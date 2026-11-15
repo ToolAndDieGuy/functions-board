@@ -25,7 +25,14 @@
   const REPO_URL = 'https://github.com/ToolAndDieGuy/functions-board';
   const STORE = 'functions_board';
   const HOLD_MS = 1000;  // on a touch screen, how long a box is held before it moves
-  const CAPTURE_KEY = 'functions_board_capture';  // a create that left the board (phone app), in sessionStorage
+  const CAPTURE_KEY = 'functions_board_capture';
+  // Home Assistant builds a new board each time its page is opened again (back from an editor, say). What the
+  // last board loaded is kept here so the next one can draw at once: the registries for a few minutes, and
+  // refreshed behind the scenes; the trigger and condition descriptions until the page reloads.
+  const WARM_MS = 10 * 60000;
+  let REG = null, DESC = null;
+  // a cheap fingerprint of the registries: how many of each, and the newest change
+  const regSig = (d) => d.map((list) => (list || []).length + ':' + (list || []).reduce((m, x) => Math.max(m, x.modified_at || x.created_at || 0), 0)).join('|');  // a create that left the board (phone app), in sessionStorage
   const NW = 240, NH = 62, XW = 204, XH = 40, COLG = 100, ROWG = 24;
 
   /* ---------- the board's words (4.9) ---------- */
@@ -2541,7 +2548,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           ui: Object.assign({ current: null, list: true, outside: true, suggest: true, legend: true }, d.ui || {}),
         };
         this._markSaved();
-        await Promise.all([this._loadRegistries(), this._loadDescriptions()]);
+        await Promise.all([this._loadRegistries(true), this._loadDescriptions()]);
         this._subscribe();
         this._renderLegend();
         this._applyMode();
@@ -2553,18 +2560,27 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         if (cur) await this._open(cur, false, { replace: true });
         else { this._renderHeader(); this._setEmpty(); }
         this._resumeCapture();
+        if (this._regWarm) setTimeout(() => this._refreshWarm(), 600);
       } catch (e) { this._fatal(e); }
       this._booting = false;
     }
 
-    async _loadRegistries() {
-      const [labels, ents, devs, areas, floors] = await Promise.all([
+    async _fetchRegistries() {
+      const d = await Promise.all([
         this._ws({ type: 'config/label_registry/list' }),
         this._ws({ type: 'config/entity_registry/list' }),
         this._ws({ type: 'config/device_registry/list' }),
         this._ws({ type: 'config/area_registry/list' }).catch(() => []),
         this._ws({ type: 'config/floor_registry/list' }).catch(() => []),
       ]);
+      REG = { data: d, at: Date.now(), user: this._hass.user && this._hass.user.id };
+      return d;
+    }
+    // warm: the last board's registries will do for now (see WARM_MS); given: ones just fetched
+    async _loadRegistries(warm, given) {
+      const keep = warm && REG && REG.user === (this._hass.user && this._hass.user.id) && Date.now() - REG.at < WARM_MS ? REG.data : null;
+      this._regWarm = !!keep;
+      const [labels, ents, devs, areas, floors] = given || keep || await this._fetchRegistries();
       this._areaMap = new Map((areas || []).map((a) => [a.area_id, a]));
       this._floorMap = new Map((floors || []).map((f) => [f.floor_id, f]));
       this._tgt = new Map(); this._src = new Map();  // what areas and helpers contain changes with the registries
@@ -2627,8 +2643,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       clearInterval(this._condTick); this._condTick = null;
     }
 
-    async _reload() {
-      try { await this._loadRegistries(); } catch (e) { return; }
+    async _reload(given) {
+      try { await this._loadRegistries(false, given); } catch (e) { return; }
       this._renderList();
       const cur = this._data.ui.current;
       if (cur && this._data.functions.includes(cur)) await this._open(cur, true);
@@ -2923,6 +2939,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     // what each purpose-specific trigger and condition can target (Home Assistant's triggers.yaml), read once
     async _loadDescriptions() {
       if (this._trigDesc) return;
+      if (DESC) { [this._trigDesc, this._condDesc] = DESC; return; }
       const get = (type) => new Promise((resolve) => {
         let done = false, unsub = null;
         const fin = (v) => { if (done) return; done = true; resolve(v || {}); Promise.resolve(unsub).then((f) => f && f()).catch(() => {}); };
@@ -2930,6 +2947,16 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         setTimeout(() => fin({}), 4000);
       });
       [this._trigDesc, this._condDesc] = await Promise.all([get('trigger_platforms/subscribe'), get('condition_platforms/subscribe')]);
+      if (Object.keys(this._trigDesc).length && Object.keys(this._condDesc).length) DESC = [this._trigDesc, this._condDesc];
+    }
+    // after a warm start: fetch the registries again, and redraw only if something changed while the board was away
+    async _refreshWarm() {
+      if (!this._regWarm || !this.isConnected) return;
+      const old = REG && REG.data;
+      const d = await this._fetchRegistries().catch(() => null);
+      this._regWarm = false;
+      if (!d || !this.isConnected || (old && regSig(d) === regSig(old))) return;
+      await this._reload(d);
     }
     async _resolveTargets(keys) {
       const todo = [...new Set(keys)].filter((k) => !this._tgt.has(k));

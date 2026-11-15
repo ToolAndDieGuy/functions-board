@@ -769,6 +769,28 @@ test('0.5.4 phone app: editors open full screen, and what is created there joins
   await ctx.close();
 });
 
+test('0.5.4 back from an editor: the board draws from what it had, then catches up', async (browser) => {
+  const { ctx, page } = await imported(browser);
+  const g = await openFn(page, /garage/i);
+  await page.waitForTimeout(1000);
+  await el(page, (b, k) => { b._inApp = () => true; b._openItem(b._model.nodes.get(k)); }, GARAGE[1]);
+  await page.locator('ha-automation-editor ha-icon-button-arrow-prev').first().waitFor({ timeout: 15000 });
+  // renamed while the board is away: the warm board can't know until it checks again
+  await ws(page, { type: 'config/entity_registry/update', entity_id: GARAGE[2], name: 'FB renamed while away' });
+  await page.waitForTimeout(500);
+  const sent0 = page.sent.length;
+  await page.locator('ha-automation-editor ha-icon-button-arrow-prev').first().click();
+  await fbq(page, '.nodes .node').first().waitFor({ timeout: 15000 });
+  const before = page.sent.slice(sent0).map((m) => m.type);
+  check('0.5.4 the board draws without fetching the registries again', !before.includes('config/entity_registry/list'), before);
+  const named = await until(() => el(page, (b, k) => { const n = b._model && b._model.nodes.get(k); return n && n.name === 'FB renamed while away'; }, GARAGE[2]), 6000);
+  check('0.5.4 a change made while away shows up a moment later', named, await el(page, (b, k) => (b._model.nodes.get(k) || {}).name, GARAGE[2]));
+  check('0.5.4 it is still the same function', await page.evaluate((p) => location.pathname === p, '/functions/' + g));
+  await ws(page, { type: 'config/entity_registry/update', entity_id: GARAGE[2], name: null });
+  check('0.5.4 warm return: no errors', page.logs.length === 0, page.logs);
+  await ctx.close();
+});
+
 test('0.5.4 touch: a box moves only after a one-second hold; a quick swipe pans', async (browser) => {
   const { ctx, page } = await imported(browser, { mobile: true });
   await openFn(page, /garage/i);

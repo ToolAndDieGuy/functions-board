@@ -6,6 +6,9 @@
   own page full screen instead of in the drawer, where the app's sign-in can't reach and the editors never loaded.
   The app's Back and the editor's own back arrow return to the board, and anything created there still joins the
   function.
+- Coming back to the board from an editor is quicker: the new board draws with the registries and trigger and
+  condition descriptions the last one loaded, then checks the registries again behind the scenes and redraws
+  only if something changed while it was away.
 - Touch: a box, frame or note moves only after it has been held still for a second; it lifts to show it's picked
   up. A finger that moves sooner pans the board, so swiping across boxes no longer drags them.
 
