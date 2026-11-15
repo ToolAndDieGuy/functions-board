@@ -4,7 +4,8 @@
 
 - Phone app: Edit, Traces, new automations, scripts, scenes and helpers, and a device's page open Home Assistant's
   own page full screen instead of in the drawer, where the app's sign-in can't reach and the editors never loaded.
-  The app's Back returns to the board, and anything created there still joins the function.
+  The app's Back and the editor's own back arrow return to the board, and anything created there still joins the
+  function.
 - Touch: a box, frame or note moves only after it has been held still for a second; it lifts to show it's picked
   up. A finger that moves sooner pans the board, so swiping across boxes no longer drags them.
 

@@ -733,6 +733,12 @@ test('0.5.4 phone app: editors open full screen, and what is created there joins
   await until(() => page.evaluate(() => location.pathname.startsWith('/config/automation/edit/')), 8000);
   const r1 = await page.evaluate(() => location.pathname);
   check('0.5.4 Edit leaves the board for the automation editor', r1.startsWith('/config/automation/edit/'), r1);
+  // the editor's own back arrow (not only the phone's Back) returns to the board
+  await page.locator('ha-automation-editor ha-icon-button-arrow-prev').first().click();
+  await fbq(page, '.nodes .node').first().waitFor({ timeout: 15000 });
+  check('0.5.4 the editor\'s back arrow returns to the function', await page.evaluate((p) => location.pathname === p, '/functions/' + g), await page.evaluate(() => location.pathname));
+  await el(page, (b, k) => { b._inApp = () => true; b._openItem(b._model.nodes.get(k)); }, GARAGE[1]);
+  await until(() => page.evaluate(() => location.pathname.startsWith('/config/automation/edit/')), 8000);
   await page.goBack();
   await fbq(page, '.nodes .node').first().waitFor({ timeout: 15000 });
   check('0.5.4 Back returns to the function', await page.evaluate((p) => location.pathname === p, '/functions/' + g), await page.evaluate(() => location.pathname));

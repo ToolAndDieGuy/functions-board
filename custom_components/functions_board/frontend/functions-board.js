@@ -4387,7 +4387,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       }
       this._capture = null;
       if (this._drawer) this._closeDrawer();
-      history.pushState(null, '', url);
+      // "from" is how Home Assistant's own navigation marks a page that was opened from another one; with it, the
+      // editor's back arrow goes back here instead of to its own list
+      history.pushState({ from: location.pathname }, '', url);
       window.dispatchEvent(new CustomEvent('location-changed', { detail: { replace: false } }));
     }
     async _resumeCapture() {
