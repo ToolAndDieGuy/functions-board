@@ -723,6 +723,116 @@ test('9.5 a notification\'s buttons are wired to the automations that answer the
   await ctx.close();
 });
 
+test('0.5.4 phone app: editors open full screen, and what is created there joins the function', async (browser) => {
+  const { ctx, page } = await imported(browser);
+  const g = await openFn(page, /garage/i);
+  // the phone app is told apart by its own sign-in (hass.auth.external); that can't be faked here without
+  // confusing Home Assistant's frontend, so the board is told it's in the app
+  await el(page, (b) => { b._inApp = () => true; });
+  await el(page, (b, k) => b._openItem(b._model.nodes.get(k)), GARAGE[1]);
+  await until(() => page.evaluate(() => location.pathname.startsWith('/config/automation/edit/')), 8000);
+  const r1 = await page.evaluate(() => location.pathname);
+  check('0.5.4 Edit leaves the board for the automation editor', r1.startsWith('/config/automation/edit/'), r1);
+  // the editor's own back arrow (not only the phone's Back) returns to the board
+  await page.locator('ha-automation-editor ha-icon-button-arrow-prev').first().click();
+  await fbq(page, '.nodes .node').first().waitFor({ timeout: 15000 });
+  check('0.5.4 the editor\'s back arrow returns to the function', await page.evaluate((p) => location.pathname === p, '/functions/' + g), await page.evaluate(() => location.pathname));
+  await el(page, (b, k) => { b._inApp = () => true; b._openItem(b._model.nodes.get(k)); }, GARAGE[1]);
+  await until(() => page.evaluate(() => location.pathname.startsWith('/config/automation/edit/')), 8000);
+  await page.goBack();
+  await fbq(page, '.nodes .node').first().waitFor({ timeout: 15000 });
+  check('0.5.4 Back returns to the function', await page.evaluate((p) => location.pathname === p, '/functions/' + g), await page.evaluate(() => location.pathname));
+  check('0.5.4 no drawer frame was opened', (await fbq(page, '.drawer iframe').count()) === 0);
+  // create: the board goes, the automation is saved meanwhile, and on Back it gets the function's label
+  await el(page, (b) => { b._inApp = () => true; b._create('automation'); });
+  await until(() => page.evaluate(() => location.pathname === '/config/automation/edit/new'), 8000);
+  const pend = await page.evaluate(() => JSON.parse(sessionStorage.getItem('functions_board_capture') || 'null'));
+  check('0.5.4 Create remembers what it is for', pend && pend.label === g && pend.kind === 'automation' && pend.since > 0, pend);
+  const sid = 'fbapp' + Date.now(), aid = 'automation.fb_made_in_the_app';
+  await api(page, 'POST', 'config/automation/config/' + sid, { alias: 'FB made in the app', triggers: [{ trigger: 'state', entity_id: 'cover.garage_door', to: 'open' }], actions: [] });
+  await until(() => page.evaluate((k) => !!document.querySelector('home-assistant').hass.states[k], aid), 8000);
+  await page.goBack();
+  await fbq(page, '.nodes .node').first().waitFor({ timeout: 15000 });
+  check('0.5.4 the automation made in the editor joins the function', await until(() => hasLabel(page, aid, g), 8000), await regWhenThere(page, aid));
+  check('0.5.4 the pending create is used up', !(await page.evaluate(() => sessionStorage.getItem('functions_board_capture'))));
+  // an old item is never picked up: a second Back-and-return with nothing new labels nothing else
+  const before = (await ws(page, { type: 'config/entity_registry/list' })).filter((e) => (e.labels || []).includes(g)).length;
+  await el(page, (b) => { b._inApp = () => true; b._create('script'); });
+  await until(() => page.evaluate(() => location.pathname === '/config/script/edit/new'), 8000);
+  await page.goBack();
+  await fbq(page, '.nodes .node').first().waitFor({ timeout: 15000 });
+  await page.waitForTimeout(2000);
+  const after = (await ws(page, { type: 'config/entity_registry/list' })).filter((e) => (e.labels || []).includes(g)).length;
+  check('0.5.4 nothing is labelled when nothing was made', after === before, { before, after });
+  await api(page, 'DELETE', 'config/automation/config/' + sid);
+  check('0.5.4 phone app: no errors', page.logs.length === 0, page.logs);
+  await ctx.close();
+});
+
+test('0.5.4 back from an editor: the board draws from what it had, then catches up', async (browser) => {
+  const { ctx, page } = await imported(browser);
+  const g = await openFn(page, /garage/i);
+  await page.waitForTimeout(1000);
+  await el(page, (b, k) => { b._inApp = () => true; b._openItem(b._model.nodes.get(k)); }, GARAGE[1]);
+  await page.locator('ha-automation-editor ha-icon-button-arrow-prev').first().waitFor({ timeout: 15000 });
+  // renamed while the board is away: the warm board can't know until it checks again
+  await ws(page, { type: 'config/entity_registry/update', entity_id: GARAGE[2], name: 'FB renamed while away' });
+  await page.waitForTimeout(500);
+  const sent0 = page.sent.length;
+  await page.locator('ha-automation-editor ha-icon-button-arrow-prev').first().click();
+  await fbq(page, '.nodes .node').first().waitFor({ timeout: 15000 });
+  const before = page.sent.slice(sent0).map((m) => m.type);
+  check('0.5.4 the board draws without fetching the registries again', !before.includes('config/entity_registry/list'), before);
+  const named = await until(() => el(page, (b, k) => { const n = b._model && b._model.nodes.get(k); return n && n.name === 'FB renamed while away'; }, GARAGE[2]), 6000);
+  check('0.5.4 a change made while away shows up a moment later', named, await el(page, (b, k) => (b._model.nodes.get(k) || {}).name, GARAGE[2]));
+  check('0.5.4 it is still the same function', await page.evaluate((p) => location.pathname === p, '/functions/' + g));
+  await ws(page, { type: 'config/entity_registry/update', entity_id: GARAGE[2], name: null });
+  check('0.5.4 warm return: no errors', page.logs.length === 0, page.logs);
+  await ctx.close();
+});
+
+test('0.5.4 touch: a box moves only after a one-second hold; a quick swipe pans', async (browser) => {
+  const { ctx, page } = await imported(browser, { mobile: true });
+  await openFn(page, /garage/i);
+  const cdp = await ctx.newCDPSession(page);
+  const touch = (type, x, y) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] });
+  const swipe = async (x, y, dx, hold) => {
+    await touch('touchStart', x, y);
+    if (hold) await page.waitForTimeout(hold);
+    for (let i = 1; i <= 6; i++) { await touch('touchMove', x + dx * i / 6, y); await page.waitForTimeout(16); }
+    await touch('touchEnd');
+    await page.waitForTimeout(400);
+  };
+  const key = GARAGE[1];
+  const where = () => el(page, (b, k) => { const n = b._model.nodes.get(k), r = b._els.get(k).getBoundingClientRect(); return { x: n.x, y: n.y, cx: r.left + r.width / 2, cy: r.top + r.height / 2, vx: b._view.x, w: r.width }; }, key);
+  await el(page, (b, k) => { b._listOpen = false; b._renderList(); b._centerOn(k); }, key);
+  await page.waitForTimeout(500);
+  let p = await where();
+  await swipe(p.cx, p.cy, -60, 0);
+  let q = await where();
+  check('0.5.4 a quick swipe that starts on a box pans the board', q.x === p.x && q.y === p.y && Math.abs((q.vx - p.vx) + 60) < 6, { p, q });
+  p = q;
+  await touch('touchStart', p.cx, p.cy);
+  await page.waitForTimeout(1200);
+  check('0.5.4 a held box shows it is picked up', await el(page, (b, k) => b._els.get(k).classList.contains('lifted'), key));
+  for (let i = 1; i <= 6; i++) { await touch('touchMove', p.cx + 10 * i, p.cy); await page.waitForTimeout(16); }
+  await touch('touchEnd');
+  await page.waitForTimeout(400);
+  q = await where();
+  const k = await el(page, (b) => b._view.k);
+  check('0.5.4 after the hold the box moves with the finger', Math.abs(q.x - p.x - 60 / k) < 3 && q.vx === p.vx, { p, q, k });
+  check('0.5.4 the lift ends with the drag', !(await el(page, (b, k) => b._els.get(k).classList.contains('lifted'), key)));
+  const L = await el(page, (b, k) => (b._layout(b._model.label).nodes || {})[k], key);
+  check('0.5.4 the move is saved', L && L.x === q.x, L);
+  p = q;
+  await touch('touchStart', p.cx + 60, p.cy);
+  await touch('touchEnd');
+  await page.waitForTimeout(400);
+  check('0.5.4 a tap still selects the box', (await el(page, (b) => b._sel)) === key, await el(page, (b) => b._sel));
+  check('0.5.4 touch: no errors', page.logs.length === 0, page.logs);
+  await ctx.close();
+});
+
 (async () => {
   const browser = await chromium.launch();
   for (const [name, fn] of cases) {

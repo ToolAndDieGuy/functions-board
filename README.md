@@ -76,7 +76,7 @@ The screenshots come from the demo setup the tests run on: a garage door that st
 <table>
 <tr>
 <td width="70%" valign="top"><b>Import</b> finds the systems already in your setup, from how your automations and scripts are wired and the categories you already use.<br><br><img src="https://raw.githubusercontent.com/ToolAndDieGuy/functions-board/main/docs/images/import.png" alt="The import manager listing Garage, Furnace filter and Morning, with the Garage group opened to show its automations, script and helpers"></td>
-<td width="30%" valign="top"><b>On a phone</b> the board works the same.<br><br><img src="https://raw.githubusercontent.com/ToolAndDieGuy/functions-board/main/docs/images/phone.png" alt="The Garage function on a phone"></td>
+<td width="30%" valign="top"><b>On a phone</b> the board works the same. Swipe to move around; hold a box for a second to move it. In the phone app, Home Assistant's editors open full screen, and Back returns to the board.<br><br><img src="https://raw.githubusercontent.com/ToolAndDieGuy/functions-board/main/docs/images/phone.png" alt="The Garage function on a phone"></td>
 </tr>
 </table>
 
@@ -173,7 +173,7 @@ To try a table without editing the file, add it from the browser console on the 
 
 ## Feedback
 
-This is a prototype (v0.5.3). Please open an [issue](https://github.com/ToolAndDieGuy/functions-board/issues) for bugs, wrong or missing arrows, or ideas. A screenshot of the board and the automation's YAML help a lot.
+This is a prototype (v0.5.4). Please open an [issue](https://github.com/ToolAndDieGuy/functions-board/issues) for bugs, wrong or missing arrows, or ideas. A screenshot of the board and the automation's YAML help a lot.
 
 ## Credits
 
