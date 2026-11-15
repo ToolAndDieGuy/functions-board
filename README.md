@@ -183,3 +183,6 @@ This is a prototype (v0.5.3). Please open an [issue](https://github.com/ToolAndD
 ## License
 
 [MIT](LICENSE)
+
+
+Tool and Die Guy Here- I am not a coder, nor do I have any software experience. I had an idea for how Home Assistants various components should be organized and managed and I used Claude to make it real. I can't answer any questions about the code. I guided Claude through designing this. That's it. the documentation, testing, deployment, debugging, etc has all been Claude. This paragraph is the only thing I have personally typed. If the developers of Home Assistant are interested in this, they can have this project freely.
