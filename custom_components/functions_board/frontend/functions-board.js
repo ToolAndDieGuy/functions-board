@@ -1,5 +1,5 @@
 /*!
- * Functions board v0.5.3 (prototype) for Home Assistant
+ * Functions board v0.5.4 (prototype) for Home Assistant
  *
  * One page per "function": every automation, script, helper and device that makes one job work,
  * grouped by a Home Assistant label and wired together from their own configs.
@@ -13,7 +13,7 @@
  */
 (() => {
   'use strict';
-  const VERSION = '0.5.3';
+  const VERSION = '0.5.4';
   const loaded = customElements.get('functions-board');
   if (loaded) {
     if (loaded.VERSION !== VERSION) {
@@ -24,6 +24,8 @@
   }
   const REPO_URL = 'https://github.com/ToolAndDieGuy/functions-board';
   const STORE = 'functions_board';
+  const HOLD_MS = 1000;  // on a touch screen, how long a box is held before it moves
+  const CAPTURE_KEY = 'functions_board_capture';  // a create that left the board (phone app), in sessionStorage
   const NW = 240, NH = 62, XW = 204, XH = 40, COLG = 100, ROWG = 24;
 
   /* ---------- the board's words (4.9) ---------- */
@@ -1024,7 +1026,7 @@ button{font:inherit;color:inherit}
 .ib{padding:6px}
 .sep{width:1px;height:22px;background:var(--divider-color);margin:0 4px}
 [data-confirm]{border-color:var(--fb-amber)!important;color:var(--fb-amber)!important}
-.vp{position:relative;flex:1;min-width:0;overflow:hidden;touch-action:none;background-color:var(--primary-background-color);
+.vp{position:relative;flex:1;min-width:0;overflow:hidden;touch-action:none;-webkit-touch-callout:none;background-color:var(--primary-background-color);
   background-image:radial-gradient(var(--fb-dot) 1px,transparent 1px);background-size:22px 22px}
 .world{position:absolute;left:0;top:0;transform-origin:0 0}
 .edges{position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;pointer-events:none}
@@ -1070,6 +1072,7 @@ button{font:inherit;color:inherit}
 .node.dim{opacity:.2}
 .node.pulse{animation:pulse 1.8s ease-out}
 @keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--fb-blue) 85%,transparent)}100%{box-shadow:0 0 0 16px transparent}}
+.node.lifted,.frame.lifted,.note.lifted{outline:2px solid var(--primary-color);outline-offset:2px;box-shadow:0 8px 24px rgba(0,0,0,.45)}
 .note{position:absolute;border-radius:10px;background:var(--card-background-color);border:1px solid var(--divider-color);box-shadow:var(--ha-card-box-shadow,none)}
 .nhead{display:flex;align-items:center;justify-content:space-between;padding:4px 2px 0 10px;cursor:grab;color:var(--secondary-text-color)}
 .nhead ha-icon{--mdc-icon-size:16px}
@@ -2220,6 +2223,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         // back on the page: the open function's monitors listen again, and an open debugger records again
         if (this._model) { this._startMonitors(); this._afterOpen(this._model.label); }
         if (this._drawer && this._drawer.mode === 'debug' && this._dbg && !this._dbg.rec) this._dbgStart();
+        this._resumeCapture();
       }
       if (this._ro && this._$) this._ro.observe(this._$.board);
       window.addEventListener('pagehide', this._flushNow);
@@ -2494,6 +2498,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       vp.addEventListener('pointerdown', (e) => this._onDown(e));
       vp.addEventListener('pointermove', (e) => { if (this._linking && !this._linking.drag) this._linkMove(e); });
       vp.addEventListener('wheel', (e) => this._onWheel(e), { passive: false });
+      // holding a finger on a box to move it must not open the phone's own menu
+      vp.addEventListener('contextmenu', (e) => { if (this._drag && this._drag.touch) e.preventDefault(); });
       this._$.drawer.addEventListener('mouseover', (e) => { const x = e.target.closest('.run, .dbrow, .wrow'); this._hover(x ? x.dataset.key || null : null); });
       // hovering an arrow that comes from a template shows the template's value right now (9.3)
       const ed = this._$.edges;
@@ -2546,6 +2552,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         const cur = want && this._data.functions.includes(want) ? want : this._data.functions.includes(this._data.ui.current) ? this._data.ui.current : this._data.functions[0];
         if (cur) await this._open(cur, false, { replace: true });
         else { this._renderHeader(); this._setEmpty(); }
+        this._resumeCapture();
       } catch (e) { this._fatal(e); }
       this._booting = false;
     }
@@ -2632,16 +2639,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     async _onRegistry(ev) {
       const d = (ev && ev.data) || {}, id = d.entity_id;
       if (d.action === 'create' && this._capture && id) {
-        const c = this._capture, dom = id.split('.')[0];
-        let ok = (c.kind === 'automation' && dom === 'automation') || (c.kind === 'script' && dom === 'script') || (c.kind === 'scene' && dom === 'scene');
-        if (c.kind === 'helper' && !ok) {
-          if (HELPER_DOMAINS.has(dom)) ok = true;
-          else {
-            const reg = await this._ws({ type: 'config/entity_registry/get', entity_id: id }).catch(() => null);
-            ok = !!(reg && (HELPER_PLATFORMS.has(reg.platform) || (c.domain && reg.platform === c.domain)));
-          }
-        }
-        if (ok) await this._captured(id, c);
+        const c = this._capture;
+        if (await this._captureMatch(id, c)) await this._captured(id, c);
       } else if (d.action === 'update' && id && this._watch.has(id)) await this._rewatch(id);
       if (id && /^(automation|script)\./.test(id)) this._cfgCache.delete(id);
       const relevant = d.action !== 'update' || (this._model && this._model.nodes.has(id)) || (d.changes && 'labels' in d.changes);
@@ -3737,6 +3736,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       this._listen(true);
       if (this._pointers.size === 2) {
+        this._dropHold(this._drag);
         const [p, q] = [...this._pointers.values()];
         this._drag = { type: 'pinch', d0: Math.hypot(p.x - q.x, p.y - q.y) || 1, v0: Object.assign({}, this._view), mx: (p.x + q.x) / 2, my: (p.y + q.y) / 2 };
         return;
@@ -3746,7 +3746,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const nodeEl = e.target.closest('.node'), fres = e.target.closest('.fresize'), fhead = e.target.closest('.fhead'), nhead = e.target.closest('.nhead');
       if (nodeEl && m) {
         const n = m.nodes.get(nodeEl.dataset.key);
-        if (n) { this._drag = Object.assign(base, { type: 'node', n, el: nodeEl, ox: n.x, oy: n.y, before: this._snap(m.label) }); return; }
+        if (n) { this._grab(e, Object.assign(base, { type: 'node', n, el: nodeEl, ox: n.x, oy: n.y, before: this._snap(m.label) })); return; }
       }
       if (fres && L) {
         const f = L.frames.find((x) => x.id === fres.dataset.fid);
@@ -3754,13 +3754,31 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       }
       if (fhead && L) {
         const f = L.frames.find((x) => x.id === fhead.dataset.fid);
-        if (f) { this._drag = Object.assign(base, { type: 'frame', f, el: fhead.parentElement, ox: f.x, oy: f.y, items: this._inFrame(f), before: this._snap(m.label) }); return; }
+        if (f) { this._grab(e, Object.assign(base, { type: 'frame', f, el: fhead.parentElement, ox: f.x, oy: f.y, items: this._inFrame(f), before: this._snap(m.label) })); return; }
       }
       if (nhead && L) {
         const nt = L.notes.find((x) => x.id === nhead.dataset.nid);
-        if (nt) { this._drag = Object.assign(base, { type: 'note', nt, el: nhead.parentElement, ox: nt.x, oy: nt.y, before: this._snap(m.label) }); return; }
+        if (nt) { this._grab(e, Object.assign(base, { type: 'note', nt, el: nhead.parentElement, ox: nt.x, oy: nt.y, before: this._snap(m.label) })); return; }
       }
       this._drag = Object.assign(base, { type: 'pan', ox: this._view.x, oy: this._view.y });
+    }
+    // On a touch screen a box, frame or note moves only after it has been held still for a second. A finger
+    // that moves sooner pans the board, so swiping across boxes to look around doesn't drag them along.
+    _grab(e, d) {
+      this._drag = d;
+      if (e.pointerType !== 'touch') return;
+      d.touch = true; d.wait = true;
+      d.timer = setTimeout(() => {
+        if (this._drag !== d || !d.wait) return;
+        d.wait = false;
+        if (d.el) d.el.classList.add('lifted');
+        try { if (navigator.vibrate) navigator.vibrate(20); } catch (err) { /* no buzz on this phone */ }
+      }, HOLD_MS);
+    }
+    _dropHold(d) {
+      if (!d) return;
+      clearTimeout(d.timer); d.wait = false;
+      if (d.el) d.el.classList.remove('lifted');
     }
     _inFrame(f) {
       const items = [], inside = (x, y) => x >= f.x && x <= f.x + f.w && y >= f.y && y <= f.y + f.h;
@@ -3776,7 +3794,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     _onMove(e) {
       if (this._pointers.has(e.pointerId)) this._pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (this._linking && this._linking.drag) { this._linkMove(e); return; }
-      const d = this._drag;
+      let d = this._drag;
       if (!d) return;
       if (d.type === 'pinch') {
         if (this._pointers.size < 2) return;
@@ -3786,6 +3804,12 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         return;
       }
       const dx = e.clientX - d.sx, dy = e.clientY - d.sy;
+      if (d.wait) {
+        // a finger can wobble a little while it holds; past that, before the second is up, it's a pan
+        if (Math.hypot(dx, dy) < 10) return;
+        this._dropHold(d);
+        d = this._drag = { type: 'pan', touch: true, sx: d.sx, sy: d.sy, moved: false, ox: this._view.x, oy: this._view.y };
+      }
       if (!d.moved && Math.hypot(dx, dy) < 4) return;
       d.moved = true;
       const k = this._view.k, mv = (o, x, y) => { o.x = Math.round(x); o.y = Math.round(y); };
@@ -3823,6 +3847,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (!d) return;
       if (d.type === 'pinch') { if (this._pointers.size < 2) { this._drag = null; this._saveView(); } return; }
       this._drag = null;
+      this._dropHold(d);
       const label = this._model && this._model.label, L = label && this._layout(label);
       if (d.type === 'node') {
         if (!d.moved) this._select(d.n.key);
@@ -4325,7 +4350,12 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       }
       if (!keepAnchor) this._menuAnchor = null;
     }
+    // The phone app signs its page in through the app itself, and Home Assistant inside the drawer's frame can't
+    // reach that sign-in, so its editors never load there. In the app, Home Assistant's own pages open full
+    // screen instead; the app's Back returns to the board.
+    _inApp() { return !!(this._hass && this._hass.auth && this._hass.auth.external); }
     _openDrawer(url, title, opt = {}) {
+      if (this._inApp() && /^\/config\//.test(url)) { this._goTo(url, opt.capture); return; }
       this._leaveDrawerMode();
       if (!opt.capture) this._capture = null;
       const was = this._drawer;
@@ -4345,6 +4375,38 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._hover(null);
       if (was && was.mode === 'frame') this._configChanged();  // whatever was saved in the editor shows at once
       this._fitLitbar();
+    }
+    // Leaving the board for one of Home Assistant's pages (the phone app). The board stops while it's away, so
+    // a create remembers what it's for, and when the board comes back, what was made meanwhile joins the
+    // function. "Meanwhile" is measured by the registry's own clock, not the phone's.
+    _goTo(url, capture) {
+      const c = capture && this._capture;
+      if (c) {
+        const since = (this._ents || []).reduce((m, e) => Math.max(m, e.created_at || 0), 0);
+        try { sessionStorage.setItem(CAPTURE_KEY, JSON.stringify({ label: c.label, kind: c.kind, domain: c.domain, since, at: Date.now() })); } catch (e) { /* the item just won't be labelled */ }
+      }
+      this._capture = null;
+      if (this._drawer) this._closeDrawer();
+      history.pushState(null, '', url);
+      window.dispatchEvent(new CustomEvent('location-changed', { detail: { replace: false } }));
+    }
+    async _resumeCapture() {
+      if (this._mode() !== 'panel') return;
+      let c = null;
+      try { c = JSON.parse(sessionStorage.getItem(CAPTURE_KEY) || 'null'); sessionStorage.removeItem(CAPTURE_KEY); } catch (e) { c = null; }
+      if (!c || !c.label || typeof c.since !== 'number' || Date.now() - c.at > 30 * 60000) return;
+      const ents = await this._ws({ type: 'config/entity_registry/list' }).catch(() => []);
+      const made = (ents || []).filter((e) => (e.created_at || 0) > c.since).slice(0, 5);
+      for (const e of made) if (await this._captureMatch(e.entity_id, c, e)) await this._captured(e.entity_id, c);
+    }
+    // does this new entity belong to what was being created?
+    async _captureMatch(id, c, reg) {
+      const dom = id.split('.')[0];
+      if (c.kind === 'automation' || c.kind === 'script' || c.kind === 'scene') return dom === c.kind;
+      if (c.kind !== 'helper') return false;
+      if (HELPER_DOMAINS.has(dom)) return true;
+      if (!reg) reg = await this._ws({ type: 'config/entity_registry/get', entity_id: id }).catch(() => null);
+      return !!(reg && (HELPER_PLATFORMS.has(reg.platform) || (c.domain && reg.platform === c.domain)));
     }
     _endCapture() {
       // a few seconds' grace: the item saved just before the drawer closed still gets the label
