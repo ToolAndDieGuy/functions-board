@@ -1,0 +1,57 @@
+homeassistant:
+  name: Functions demo
+  latitude: 42.5
+  longitude: -85.4
+  elevation: 270
+  unit_system: us_customary
+  time_zone: America/New_York
+  country: US
+  currency: USD
+  packages: !include_dir_named packages
+http:
+  server_port: 8123
+frontend:
+config:
+onboarding:
+# the function debugger (9.4) reads the logbook and the action history, which need the recorder
+recorder:
+  commit_interval: 1
+  purge_keep_days: 1
+logbook:
+history:
+demo:
+automation: !include automations.yaml
+automation manual: !include automations_manual.yaml
+script: !include scripts.yaml
+scene: !include scenes.yaml
+input_boolean:
+  filter_due:
+    name: Furnace filter due
+    icon: mdi:air-filter
+  garage_auto_close:
+    name: Garage auto-close
+    icon: mdi:garage-lock
+  vacation_mode:
+    name: Vacation mode
+    icon: mdi:airplane
+counter:
+  filter_countdown:
+    name: Furnace filter days left
+    icon: mdi:calendar-clock
+    initial: 90
+    minimum: 0
+timer:
+  garage_open:
+    name: Garage open timer
+    duration: "00:15:00"
+input_datetime:
+  wake_up:
+    name: Wake-up time
+    has_date: false
+    has_time: true
+    initial: "06:30"
+template:
+  - sensor:
+      - name: "Furnace filter status"
+        unique_id: furnace_filter_status
+        state: "{{ states('counter.filter_countdown') }} days{{ ' (due)' if is_state('input_boolean.filter_due', 'on') else '' }}"

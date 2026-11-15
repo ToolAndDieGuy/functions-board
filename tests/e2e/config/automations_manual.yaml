@@ -1,0 +1,14 @@
+# An automation without an id: it has no registry entry, so it can't carry a label (import must skip it, 3.1)
+- alias: "Garage: restart timer when reopened"
+  triggers:
+    - trigger: state
+      entity_id: cover.garage_door
+      to: open
+  conditions:
+    - condition: state
+      entity_id: timer.garage_open
+      state: active
+  actions:
+    - action: timer.start
+      target:
+        entity_id: timer.garage_open

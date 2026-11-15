@@ -1,0 +1,24 @@
+{
+  "domain": "functions_board",
+  "name": "Functions Board",
+  "categories": [
+    "helpers"
+  ],
+  "codeowners": [
+    "@ToolAndDieGuy"
+  ],
+  "config_flow": true,
+  "dependencies": [
+    "frontend",
+    "http",
+    "panel_custom",
+    "websocket_api"
+  ],
+  "documentation": "https://github.com/ToolAndDieGuy/functions-board",
+  "integration_type": "service",
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/ToolAndDieGuy/functions-board/issues",
+  "requirements": [],
+  "single_config_entry": true,
+  "version": "0.5.3"
+}

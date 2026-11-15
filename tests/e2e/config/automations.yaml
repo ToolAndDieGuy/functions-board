@@ -1,0 +1,114 @@
+- id: "1001"
+  alias: "Furnace filter: count down daily"
+  description: One day off the filter's life for each day the furnace runs.
+  triggers:
+    - trigger: time
+      at: "12:30:00"
+  conditions:
+    - condition: not
+      conditions:
+        - condition: state
+          entity_id: climate.hvac
+          state: "off"
+  actions:
+    - action: counter.decrement
+      target:
+        entity_id: counter.filter_countdown
+- id: "1002"
+  alias: "Furnace filter: due alert"
+  triggers:
+    - trigger: numeric_state
+      entity_id: counter.filter_countdown
+      below: 1
+  actions:
+    - action: input_boolean.turn_on
+      target:
+        entity_id: input_boolean.filter_due
+    - action: persistent_notification.create
+      data:
+        title: Furnace filter
+        message: Time to change the furnace filter.
+- id: "2001"
+  alias: "Garage: start open timer"
+  triggers:
+    - trigger: state
+      entity_id: cover.garage_door
+      to: open
+  actions:
+    - action: timer.start
+      target:
+        entity_id: timer.garage_open
+- id: "2002"
+  alias: "Garage: left open"
+  triggers:
+    - trigger: event
+      event_type: timer.finished
+      event_data:
+        entity_id: timer.garage_open
+  conditions:
+    - condition: state
+      entity_id: cover.garage_door
+      state: open
+  actions:
+    - action: persistent_notification.create
+      data:
+        title: Garage
+        message: The garage door has been open for 15 minutes.
+    - if:
+        - condition: state
+          entity_id: input_boolean.garage_auto_close
+          state: "on"
+      then:
+        - action: script.close_garage
+- id: "2003"
+  alias: "Garage: closed, stop timer"
+  triggers:
+    - trigger: state
+      entity_id: cover.garage_door
+      to: closed
+  actions:
+    - action: timer.cancel
+      target:
+        entity_id: timer.garage_open
+- id: "3001"
+  alias: "Morning: lights and blinds"
+  triggers:
+    - trigger: time
+      at: input_datetime.wake_up
+  conditions:
+    - condition: state
+      entity_id: input_boolean.vacation_mode
+      state: "off"
+  actions:
+    - action: light.turn_on
+      target:
+        entity_id: light.kitchen_lights
+      data:
+        brightness_pct: 60
+    - action: cover.open_cover
+      target:
+        entity_id: cover.living_room_window
+    - action: script.morning_briefing
+- id: "3002"
+  alias: "Morning: kitchen speaker on with the lights"
+  triggers:
+    - trigger: state
+      entity_id: light.kitchen_lights
+      to: "on"
+  conditions:
+    - condition: time
+      after: "05:00:00"
+      before: "09:00:00"
+  actions:
+    - action: media_player.turn_on
+      target:
+        entity_id: media_player.kitchen
+- id: "4001"
+  alias: Backyard motion light
+  use_blueprint:
+    path: homeassistant/motion_light.yaml
+    input:
+      motion_entity: binary_sensor.movement_backyard
+      light_target:
+        entity_id: light.living_room_rgbww_lights
+      no_motion_wait: 120

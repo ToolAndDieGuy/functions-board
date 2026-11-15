@@ -1,0 +1,36 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Functions Board",
+        "description": "Adds a Functions page to the sidebar for administrators: one whiteboard per function, showing its automations, scripts, helpers and devices wired together.\n\nIt starts in Organise only mode. A function is a Home Assistant label; the board adds and removes labels and categories, and Pause turns a function's automations off until you resume them. It doesn't create, edit or delete your automations, scripts or helpers.\n\nIn the integration's options you can switch to Full manager, which also creates and deletes automations, scripts, helpers and functions, edits the wiring in automation and script configs, and runs test changes. The board shows every change before it happens, and you can undo everything except test changes."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Functions Board is already set up."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Functions Board",
+        "data": {
+          "mode": "What the board may change",
+          "card": "Make the Functions card available on dashboards"
+        },
+        "data_description": {
+          "mode": "Organise only: labels, categories, and Pause and Resume. Full manager adds: creating and deleting automations, scripts, helpers and functions; editing the wiring in automation and script configs, which rewrites automations.yaml and scripts.yaml the way Home Assistant's own editors do (YAML comments are lost); and test changes such as simulated states, fired events and test runs. Every change is shown before it happens; all but test changes can be undone.",
+          "card": "Loads the board on dashboard pages so you can add a custom:functions-board card without adding a resource by hand."
+        }
+      }
+    }
+  },
+  "selector": {
+    "mode": {
+      "options": {
+        "organise": "Organise only",
+        "full": "Full manager"
+      }
+    }
+  }
+}

@@ -1,0 +1,42 @@
+name: Validate
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 6 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  marketplace:
+    name: Marketplace (HACS) checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: hacs/action@main
+        with:
+          category: integration
+          # brand images ship inside the integration (custom_components/functions_board/brand)
+          ignore: brands
+
+  hassfest:
+    name: hassfest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: home-assistant/actions/hassfest@master
+
+  board:
+    name: Board script
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Syntax
+        run: node --check custom_components/functions_board/frontend/functions-board.js
+      - name: Wiring and loop tests
+        run: node tests/wiring.test.js

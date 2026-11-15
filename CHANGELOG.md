@@ -1,0 +1,105 @@
+# Changelog
+
+## 0.5.3 (2026-11-15)
+
+- A box's bar wraps onto a second line when it doesn't fit beside an open drawer or on a narrow screen, instead
+  of running under the drawer.
+- Debugger: Clear keeps what happened before it out of the list, also when the runs are read again.
+- README: a tour with screenshots of the board, menus, debugger, tests and the arrow editor, and credits.
+  `tests/e2e/screens.js` takes the screenshots on the test setup.
+
+## 0.5.2 (2026-11-15)
+
+- Helpers and scenes have Edit in their bar, like automations and scripts: a helper opens on its settings (where
+  its options are, and a template helper's template), a scene in the scene editor. Double-click and Enter do
+  the same. Something set up in YAML without a unique ID says why it can't be edited from the UI.
+
+## 0.5.1 (2026-11-15)
+
+Ready for translations, and one false loop fewer.
+
+- Every text the board shows is in one table, `STR.en`, keyed by id. A translation is one more table named by
+  Home Assistant's language code; ids it leaves out stay English, and `pt-BR` falls back to `pt`. Counts take the
+  plural forms the language needs. The board follows the user's language, also when it changes while the page
+  is open. A table can be tried from the browser console before it goes into the file.
+- An automation that turns a light off when its brightness crosses a threshold is no longer marked as a loop:
+  a light that is off has no brightness, so turning it off can't fire the trigger again.
+- README: the Full manager, the developer tools, Node-RED, the card option and what the arrows follow now.
+
+## 0.5.0 (2026-11-15)
+
+Developer tools on the board, an arrow editor and Node-RED flows.
+
+- Test (Full manager): a helper changes through its own actions, any other entity gets a simulated state that
+  stays marked until its device reports, events are fired with the data their trigger expects, automations
+  run with or without their conditions, scripts with their fields, notifications are sent with their
+  templates filled in. A test can be kept on the board as a button. The first test of a session asks first;
+  every test is written to the logbook and can't be undone.
+- Live checks: a tick or a cross on each check arrow says whether that condition passes right now. Hovering
+  an arrow that comes from a template shows its value now.
+- Watch triggers arms an automation's triggers without running it: its trigger arrows pulse whenever one
+  would fire, even while it is off. Pause plus Watch is a dry run.
+- Monitor boxes list the last 10 events of one type, or MQTT messages on a topic, while the function is open.
+- Debug panel: what happened to the function in the last 15 minutes and from now on (the logbook, the action
+  history and the traces), with what caused each step. Picking a step lights the chain that led to it, one
+  step at a time. Selecting an automation says why it did or didn't run, down to the condition that failed.
+- A run from the Runs list or the debugger lights the arrows it actually used, with its trace in a bar.
+- Notification boxes: Messages lists what they sent lately, from the traces.
+- Arrow editor (Full manager): drag from a box's handle onto another box to add a trigger, a check, an
+  action or a script call, chosen from Home Assistant's own lists, with the YAML shown and checked before it
+  is saved. Click an arrow to remove what it stands for. Every change is on the undo stack.
+- Node-RED flows (off until switched on in the Key): each wired group in a flow tab is a box wired to the
+  pieces it triggers on, reads, changes and runs. Read in the browser; nothing is stored.
+- Keyboard and screen readers: boxes are named buttons that say what they are wired to, the arrow keys move
+  along the arrows, dialogs keep the focus.
+- Trigger-based template sensors show what they read.
+
+## 0.4.0 (2026-11-15)
+
+A full manager, more of the wiring, and arrow tools.
+
+- Storage: one layout per write with a revision each, so two boards editing different functions never
+  overwrite each other; saves no longer go into the recorder database. Store version 1.2 (v0.3 still loads it).
+- Integration options: Organise only (default) or Full manager, and a switch that makes the board
+  available as a dashboard card without adding a resource by hand. The page's address carries a hash of the
+  board file, so browsers always load the current one.
+- Full manager: Delete function, Delete function and its items, and Delete on a box (automations, scripts,
+  scenes, helpers made in the UI, helpers set up by integrations), with a second step listing what goes and
+  what still uses it. Undo brings back everything except helpers set up by integrations.
+- Arrows for area, floor and label targets, purpose-specific triggers (light.turned_on, door.opened...),
+  what template and other derived helpers read, scenes and groups, notification buttons and the automations
+  that answer them. Loop detection understands all of these and no longer flags setting the state that
+  triggered you.
+- Arrows menu: highlight modes (chain, upstream, downstream, both, with a reach of 1 to 6 arrows) and filters
+  per arrow type. Arrows attach to the facing sides of their boxes, spread out, and route around boxes.
+- Each function has its own address; Back and reload work. Find anything from the top of the list.
+- Import shows what is left over and how much is covered; optionally joins automations that meet at a device.
+- Unwired pieces say why; new boxes appear next to their most connected neighbour.
+- Diagnostics download; backend unit tests; end-to-end tests in the repo.
+
+## 0.3.1 (2026-11-15)
+
+Fixes from the first week on a real setup, plus undo.
+
+- Pause remembers which automations were on; Resume turns only those back on. Resume shows while the
+  function is paused, even if one was switched back on by hand.
+- Running boxes keep their shape (their class clashed with the Runs list rows).
+- Existing always adds to the function on screen, names it on the Add button, and doesn't jump away.
+- Items made in the editor drawer keep the function's label after Home Assistant's save dialog rewrites
+  labels and categories, and show near the middle of the board.
+- Saving an automation or script redraws its arrows at once.
+- "Take off the board" is now Hide from board. Creating a function with a name that's taken explains why and
+  offers to put the hidden function back with its layout.
+- Helper opens a menu of helper types (and Scene); each opens Home Assistant's create dialog directly.
+- Undo and redo (Ctrl+Z, Ctrl+Shift+Z, toolbar) for moves, Arrange, frames, notes, adding and removing items,
+  imports, new functions, hiding, Pause and Resume. Toasts offer Undo.
+- Import skips pieces without a unique ID (YAML automations without id:), says why, and still finishes.
+- Fit zooms out to show a wide system whole on a second press; the action bar stays on screen.
+- On a phone, leaving the page no longer leaves the board re-fitting itself in the background.
+- Stored colours, ids and positions are checked before they reach the page; layouts of deleted labels are
+  pruned; a change made just before leaving is saved.
+
+## 0.3.0 (2026-11-14)
+
+First version as a Home Assistant integration: a Functions page in the sidebar, layouts shared between
+administrators, an import manager that finds the functions already in a setup, live states and runs.

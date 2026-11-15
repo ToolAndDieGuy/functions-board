@@ -1,0 +1,38 @@
+close_garage:
+  alias: Close garage
+  icon: mdi:garage
+  sequence:
+    - action: cover.close_cover
+      target:
+        entity_id: cover.garage_door
+    - action: persistent_notification.create
+      data:
+        title: Garage
+        message: Closed the garage door.
+filter_reset:
+  alias: "Furnace filter: reset"
+  icon: mdi:restore
+  sequence:
+    - action: counter.reset
+      target:
+        entity_id: counter.filter_countdown
+    - action: input_boolean.turn_off
+      target:
+        entity_id: input_boolean.filter_due
+morning_briefing:
+  alias: Morning briefing
+  icon: mdi:weather-sunset-up
+  sequence:
+    - action: media_player.volume_set
+      target:
+        entity_id: media_player.kitchen
+      data:
+        volume_level: 0.35
+    - action: media_player.media_play
+      target:
+        entity_id: media_player.kitchen
+slow_demo:
+  alias: "Test: wait 30 seconds"
+  icon: mdi:timer-sand
+  sequence:
+    - delay: 30
