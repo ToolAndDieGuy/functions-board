@@ -17,9 +17,9 @@ jobs:
     steps:
       - uses: hacs/action@main
         with:
+          # no ignores: the default list requires a clean pass. The brand check finds the icon inside the
+          # integration (custom_components/functions_board/brand/icon.png)
           category: integration
-          # brand images ship inside the integration (custom_components/functions_board/brand)
-          ignore: brands
 
   hassfest:
     name: hassfest
