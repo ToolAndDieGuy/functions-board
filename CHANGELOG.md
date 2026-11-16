@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.5.5 (2026-11-16)
+
 ## 0.5.4 (2026-11-15)
 
 - Phone app: Edit, Traces, new automations, scripts, scenes and helpers, and a device's page open Home Assistant's
