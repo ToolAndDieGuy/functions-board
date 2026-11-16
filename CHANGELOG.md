@@ -19,8 +19,14 @@ New arrows and a new automatic layout.
 - A function too wide for a screen folds into rows, cut where the fewest arrows cross.
 - Arrows > Style > Curved arrows brings back the curved arrows, which take the shortest way between facing sides.
 - Arrange is now Auto-arrange: one click lays the function out automatically, for functions you made as well as
-  imported ones, and Undo puts your own arrangement back. It no longer asks first. A function you haven't
-  arranged by hand (one just imported, for one) is always laid out automatically.
+  imported ones, boxes you moved by hand included, and Undo puts your own arrangement back. It no longer asks
+  first.
+- Keep in place, in a box's bar, leaves that box where it is through Auto-arrange (it shows a pin); the rest is
+  laid out together, clear of the kept boxes. Let Auto-arrange move it takes the pin off.
+- An import runs Auto-arrange on each function it makes or adds to, so new pieces don't land in odd places; boxes
+  kept in place stay put.
+- Moving a box by hand keeps all the others where they are from then on, until Auto-arrange. Before, the boxes
+  still placed automatically could shift round the one you moved.
 
 ## 0.5.5 (2026-11-16)
 

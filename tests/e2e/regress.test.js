@@ -887,6 +887,31 @@ test('0.6.0 square-cornered arrows: never alongside each other, colours by meani
   await page.waitForTimeout(500);
   const back = await el(page, (b, k) => ({ x: b._model.nodes.get(k).x, y: b._model.nodes.get(k).y }), key);
   check('0.6.0 Undo puts your arrangement back', back.x === moved.x && back.y === moved.y, { moved, back });
+  check('0.6.0 moving one box by hand keeps the others where they were', await el(page, (b) => [...b._visibleKeys()].filter((k) => !k.startsWith('tool:')).every((k) => b._layout(b._model.label).nodes[k])));
+  // Keep in place: a kept box stays where you put it through Auto-arrange; the rest is laid out clear of it
+  const kk = GARAGE[0];
+  await el(page, (b, k) => b._select(k), kk);
+  await fbq(page, '.nodebar [data-act="keep"]').click();
+  await page.waitForTimeout(300);
+  check('0.6.0 a kept box shows a pin', await fbq(page, `.node[data-key="${kk}"] .kept`).count() === 1);
+  const kb = await fbq(page, `.node[data-key="${kk}"]`).boundingBox();
+  await page.mouse.move(kb.x + 30, kb.y + 20); await page.mouse.down();
+  await page.mouse.move(kb.x + 30, kb.y - 220, { steps: 8 }); await page.mouse.up();
+  await page.waitForTimeout(400);
+  const kept = await el(page, (b, k) => ({ x: b._model.nodes.get(k).x, y: b._model.nodes.get(k).y }), kk);
+  await fbq(page, '[data-act="arrange"]').click();
+  await page.waitForTimeout(600);
+  const ka = await el(page, (b, k) => {
+    const n = b._model.nodes.get(k), others = [...b._visibleKeys()].filter((o) => o !== k && !o.startsWith('tool:')).map((o) => b._model.nodes.get(o));
+    return { x: n.x, y: n.y, overlap: others.filter((o) => o.x < n.x + n.w && o.x + o.w > n.x && o.y < n.y + n.h && o.y + o.h > n.y).map((o) => o.key), saved: Object.keys(b._layout(b._model.label).nodes) };
+  }, kk);
+  check('0.6.0 Auto-arrange leaves a kept box where it is and moves only the rest', ka.x === kept.x && ka.y === kept.y && ka.saved.length === 1 && ka.saved[0] === kk, { kept, ka });
+  check('0.6.0 nothing is laid out on top of a kept box', !ka.overlap.length, ka.overlap);
+  check('0.6.0 the rest still keeps its arrows 16 px apart', ((r) => !r.close && !r.through)(await board(page).evaluate(routeCheck, { min: 16 })));
+  await el(page, (b, k) => b._select(k), kk);
+  await fbq(page, '.nodebar [data-act="keep"]').click();
+  await page.waitForTimeout(300);
+  check('0.6.0 Let Auto-arrange move it takes the pin off', await fbq(page, `.node[data-key="${kk}"] .kept`).count() === 0 && !(await el(page, (b) => (b._layout(b._model.label).keep || []).length)));
   // separate chains are each laid out on their own and packed together, not spread through one set of columns
   const pk = await el(page, (b) => {
     const mk = (key, kind) => ({ key, kind, domain: key.split('.')[0], name: key, icon: 'mdi:circle', badges: new Set(), w: kind === 'outside' ? 204 : 240, h: kind === 'outside' ? 40 : 62, x: 0, y: 0 });

@@ -161,6 +161,8 @@
       if (!n || !SAFE_ID.test(String(n.id))) return;
       out.notes.push({ id: String(n.id), text: String(n.text == null ? '' : n.text).slice(0, 10000), x: num(n.x, 0), y: num(n.y, 0), w: Math.max(120, num(n.w, 240)) });
     });
+    // boxes Auto-arrange leaves where they are
+    if (src.keep != null) out.keep = Array.isArray(src.keep) ? src.keep.filter((k) => typeof k === 'string' && k.length < 300).slice(0, 2000) : [];
     if (out.paused != null) out.paused = Array.isArray(out.paused) ? out.paused.filter((x) => typeof x === 'string') : null;
     if (out.categories != null && typeof out.categories !== 'object') out.categories = null;
     // test buttons and monitor boxes (Phase 9): only what they can be
@@ -1715,6 +1717,7 @@ button{font:inherit;color:inherit}
 .mdepth.off{opacity:.45}
 .mdepth .chip{padding:2px 8px;font-size:12px}
 .node .wr.hid{border-style:dashed}
+.node .kept{--mdc-icon-size:13px;color:var(--secondary-text-color)}
 .dtext{margin:0;font-size:13.5px;line-height:1.5}
 .dtext.dno{color:var(--fb-amber)}
 .dwarn{display:flex;align-items:flex-start;gap:6px;font-size:12.5px;color:var(--fb-amber);margin-top:2px}
@@ -1993,6 +1996,11 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       helper: 'Helper',
       debug_2: 'Debug',
       arrange: 'Auto-arrange',
+      keep_in_place: 'Keep in place',
+      unpin: 'Let Auto-arrange move it',
+      kept_in_place_auto_arrange: 'Kept in place: Auto-arrange leaves it where it is',
+      keep_name_in_place: 'Keep {name} in place',
+      let_auto_arrange_move_name: 'Let Auto-arrange move {name}',
       fit_everything: 'Fit everything',
       home_assistant_menu: 'Home Assistant menu',
       show_or_hide_the_list: 'Show or hide the list of functions',
@@ -2006,7 +2014,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       draw_a_frame_to_group: 'Draw a frame to group part of the system',
       add_a_note: 'Add a note',
       note: 'Note',
-      auto_arrange_resets_positions_you: 'Lay this function out automatically: lined-up columns, separate chains packed together (Undo puts your own arrangement back)',
+      auto_arrange_resets_positions_you: 'Lay this function out automatically, boxes you moved too. Boxes you keep in place (in their bar) stay where they are. Undo puts your own arrangement back.',
       arrows_what_lights_up_around: 'Arrows: what lights up around a selected box, and which arrows show',
       arrows: 'Arrows',
       every_run_of_every_automation: 'Every run of every automation and script in this function, newest first',
@@ -3621,10 +3629,21 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       // test buttons and monitor boxes (Phase 9) take no part in the layout: adding one moves nothing else
       const tools = [...vis].filter((k) => k.startsWith('tool:')), E = this._visEdges().filter((e) => e.role !== 'tool');
       const keys = [...vis].filter((k) => !k.startsWith('tool:')).sort((a, b) => this._sortKey(a).localeCompare(this._sortKey(b)));
-      const auto = layered(keys, E, (k) => m.nodes.get(k), (k) => this._kindHead(k));
-      const saved = keys.filter((k) => L.nodes[k]), fresh = keys.filter((k) => !L.nodes[k]);
+      const saved = keys.filter((k) => L.nodes[k]), fresh = keys.filter((k) => !L.nodes[k]), keep = new Set(L.keep || []);
+      // after Auto-arrange with boxes kept in place, everything else is laid out together, clear of the kept boxes
+      const around = saved.length && fresh.length && saved.every((k) => keep.has(k));
+      const lay = around ? fresh : keys, auto = layered(lay, E.filter((e) => !around || (fresh.includes(e.from) && fresh.includes(e.to))), (k) => m.nodes.get(k), (k) => this._kindHead(k));
       let dx = 0, dy = 0;
-      if (saved.length && fresh.length) {
+      if (around) {
+        const sz = (k) => m.nodes.get(k), kb = saved.map((k) => [L.nodes[k].x, L.nodes[k].y, L.nodes[k].x + sz(k).w, L.nodes[k].y + sz(k).h]);
+        const ab = fresh.map((k) => { const a = auto.get(k); return [a.x, a.y, a.x + sz(k).w, a.y + sz(k).h]; });
+        const ext = (bs) => [Math.min(...bs.map((b) => b[0])), Math.min(...bs.map((b) => b[1])), Math.max(...bs.map((b) => b[2])), Math.max(...bs.map((b) => b[3]))];
+        const K = ext(kb), A = ext(ab), clear = (ox, oy) => !ab.some((a) => kb.some((b) => a[0] + ox < b[2] + 40 && a[2] + ox + 40 > b[0] && a[1] + oy < b[3] + 40 && a[3] + oy + 40 > b[1]));
+        const shape = (ox, oy) => { const w = Math.max(K[2], A[2] + ox) - Math.min(K[0], A[0] + ox), h = Math.max(K[3], A[3] + oy) - Math.min(K[1], A[1] + oy); return Math.abs(Math.log(w / h / 1.7)); };
+        const tries = [[K[0] - A[0], K[1] - A[1]], [K[2] + 120 - A[0], K[1] - A[1]], [K[0] - A[0], K[3] + 120 - A[1]]];
+        const ok = tries.filter(([ox, oy]) => clear(ox, oy));
+        [dx, dy] = clear(...tries[0]) ? tries[0] : (ok.length ? ok : tries.slice(1)).sort((p, q) => shape(...p) - shape(...q))[0];
+      } else if (saved.length && fresh.length) {
         dy = Math.max(...saved.map((k) => L.nodes[k].y + m.nodes.get(k).h)) + 100 - Math.min(...fresh.map((k) => auto.get(k).y));
         dx = Math.min(...saved.map((k) => L.nodes[k].x)) - Math.min(...fresh.map((k) => auto.get(k).x));
       }
@@ -3637,7 +3656,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         this._autoPos.set(k, [n.x, n.y]);
       });
       // a box new to an arranged function goes next to its most connected neighbour (7.4)
-      if (saved.length && fresh.length) {
+      if (!around && saved.length && fresh.length) {
         const placed = saved.map((k) => m.nodes.get(k));
         const overlaps = (n) => placed.some((o) => o !== n && n.x < o.x + o.w + 20 && n.x + n.w + 20 > o.x && n.y < o.y + o.h + 14 && n.y + n.h + 14 > o.y);
         fresh.forEach((k) => {
@@ -3709,7 +3728,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const b = [...n.badges].filter((x) => BADGES[x]).map((x) => `<ha-icon icon="${BADGES[x][0]}" title="${BADGES[x][1]}"></ha-icon>`).join('')
         + (n.writers > 1 ? `<span class="wr" title="${T('changed_by_automations_or_scripts', { writers: n.writers })}">&#9998;${n.writers}</span>` : '')
         + (n.unref ? `<ha-icon class="unref" icon="mdi:link-variant-off" title="${T('it_may_be_used_by', { extra: n.domain === 'script' ? T('no_automation_or_script_runs') : T('no_automation_or_script_refers') })}"></ha-icon>` : '')
-        + (n.hidden ? `<span class="wr hid" title="${T('its_arrows_are_hidden_by')}">${P('n_hidden', n.hidden)}</span>` : '');
+        + (n.hidden ? `<span class="wr hid" title="${T('its_arrows_are_hidden_by')}">${P('n_hidden', n.hidden)}</span>` : '')
+        + ((this._layout(this._model.label).keep || []).includes(n.key) ? `<ha-icon class="kept" icon="mdi:pin" title="${T('kept_in_place_auto_arrange')}"></ha-icon>` : '');
       return `<div class="node ${n.kind} d-${esc(n.domain)}" data-key="${esc(n.key)}" role="button" tabindex="-1" style="left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${n.h}px">`
         + `<span class="tag">${esc(this._tagOf(n.key))}</span><ha-icon class="ic" icon="${esc(n.icon)}"></ha-icon><div class="txt"><div class="name">${esc(n.name)}</div>`
         + (n.kind === 'outside' ? '' : '<div class="sub"></div>') + '</div>'
@@ -3971,6 +3991,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (n.kind === 'member') btn.push(['remove', 'mdi:link-variant-off', T('remove')]);
       else if (ent) btn.push(['add', 'mdi:link-variant-plus', T('add_to_function')]);
       if (this._full() && !n.key.includes(':') && (logic || n.domain === 'scene' || this._scopeOf(n.key) === 'helpers')) btn.push(['delete', 'mdi:delete-outline', T('delete_3')]);
+      const kept = (this._layout(m.label).keep || []).includes(n.key);
+      btn.push(['keep', kept ? 'mdi:pin-off-outline' : 'mdi:pin-outline', kept ? T('unpin') : T('keep_in_place')]);
       // developer tools (Phase 9)
       const tools = [];
       if (this._canTest(n)) tools.push(['test', 'mdi:flask-outline', T('test_2'), this._full() ? null : FULL_ONLY_TEST]);
@@ -4223,11 +4245,37 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._applyView();
       this._saveView();
     }
+    // Auto-arrange: every box goes where the automatic layout puts it, boxes you moved by hand included, except
+    // those you chose to keep in place
+    _arrangeData(label) {
+      const L = this._layout(label), keep = new Set(L.keep || []), nodes = {};
+      Object.entries(L.nodes || {}).forEach(([k, p]) => { if (keep.has(k)) nodes[k] = p; });
+      L.nodes = nodes;
+    }
     _arrange() {
-      const label = this._model.label, L = this._layout(label), before = this._snap(label);
-      L.nodes = {};
+      const label = this._model.label, before = this._snap(label);
+      this._arrangeData(label);
       this._place(); this._render(); this._fit(); this._save();
       this._layoutStep(label, before, T('arrange'));
+    }
+
+    // moving a box by hand keeps every other box where it is now too: the function is arranged by hand from then
+    // on, until Auto-arrange
+    _freeze(L) {
+      const m = this._model;
+      this._visibleKeys().forEach((k) => { const n = m.nodes.get(k); if (n && !L.nodes[k] && !k.startsWith('tool:')) L.nodes[k] = { x: n.x, y: n.y }; });
+    }
+    // keep a box in place: Auto-arrange (and an import's) leaves it where it is
+    _toggleKeep(key) {
+      const m = this._model, n = m && m.nodes.get(key);
+      if (!n) return;
+      const label = m.label, L = this._layout(label), before = this._snap(label), keep = new Set(L.keep || []);
+      if (keep.has(key)) keep.delete(key);
+      else { keep.add(key); L.nodes[key] = { x: n.x, y: n.y }; }
+      if (keep.size) L.keep = [...keep]; else delete L.keep;
+      this._save();
+      this._layoutStep(label, before, keep.has(key) ? T('keep_name_in_place', { name: n.name }) : T('let_auto_arrange_move_name', { name: n.name }));
+      this._render();
     }
 
     /* ---------- pointer: pan, zoom, drag nodes / frames / notes ---------- */
@@ -4376,10 +4424,11 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const label = this._model && this._model.label, L = label && this._layout(label);
       if (d.type === 'node') {
         if (!d.moved) this._select(d.n.key);
-        else { L.nodes[d.n.key] = { x: d.n.x, y: d.n.y }; this._save(); this._drawEdges(); this._layoutStep(label, d.before, T('move', { name: d.n.name })); }
+        else { this._freeze(L); L.nodes[d.n.key] = { x: d.n.x, y: d.n.y }; this._save(); this._drawEdges(); this._layoutStep(label, d.before, T('move', { name: d.n.name })); }
       } else if (d.type === 'pan') {
         if (!d.moved) this._select(null); else { this._fitNext = null; this._saveView(); }
       } else if (d.type === 'frame' && d.moved) {
+        this._freeze(L);
         d.items.forEach((it) => { if (it.n) L.nodes[it.n.key] = { x: it.n.x, y: it.n.y }; });
         this._save(); this._drawEdges(); this._layoutStep(label, d.before, T('move_frame'));
       } else if ((d.type === 'resize' || d.type === 'note') && d.moved) { this._save(); this._layoutStep(label, d.before, d.type === 'resize' ? T('resize_frame') : T('move_note')); }
@@ -4507,6 +4556,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         case 'tool-del': this._delTool(el.dataset.tid); break;
         case 'mon-clear': this._monData.delete(el.dataset.tid); this._monCount.delete(el.dataset.tid); this._renderMon(el.dataset.tid); break;
         case 'watch': if (this._sel) this._toggleWatch(this._sel); break;
+        case 'keep': if (this._sel) this._toggleKeep(this._sel); break;
         case 'monitor': if (this._sel) this._monitorFor(this._sel); break;
         case 'messages': if (this._sel) this._openMessages(this._sel); break;
         case 'msg-run': { const x = (this._msgs || [])[+el.dataset.i]; if (x) this._showRun({ kind: 'run', key: x.from, t: x.t, run: x.run }, null); break; }
@@ -6530,7 +6580,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       else if (this._model) { this._place(); this._render(); }
     }
     // layout steps: moving boxes, Arrange, frames and notes restore the function's previous layout
-    _snap(label) { const L = this._layout(label); return JSON.stringify({ nodes: L.nodes, frames: L.frames, notes: L.notes, tools: L.tools || [] }); }
+    _snap(label) { const L = this._layout(label); return JSON.stringify({ nodes: L.nodes, frames: L.frames, notes: L.notes, tools: L.tools || [], keep: L.keep || [] }); }
     _layoutStep(label, before, text) {
       const after = this._snap(label);
       if (after === before) return;
@@ -6538,6 +6588,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         const v = JSON.parse(j), L = this._layout(label), tools = JSON.stringify(L.tools || []) !== JSON.stringify(v.tools || []);
         L.nodes = v.nodes; L.frames = v.frames; L.notes = v.notes;
         if (v.tools && v.tools.length) L.tools = v.tools; else delete L.tools;
+        if (v.keep && v.keep.length) L.keep = v.keep; else delete L.keep;
         this._save();
         // test buttons and monitors are boxes on the board: put them back or take them away too
         if (tools && this._model && this._model.label === label) { this._syncTools(); this._startMonitors(); }
@@ -7461,6 +7512,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         } catch (e) { failed.push(c.name); this._toast(T('could_not_import', { name: c.name, message: e.message || e.code })); }
       }
       g.busy = false; g.sel = new Set();
+      // an import lays each function out again (Auto-arrange), leaving only boxes kept in place where they are
+      if (done.length) { done.forEach((l) => this._arrangeData(l)); this._save(); }
       await this._loadRegistries();
       this._renderList();
       if (this._$.modal.querySelector('.mgr')) this._renderManager();
