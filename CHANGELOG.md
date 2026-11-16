@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.6.0 (2026-11-16)
+
+New arrows and a new automatic layout.
+
+- Arrows are coloured by what they do: orange for what sets something off, blue for what it changes, aqua for
+  running a script. Checks stay grey dashed and template reads grey dotted. The colours were checked for colour
+  blindness in both the light and the dark theme. The Key shows them.
+- Arrows run square-cornered, always left to right: out of a box's right side, into the next one's left side, in
+  lanes in the gaps between columns. One that goes back runs round the outside of the boxes. Three or more arrows
+  out of one side of a box leave from one point as one line that branches (a trunk), and likewise into a box.
+- No two arrows run alongside each other closer than 16 px. The automatic layout widens each gap between
+  columns to fit the arrows that turn in it, and a last pass moves any run that is still too close to the nearest
+  clear spot.
+- Boxes line up with what they connect to, so a chain runs straight across instead of zigzagging.
+- Separate chains in one function are laid out on their own and packed together, the big one first, the others
+  beside or under it, instead of being spread through one set of columns with gaps between.
+- A function too wide for a screen folds into rows, cut where the fewest arrows cross.
+- Arrows > Style > Curved arrows brings back the curved arrows, which take the shortest way between facing sides.
+- Arrange is now Auto-arrange: one click lays the function out automatically, for functions you made as well as
+  imported ones, and Undo puts your own arrangement back. It no longer asks first. A function you haven't
+  arranged by hand (one just imported, for one) is always laid out automatically.
+
 ## 0.5.5 (2026-11-16)
 
 - Nothing changes in the board. The Marketplace (HACS) checks now run in full, with nothing skipped, which the

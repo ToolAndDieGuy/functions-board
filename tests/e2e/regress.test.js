@@ -4,6 +4,7 @@ const path = require('path');
 const { chromium, BASE, SHOTS, session, ws, svc, states, ready, fbq, board, until, suite, reset, importAll, openFn, sleep } = require('./lib');
 const { check, done } = suite('regress');
 const only = process.argv[2] ? new RegExp(process.argv[2], 'i') : null;
+const { routeCheck } = require('./routecheck');
 const GARAGE = ['automation.garage_start_open_timer', 'automation.garage_left_open', 'automation.garage_closed_stop_timer'];
 
 // a fresh owner board with every detected group imported; returns { ctx, page }
@@ -673,20 +674,36 @@ test('Phase 7: highlight modes, filters, nearest sides, new boxes by their neigh
   await page.mouse.move(db.x + 30, db.y + 20); await page.mouse.down();
   await page.mouse.move(sb.x - db.width - 120, sb.y + 20, { steps: 10 }); await page.mouse.up();
   await page.waitForTimeout(400);
-  const geo = await el(page, (b, a) => {
+  const arrow = (a) => el(page, (b, a) => {
     const n1 = b._model.nodes.get(a[0]), n2 = b._model.nodes.get(a[1]);
     const p = b.shadowRoot.querySelector(`.edges path[data-edge="${a[0]}>${a[1]}"]`);
     const L = p.getTotalLength(), pts = [];
     for (let i = 1; i < 40; i++) { const q = p.getPointAtLength((L * i) / 40); pts.push([q.x, q.y]); }
     const inBox = (q, n) => q[0] > n.x + 3 && q[0] < n.x + n.w - 3 && q[1] > n.y + 3 && q[1] < n.y + n.h - 3;
-    const s0 = p.getPointAtLength(0);
-    return { startX: s0.x, srcX: n1.x, crosses: pts.filter((q) => inBox(q, n1) || inBox(q, n2)).length, left: n2.x + n2.w < n1.x };
-  }, [src, dst]);
-  check('7.3 after the swap the arrow leaves the left side', geo.left && Math.abs(geo.startX - geo.srcX) < 4, geo);
+    const s0 = p.getPointAtLength(0), s1 = p.getPointAtLength(L);
+    return { startX: s0.x, srcX: n1.x, srcR: n1.x + n1.w, endX: s1.x, dstX: n2.x, crosses: pts.filter((q) => inBox(q, n1) || inBox(q, n2)).length, left: n2.x + n2.w < n1.x };
+  }, a);
+  // square-cornered arrows always read left to right: out of the right side, round, into the left side
+  let geo = await arrow([src, dst]);
+  check('7.3 after the swap the arrow still leaves the right side and goes round', geo.left && Math.abs(geo.startX - geo.srcR) < 4 && geo.endX < geo.dstX + 2, geo);
   check('7.3 no part of it runs through either box', geo.crosses === 0, geo);
+  // curved arrows (the Arrows menu's style) take the facing sides
+  await fbq(page, '[data-act="hl"]').click();
+  await fbq(page, '.menu [data-act="hl-curved"]').click();
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(300);
+  geo = await arrow([src, dst]);
+  // (the boxes not moved by hand are laid out again for the other style, so which side faces the other may change)
+  check('7.3 curved, the arrow leaves the side facing its target', Math.abs(geo.startX - (geo.left ? geo.srcX : geo.srcR)) < 4, geo);
+  check('7.3 curved, no part of it runs through either box', geo.crosses === 0, geo);
+  await fbq(page, '[data-act="hl"]').click();
+  await fbq(page, '.menu [data-act="hl-curved"]').click();
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(300);
   await page.keyboard.press('Control+z');
   // 7.4 a box new to an arranged function goes next to its neighbour
-  await fbq(page, '[data-act="arrange"]').click(); await page.waitForTimeout(200); await fbq(page, '[data-act="arrange"]').click();
+  // Auto-arrange is one click (it can be undone)
+  await fbq(page, '[data-act="arrange"]').click();
   await page.waitForTimeout(500);
   await el(page, (b) => { const L = b._layout(b._model.label); b._model.nodes.forEach((n, k) => { if (n.kind === 'member') L.nodes[k] = { x: n.x, y: n.y }; }); b._save(); });
   await page.waitForTimeout(900);
@@ -831,6 +848,63 @@ test('0.5.4 touch: a box moves only after a one-second hold; a quick swipe pans'
   check('0.5.4 a tap still selects the box', (await el(page, (b) => b._sel)) === key, await el(page, (b) => b._sel));
   check('0.5.4 touch: no errors', page.logs.length === 0, page.logs);
   await ctx.close();
+});
+
+test('0.6.0 square-cornered arrows: never alongside each other, colours by meaning, Auto-arrange, separate chains packed', async (browser) => {
+  const { page } = await imported(browser);
+  // every imported function, laid out automatically: no two arrows run closer than 16 px, and none crosses a box
+  const fns = await el(page, (b) => (b._data.functions || []).slice());
+  const bad = [];
+  for (const id of fns) {
+    await el(page, (b, id) => b._open(id), id);
+    await page.waitForTimeout(700);
+    const r = await el(page, (b) => { b._layout(b._model.label).nodes = {}; b._place(); b._render(); return null; }).then(() => board(page).evaluate(routeCheck, { min: 16 }));
+    if (r.error || r.close || r.through) bad.push({ id, r });
+  }
+  check('0.6.0 in every function no two arrows run within 16 px of each other or through a box', fns.length > 0 && !bad.length, bad);
+  await openFn(page, /garage/i);
+  // colour by meaning: what sets things off, what they change
+  const col = await el(page, (b) => {
+    const get = (role) => { const p = b.shadowRoot.querySelector(`.edges path.e.role-${role}`); return p && getComputedStyle(p).stroke; };
+    const root = getComputedStyle(b._$.board);
+    return { trig: get('trigger'), act: get('action'), want: [root.getPropertyValue('--fb-trig').trim(), root.getPropertyValue('--fb-act').trim()] };
+  });
+  const rgb = (h) => `rgb(${parseInt(h.slice(1, 3), 16)}, ${parseInt(h.slice(3, 5), 16)}, ${parseInt(h.slice(5, 7), 16)})`;
+  check('0.6.0 trigger arrows are orange and action arrows blue', col.trig === rgb(col.want[0]) && col.act === rgb(col.want[1]), col);
+  // Auto-arrange: one click lays out boxes you moved, and Undo puts them back
+  const key = GARAGE[1];
+  const box = await fbq(page, `.node[data-key="${key}"]`).boundingBox();
+  await page.mouse.move(box.x + 30, box.y + 20); await page.mouse.down();
+  await page.mouse.move(box.x + 30, box.y + 260, { steps: 8 }); await page.mouse.up();
+  await page.waitForTimeout(400);
+  const moved = await el(page, (b, k) => ({ x: b._model.nodes.get(k).x, y: b._model.nodes.get(k).y }), key);
+  await fbq(page, '[data-act="arrange"]').click();
+  await page.waitForTimeout(500);
+  const after = await el(page, (b, k) => ({ x: b._model.nodes.get(k).x, y: b._model.nodes.get(k).y, saved: Object.keys(b._layout(b._model.label).nodes || {}).length }), key);
+  check('0.6.0 Auto-arrange takes one click and lays the moved box out again', (after.x !== moved.x || after.y !== moved.y) && after.saved === 0, { moved, after });
+  check('0.6.0 Auto-arrange asks nothing', !(await fbq(page, '[data-act="arrange"][data-confirm]').count()));
+  await page.keyboard.press('Control+z');
+  await page.waitForTimeout(500);
+  const back = await el(page, (b, k) => ({ x: b._model.nodes.get(k).x, y: b._model.nodes.get(k).y }), key);
+  check('0.6.0 Undo puts your arrangement back', back.x === moved.x && back.y === moved.y, { moved, back });
+  // separate chains are each laid out on their own and packed together, not spread through one set of columns
+  const pk = await el(page, (b) => {
+    const mk = (key, kind) => ({ key, kind, domain: key.split('.')[0], name: key, icon: 'mdi:circle', badges: new Set(), w: kind === 'outside' ? 204 : 240, h: kind === 'outside' ? 40 : 62, x: 0, y: 0 });
+    const keys = ['input_boolean.a1', 'automation.a2', 'light.a3', 'light.a4', 'input_boolean.b1', 'automation.b2', 'switch.b3', 'automation.c1'];
+    const nodes = new Map(keys.map((k) => [k, mk(k, k.startsWith('light') || k.startsWith('switch') ? 'outside' : 'member')]));
+    const E = [['input_boolean.a1', 'automation.a2', 'trigger'], ['automation.a2', 'light.a3', 'action'], ['automation.a2', 'light.a4', 'action'],
+      ['input_boolean.b1', 'automation.b2', 'trigger'], ['automation.b2', 'switch.b3', 'action']].map(([from, to, role]) => ({ id: from + '>' + to, from, to, role, svcs: new Set(), tfs: [], anyTrig: true }));
+    b._model = { label: 'fbx-pack', nodes, edges: E };
+    b._layout('fbx-pack').nodes = {};
+    b._place(); b._render();
+    const ext = (ks) => { const ns = ks.map((k) => nodes.get(k)); return { x0: Math.min(...ns.map((n) => n.x)), y0: Math.min(...ns.map((n) => n.y)), x1: Math.max(...ns.map((n) => n.x + n.w)), y1: Math.max(...ns.map((n) => n.y + n.h)) }; };
+    return { a: ext(keys.slice(0, 4)), b: ext(keys.slice(4, 7)), c: ext(['automation.c1']) };
+  });
+  const apart = (p, q) => p.x1 + 40 <= q.x0 || q.x1 + 40 <= p.x0 || p.y1 + 40 <= q.y0 || q.y1 + 40 <= p.y0;
+  check('0.6.0 two separate chains sit apart as blocks', apart(pk.a, pk.b), pk);
+  check('0.6.0 a chain packs beside or under the bigger one, without a column gap between its boxes', pk.b.x1 - pk.b.x0 < 900, pk);
+  check('0.6.0 a box with no arrows goes under the chains', pk.c.y0 >= Math.max(pk.a.y1, pk.b.y1), pk);
+  check('0.6.0 no errors', page.logs.length === 0, page.logs);
 });
 
 (async () => {
