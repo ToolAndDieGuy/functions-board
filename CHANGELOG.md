@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.5 (2026-11-16)
+
+- Nothing changes in the board. The Marketplace (HACS) checks now run in full, with nothing skipped, which the
+  Marketplace's default list requires; this is the release made after that clean run.
+
 ## 0.5.4 (2026-11-15)
 
 - Phone app: Edit, Traces, new automations, scripts, scenes and helpers, and a device's page open Home Assistant's
