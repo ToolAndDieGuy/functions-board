@@ -33,6 +33,23 @@ const DOOR = 'cover.garage_door', TIMER = 'timer.garage_open', AUTO = 'input_boo
   await fbq(page, '.tools [data-act="sandbox"]').click();
   await fbq(page, '.modal [data-act="sbx-start"]').click();
   await fbq(page, '.drawer .sbctl .sbent').waitFor({ timeout: 10000 });
+  // don't show it again: ticked, the next opening goes straight in; the i shows it any time, and unticking brings it back
+  await fbq(page, '.drawer [data-act="sbx-about"]').click();
+  await fbq(page, '.modal .sbxdlg').waitFor({ timeout: 5000 });
+  check('the i in the drawer shows the dialog again, with Close (the sandbox is already open)', (await fbq(page, '.modal [data-act="modal-cancel"]').count()) === 0 && /Close/.test(await fbq(page, '.modal [data-act="sbx-start"]').textContent()));
+  await fbq(page, '.modal input[name="sbxskip"]').check();
+  await fbq(page, '.modal [data-act="sbx-start"]').click();
+  check('... closing it leaves the sandbox open', await el(page, (b) => b._sbxOn()));
+  await fbq(page, '.drawer [data-act="close"]').click();
+  await fbq(page, '.tools [data-act="sandbox"]').click();
+  await page.waitForTimeout(600);
+  check('"don\'t show this again": the sandbox opens straight away', (await fbq(page, '.modal .sbxdlg').count()) === 0 && await el(page, (b) => b._sbxOn()));
+  await until(async () => (await ws(page, { type: 'frontend/get_user_data', key: 'functions_board_ui' })).value?.ui?.sbxIntro === false || null, 4000);
+  check('... saved with your own display settings', (await ws(page, { type: 'frontend/get_user_data', key: 'functions_board_ui' })).value.ui.sbxIntro === false);
+  await fbq(page, '.drawer [data-act="sbx-about"]').click();
+  await fbq(page, '.modal input[name="sbxskip"]').uncheck();
+  await fbq(page, '.modal [data-act="sbx-start"]').click();
+  check('unticked from the i: it shows again next time', await el(page, (b) => b._data.ui.sbxIntro === undefined));
   check('the sandbox opens in the drawer, the board is marked', await el(page, (b) => b._$.board.classList.contains('sbx') && !b._$.sbxpill.hidden && b._drawer.mode === 'sandbox'));
   check('it runs every automation and script on the board', await el(page, (b) => [...b._sbx.eng.items.keys()].filter((k) => k.startsWith('automation.')).length >= 3 && b._sbx.eng.items.has('script.close_garage')));
 

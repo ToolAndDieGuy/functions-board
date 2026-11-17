@@ -38,5 +38,50 @@ jobs:
           node-version: 22
       - name: Syntax
         run: node --check custom_components/functions_board/frontend/functions-board.js
+      - name: Static checks
+        run: node tests/static.test.js
       - name: Wiring and loop tests
         run: node tests/wiring.test.js
+      - name: Sandbox engine
+        run: node tests/sandbox.test.js
+
+  backend:
+    name: Backend unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Set up (versions as in tests/setup.sh)
+        run: |
+          uv venv --python 3.14 venvtest
+          uv pip install --python venvtest/bin/python pytest-homeassistant-custom-component==0.13.375 home-assistant-frontend
+      - run: venvtest/bin/python -m pytest tests/backend -q
+
+  e2e:
+    name: Browser suites on a real Home Assistant
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: astral-sh/setup-uv@v6
+      - name: System libraries
+        run: sudo apt-get update && sudo apt-get install -y libturbojpeg0 || sudo apt-get install -y libturbojpeg
+      - name: Set up Home Assistant and Playwright
+        run: |
+          sh tests/setup.sh
+          npx playwright install --with-deps chromium
+      - name: Start Home Assistant
+        run: sh tests/start-ha.sh
+      - name: Run every suite
+        run: sh tests/run-all.sh --e2e
+      - name: Home Assistant log and screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-failure
+          path: |
+            ha/hass.log
+            tests/e2e/.state/shots/

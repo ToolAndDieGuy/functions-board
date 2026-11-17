@@ -2513,6 +2513,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       sbxi_l_time: '<b>Time only moves when you move it.</b> Everything else happens at once, so races between automations that depend on real timing won\'t show.',
       sbxi_bottom: 'A sandbox run shows what your configuration says should happen. It doesn\'t prove your devices, integrations or the rest of your home will do it.',
       sbxi_go: 'I understand: open the sandbox',
+      sbxi_skip: 'Don\'t show this again (the i in the sandbox\'s title bar shows it any time)',
+      sbx_about_t: 'What the sandbox is for, and what it can\'t show you',
       sbx_bad_data: 'The event data isn\'t JSON or YAML.',
       sbx_bar_note: 'Sandbox: nothing here changes your home',
       sbx_button: 'Sandbox',
@@ -6166,10 +6168,18 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (el.dataset.run != null) { this._openRun(+el.dataset.run); return; }
       const a = el.dataset.act, label = this._data && this._data.ui.current;
       const need = () => { if (!label) { this._toast(T('create_or_pick_a_function')); return false; } return true; };
-      if (a && a.startsWith('sbx-') && this._sbxOn()) { this._sbxBox(a, el); return; }
+      if (a && a.startsWith('sbx-') && a !== 'sbx-start' && a !== 'sbx-about' && this._sbxOn()) { this._sbxBox(a, el); return; }
       switch (a) {
-        case 'sandbox': if (need()) { if (this._sbxOn()) this._closeDrawer(); else this._sbxIntro(); } break;
-        case 'sbx-start': this._closeModal(); this._openSandbox(); break;
+        case 'sandbox': if (need()) { if (this._sbxOn()) this._closeDrawer(); else if (this._data.ui.sbxIntro === false) this._openSandbox(); else this._sbxIntro(); } break;
+        case 'sbx-start': {
+          // "don't show this again" is yours alone (saved with your display settings); the i in the drawer shows it again
+          const skip = this._$.modal.querySelector('input[name="sbxskip"]');
+          if (skip) { if (skip.checked) this._data.ui.sbxIntro = false; else delete this._data.ui.sbxIntro; this._save(); }
+          this._closeModal();
+          if (!this._sbxOn()) this._openSandbox();
+          break;
+        }
+        case 'sbx-about': this._sbxIntro(); break;
         case 'togglelist':
           if (this._compact) this._listOpen = !this._listOpen;
           else if (this._data) { this._data.ui.list = !this._data.ui.list; this._save(); }
@@ -7670,14 +7680,15 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     }
     // every time it opens: what the sandbox is for, and everything it can't do, to click through
     _sbxIntro() {
-      const m = this._$.modal, li = (xs) => xs.map((x) => `<li>${x}</li>`).join('');
+      const m = this._$.modal, li = (xs) => xs.map((x) => `<li>${x}</li>`).join(''), open = this._sbxOn();
       m.hidden = false;
       m.innerHTML = `<div class="dlg sbxdlg"><h3><ha-icon icon="mdi:flask-outline"></ha-icon> ${T('sbxi_title')}</h3>`
         + `<p>${T('sbxi_why')}</p>`
         + `<div class="okbox"><ha-icon icon="mdi:shield-check-outline"></ha-icon><span>${T('sbxi_safe')}</span></div>`
         + `<h4>${T('sbxi_limits_h')}</h4><ol class="sbxl">${li([T('sbxi_l_board'), T('sbxi_l_devices'), T('sbxi_l_calls'), T('sbxi_l_triggers'), T('sbxi_l_ask'), T('sbxi_l_tpl'), T('sbxi_l_nodered'), T('sbxi_l_copy'), T('sbxi_l_time')])}</ol>`
         + `<div class="warnbox"><ha-icon icon="mdi:alert-outline"></ha-icon><span>${T('sbxi_bottom')}</span></div>`
-        + `<div class="btns"><button data-act="modal-cancel">${T('cancel')}</button><button class="primary" data-act="sbx-start">${T('sbxi_go')}</button></div></div>`;
+        + `<label class="chk"><input type="checkbox" name="sbxskip"${this._data.ui.sbxIntro === false ? ' checked' : ''}>${T('sbxi_skip')}</label>`
+        + `<div class="btns">${open ? '' : `<button data-act="modal-cancel">${T('cancel')}</button>`}<button class="primary" data-act="sbx-start">${open ? T('close') : T('sbxi_go')}</button></div></div>`;
       const b = m.querySelector('[data-act="sbx-start"]');
       if (b) b.focus();
     }
@@ -7690,7 +7701,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._drawer = { mode: 'sandbox' };
       const d = this._$.drawer;
       d.hidden = false;
-      d.innerHTML = `<div class="dhead"><span class="dtitle">${T('sbx_title', { fnName: esc(this._fnName(label)) })}</span><span class="sbclock"></span><button data-act="sbx-reset" title="${T('sbx_reset_t')}"><ha-icon icon="mdi:restore"></ha-icon></button><button data-act="close" title="${T('sbx_close_t')}"><ha-icon icon="mdi:close"></ha-icon></button></div><div class="dbg sbx"><div class="sbnote">${T('sbx_note')}</div><div class="sbask"></div><div class="sbctl"></div><div class="sbdue"></div><div class="dtl sbtl"><div class="muted pad">${T('reading_configs')}</div></div></div>`;
+      d.innerHTML = `<div class="dhead"><span class="dtitle">${T('sbx_title', { fnName: esc(this._fnName(label)) })}</span><span class="sbclock"></span><button data-act="sbx-about" title="${T('sbx_about_t')}"><ha-icon icon="mdi:information-outline"></ha-icon></button><button data-act="sbx-reset" title="${T('sbx_reset_t')}"><ha-icon icon="mdi:restore"></ha-icon></button><button data-act="close" title="${T('sbx_close_t')}"><ha-icon icon="mdi:close"></ha-icon></button></div><div class="dbg sbx"><div class="sbnote">${T('sbx_note')}</div><div class="sbask"></div><div class="sbctl"></div><div class="sbdue"></div><div class="dtl sbtl"><div class="muted pad">${T('reading_configs')}</div></div></div>`;
       this._$.board.classList.add('sbx');
       this._$.sbxpill.hidden = false;
       this._fitLitbar();

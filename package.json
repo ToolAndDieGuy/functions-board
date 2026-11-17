@@ -1,0 +1,15 @@
+{
+  "name": "functions-board-dev",
+  "private": true,
+  "description": "Development and test tools for Functions Board. Not part of the integration: HACS installs only custom_components/functions_board.",
+  "license": "MIT",
+  "scripts": {
+    "setup": "sh tests/setup.sh",
+    "start-ha": "sh tests/start-ha.sh",
+    "test": "sh tests/run-all.sh",
+    "test:e2e": "sh tests/run-all.sh --e2e"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}

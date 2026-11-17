@@ -1,0 +1,100 @@
+# The demo function "Away mode", added to the test config for the README screenshots and the demo video
+# (tests/e2e/setup.sh demo). Demo entities only: no real names, places or devices.
+- id: '5001'
+  alias: 'Away: everyone left, start grace timer'
+  triggers:
+  - trigger: state
+    entity_id: binary_sensor.anyone_home
+    to: 'off'
+  conditions:
+  - condition: state
+    entity_id: input_boolean.guest_mode
+    state: 'off'
+  actions:
+  - action: timer.start
+    target:
+      entity_id: timer.away_grace
+- id: '5002'
+  alias: 'Away: grace over, set house to Away'
+  triggers:
+  - trigger: event
+    event_type: timer.finished
+    event_data:
+      entity_id: timer.away_grace
+  conditions:
+  - condition: state
+    entity_id: binary_sensor.anyone_home
+    state: 'off'
+  actions:
+  - action: input_select.select_option
+    target:
+      entity_id: input_select.house_mode
+    data:
+      option: Away
+- id: '5003'
+  alias: 'Away: secure the house'
+  triggers:
+  - trigger: state
+    entity_id: input_select.house_mode
+    to: Away
+  actions:
+  - action: script.secure_house
+- id: '5004'
+  alias: 'Away: someone''s back'
+  triggers:
+  - trigger: state
+    entity_id: binary_sensor.anyone_home
+    to: 'on'
+  actions:
+  - action: timer.cancel
+    target:
+      entity_id: timer.away_grace
+  - if:
+    - condition: state
+      entity_id: input_select.house_mode
+      state: Away
+    then:
+    - action: input_select.select_option
+      target:
+        entity_id: input_select.house_mode
+      data:
+        option: Home
+    - action: script.welcome_home
+- id: '5005'
+  alias: 'Away: door unlocked while away'
+  triggers:
+  - trigger: state
+    entity_id:
+    - lock.front_door
+    - lock.kitchen_door
+    to: unlocked
+  conditions:
+  - condition: state
+    entity_id: input_select.house_mode
+    state: Away
+  actions:
+  - action: persistent_notification.create
+    data:
+      title: Away mode
+      message: '{{ trigger.to_state.name }} was unlocked while everyone is away.'
+  - action: light.turn_on
+    target:
+      entity_id: light.entrance_color_white_lights
+- id: '5006'
+  alias: 'Away: water on the basement floor'
+  triggers:
+  - trigger: state
+    entity_id: binary_sensor.basement_floor_wet
+    to: 'on'
+  conditions:
+  - condition: state
+    entity_id: input_select.house_mode
+    state: Away
+  actions:
+  - action: valve.close_valve
+    target:
+      entity_id: valve.front_garden
+  - action: persistent_notification.create
+    data:
+      title: Away mode
+      message: Water on the basement floor. The main valve was closed.
