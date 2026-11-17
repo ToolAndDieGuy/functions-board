@@ -139,7 +139,7 @@ async def main():
         if entry_id:
             async with s.post(BASE + "/api/config/config_entries/options/flow", json={"handler": entry_id}, headers=H) as r:
                 of = await r.json()
-            check("options flow shows the form", of.get("type") == "form" and {x["name"] for x in of.get("data_schema", [])} == {"mode", "card"}, of)
+            check("options flow shows the form", of.get("type") == "form" and {x["name"] for x in of.get("data_schema", [])} == {"mode", "card", "nodered_url", "nodered_username", "nodered_password"}, of)
             async with s.post(BASE + f"/api/config/config_entries/options/flow/{of.get('flow_id')}", json={"mode": "full", "card": True}, headers=H) as r:
                 of2 = await r.json()
             await asyncio.sleep(2)

@@ -21,7 +21,7 @@ from .const import (
     MAX_SOURCES,
     SIGNAL_UPDATED,
 )
-from .nodered import clean_groups
+from .nodered import NodeRedError, clean_groups
 from .sources import async_sources
 
 if TYPE_CHECKING:
@@ -245,17 +245,30 @@ async def ws_sources(
     )
 
 
-@websocket_api.websocket_command({vol.Required("type"): "functions_board/nodered"})
+@websocket_api.websocket_command(
+    {vol.Required("type"): "functions_board/nodered", vol.Optional("read", default=False): bool}
+)
 @websocket_api.require_admin
-@callback
-def ws_nodered(
+@websocket_api.async_response
+async def ws_nodered(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
-    """The Node-RED flow groups last read by any board, with when ({at, slug, groups}), or None."""
+    """The Node-RED flow groups last read by any board, with when ({at, slug, groups}), or None.
+
+    With read, and a Node-RED address set in the options, also the flows themselves, read by Home
+    Assistant now (or in the last 30 seconds): {"server": {"flows": [...]}} or {"server": {"error": code}}.
+    A board asks with read only while its Node-RED switch is on.
+    """
     board = _board(hass)
-    connection.send_result(msg["id"], {"kept": board.nodered.kept if board.nodered else None})
+    out: dict[str, Any] = {"kept": board.nodered.kept if board.nodered else None}
+    if msg["read"] and board.reader:
+        try:
+            out["server"] = {"flows": await board.reader.async_read()}
+        except NodeRedError as err:
+            out["server"] = {"error": err.code, "detail": err.detail}
+    connection.send_result(msg["id"], out)
 
 
 @websocket_api.websocket_command(
