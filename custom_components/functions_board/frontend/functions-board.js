@@ -25,7 +25,6 @@
   const REPO_URL = 'https://github.com/ToolAndDieGuy/functions-board';
   const STORE = 'functions_board';
   const HOLD_MS = 1000;  // on a touch screen, how long a box is held before it moves
-  const NR_KEEP = 'functions_board_nodered';
   const CAPTURE_KEY = 'functions_board_capture';
   // Home Assistant builds a new board each time its page is opened again (back from an editor, say). What the
   // last board loaded is kept here so the next one can draw at once: the registries for a few minutes, and
@@ -2404,7 +2403,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       simulated_state: 'simulated state',
       show_outside_items: 'Show outside items',
       show_related_suggestions: 'Show related suggestions',
-      reads_your_node_red_app: 'Reads your Node-RED app\'s flows in your browser, through the Node-RED page Home Assistant opens for you, to draw what they trigger on, read and change. The flows last read are kept in this browser only, so they show until the next read.',
+      reads_your_node_red_app: 'Reads your Node-RED app\'s flows in your browser, through the Node-RED page Home Assistant opens for you, to draw what they trigger on, read and change. The flows last read are kept by the integration, so every board shows them until the next read.',
       node_red_flows_as_of: 'Node-RED flows as of {when}. Open Node-RED to read them again.',
       open_node_red_once_so_the: 'Open Node-RED once, so the board can read its flows.',
       open_node_red: 'Open Node-RED',
@@ -2708,7 +2707,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       tests_full_manager_a_helper: 'Tests (Full manager): a helper changed through its own actions, a simulated state (Home Assistant\'s copy only; the device keeps its real state), a fired event, an automation or script run, a test notification. Each is written to the logbook and can\'t be undone; the first one of a session asks first.',
       this_install_is_set_to: 'This install is set to Organise only: the board doesn\'t edit or delete automations, scripts, helpers or devices, and doesn\'t run tests. Full manager, which adds deleting and tests, is in the Functions Board integration\'s options.',
       the_debugger_watch_triggers_monitor: 'The debugger, Watch triggers, monitor boxes and the live checks on arrows only read: watching a trigger never runs the automation.',
-      show_node_red_flows_in: 'Show Node-RED flows (in the Key, off until you switch it on) reads your Node-RED app\'s flows in your browser to draw what they use. The flows last read are kept in this browser only.',
+      show_node_red_flows_in: 'Show Node-RED flows (in the Key, off until you switch it on) reads your Node-RED app\'s flows in your browser to draw what they use. The flows last read (names and entity IDs, no flow code) are kept by the integration for every board.',
       every_change_is_shown_before: 'Every change is shown before it happens, and Undo (Ctrl+Z) takes it back, except tests and deleting a helper that an integration set up.',
       shared_between_administrators_functions_board: 'shared between administrators (Functions Board integration)',
       stored_for_your_user_only: 'stored for your user only (install the Functions Board integration to share them)',
@@ -3086,6 +3085,11 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (this._storeMode !== 'shared' || !this._data) return;
       if (d.what === 'mode') { this._fbMode = d.mode === 'full' ? 'full' : 'organise'; this._$.board.classList.toggle('full', this._fbMode === 'full'); this._renderHeader(); this._renderNodebar(); return; }
       if (d.client && d.client === this._client()) return;
+      // another board read Node-RED: one showing older flows takes the new ones (only with Node-RED switched on)
+      if (d.what === 'nodered') {
+        if (this._data.ui.nodered === true && this._nrCache && this._nrCache.need && this._model) { this._nrCache = null; this._open(this._model.label, true).then(() => this._renderLegend()); }
+        return;
+      }
       const act = this.shadowRoot.activeElement;
       if (this._drag || (act && /^(INPUT|TEXTAREA|SELECT)$/.test(act.tagName))) {
         // finish what's in hand first; pick the change up shortly after
@@ -4872,8 +4876,6 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (t.hasAttribute && t.hasAttribute('data-nr')) {
         // the Node-RED switch is yours, for every function: off means no request to Node-RED at all
         this._data.ui.nodered = t.checked; this._save(); this._nrCache = null;
-        // off: the flows kept in this browser go too
-        if (!t.checked) try { localStorage.removeItem(NR_KEEP); } catch (e) { /* nothing kept */ }
         if (this._model) this._open(this._model.label, true).then(() => this._renderLegend()); else this._renderLegend();
         return;
       }
@@ -6645,7 +6647,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     /* ---------- Node-RED flows (2.7, decision D1): read in the browser through the Node-RED app's own page, only
        while the switch in the Key is on. That page answers only once Home Assistant has let this browser in, which
        it does when Node-RED is opened from its sidebar (the board never asks for that itself). Until then, the
-       flows last read here, kept in this browser (NR_KEEP), stand in, marked with when they were read. ---------- */
+       flows last read by any board, kept by the integration (functions_board/nodered), stand in, marked with when
+       they were read. What's kept is the summary nrGroups makes: names and entity ids, no flow code. ---------- */
     async _nodered() {
       if (this._data.ui.nodered !== true) return null;
       const c = this._nrCache;
@@ -6666,8 +6669,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           const res = await fetch(base + 'flows', { credentials: 'same-origin', headers: { 'Node-RED-API-Version': 'v2' } }).catch(() => null);
           if (!res || res.status === 401 || res.status === 403) {
             // not let in (yet, or any more): the flows last read here, if any, until Node-RED is opened
-            let kept = null;
-            try { kept = JSON.parse(localStorage.getItem(NR_KEEP) || 'null'); } catch (e) { /* none kept */ }
+            const kept = await this._ws({ type: 'functions_board/nodered' }).then((x) => x && x.kept).catch(() => null);
             const ok = kept && kept.slug === app.slug && Array.isArray(kept.groups) ? kept : null;
             const when = ok ? new Date(ok.at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
             return done({ base, slug: app.slug, need: true, groups: ok ? ok.groups : [], asOf: ok ? ok.at : null,
@@ -6676,7 +6678,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           if (!res.ok) return done({ slug: app.slug, err: T('node_red_answered', { status: res.status }) });
           const body = await res.json(), flows = Array.isArray(body) ? body : (body && body.flows) || [];
           const groups = nrGroups(flows, (x) => this._known(x));
-          try { localStorage.setItem(NR_KEEP, JSON.stringify({ at: Date.now(), slug: app.slug, groups })); } catch (e) { /* kept for this visit only */ }
+          this._ws({ type: 'functions_board/nodered_keep', slug: app.slug, groups, client: this._client() }).catch(() => { /* shown here, just not kept */ });
           return done({ base, slug: app.slug, groups });
         } catch (e) { return done({ err: T('could_not_read_the_flows', { e: (e && (e.message || e.code)) || e }) }); }
         finally { this._nrLoading = null; }

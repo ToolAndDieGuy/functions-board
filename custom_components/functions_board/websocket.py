@@ -21,6 +21,7 @@ from .const import (
     MAX_SOURCES,
     SIGNAL_UPDATED,
 )
+from .nodered import clean_groups
 from .sources import async_sources
 
 if TYPE_CHECKING:
@@ -40,6 +41,8 @@ def async_register(hass: HomeAssistant) -> None:
         ws_set_layout,
         ws_subscribe,
         ws_sources,
+        ws_nodered,
+        ws_nodered_keep,
     ):
         websocket_api.async_register_command(hass, handler)
 
@@ -240,3 +243,44 @@ async def ws_sources(
     connection.send_result(
         msg["id"], {"sources": await async_sources(hass, msg["entity_ids"])}
     )
+
+
+@websocket_api.websocket_command({vol.Required("type"): "functions_board/nodered"})
+@websocket_api.require_admin
+@callback
+def ws_nodered(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """The Node-RED flow groups last read by any board, with when ({at, slug, groups}), or None."""
+    board = _board(hass)
+    connection.send_result(msg["id"], {"kept": board.nodered.kept if board.nodered else None})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "functions_board/nodered_keep",
+        vol.Required("slug"): vol.All(str, vol.Length(max=100)),
+        vol.Required("groups"): list,
+        vol.Optional("client"): CLIENT,
+    }
+)
+@websocket_api.require_admin
+@callback
+def ws_nodered_keep(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Keep the flow groups a board just read, for every board."""
+    board = _board(hass)
+    groups = clean_groups(msg["groups"])
+    if groups is None or board.nodered is None:
+        connection.send_error(msg["id"], "invalid_format", "Not flow groups")
+        return
+    if problem := board.nodered.keep(msg["slug"], groups):
+        connection.send_error(msg["id"], problem, "Flow groups larger than 1 MB")
+        return
+    board.notify(hass, {"what": "nodered", "client": msg.get("client", "")})
+    connection.send_result(msg["id"])

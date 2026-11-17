@@ -101,8 +101,8 @@ Every change is shown before it happens, and **Undo** takes it back, except test
 In either mode:
 
 - The debugger, Watch triggers, monitor boxes and the live checks on arrows only read. Watching a trigger never runs the automation.
-- **Show Node-RED flows** reads your Node-RED app's flows in your browser, through the app's page in Home Assistant, only while it's switched on. That page opens to the board once you've opened Node-RED from the sidebar (or with the board's **Open Node-RED** button); until then the board shows the flows it last read, marked with when, kept in that browser only and cleared when you switch the flows off. The board never signs itself in to the app.
-- The board's own data (which labels are functions, box positions, frames, notes and test buttons) is kept in `.storage/functions_board` and shared between administrators. Your view (zoom, whether the list is open) is kept per user.
+- **Show Node-RED flows** reads your Node-RED app's flows in your browser, through the app's page in Home Assistant, only while it's switched on. That page opens to the board once you've opened Node-RED from the sidebar (or with the board's **Open Node-RED** button); until then the board shows the flows last read on any device, marked with when. The integration keeps that summary (group and tab names and the entity IDs they use, no flow code) so every board shares it. The board never signs itself in to the app.
+- The board's own data (which labels are functions, box positions, frames, notes and test buttons) is kept in `.storage/functions_board` and shared between administrators. The Node-RED flow summary, when you use Node-RED flows, is kept in `.storage/functions_board.nodered`. Your view (zoom, whether the list is open) is kept per user.
 - Nothing leaves your Home Assistant: no network calls, no external libraries, no telemetry.
 
 Removing the integration takes the page out of the sidebar. Labels and categories stay; they are ordinary Home Assistant labels you can delete under **Settings → Areas, labels & zones → Labels**.
