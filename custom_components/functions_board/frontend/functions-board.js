@@ -5636,9 +5636,12 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         chips.push(`<g class="bch role-${esc(t.role)}${end ? ' end' : ''}${lit ? '' : ' dim'}" data-act="bus-tag" data-e="${esc(e.id)}" data-own="${esc(t.own)}" transform="translate(${cx},${cy})"><rect x="-7.5" y="-7.5" width="15" height="15" rx="4"></rect><text y="3.9" text-anchor="middle">${busLetter(t.tag)}</text><title>${esc(T('bus_tag_t', { l: busLetter(t.tag), name: this._boxName(far) }))}</title></g>`);
       };
       if (tagged) {
-        dots.forEach((dt) => { if (dt.tag != null && tagged.get(dt.ri)) chip(dt.x, dt.y, dt.ri, tagged.get(dt.ri), false); });
         // beside its own end, just off the arrow: before the box it goes into, after the box it comes from
-        tagged.forEach((t, ri) => { const into = t.own.startsWith('out:'); chip(t.far[0] + (into ? -16 : 16), t.far[1] - 11, ri, t, true); });
+        const endAt = new Map();
+        tagged.forEach((t, ri) => { const into = t.own.startsWith('out:'); endAt.set(ri, [t.far[0] + (into ? -16 : 16), t.far[1] - 11]); });
+        // where it branches off, unless that's right beside its end, where the end's letter already says it
+        dots.forEach((dt) => { const t = dt.tag != null && tagged.get(dt.ri), e = endAt.get(dt.ri); if (t && !(e && Math.abs(e[0] - dt.x) < 34 && Math.abs(e[1] - dt.y) < 26)) chip(dt.x, dt.y, dt.ri, t, false); });
+        endAt.forEach(([x, y], ri) => chip(x, y, ri, tagged.get(ri), true));
       }
       const drawn = out.slice(1).join('') + chev.join('') + jd.join('') + hits.join('');
       this._$.edges.innerHTML = DEFS + (V ? `<g transform="matrix(0 1 1 0 0 0)">${drawn}</g>` : drawn) + labels.join('') + marks.join('') + chips.join('');
@@ -8063,7 +8066,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       clearTimeout(this._timers.lit);
       this._flow = f;
       this._sel = null;
-      if (fresh) this._frameKeys(f.keys, [...f.ghosts.values()]);
+      // the whole run in view if it reads at that size; otherwise the view follows the steps as they play
+      if (fresh) { const all = this._flowRects(f, f.steps.map((x, i) => i)); if (all && this._fitK(all) >= 0.6) this._frameKeys(f.keys, [...f.ghosts.values()]); }
       this._renderSbx();
       if (auto) { this._flowPlay(); return; }
       let i = f.steps.findIndex((x) => x.e.id === id);
@@ -8189,6 +8193,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (this._sbx) this._sbx.sel = cur.e.id;
       this._applyFocus();
       this._flowBar();
+      this._flowFollow(f, f.at);
       this._flowRows();
       if (anim) {
         const el = f.now[0] === '~' ? this._$.flow.querySelector(`.ghost[data-g="${CSS.escape(f.now)}"]`) : this._els.get(f.now);
@@ -8206,6 +8211,36 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (e.kind === 'wait' && e.key) return T('sbx_f_waits', { a: nm(e.key), w: String(e.text || '').replace(/^./, (c) => c.toLowerCase()) });
       if (e.kind === 'cond' && e.key) return T('sbx_f_checks', { a: nm(e.key), c: t });
       return t;
+    }
+    // the boxes of some steps, as one rectangle on the board
+    _flowRects(f, idx) {
+      const m = this._model, rs = [];
+      idx.forEach((i) => { const s = f.steps[i]; [s.box, ...s.links.flatMap((l) => [l.a, l.b])].forEach((k) => { const r = k && (k[0] === '~' ? f.ghosts.get(k) : m.nodes.get(k)); if (r) rs.push(r); }); });
+      if (!rs.length) return null;
+      const x0 = Math.min(...rs.map((r) => r.x)), y0 = Math.min(...rs.map((r) => r.y));
+      return { x0, y0, x1: Math.max(...rs.map((r) => r.x + r.w)), y1: Math.max(...rs.map((r) => r.y + r.h)) };
+    }
+    // the part of the board left free by the drawer and the bar along its foot, and the zoom a rectangle fits at
+    _flowArea() { return { W: this._openWidth(), H: this._$.vp.clientHeight - (this._$.litbar.hidden ? 20 : this._$.litbar.offsetHeight + 30), pad: 50 }; }
+    _fitK(R) { const a = this._flowArea(); return Math.min((a.W - 2 * a.pad) / Math.max(1, R.x1 - R.x0), (a.H - 2 * a.pad) / Math.max(1, R.y1 - R.y0)); }
+    // a step out of view: glide to it, at the same zoom unless it doesn't fit
+    _flowFollow(f, i) {
+      let R = this._flowRects(f, [i]);
+      if (!R) return;
+      // a step too long to fit even zoomed out: the box it reaches
+      if (this._fitK(R) < 0.35 && f.now) { const n = f.now[0] === '~' ? f.ghosts.get(f.now) : this._model.nodes.get(f.now); if (n) R = { x0: n.x, y0: n.y, x1: n.x + n.w, y1: n.y + n.h }; }
+      const a = this._flowArea(), v = this._view;
+      if (R.x0 * v.k + v.x >= a.pad / 2 && R.y0 * v.k + v.y >= a.pad / 2 && R.x1 * v.k + v.x <= a.W - a.pad / 2 && R.y1 * v.k + v.y <= a.H - a.pad / 2) return;
+      const k = Math.max(0.35, Math.min(v.k, this._fitK(R)));
+      const to = { k, x: a.W / 2 - ((R.x0 + R.x1) / 2) * k, y: a.H / 2 - ((R.y0 + R.y1) / 2) * k }, from = { ...v }, t0 = performance.now(), ms = 380;
+      cancelAnimationFrame(this._followRaf);
+      const step = (now) => {
+        const t = Math.min(1, (now - t0) / ms), e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+        this._view = { k: from.k + (to.k - from.k) * e, x: from.x + (to.x - from.x) * e, y: from.y + (to.y - from.y) * e };
+        this._applyView();
+        if (t < 1) this._followRaf = requestAnimationFrame(step); else this._saveView();
+      };
+      this._followRaf = requestAnimationFrame(step);
     }
     _flowBar() {
       const f = this._flow, b = this._$.litbar;

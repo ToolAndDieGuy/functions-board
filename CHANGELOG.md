@@ -8,6 +8,9 @@ Shared lines are easier to follow.
   end through the shared part, and fades the other arrows on that line. Pointing at the box the line starts from
   traces all of its arrows. On a touch screen, tap a letter: the arrow stays traced until you tap it again or tap
   somewhere else.
+- **The sandbox's flow follows the steps.** If a whole run reads at a comfortable size it's framed at once;
+  otherwise the board glides to each step as it plays (or as you step through), zooming out only when one step
+  doesn't fit, instead of zooming out to fit everything.
 - **Letters instead of coloured dots.** Each arrow on a shared line has a letter, the same where it branches off
   and beside its other end, unique across the function (A to Z, then AA…). Letters don't depend on telling
   colours apart, read the same in the light theme, and stay upright top to bottom. Hover a letter to see where its

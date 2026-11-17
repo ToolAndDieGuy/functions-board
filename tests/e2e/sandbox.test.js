@@ -120,6 +120,16 @@ const DOOR = 'cover.garage_door', TIMER = 'timer.garage_open', AUTO = 'input_boo
   await fbq(page, `.drawer .sbtl .dbrow[data-id="${trigId}"]`).click();
   const jumped = await el(page, (b) => ({ cur: b._flow.steps[b._flow.at].e.id, bar: b._$.litbar.querySelector('.fcur').textContent, now: b._lit.now }));
   check('0.7.1 clicking a row in the timeline goes to that step on the board', jumped.cur === trigId && /left open triggered/.test(jumped.bar) && jumped.now === 'automation.garage_left_open', jumped);
+  // the view follows the steps: moved far off, going to a step brings its boxes back into view
+  await el(page, (b) => { b._view = { k: 1, x: -20000, y: -20000 }; b._applyView(); });
+  await fbq(page, '.litbar [data-act="flow-next"]').click();
+  await page.waitForTimeout(700);
+  const seen = await el(page, (b) => {
+    const s = b._flow.steps[b._flow.at], k = s.box || s.links[0].b, n = k[0] === '~' ? b._$.flow.querySelector(`.ghost[data-g="${CSS.escape(k)}"]`) : b._els.get(k);
+    const r = n.getBoundingClientRect(), v = b._$.vp.getBoundingClientRect(), right = v.left + b._openWidth();
+    return { k, inView: r.left >= v.left && r.right <= right && r.top >= v.top && r.bottom <= v.bottom, r: [r.left, r.top, r.right, r.bottom], v: [v.left, v.top, right, v.bottom] };
+  });
+  check('0.7.2 the board follows the flow: a step out of view is brought into it', seen.inView, seen);
   await fbq(page, '.flow .ghost').first().dispatchEvent('click');
   check('0.7.1 clicking a temporary box goes to its step', await el(page, (b) => { const s = b._flow.steps[b._flow.at]; return s.links.some((l) => l.b[0] === '~') || (s.box || '')[0] === '~'; }));
   await fbq(page, '.litbar [data-act="lit-clear"]').click();

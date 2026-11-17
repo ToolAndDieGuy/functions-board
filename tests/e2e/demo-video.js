@@ -222,6 +222,8 @@ const caption = (page, text) => page.evaluate((t) => {
 
   let from;
   if (process.env.FB_TOUR === 'sandbox') {
+    await page.goto(BASE + '/');
+    await ready(page);
     const labels = await ws(page, { type: 'config/label_registry/list' });
     const garage = labels.find((l) => l.name === 'Garage').label_id;
     const G = ['cover.garage_door', 'timer.garage_open', 'automation.garage_start_open_timer', 'automation.garage_left_open', 'automation.garage_closed_stop_timer', 'script.close_garage', 'input_boolean.garage_auto_close'];
@@ -242,7 +244,9 @@ const caption = (page, text) => page.evaluate((t) => {
     await page.waitForTimeout(3600);
     await clickSel('.modal [data-act="sbx-start"]', 700);
     await fbq(page, '.drawer .sbctl .sbent').waitFor({ timeout: 10000 });
-    await frame(G, 1.0, 140);
+    // a narrower drawer for the video, so the board stays big enough to follow
+    await el(page, (b) => { b._$.drawer.style.width = '500px'; b._fitLitbar(); });
+    await frame(['cover.garage_door', 'automation.garage_start_open_timer', 'timer.garage_open', 'input_boolean.garage_auto_close'], 1.05, 150);
     await caption(page, 'Turn auto-close on and open the garage door: <b>in the sandbox only</b>.');
     await page.waitForTimeout(1600);
     await fbq(page, '.drawer .sbent').selectOption('input_boolean.garage_auto_close');

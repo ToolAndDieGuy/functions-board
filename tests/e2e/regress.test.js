@@ -971,11 +971,12 @@ test('0.6.0 square-cornered arrows: never alongside each other, colours by meani
     b._model = { label: 'fbx-tags', nodes, edges: ls.map((t) => ({ id: 'automation.all_off>' + t, from: 'automation.all_off', to: t, role: 'action', svcs: new Set(), tfs: [], anyTrig: true })) };
     b._layout('fbx-tags').nodes = {};
     b._place(); b._render();
-    const chips = [...b.shadowRoot.querySelectorAll('.edges g.bch')].map((c) => ({ l: c.querySelector('text').textContent, e: c.dataset.e, end: c.classList.contains('end') }));
+    const chips = [...b.shadowRoot.querySelectorAll('.edges g.bch')].map((c) => { const m = /translate\(([-\d.]+),([-\d.]+)\)/.exec(c.getAttribute('transform')); return { l: c.querySelector('text').textContent, e: c.dataset.e, end: c.classList.contains('end'), x: +m[1], y: +m[2] }; });
     return { ends: chips.filter((c) => c.end), branches: chips.filter((c) => !c.end), colours: b.shadowRoot.querySelectorAll('.edges circle.jd:not(.split), .node .port.tagd').length };
   });
   check('0.7.2 the arrows on a shared line each have a letter beside their own end, all different', tg.ends.length >= 4 && new Set(tg.ends.map((c) => c.l)).size === tg.ends.length && tg.ends.every((c) => /^[A-Z]+$/.test(c.l)), tg);
-  check('0.7.2 each letter where an arrow branches off is the letter at that arrow\'s end; no colour dots', tg.branches.length >= 2 && tg.branches.every((c) => tg.ends.some((x) => x.e === c.e && x.l === c.l)) && tg.colours === 0, tg);
+  check('0.7.2 each letter where an arrow branches off is the letter at that arrow\'s end, and isn\'t drawn right beside it; no colour dots',
+    tg.branches.every((c) => tg.ends.some((x) => x.e === c.e && x.l === c.l && (Math.abs(x.x - c.x) >= 26 || Math.abs(x.y - c.y) >= 26))) && tg.colours === 0, tg);
   const apart = (p, q) => p.x1 + 40 <= q.x0 || q.x1 + 40 <= p.x0 || p.y1 + 40 <= q.y0 || q.y1 + 40 <= p.y0;
   check('0.6.0 two separate chains sit apart as blocks', apart(pk.a, pk.b), pk);
   check('0.6.0 a chain packs beside or under the bigger one, without a column gap between its boxes', pk.b.x1 - pk.b.x0 < 900, pk);
@@ -1110,7 +1111,7 @@ test('0.7.2 shared lines: point at a box to trace its arrow, tap a letter to kee
     const chips = [...b._$.edges.querySelectorAll('g.bch')], trc = b._$.edges.querySelector('path.trc');
     return { chips: chips.length, upright: chips.every((c) => c.parentNode === b._$.edges), turned: !!trc && trc.parentNode.getAttribute('transform') === 'matrix(0 1 1 0 0 0)' };
   });
-  check('0.7.2 top to bottom: the letters read upright and the trace follows the turned arrows', v.chips >= 6 && v.upright && v.turned, v);
+  check('0.7.2 top to bottom: the letters read upright and the trace follows the turned arrows', v.chips >= 4 && v.upright && v.turned, v);
   await el(page, (b) => b._setTrace(null));
   check('0.7.2 no errors', page.logs.length === 0, page.logs);
 });
