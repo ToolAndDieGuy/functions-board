@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.6.0 (2026-11-16)
+
+New arrows and a new automatic layout.
+
+- Arrows are coloured by what they do: orange for what sets something off, blue for what it changes, aqua for
+  running a script. Checks stay grey dashed and template reads grey dotted. The colours were checked for colour
+  blindness in both the light and the dark theme. The Key shows them.
+- Arrows run square-cornered with rounder turns, always left to right: out of a box's right side, into the next
+  one's left side, in lanes in the gaps between columns. One that goes back runs round the outside of the boxes.
+- Each side of a box has three points, shown as small dots, where arrows leave and enter. Up to three arrows on a
+  side each have a point of their own and their own line. More than three share the three points (split by kind
+  and by where they go): the arrows at a point run as one line that branches, with a dot at each branch. Where two
+  lines cross without meeting, one hops over the other, so a dot always means a branch and a hop a crossing.
+- Each arrow on a shared line has a colour of its own (sixteen, used in turn across the function), on the dot
+  where it branches off and on the point at its own end, ringed in the colour of its kind; where the shared line
+  just splits, the dot is plain.
+- Arrows running back (right to left) carry small arrowheads along the way, so their direction reads at a glance.
+- In Full manager, drag from a box's right-hand point to another box to draw an arrow out of it, or from a
+  left-hand point to draw one into it.
+- A short step up or down in the middle of a level run is straightened out where that's clear.
+- No two arrows run alongside each other closer than 16 px. The automatic layout widens each gap between
+  columns to fit the arrows that turn in it, and a last pass moves any run that is still too close to the nearest
+  clear spot.
+- Boxes line up with what they connect to, so a chain runs straight across instead of zigzagging.
+- Separate chains in one function are laid out on their own and packed together, the big one first, the others
+  beside or under it, instead of being spread through one set of columns with gaps between.
+- A function too wide for a screen folds into rows, cut where the fewest arrows cross.
+- Arrows > Style > Curved arrows brings back the curved arrows, which take the shortest way between facing sides.
+- Arrange is now Auto-arrange: one click lays the function out automatically, for functions you made as well as
+  imported ones, boxes you moved by hand included, and Undo puts your own arrangement back. It no longer asks
+  first.
+- Keep in place, in a box's bar, leaves that box where it is through Auto-arrange (it shows a pin); the rest is
+  laid out together, clear of the kept boxes. Let Auto-arrange move it takes the pin off.
+- An import runs Auto-arrange on each function it makes or adds to, so new pieces don't land in odd places; boxes
+  kept in place stay put.
+- Moving a box by hand keeps all the others where they are from then on, until Auto-arrange. Before, the boxes
+  still placed automatically could shift round the one you moved.
+
 ## 0.5.5 (2026-11-16)
 
 - Nothing changes in the board. The Marketplace (HACS) checks now run in full, with nothing skipped, which the

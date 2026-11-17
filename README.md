@@ -14,6 +14,7 @@ Home Assistant files things by type: automations in one list, scripts in another
 
 - **One board per function.** A function is a Home Assistant label. Everything carrying it is on the board, and still lives in its usual place under Settings.
 - **Arrows read from your configs:** what triggers each automation, what it checks, what it changes and which scripts it runs, including area, floor and label targets, purpose-specific triggers (a light turning on, a door opening), what template and other derived helpers read, scenes and groups, and the buttons on a notification with the automations that answer them. Blueprint automations are read as Home Assistant fills them in. Real loops (an automation whose own effects can set it off again) are marked.
+- **Laid out for you:** arrows are coloured by what they do (orange sets something off, blue changes it, aqua runs a script) and run square-cornered from left to right in their own lanes, never alongside each other, from three points on each side of a box. Lines that share a point branch at a dot, coloured per arrow to match the point at its other end; lines that cross without meeting hop over each other; arrows running back carry arrowheads along the way. Boxes line up with what they connect to, separate chains are packed together, and **Auto-arrange** lays out a function again at any time, and runs on every import; **Keep in place** in a box's bar leaves that box where you put it, and Undo puts your own arrangement back. **Arrows → Curved arrows** brings back curved arrows.
 - **Click a box** to light up its chain; the **Arrows** menu chooses how far (upstream, downstream, both) and which kinds of arrow show. **Edit** in a box's bar, or a double-click, opens it in Home Assistant's own editor without leaving the board: an automation's or script's editor, a helper's settings, a scene's editor.
 - **Live:** states on every box, runs pulse as they happen, last-run failures and unavailable entities are flagged, and **Runs** lists every run in the function; picking one lights the arrows it actually used.
 - **Import** finds the functions already in your setup. It traces every automation and script and groups the ones that trigger, change or call each other, merged with the categories you already use, and shows what is left over. Import them all or one at a time, start from labels you already have, or pick items by hand.
@@ -25,7 +26,7 @@ Home Assistant files things by type: automations in one list, scripts in another
   - **Watch triggers** pulses an automation's trigger arrows whenever one would fire, without running it. With Pause, that's a dry run.
   - **Monitor boxes** list the last events of one type, or MQTT messages on a topic, while the function is open.
   - **Tests** (Full manager only) change a helper, simulate a state, fire an event, send a notification, or run an automation or script. A test can be kept on the board as a button.
-- **Arrow editor** (Full manager only): drag from one box onto another to add a trigger, a check, an action or a script call, chosen from Home Assistant's own lists. The YAML is shown and checked before it's saved. Click an arrow to remove what it stands for.
+- **Arrow editor** (Full manager only): drag from a box's points (or from one box) onto another to add a trigger, a check, an action or a script call, chosen from Home Assistant's own lists. The YAML is shown and checked before it's saved. Click an arrow to remove what it stands for.
 - **Node-RED flows** (off until you switch them on in the board's Key): each wired group in a flow is a box, with arrows to what it triggers on, reads, changes and runs.
 - Works with the keyboard and screen readers, on a phone, and as a dashboard card. The board's text is kept in one table per language, so it can be translated (see [Translating](#translating)).
 
@@ -43,7 +44,7 @@ The screenshots come from the demo setup the tests run on: a garage door that st
 
 <table>
 <tr>
-<td width="44%" valign="top"><b>The Key</b> says what each line, outline and mark means, and switches outside items, suggestions and Node-RED flows on and off.<br><br><img src="https://raw.githubusercontent.com/ToolAndDieGuy/functions-board/main/docs/images/key.png" alt="The Key: arrow styles for triggers, checks, changes, script calls, helper inputs, loops and test buttons, then outlines and state marks"></td>
+<td width="44%" valign="top"><b>The Key</b> says what each line, outline and mark means, and switches outside items, suggestions and Node-RED flows on and off.<br><br><img src="https://raw.githubusercontent.com/ToolAndDieGuy/functions-board/main/docs/images/key.png" alt="The Key: arrow colours and styles for triggers, checks, changes, script calls, helper inputs, loops and test buttons, then outlines and state marks"></td>
 <td width="56%" valign="top"><b>A function's menu</b> renames it, hides it from the board, or deletes it, with or without its automations, scripts and helpers (Full manager).<br><br><img src="https://raw.githubusercontent.com/ToolAndDieGuy/functions-board/main/docs/images/menu.png" alt="The menu of the Garage function: Edit name, icon, colour; Hide from board; Delete function; Delete function and its items"></td>
 </tr>
 </table>
@@ -151,15 +152,15 @@ It needs room, so a **panel** view works best. Without the option, a dashboard r
 
 Each automation and script config is read for:
 
-| Arrow | Comes from |
-| --- | --- |
-| triggers | state, numeric state, event, MQTT, device and purpose-specific triggers (`light.turned_on`, `door.opened`...) |
-| is checked or read by | conditions, and entities named in templates |
-| changes | the targets of actions (entities, devices, areas, floors and labels), and the members of a scene or group |
-| runs | script calls |
-| is read by | what template helpers, trigger-based template sensors and other derived helpers (min/max, threshold, utility meter...) read |
+| Arrow | Colour | Comes from |
+| --- | --- | --- |
+| triggers | orange | state, numeric state, event, MQTT, device and purpose-specific triggers (`light.turned_on`, `door.opened`...) |
+| is checked or read by | grey, dashed | conditions, and entities named in templates |
+| changes | blue | the targets of actions (entities, devices, areas, floors and labels), and the members of a scene or group |
+| runs | aqua | script calls |
+| is read by | grey, dotted | what template helpers, trigger-based template sensors and other derived helpers (min/max, threshold, utility meter...) read |
 
-A **loop** means an automation's or script's own effects can set it off again, like an automation that toggles the light it is triggered by. Effects that can't fire a trigger don't count: closing a door won't fire a trigger on it opening, cancelling a timer won't fire `timer.finished`, turning a light off won't fire a trigger on its brightness, and setting the state that triggered an automation changes nothing.
+A **loop** (an amber glow round the arrow) means an automation's or script's own effects can set it off again, like an automation that toggles the light it is triggered by. Effects that can't fire a trigger don't count: closing a door won't fire a trigger on it opening, cancelling a timer won't fire `timer.finished`, turning a light off won't fire a trigger on its brightness, and setting the state that triggered an automation changes nothing.
 
 Node-RED flows are read when you switch them on: each wired group is a box, with arrows to the entities its nodes trigger on, read and change, and the scripts they run.
 
@@ -173,7 +174,7 @@ To try a table without editing the file, add it from the browser console on the 
 
 ## Feedback
 
-This is a prototype (v0.5.5). Please open an [issue](https://github.com/ToolAndDieGuy/functions-board/issues) for bugs, wrong or missing arrows, or ideas. A screenshot of the board and the automation's YAML help a lot.
+This is a prototype (v0.6.0). Please open an [issue](https://github.com/ToolAndDieGuy/functions-board/issues) for bugs, wrong or missing arrows, or ideas. A screenshot of the board and the automation's YAML help a lot.
 
 ## Credits
 

@@ -452,8 +452,8 @@ test('7.5 draw an arrow and remove it: the config ends as it started, and both s
   const cfg = () => api(page, 'GET', 'config/automation/config/' + aid);
   const canon = (v) => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.keys(x).sort().reduce((o, kk) => { o[kk] = x[kk]; return o; }, {}) : x));
   const c0 = canon(await cfg());
-  // drag from the helper's handle onto the automation
-  await el(page, (b, k) => { b._centerOn(k); b._select(k); }, AUTO);
+  // drag from the helper's handle onto the automation (the Key closed, so it covers neither)
+  await el(page, (b, k) => { b._data.ui.legend = false; b._renderLegend(); b._centerOn(k); b._select(k); }, AUTO);
   await page.waitForTimeout(400);
   const hb = await fbq(page, '.lh').boundingBox();
   const tb = await fbq(page, `.node[data-key="${ak}"]`).boundingBox();
