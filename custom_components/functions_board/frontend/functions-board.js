@@ -1,5 +1,5 @@
 /*!
- * Functions board v0.6.0 (prototype) for Home Assistant
+ * Functions board v0.6.1 (prototype) for Home Assistant
  *
  * One page per "function": every automation, script, helper and device that makes one job work,
  * grouped by a Home Assistant label and wired together from their own configs.
@@ -13,7 +13,7 @@
  */
 (() => {
   'use strict';
-  const VERSION = '0.6.0';
+  const VERSION = '0.6.1';
   const loaded = customElements.get('functions-board');
   if (loaded) {
     if (loaded.VERSION !== VERSION) {
@@ -695,7 +695,9 @@
     });
     return { dots, tags };
   }
-  // where a level run crosses another arrow's upright run, it hops over it: per arrow, the runs and where
+  // where a level run crosses another arrow's upright run, it hops over it: per arrow, the runs and their hops, each
+  // [from, to] along the run (crossings closer together than a hop share one wider arch). A hop can come up to
+  // just short of a turn: the turn is drawn tighter there to make room.
   function hopsOf(routes, owners) {
     const ups = [];
     routes.forEach((pts, ri) => { for (let i = 1; i < pts.length; i++) if (Math.abs(pts[i - 1][0] - pts[i][0]) < 0.5) ups.push({ ri, x: pts[i][0], lo: Math.min(pts[i - 1][1], pts[i][1]), hi: Math.max(pts[i - 1][1], pts[i][1]) }); });
@@ -704,39 +706,50 @@
       for (let i = 1; i < pts.length; i++) {
         const u = pts[i - 1], v = pts[i];
         if (Math.abs(u[1] - v[1]) > 0.5) continue;
-        const lo = Math.min(u[0], v[0]) + RAD + HOP + 2, hi = Math.max(u[0], v[0]) - RAD - HOP - 2, xs = [];
+        const lo = Math.min(u[0], v[0]) + HOP + 3, hi = Math.max(u[0], v[0]) - HOP - 3, xs = [];
         ups.forEach((w) => {
           if (w.ri === ri || w.x <= lo || w.x >= hi || u[1] <= w.lo + 2 || u[1] >= w.hi - 2) return;
           if ((owners[w.ri] || []).some((o) => o && mine.includes(o))) return;
           xs.push(w.x);
         });
-        xs.sort((p, q) => (v[0] > u[0] ? p - q : q - p));
-        const keep = [];
-        xs.forEach((x) => { if (!keep.length || Math.abs(x - keep[keep.length - 1]) > 2 * HOP + 4) keep.push(x); });
-        if (keep.length) out.set(i, keep);
+        if (!xs.length) continue;
+        const dir = v[0] > u[0] ? 1 : -1, spans = [];
+        xs.sort((p, q) => (p - q) * dir).forEach((x) => {
+          const last = spans[spans.length - 1];
+          if (last && Math.abs(x - last[1]) <= 2 * HOP + 4) last[1] = x; else spans.push([x, x]);
+        });
+        out.set(i, spans);
       }
       return out;
     });
   }
   // a path through the corner points with small rounded turns; mid is halfway along it
-  // (hops: per run, where it hops over another arrow)
+  // (hops: per run, where it hops over other arrows)
   function roundPath(pts, hops) {
     const P = pts.filter((p, i) => !i || Math.hypot(p[0] - pts[i - 1][0], p[1] - pts[i - 1][1]) > 0.5);
     const fmt = (p) => `${Math.round(p[0] * 10) / 10},${Math.round(p[1] * 10) / 10}`;
     let d = `M${fmt(P[0])}`, total = 0;
     const lens = P.map((p, i) => (i ? Math.hypot(p[0] - P[i - 1][0], p[1] - P[i - 1][1]) : 0));
-    // a little arch, bulging up, over each crossing on run i
+    // each turn's radius, tighter where a hop sits close to it
+    const r = P.map((p, i) => (i > 0 && i < P.length - 1 ? Math.min(RAD, lens[i] / 2, lens[i + 1] / 2) : 0));
+    if (hops) hops.forEach((spans, i) => {
+      if (!spans.length) return;
+      const a = P[i - 1], c = P[i];
+      if (i - 1 > 0) r[i - 1] = Math.max(2, Math.min(r[i - 1], Math.abs(spans[0][0] - a[0]) - HOP - 1));
+      if (i < P.length - 1) r[i] = Math.max(2, Math.min(r[i], Math.abs(c[0] - spans[spans.length - 1][1]) - HOP - 1));
+    });
+    // an arch, bulging up, over each crossing (or close group of them) on run i
     const hop = (i) => {
-      const xs = hops && hops.get(i), a = P[i - 1], c = P[i];
-      if (!xs) return;
+      const spans = hops && hops.get(i), a = P[i - 1], c = P[i];
+      if (!spans) return;
       const dir = c[0] > a[0] ? 1 : -1;
-      xs.forEach((x) => { d += ` L${fmt([x - dir * HOP, a[1]])} A${HOP},${HOP} 0 0 ${dir > 0 ? 1 : 0} ${fmt([x + dir * HOP, a[1]])}`; });
+      spans.forEach(([x0, x1]) => { d += ` L${fmt([x0 - dir * HOP, a[1]])} A${Math.abs(x1 - x0) / 2 + HOP},${HOP} 0 0 ${dir > 0 ? 1 : 0} ${fmt([x1 + dir * HOP, a[1]])}`; });
     };
     for (let i = 1; i < P.length - 1; i++) {
-      const a = P[i - 1], c = P[i], e = P[i + 1], r = Math.min(RAD, lens[i] / 2, lens[i + 1] / 2);
+      const a = P[i - 1], c = P[i], e = P[i + 1];
       const u = [(c[0] - a[0]) / lens[i], (c[1] - a[1]) / lens[i]], w = [(e[0] - c[0]) / lens[i + 1], (e[1] - c[1]) / lens[i + 1]];
       hop(i);
-      d += ` L${fmt([c[0] - u[0] * r, c[1] - u[1] * r])} Q${fmt(c)} ${fmt([c[0] + w[0] * r, c[1] + w[1] * r])}`;
+      d += ` L${fmt([c[0] - u[0] * r[i], c[1] - u[1] * r[i]])} Q${fmt(c)} ${fmt([c[0] + w[0] * r[i], c[1] + w[1] * r[i]])}`;
     }
     hop(P.length - 1);
     d += ` L${fmt(P[P.length - 1])}`;
@@ -4054,7 +4067,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const chev = [];
       if (PR.ortho) {
         const r = orthoAll(geo, (e, sd) => this._routeFor(e, sd), boxes);
-        this._ortho = { ids: geo.map((g) => g.e.id), routes: r.routes, owners: r.owners, boxes: geo.map((g) => [g.e.from, g.e.to]) };
+        this._ortho = { ids: geo.map((g) => g.e.id), routes: r.routes, owners: r.owners, hops: r.hops.map((m) => [...m]), boxes: geo.map((g) => [g.e.from, g.e.to]) };
         geo.forEach((g, i) => { const rp = roundPath(r.routes[i], r.hops[i]); g.gm = { d: rp.d, mx: rp.mid[0], my: rp.mid[1] }; });
         // a bus's dots light with it
         // a branch lights with its arrow
@@ -4070,7 +4083,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
             for (let q = 1; q <= n; q++) {
               let x = u[0] - (len * q) / (n + 1);
               // (not on a hop)
-              (hp.get(j) || []).forEach((h) => { if (Math.abs(h - x) < HOP + 6) x = h + HOP + 8; });
+              (hp.get(j) || []).forEach(([h0, h1]) => { if (x > Math.min(h0, h1) - HOP - 6 && x < Math.max(h0, h1) + HOP + 6) x = Math.min(h0, h1) - HOP - 8; });
               chev.push(`<path class="chev role-${esc(g.e.role)}${F && !hi ? ' dim' : ''}" d="M${x - 4},${u[1]} L${x + 4},${u[1] - 4.5} L${x + 4},${u[1] + 4.5} z"></path>`);
             }
           }

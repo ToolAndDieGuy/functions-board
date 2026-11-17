@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.1 (2026-11-16)
+
+- Every place two arrows cross without meeting now gets a hop. Before, a crossing within about 20 px of a turn,
+  or closer than 14 px to another hop on the same line, was drawn without one (about 40% of crossings on a busy
+  board). Crossings close together now share one wider arch, and a turn right beside a hop is drawn a little
+  tighter to make room for it.
+
 ## 0.6.0 (2026-11-16)
 
 New arrows and a new automatic layout.
