@@ -15,8 +15,20 @@ New: a sandbox, to try a function out without anything changing in your home.
   `is_state()`, `state_attr()`, `is_state_attr()`, `has_value()`, `states.x.y` and `states['x.y']`, whole
   domains, `expand()`, `now()`, `utcnow()` and `today_at()`, as functions, filters and tests. A template that
   reads something the sandbox can't stand in for is marked partly real.
+- Home Assistant's per-entity triggers (`light.turned_on`, `door.opened`, `lock.unlocked`, `event.received`,
+  `counter.maximum_reached`, brightness and temperature thresholds and the rest, with `behavior` and `for`) follow
+  the rules of Home Assistant's own trigger classes, from a table generated from them
+  (`scripts/gen_sandbox_triggers.py`). Template triggers take `for:`. `wait_for_trigger` waits for any trigger the
+  sandbox follows, template triggers included.
+- MQTT: triggers on topics (with `+` and `#`), payloads and value templates; an MQTT row in the drawer sends a
+  message, and `mqtt.publish` in a script reaches the triggers too.
+- **Run** takes the trigger to stand in for, so `trigger.id` conditions and `trigger.` templates work, and the
+  triggers it can't follow (zone, sun, start, webhook, device) are named when the sandbox opens.
+- `states[...]` looked up by a variable and `states | ...` over every state read the sandbox too; only templates
+  that read locations are marked partly real.
 - It asks what it can't know (a sun, zone or device condition, a template Home Assistant couldn't render) and
-  uses your answer. A call it doesn't know the effect of, like a notification, is listed as one it would make.
+  uses your answer. Notifications, TTS and log messages are listed as messages; any other call it doesn't know
+  the effect of is listed as one it would make.
 - Run modes (single, restart, queued, parallel), scripts, `choose`, `if`, `repeat`, `parallel`, `variables`,
   waits and `stop` behave as in Home Assistant. One change that leads to more than 2,000 steps is stopped as a
   loop.

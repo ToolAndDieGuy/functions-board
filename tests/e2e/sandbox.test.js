@@ -49,9 +49,9 @@ const DOOR = 'cover.garage_door', TIMER = 'timer.garage_open', AUTO = 'input_boo
   await fbq(page, '.drawer [data-act="sbx-next"]').click();
   const closed = await until(() => el(page, (b, k) => b._sbx.eng.get(k).state === 'closed' || null, DOOR), 10000);
   check('15 minutes on: left open fires and the script closes the door', !!closed);
-  const L = await el(page, (b) => b._sbx.eng.log.map((e) => ({ kind: e.kind, key: e.key, svc: e.svc, ok: e.ok, unknown: e.unknown, text: e.text })));
+  const L = await el(page, (b) => b._sbx.eng.log.map((e) => ({ kind: e.kind, key: e.key, svc: e.svc, ok: e.ok, unknown: e.unknown, msg: e.msg, text: e.text })));
   check('its condition (door open) passed', L.some((e) => e.kind === 'cond' && e.key === 'automation.garage_left_open' && e.ok === true), L.filter((e) => e.kind === 'cond'));
-  check('the notification is marked as a call the sandbox doesn\'t follow', L.some((e) => e.kind === 'call' && e.svc === 'persistent_notification.create' && e.unknown));
+  check('the notification is listed as a message, not as a gap', L.some((e) => e.kind === 'call' && e.svc === 'persistent_notification.create' && !e.unknown));
   check('closing it cancels the timer (Garage: closed, stop timer)', L.some((e) => e.kind === 'trigger' && e.key === 'automation.garage_closed_stop_timer'));
   check('the clock moved 15 minutes', await el(page, (b) => Math.round((b._sbx.eng.now - b._sbx.eng.log[0].t) / 60000) === 15));
   check('the chain is lit on the board', await until(() => el(page, (b) => !!(b._lit && b._lit.keys.size > 1) || null), 4000));
@@ -63,8 +63,12 @@ const DOOR = 'cover.garage_door', TIMER = 'timer.garage_open', AUTO = 'input_boo
   check('a template reads the sandbox\'s states, rendered by Home Assistant', t1.ok && t1.value === true && t1.partly.length === 0, t1);
   const t2 = await el(page, (b) => b._sbxTpl("{{ (now() - states.cover.garage_door.last_changed).total_seconds() | int }}", {}));
   check('... and its clock: the door closed 0 s ago on the sandbox clock', t2.ok && t2.value === 0, t2);
-  const t3 = await el(page, (b) => b._sbxTpl("{{ states | selectattr('state', 'eq', 'on') | list | count }}", {}));
-  check('a template that reads all states is marked partly real', t3.ok && t3.partly.includes('states'), t3);
+  const t3 = await el(page, (b) => b._sbxTpl("{{ states | selectattr('entity_id', 'eq', 'input_boolean.garage_auto_close') | map(attribute='state') | list }}", {}));
+  check('every state at once (states | ...) reads the sandbox\'s too', t3.ok && JSON.stringify(t3.value) === '["on"]' && t3.partly.length === 0, t3);
+  const t3b = await el(page, (b) => b._sbxTpl("{% set e = 'cover.' ~ 'garage_door' %}{{ states[e].state }} {{ states['cover'] | selectattr('entity_id', 'eq', e) | map(attribute='state') | first }}", {}));
+  check('a state looked up by a variable (states[e]) reads the sandbox\'s', t3b.ok && t3b.value === 'closed closed', t3b);
+  const t3c = await el(page, (b) => b._sbxTpl("{{ closest('zone.home') }}", {}));
+  check('locations are marked partly real', t3c.partly.includes('closest'), t3c);
   const t4 = await el(page, (b) => b._sbxTpl('{{ this is not a template', {}));
   check('one Home Assistant can\'t render comes back as not rendered', !t4.ok, t4);
 
@@ -74,6 +78,14 @@ const DOOR = 'cover.garage_door', TIMER = 'timer.garage_open', AUTO = 'input_boo
   check('a sun condition: the question shows in the drawer', /sun/i.test(await fbq(page, '.drawer .sbq').textContent()));
   await fbq(page, '.drawer .sbq [data-v="1"]').click();
   check('... and your answer is used', (await asked).ok === true);
+
+  // run as if a chosen trigger fired: the trigger picker follows the automation picked
+  await fbq(page, '.drawer .sbrun').selectOption('automation.garage_start_open_timer');
+  const trigOpts = await fbq(page, '.drawer .sbtrig option').allTextContents();
+  check('Run offers the automation\'s triggers to stand in for', trigOpts.length === 2 && /as if 1\. state: Garage Door/.test(trigOpts[0]), trigOpts);
+  await fbq(page, '.drawer .sbtrig').selectOption('0');
+  await fbq(page, '.drawer [data-act="sbx-run"]').click();
+  check('... and runs it as if that trigger fired', await until(() => el(page, (b) => b._sbx.eng.log.some((e) => e.kind === 'trigger' && /as if trigger 1/.test(e.text)) || null), 5000));
 
   // the box bar and tests act on the sandbox
   await el(page, (b, k) => b._select(k), DOOR);

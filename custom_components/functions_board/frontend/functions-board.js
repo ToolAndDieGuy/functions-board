@@ -1965,7 +1965,7 @@ button{font:inherit;color:inherit}
 .sbrow{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .sbl{width:44px;font-size:12px;color:var(--secondary-text-color)}
 .sbrow select,.sbrow input:not([type=checkbox]){font:inherit;font-size:12.5px;padding:4px 8px;border-radius:8px;border:1px solid var(--divider-color);background:var(--card-background-color);color:var(--primary-text-color);min-width:0}
-.sbrow .sbent,.sbrow .sbrun{flex:1 1 170px}.sbrow .sbval{flex:0 1 130px}.sbrow .sbev{flex:1 1 140px}.sbrow .sbevd{flex:2 1 170px}
+.sbrow .sbent,.sbrow .sbrun{flex:1 1 170px}.sbrow .sbtrig{flex:1 1 150px}.sbrow .sbtop{flex:1 1 160px}.sbrow .sbpay{flex:1 1 140px}.sbrow .sbval{flex:0 1 130px}.sbrow .sbev{flex:1 1 140px}.sbrow .sbevd{flex:2 1 170px}
 .sbrow .chip:disabled{opacity:.5;cursor:default}
 .sbcb{display:inline-flex;gap:4px;align-items:center;font-size:12px;color:var(--secondary-text-color)}
 .sbdue{display:flex;flex-wrap:wrap;gap:4px 10px;padding:6px 10px;font-size:11.5px;border-bottom:1px solid var(--divider-color)}.sbdue:empty{display:none}
@@ -2435,6 +2435,16 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       sbx_running: 'running in the sandbox',
       sbx_ran_n: { one: 'ran once in the sandbox', other: 'ran {n} times in the sandbox' },
       sbx_not_run: 'not run in the sandbox yet',
+      sbx_not_followed: 'Triggers the sandbox doesn\'t follow (use Run, with that trigger): {list}.',
+      sbx_run_as: 'Run by you, as if trigger {n} ({p}) fired',
+      sbx_as_if: 'As if this trigger fired',
+      sbx_as_trigger: 'as if {n}. {what}',
+      sbx_no_trigger: 'with no trigger',
+      sbx_topic: 'topic',
+      sbx_payload: 'payload',
+      sbx_send: 'Send',
+      sbx_pick_topic: 'Type an MQTT topic.',
+      sbx_msg: 'sends a message: nothing in your states changes',
       sbx_bad_data: 'The event data isn\'t JSON or YAML.',
       sbx_bar_note: 'Sandbox: nothing here changes your home',
       sbx_button: 'Sandbox',
@@ -3069,10 +3079,12 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       return sbxEffect(dom, isOn ? 'turn_off' : 'turn_on', cur, d, nowIso);
     }
     switch (dom + '.' + svc) {
-      case 'cover.open_cover': case 'valve.open_valve': return ['open', { current_position: 100 }];
-      case 'cover.close_cover': case 'valve.close_valve': return ['closed', { current_position: 0 }];
+      case 'cover.open_cover': return ['open', { current_position: 100, is_closed: false }];
+      case 'cover.close_cover': return ['closed', { current_position: 0, is_closed: true }];
+      case 'valve.open_valve': return ['open', { current_position: 100 }];
+      case 'valve.close_valve': return ['closed', { current_position: 0 }];
       case 'cover.stop_cover': case 'valve.stop_valve': return [st === 'opening' ? 'open' : st === 'closing' ? 'closed' : st, {}];
-      case 'cover.set_cover_position': case 'valve.set_valve_position': { const p = num(d.position); return p == null ? null : [p > 0 ? 'open' : 'closed', { current_position: p }]; }
+      case 'cover.set_cover_position': case 'valve.set_valve_position': { const p = num(d.position); return p == null ? null : [p > 0 ? 'open' : 'closed', Object.assign({ current_position: p }, dom === 'cover' ? { is_closed: p === 0 } : {})]; }
       case 'lock.lock': return ['locked', {}];
       case 'lock.unlock': return ['unlocked', {}];
       case 'lock.open': return ['open', {}];
@@ -3148,6 +3160,35 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
   // homeassistant.turn_on and friends, per entity: the entity's own domain's service
   const HA_GENERIC = { cover: { turn_on: 'open_cover', turn_off: 'close_cover', toggle: 'toggle' }, valve: { turn_on: 'open_valve', turn_off: 'close_valve', toggle: 'toggle' },
     lock: { turn_on: 'lock', turn_off: 'unlock' } };
+
+  // Home Assistant's per-entity triggers (light.turned_on, door.opened, ...), from its own trigger classes:
+  // scripts/gen_sandbox_triggers.py writes this table
+  const SBX_ETRIG = /* SBX_ETRIG:start */{"air_quality.co2_changed":{"d":{"sensor":{"dc":["carbon_dioxide"]}},"k":"num_changed"},"air_quality.co2_crossed_threshold":{"d":{"sensor":{"dc":["carbon_dioxide"]}},"k":"num_crossed"},"air_quality.co_changed":{"d":{"sensor":{"dc":["carbon_monoxide"]}},"k":"num_changed"},"air_quality.co_cleared":{"d":{"binary_sensor":{"dc":["carbon_monoxide"]}},"k":"target","to":["off"]},"air_quality.co_crossed_threshold":{"d":{"sensor":{"dc":["carbon_monoxide"]}},"k":"num_crossed"},"air_quality.co_detected":{"d":{"binary_sensor":{"dc":["carbon_monoxide"]}},"k":"target","to":["on"]},"air_quality.gas_cleared":{"d":{"binary_sensor":{"dc":["gas"]}},"k":"target","to":["off"]},"air_quality.gas_detected":{"d":{"binary_sensor":{"dc":["gas"]}},"k":"target","to":["on"]},"air_quality.n2o_changed":{"d":{"sensor":{"dc":["nitrous_oxide"]}},"k":"num_changed"},"air_quality.n2o_crossed_threshold":{"d":{"sensor":{"dc":["nitrous_oxide"]}},"k":"num_crossed"},"air_quality.no2_changed":{"d":{"sensor":{"dc":["nitrogen_dioxide"]}},"k":"num_changed"},"air_quality.no2_crossed_threshold":{"d":{"sensor":{"dc":["nitrogen_dioxide"]}},"k":"num_crossed"},"air_quality.no_changed":{"d":{"sensor":{"dc":["nitrogen_monoxide"]}},"k":"num_changed"},"air_quality.no_crossed_threshold":{"d":{"sensor":{"dc":["nitrogen_monoxide"]}},"k":"num_crossed"},"air_quality.ozone_changed":{"d":{"sensor":{"dc":["ozone"]}},"k":"num_changed"},"air_quality.ozone_crossed_threshold":{"d":{"sensor":{"dc":["ozone"]}},"k":"num_crossed"},"air_quality.pm10_changed":{"d":{"sensor":{"dc":["pm10"]}},"k":"num_changed"},"air_quality.pm10_crossed_threshold":{"d":{"sensor":{"dc":["pm10"]}},"k":"num_crossed"},"air_quality.pm1_changed":{"d":{"sensor":{"dc":["pm1"]}},"k":"num_changed"},"air_quality.pm1_crossed_threshold":{"d":{"sensor":{"dc":["pm1"]}},"k":"num_crossed"},"air_quality.pm25_changed":{"d":{"sensor":{"dc":["pm25"]}},"k":"num_changed"},"air_quality.pm25_crossed_threshold":{"d":{"sensor":{"dc":["pm25"]}},"k":"num_crossed"},"air_quality.pm4_changed":{"d":{"sensor":{"dc":["pm4"]}},"k":"num_changed"},"air_quality.pm4_crossed_threshold":{"d":{"sensor":{"dc":["pm4"]}},"k":"num_crossed"},"air_quality.radon_changed":{"d":{"sensor":{"dc":["radon"]}},"k":"num_changed"},"air_quality.radon_crossed_threshold":{"d":{"sensor":{"dc":["radon"]}},"k":"num_crossed"},"air_quality.smoke_cleared":{"d":{"binary_sensor":{"dc":["smoke"]}},"k":"target","to":["off"]},"air_quality.smoke_detected":{"d":{"binary_sensor":{"dc":["smoke"]}},"k":"target","to":["on"]},"air_quality.so2_changed":{"d":{"sensor":{"dc":["sulphur_dioxide"]}},"k":"num_changed"},"air_quality.so2_crossed_threshold":{"d":{"sensor":{"dc":["sulphur_dioxide"]}},"k":"num_crossed"},"air_quality.voc_changed":{"d":{"sensor":{"dc":["volatile_organic_compounds"]}},"k":"num_changed"},"air_quality.voc_crossed_threshold":{"d":{"sensor":{"dc":["volatile_organic_compounds"]}},"k":"num_crossed"},"air_quality.voc_ratio_changed":{"d":{"sensor":{"dc":["volatile_organic_compounds_parts"]}},"k":"num_changed"},"air_quality.voc_ratio_crossed_threshold":{"d":{"sensor":{"dc":["volatile_organic_compounds_parts"]}},"k":"num_crossed"},"alarm_control_panel.armed":{"d":{"alarm_control_panel":{}},"from":["arming","disarmed","disarming","pending","triggered"],"k":"transition","to":["armed_away","armed_custom_bypass","armed_home","armed_night","armed_vacation"]},"alarm_control_panel.armed_away":{"d":{"alarm_control_panel":{}},"k":"target","to":["armed_away"]},"alarm_control_panel.armed_home":{"d":{"alarm_control_panel":{}},"k":"target","to":["armed_home"]},"alarm_control_panel.armed_night":{"d":{"alarm_control_panel":{}},"k":"target","to":["armed_night"]},"alarm_control_panel.armed_vacation":{"d":{"alarm_control_panel":{}},"k":"target","to":["armed_vacation"]},"alarm_control_panel.disarmed":{"d":{"alarm_control_panel":{}},"k":"target","to":["disarmed"]},"alarm_control_panel.triggered":{"d":{"alarm_control_panel":{}},"k":"target","to":["triggered"]},"assist_satellite.idle":{"d":{"assist_satellite":{}},"k":"target","to":["idle"]},"assist_satellite.listening":{"d":{"assist_satellite":{}},"k":"target","to":["listening"]},"assist_satellite.processing":{"d":{"assist_satellite":{}},"k":"target","to":["processing"]},"assist_satellite.responding":{"d":{"assist_satellite":{}},"k":"target","to":["responding"]},"battery.became_low":{"d":{"binary_sensor":{"dc":["battery"]}},"k":"target","to":["on"]},"battery.level_changed":{"d":{"sensor":{"dc":["battery"]}},"k":"num_changed"},"battery.level_crossed_threshold":{"d":{"sensor":{"dc":["battery"]}},"k":"num_crossed"},"battery.no_longer_low":{"d":{"binary_sensor":{"dc":["battery"]}},"k":"target","to":["off"]},"battery.started_charging":{"d":{"binary_sensor":{"dc":["battery_charging"]}},"k":"target","to":["on"]},"battery.stopped_charging":{"d":{"binary_sensor":{"dc":["battery_charging"]}},"k":"target","to":["off"]},"button.pressed":{"d":{"button":{},"input_button":{}},"k":"stateless"},"climate.hvac_mode_changed":{"d":{"climate":{}},"k":"target"},"climate.started_cooling":{"d":{"climate":{"attr":"hvac_action"}},"k":"target","to":["cooling"]},"climate.started_drying":{"d":{"climate":{"attr":"hvac_action"}},"k":"target","to":["drying"]},"climate.started_heating":{"d":{"climate":{"attr":"hvac_action"}},"k":"target","to":["heating"]},"climate.target_humidity_changed":{"d":{"climate":{"attr":"humidity"}},"k":"num_changed"},"climate.target_humidity_crossed_threshold":{"d":{"climate":{"attr":"humidity"}},"k":"num_crossed"},"climate.target_temperature_changed":{"d":{"climate":{"attr":"temperature"}},"k":"num_changed"},"climate.target_temperature_crossed_threshold":{"d":{"climate":{"attr":"temperature"}},"k":"num_crossed"},"climate.turned_off":{"d":{"climate":{}},"k":"target","to":["off"]},"climate.turned_on":{"d":{"climate":{}},"from":["off"],"k":"transition","to":["auto","cool","dry","fan_only","heat","heat_cool"]},"cover.awning_closed":{"d":{"cover":{"attr":"is_closed","dc":["awning"],"tv":true}},"k":"cover"},"cover.awning_opened":{"d":{"cover":{"attr":"is_closed","dc":["awning"],"tv":false}},"k":"cover"},"cover.blind_closed":{"d":{"cover":{"attr":"is_closed","dc":["blind"],"tv":true}},"k":"cover"},"cover.blind_opened":{"d":{"cover":{"attr":"is_closed","dc":["blind"],"tv":false}},"k":"cover"},"cover.curtain_closed":{"d":{"cover":{"attr":"is_closed","dc":["curtain"],"tv":true}},"k":"cover"},"cover.curtain_opened":{"d":{"cover":{"attr":"is_closed","dc":["curtain"],"tv":false}},"k":"cover"},"cover.shade_closed":{"d":{"cover":{"attr":"is_closed","dc":["shade"],"tv":true}},"k":"cover"},"cover.shade_opened":{"d":{"cover":{"attr":"is_closed","dc":["shade"],"tv":false}},"k":"cover"},"cover.shutter_closed":{"d":{"cover":{"attr":"is_closed","dc":["shutter"],"tv":true}},"k":"cover"},"cover.shutter_opened":{"d":{"cover":{"attr":"is_closed","dc":["shutter"],"tv":false}},"k":"cover"},"door.closed":{"d":{"binary_sensor":{"dc":["door"],"tv":"off"},"cover":{"attr":"is_closed","dc":["door"],"tv":true}},"k":"cover"},"door.opened":{"d":{"binary_sensor":{"dc":["door"],"tv":"on"},"cover":{"attr":"is_closed","dc":["door"],"tv":false}},"k":"cover"},"doorbell.rang":{"d":{"event":{"dc":["doorbell"]}},"k":"stateless"},"event.received":{"d":{"event":{}},"k":"stateless"},"fan.turned_off":{"d":{"fan":{}},"k":"target","to":["off"]},"fan.turned_on":{"d":{"fan":{}},"k":"target","to":["on"]},"garage_door.closed":{"d":{"binary_sensor":{"dc":["garage_door"],"tv":"off"},"cover":{"attr":"is_closed","dc":["garage"],"tv":true}},"k":"cover"},"garage_door.opened":{"d":{"binary_sensor":{"dc":["garage_door"],"tv":"on"},"cover":{"attr":"is_closed","dc":["garage"],"tv":false}},"k":"cover"},"gate.closed":{"d":{"cover":{"attr":"is_closed","dc":["gate"],"tv":true}},"k":"cover"},"gate.opened":{"d":{"cover":{"attr":"is_closed","dc":["gate"],"tv":false}},"k":"cover"},"humidifier.mode_changed":{"d":{"humidifier":{"attr":"mode"}},"k":"target"},"humidifier.started_drying":{"d":{"humidifier":{"attr":"action"}},"k":"target","to":["drying"]},"humidifier.started_humidifying":{"d":{"humidifier":{"attr":"action"}},"k":"target","to":["humidifying"]},"humidifier.turned_off":{"d":{"humidifier":{}},"k":"target","to":["off"]},"humidifier.turned_on":{"d":{"humidifier":{}},"k":"target","to":["on"]},"humidity.changed":{"d":{"climate":{"attr":"current_humidity"},"humidifier":{"attr":"current_humidity"},"sensor":{"dc":["humidity"]},"weather":{"attr":"humidity"}},"k":"num_changed"},"humidity.crossed_threshold":{"d":{"climate":{"attr":"current_humidity"},"humidifier":{"attr":"current_humidity"},"sensor":{"dc":["humidity"]},"weather":{"attr":"humidity"}},"k":"num_crossed"},"illuminance.changed":{"d":{"sensor":{"dc":["illuminance"]}},"k":"num_changed"},"illuminance.cleared":{"d":{"binary_sensor":{"dc":["light"]}},"k":"target","to":["off"]},"illuminance.crossed_threshold":{"d":{"sensor":{"dc":["illuminance"]}},"k":"num_crossed"},"illuminance.detected":{"d":{"binary_sensor":{"dc":["light"]}},"k":"target","to":["on"]},"lawn_mower.became_idle":{"d":{"lawn_mower":{}},"k":"target","to":["idle"]},"lawn_mower.errored":{"d":{"lawn_mower":{}},"k":"target","to":["error"]},"lawn_mower.paused_mowing":{"d":{"lawn_mower":{}},"k":"target","to":["paused"]},"lawn_mower.returned_to_dock":{"d":{"lawn_mower":{}},"k":"target","to":["docked"]},"lawn_mower.started_mowing":{"d":{"lawn_mower":{}},"k":"target","to":["mowing"]},"lawn_mower.started_returning":{"d":{"lawn_mower":{}},"k":"target","to":["returning"]},"light.brightness_changed":{"d":{"light":{"attr":"brightness"}},"k":"num_changed"},"light.brightness_crossed_threshold":{"d":{"light":{"attr":"brightness"}},"k":"num_crossed"},"light.turned_off":{"d":{"light":{}},"k":"target","to":["off"]},"light.turned_on":{"d":{"light":{}},"k":"target","to":["on"]},"lock.jammed":{"d":{"lock":{}},"k":"target","to":["jammed"]},"lock.locked":{"d":{"lock":{}},"k":"target","to":["locked"]},"lock.opened":{"d":{"lock":{}},"k":"target","to":["open"]},"lock.unlocked":{"d":{"lock":{}},"k":"target","to":["unlocked"]},"media_player.paused_playing":{"d":{"media_player":{}},"from":["buffering","playing"],"k":"transition","to":["paused"]},"media_player.started_playing":{"d":{"media_player":{}},"from":["idle","off","on","paused"],"k":"transition","to":["buffering","playing"]},"media_player.stopped_playing":{"d":{"media_player":{}},"from":["buffering","paused","playing"],"k":"transition","to":["idle","off","on"]},"media_player.turned_off":{"d":{"media_player":{}},"from":["buffering","idle","on","paused","playing"],"k":"transition","to":["off"]},"media_player.turned_on":{"d":{"media_player":{}},"from":["off"],"k":"transition","to":["buffering","idle","on","paused","playing"]},"media_player.volume_changed":{"d":{"media_player":{"attr":"volume_level"}},"k":"num_changed"},"media_player.volume_crossed_threshold":{"d":{"media_player":{"attr":"volume_level"}},"k":"num_crossed"},"moisture.changed":{"d":{"sensor":{"dc":["moisture"]}},"k":"num_changed"},"moisture.cleared":{"d":{"binary_sensor":{"dc":["moisture"]}},"k":"target","to":["off"]},"moisture.crossed_threshold":{"d":{"sensor":{"dc":["moisture"]}},"k":"num_crossed"},"moisture.detected":{"d":{"binary_sensor":{"dc":["moisture"]}},"k":"target","to":["on"]},"motion.cleared":{"d":{"binary_sensor":{"dc":["motion"]}},"k":"target","to":["off"]},"motion.detected":{"d":{"binary_sensor":{"dc":["motion"]}},"k":"target","to":["on"]},"occupancy.cleared":{"d":{"binary_sensor":{"dc":["occupancy"]}},"k":"target","to":["off"]},"occupancy.detected":{"d":{"binary_sensor":{"dc":["occupancy"]}},"k":"target","to":["on"]},"power.changed":{"d":{"sensor":{"dc":["power"]}},"k":"num_changed"},"power.crossed_threshold":{"d":{"sensor":{"dc":["power"]}},"k":"num_crossed"},"remote.turned_off":{"d":{"remote":{}},"k":"target","to":["off"]},"remote.turned_on":{"d":{"remote":{}},"k":"target","to":["on"]},"scene.activated":{"d":{"scene":{}},"k":"stateless"},"schedule.block_ended":{"d":{"schedule":{}},"k":"target","to":["off"]},"schedule.block_started":{"d":{"schedule":{}},"from":["off","on"],"k":"transition","to":["on"]},"siren.turned_off":{"d":{"siren":{}},"k":"target","to":["off"]},"siren.turned_on":{"d":{"siren":{}},"k":"target","to":["on"]},"sun.elevation_changed":{"d":{"sun":{"attr":"elevation"}},"k":"num_changed"},"sun.elevation_crossed_threshold":{"d":{"sun":{"attr":"elevation"}},"k":"num_crossed"},"switch.turned_off":{"d":{"input_boolean":{},"switch":{}},"k":"target","to":["off"]},"switch.turned_on":{"d":{"input_boolean":{},"switch":{}},"k":"target","to":["on"]},"temperature.changed":{"d":{"climate":{"attr":"current_temperature"},"sensor":{"dc":["temperature"]},"water_heater":{"attr":"current_temperature"},"weather":{"attr":"temperature"}},"k":"num_changed"},"temperature.crossed_threshold":{"d":{"climate":{"attr":"current_temperature"},"sensor":{"dc":["temperature"]},"water_heater":{"attr":"current_temperature"},"weather":{"attr":"temperature"}},"k":"num_crossed"},"timer.cancelled":{"d":{"timer":{"attr":"last_transition"}},"k":"target","to":["cancelled"]},"timer.finished":{"d":{"timer":{"attr":"last_transition"}},"k":"target","to":["finished"]},"timer.paused":{"d":{"timer":{"attr":"last_transition"}},"k":"target","to":["paused"]},"timer.restarted":{"d":{"timer":{"attr":"last_transition"}},"k":"target","to":["restarted"]},"timer.started":{"d":{"timer":{"attr":"last_transition"}},"k":"target","to":["started"]},"update.became_available":{"d":{"update":{}},"k":"target","to":["on"]},"vacuum.errored":{"d":{"vacuum":{}},"k":"target","to":["error"]},"vacuum.paused_cleaning":{"d":{"vacuum":{}},"k":"target","to":["paused"]},"vacuum.returned_to_dock":{"d":{"vacuum":{}},"k":"target","to":["docked"]},"vacuum.started_cleaning":{"d":{"vacuum":{}},"k":"target","to":["cleaning"]},"vacuum.started_returning":{"d":{"vacuum":{}},"k":"target","to":["returning"]},"valve.closed":{"d":{"valve":{"attr":"is_closed"}},"from":[false],"k":"transition","to":[true]},"valve.opened":{"d":{"valve":{"attr":"is_closed"}},"from":[true],"k":"transition","to":[false]},"vibration.cleared":{"d":{"binary_sensor":{"dc":["vibration"]}},"k":"target","to":["off"]},"vibration.detected":{"d":{"binary_sensor":{"dc":["vibration"]}},"k":"target","to":["on"]},"water_heater.operation_mode_changed":{"d":{"water_heater":{}},"k":"target"},"water_heater.target_temperature_changed":{"d":{"water_heater":{"attr":"temperature"}},"k":"num_changed"},"water_heater.target_temperature_crossed_threshold":{"d":{"water_heater":{"attr":"temperature"}},"k":"num_crossed"},"water_heater.turned_off":{"d":{"water_heater":{}},"k":"target","to":["off"]},"water_heater.turned_on":{"d":{"water_heater":{}},"from":["off"],"k":"origin"},"window.closed":{"d":{"binary_sensor":{"dc":["window"],"tv":"off"},"cover":{"attr":"is_closed","dc":["window"],"tv":true}},"k":"cover"},"window.opened":{"d":{"binary_sensor":{"dc":["window"],"tv":"on"},"cover":{"attr":"is_closed","dc":["window"],"tv":false}},"k":"cover"}}/* SBX_ETRIG:end */;
+  // the ones with rules of their own (their trigger classes override the checks)
+  const SBX_ETRIG_OWN = {
+    'event.received': { k: 'stateless', d: { event: {} }, evt: 'options' },
+    'doorbell.rang': { k: 'stateless', d: { event: { dc: ['doorbell'] } }, evt: ['ring'] },
+    'counter.incremented': { k: 'counter', d: { counter: {} }, op: 'up' },
+    'counter.decremented': { k: 'counter', d: { counter: {} }, op: 'down' },
+    'counter.maximum_reached': { k: 'counter', d: { counter: {} }, op: 'max' },
+    'counter.minimum_reached': { k: 'counter', d: { counter: {} }, op: 'min' },
+    'counter.reset': { k: 'counter', d: { counter: {} }, op: 'reset' },
+    'select.selection_changed': { k: 'changed', d: { select: {}, input_select: {} } },
+    'media_player.muted': { k: 'target', d: { media_player: { attr: 'is_volume_muted' } }, to: [true] },
+    'media_player.unmuted': { k: 'target', d: { media_player: { attr: 'is_volume_muted' } }, to: [false] },
+  };
+  // the triggers the sandbox follows; the rest it says it can't, and Run with that trigger stands in
+  const SBX_PLATS = new Set(['state', 'numeric_state', 'event', 'time', 'time_pattern', 'template', 'mqtt']);
+  // calls that only send or log a message: nothing for the sandbox to change
+  const SBX_MSG = new Set(['notify', 'persistent_notification', 'tts', 'system_log', 'logbook', 'assist_satellite', 'telegram_bot', 'mobile_app']);
+  const sbxTopic = (pat, topic) => {
+    const p = String(pat).split('/'), t = String(topic).split('/');
+    for (let i = 0; i < p.length; i++) {
+      if (p[i] === '#') return true;
+      if (i >= t.length || (p[i] !== '+' && p[i] !== t[i])) return false;
+    }
+    return p.length === t.length;
+  };
 
   class Sandbox {
     // o: { states (Home Assistant's, read, never written), items: [{ id, cfg }], now, tz, tpl(template, vars) → { ok, value,
@@ -3228,6 +3269,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     // ---- start: arm the time and template triggers
     async start() {
       this._fresh();
+      const not = [];
+      this.items.forEach((it) => { if (it.kind === 'automation') this._trigs(it).forEach((t) => { const p = this._plat(t); if (t.enabled !== false && !SBX_PLATS.has(p) && !this._espec(p)) not.push(`${this._name(it.id)}: ${p}`); }); });
+      if (not.length) this._log({ kind: 'note', text: T('sbx_not_followed', { list: [...new Set(not)].join(', ') }) });
       this.items.forEach((it) => { if (it.kind === 'automation') this._trigs(it).forEach((t, i) => this._armTime(it, t, i)); });
       for (const it of this.items.values()) {
         if (it.kind !== 'automation') continue;
@@ -3256,12 +3300,25 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._task(() => this.fireEvent(type, data || {}, null, true));
       await this.settle();
     }
-    async userRun(id, checkConds) {
+    // run it as if one of its triggers fired (ti), or with none
+    async userRun(id, checkConds, ti) {
       this._fresh();
       const it = this.items.get(id);
       if (!it) return;
-      const cause = this._log({ kind: 'trigger', key: id, text: T('sbx_run_by_you'), by: 'you' });
-      this._start(it, { trigger: { platform: null, id: 'manual', idx: 'manual' } }, cause, { conds: checkConds });
+      const t = ti != null && it.kind === 'automation' ? this._trigs(it)[ti] : null;
+      let trigger = { platform: null, id: 'manual', idx: 'manual' };
+      if (t) {
+        const p = this._plat(t), spec = this._espec(p);
+        trigger = { platform: p, id: t.id != null ? String(t.id) : String(ti), idx: String(ti) };
+        const ents = p === 'state' || p === 'numeric_state' ? toList(t.entity_id) : spec ? this._etargets(t, spec) : [];
+        const e = ents.find((x) => typeof x === 'string');
+        if (e) { const o = this.obj(e); Object.assign(trigger, { entity_id: e, from_state: o, to_state: o }); }
+        if (p === 'event') trigger.event = { event_type: toList(t.event_type)[0], data: t.event_data || {} };
+        if (p === 'mqtt') Object.assign(trigger, { topic: t.topic, payload: t.payload != null ? String(t.payload) : '' });
+        if (p === 'time' || p === 'time_pattern') trigger.now = this.iso();
+      }
+      const cause = this._log({ kind: 'trigger', key: id, text: t ? T('sbx_run_as', { n: ti + 1, p: this._plat(t) }) : T('sbx_run_by_you'), by: 'you' });
+      this._start(it, { trigger }, cause, { conds: checkConds });
       await this.settle();
     }
     // a service call made by you (a kept test button, say): done on the sandbox like one in a script
@@ -3275,6 +3332,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     async setState(id, state, attrs, cause, byYou) {
       const old = this.get(id), was = old ? old.state : null;
       const A = Object.assign({}, old ? old.attributes : {}, attrs || {});
+      // a cover's opened and closed triggers read is_closed
+      if (id.startsWith('cover.') && !(attrs && 'is_closed' in attrs) && ['open', 'closed', 'opening', 'closing'].includes(state)) A.is_closed = state === 'closed';
       const sameAttrs = canon(A) === canon(old ? old.attributes : {});
       if (old && was === state && sameAttrs) {
         if (byYou) this._log({ kind: 'note', key: id, text: T('sbx_already', { name: this._name(id), state }) });
@@ -3299,6 +3358,35 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       }
       [...this.waiters].forEach((w) => w.onEvent && w.onEvent(ev, lid));
       return lid;
+    }
+    // an MQTT message: the triggers on its topic (+ and # wildcards), and a publish in a script reaches them too
+    async _mqttMatch(t, msg) {
+      if (!t.topic || !sbxTopic(t.topic, msg.topic)) return false;
+      if (t.payload == null) return true;
+      let v = msg.payload;
+      if (t.value_template) { const r = await this.o.tpl(String(t.value_template), { value: msg.payload, value_json: msg.payload_json }); v = r.ok ? r.value : undefined; }
+      return String(v) === String(t.payload);
+    }
+    async mqtt(topic, payload, cause, byYou) {
+      const text = typeof payload === 'string' ? payload : payload == null ? '' : JSON.stringify(payload);
+      let pj = null;
+      try { pj = JSON.parse(text); } catch (e) { /* not JSON */ }
+      const msg = { topic: String(topic), payload: text, payload_json: pj, qos: 0 };
+      const lid = this._log({ kind: 'mqtt', key: 'mqtt:' + msg.topic, text: msg.topic, payload: text, cause, by: byYou ? 'you' : null });
+      for (const it of this.items.values()) {
+        if (it.kind !== 'automation' || !this._on(it)) continue;
+        const ts = this._trigs(it);
+        for (let i = 0; i < ts.length; i++) {
+          if (ts[i].enabled !== false && this._plat(ts[i]) === 'mqtt' && await this._mqttMatch(ts[i], msg)) this._fire(it, i, Object.assign({ platform: 'mqtt' }, msg), lid);
+        }
+      }
+      [...this.waiters].forEach((w) => w.onMqtt && w.onMqtt(msg, lid));
+      return lid;
+    }
+    async userMqtt(topic, payload) {
+      this._fresh();
+      this._task(() => this.mqtt(topic, payload, null, true));
+      await this.settle();
     }
     _sval(t, s) { return s == null ? null : t.attribute != null ? s.attributes[t.attribute] : s.state; }
     _stateMatch(t, id, old, nu) {
@@ -3338,7 +3426,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     async _onState(id, old, nu, lid) {
       // a `for:` waiting on this entity: still matching, or let go
       for (const [k, p] of [...this.pend]) {
-        if (p.id !== id) continue;
+        if (p.id == null || p.id !== id) continue;
         if (!(await p.still(nu))) { this._drop(p.timer); this.pend.delete(k); }
       }
       for (const it of this.items.values()) {
@@ -3360,12 +3448,102 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
             }
           } else if (p === 'template' && this._reads(t.value_template, id)) {
             await this._tplTrig(it, i, t, lid);
+          } else if (this._espec(p) && this._eFires(this._espec(p), t, id, old, nu)) {
+            const spec = this._espec(p), vars = { platform: p, entity_id: id, from_state: old ? this.obj0(id, old) : null, to_state: this.obj0(id, nu) };
+            await this._fireFor(it, i, Object.assign({}, t, { for: (t.options || {}).for }), vars, lid, id, async (st) => this._eValid(spec, t, id, st));
           } else if (p === 'time' && toList(t.at).includes(id)) {
             this._armTime(it, t, i);
           }
         }
       }
       [...this.waiters].forEach((w) => w.onState && w.onState(id, old, nu, lid));
+    }
+    // ---- Home Assistant's per-entity triggers, by the rules of its trigger classes
+    _espec(p) { return typeof p === 'string' ? SBX_ETRIG_OWN[p] || SBX_ETRIG[p] || null : null; }
+    _etargets(t, spec) {
+      const tg = t.target || {}, out = new Set(), direct = new Set();
+      toList(tg.entity_id).forEach((x) => { if (typeof x === 'string' && EXACT_RE.test(x)) { out.add(x); direct.add(x); } });
+      ['area_id', 'floor_id', 'label_id', 'device_id'].forEach((k) => toList(tg[k]).forEach((x) => {
+        if (typeof x === 'string' && this.o.resolve) this.o.resolve((k === 'device_id' ? 'device' : k.slice(0, -3)) + ':' + x).forEach((e) => out.add(e));
+      }));
+      return [...out].filter((id) => {
+        const ds = spec.d[id.split('.')[0]];
+        if (!ds) return false;
+        if (direct.has(id) || !ds.dc) return true;
+        const st = this.get(id);
+        return !!st && ds.dc.includes(st.attributes.device_class);
+      });
+    }
+    _eval(spec, id, st) {
+      if (!st) return undefined;
+      const ds = spec.d[id.split('.')[0]] || {};
+      if (!ds.attr) return st.state;
+      const v = st.attributes[ds.attr];
+      if (v == null && ds.attr === 'is_closed') return st.state === 'closed' ? true : ['open', 'opening', 'closing'].includes(st.state) ? false : null;
+      return v;
+    }
+    _eThr(t, v) {
+      if (v == null || !isFinite(v)) return false;
+      const th = (t.options || {}).threshold || {}, type = th.type || 'any';
+      const lim = (c) => (c == null ? null : typeof c === 'number' ? c : c.number != null ? parseFloat(c.number) : c.entity ? this._limit(c.entity) : null);
+      if (type === 'any') return true;
+      if (type === 'above') { const l = lim(th.value); return l != null && v > l; }
+      if (type === 'below') { const l = lim(th.value); return l != null && v < l; }
+      const a = lim(th.value_min), b = lim(th.value_max);
+      if (a == null || b == null) return false;
+      const btw = a <= v && v <= b;
+      return type === 'between' ? btw : !btw;
+    }
+    _eValid(spec, t, id, st) {
+      if (!st) return false;
+      const v = this._eval(spec, id, st), has = (l, x) => toList(l).some((y) => y === x || String(y) === String(x));
+      switch (spec.k) {
+        case 'target': case 'transition': return has(spec.to, v);
+        case 'origin': return String(v) !== String(toList(spec.from)[0]);
+        case 'stateless':
+          if (spec.evt === 'options') return has((t.options || {}).event_type, st.attributes.event_type);
+          return Array.isArray(spec.evt) ? spec.evt.includes(st.attributes.event_type) : true;
+        case 'num_changed': case 'num_crossed': { const n = parseFloat(v); return this._eThr(t, isFinite(n) ? n : null); }
+        case 'cover': { const ds = spec.d[id.split('.')[0]] || {}; return v === ds.tv || String(v) === String(ds.tv); }
+        case 'counter': {
+          const n = parseFloat(st.state), A = st.attributes || {};
+          if (spec.op === 'max') return n === parseFloat(A.maximum);
+          if (spec.op === 'min') return n === parseFloat(A.minimum);
+          if (spec.op === 'reset') return n === parseFloat(A.initial == null ? 0 : A.initial);
+          return true;
+        }
+        default: return true;
+      }
+    }
+    _eTrans(spec, t, id, old, nu) {
+      if (!old || !nu || ['unavailable', 'unknown'].includes(nu.state)) return false;
+      if ((spec.k === 'stateless' ? ['unavailable'] : ['unavailable', 'unknown']).includes(old.state)) return false;
+      const a = this._eval(spec, id, old), b = this._eval(spec, id, nu), same = canon(a) === canon(b), has = (l, x) => toList(l).some((y) => String(y) === String(x));
+      switch (spec.k) {
+        case 'target': return !same && !has(spec.to, a);
+        case 'transition': return !same && has(spec.from, a);
+        case 'origin': { const f = String(toList(spec.from)[0]); return String(a) === f && String(b) !== f; }
+        case 'stateless': case 'changed': return old.state !== nu.state;
+        case 'num_changed': return !same;
+        case 'num_crossed': return !this._eValid(spec, t, id, old);
+        case 'cover': return a != null && !same;
+        case 'counter': {
+          const x = parseFloat(old.state), y = parseFloat(nu.state);
+          if (!isFinite(x) || !isFinite(y)) return false;
+          return spec.op === 'up' ? y > x : spec.op === 'down' ? y < x : x !== y;
+        }
+        default: return false;
+      }
+    }
+    // does this change fire this per-entity trigger, by its behavior (each, first, all)
+    _eFires(spec, t, id, old, nu) {
+      const ents = this._etargets(t, spec);
+      if (!ents.includes(id) || !this._eTrans(spec, t, id, old, nu) || !this._eValid(spec, t, id, nu)) return false;
+      const beh = (t.options || {}).behavior || 'each';
+      const others = ents.filter((e) => e !== id).map((e) => [e, this.get(e)]).filter(([, st]) => st && !['unavailable', 'unknown'].includes(st.state));
+      if (beh === 'first' || beh === 'any_first') return !others.some(([e, st]) => this._eValid(spec, t, e, st));
+      if (beh === 'all' || beh === 'last') return others.every(([e, st]) => this._eValid(spec, t, e, st));
+      return true;
     }
     obj0(id, s) { return { entity_id: id, state: s.state, attributes: s.attributes, last_changed: s.last_changed, last_updated: s.last_updated }; }
     // does a template read this entity (or read states broadly, so it might)
@@ -3385,9 +3563,17 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     }
     async _tplTrig(it, i, t, lid) {
       const k = it.id + '#' + i, r = await this.o.tpl(String(t.value_template), this._vars(null));
-      const v = r.ok ? asBool(r.value) : null, was = this.tplLast.get(k);
+      const v = r.ok ? asBool(r.value) : null, was = this.tplLast.get(k), pk = 'tpl:' + k;
       this.tplLast.set(k, v);
-      if (v === true && was === false) this._fire(it, i, { platform: 'template', entity_id: null }, lid, r.partly);
+      // with for:, it must stay true that long; false again lets the wait go
+      if (v !== true) { const p = this.pend.get(pk); if (p) { this._drop(p.timer); this.pend.delete(pk); } return; }
+      if (was !== false) return;
+      const vars = { platform: 'template', entity_id: null };
+      let ms = t.for != null ? durMs(typeof t.for === 'object' ? t.for : TPL_RE.test(String(t.for)) ? (await this.o.tpl(String(t.for), {})).value : t.for) : null;
+      if (ms == null || ms <= 0) { this._fire(it, i, vars, lid, r.partly); return; }
+      vars.for = fmtDur(ms);
+      const timer = this._at(this.now + ms, () => { this.pend.delete(pk); this._task(() => this._fire(it, i, vars, lid, r.partly)); }, null, T('sbx_for_label', { name: this._name(it.id), d: fmtDur(ms) }), it.id);
+      this.pend.set(pk, { id: null, timer, still: async () => true });
     }
     async _timeTemplates() {
       for (const it of this.items.values()) {
@@ -3796,6 +3982,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         return;
       }
       if (dom === 'timer') { for (const id of ents) await this._timer(id, s, data, cid); return; }
+      if (svc === 'mqtt.publish') { await this.mqtt(data.topic, data.payload != null ? data.payload : data.payload_template, cid); return; }
+      if (SBX_MSG.has(dom)) { entry.msg = true; if (this.o.onLog) this.o.onLog(entry, true); return; }
       let known = ents.length > 0;
       for (const id of ents) {
         const ed = id.split('.')[0], sv = generic ? ((HA_GENERIC[ed] || {})[s] || s) : s;
@@ -3835,11 +4023,36 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (!done && a.continue_on_timeout === false) throw Object.assign({}, SBX_STOP, { text: T('sbx_timed_out') });
     }
     async _waitTrig(a, run) {
-      const ts = toList(a.wait_for_trigger), ms = a.timeout != null ? durMs(await this._render(a.timeout, run)) : null;
+      const ts = toList(a.wait_for_trigger).filter((t) => t && typeof t === 'object' && t.enabled !== false), ms = a.timeout != null ? durMs(await this._render(a.timeout, run)) : null;
       this._log({ kind: 'wait', key: run.item.id, cause: run.cause, text: T('sbx_wait_trig', { d: ms == null ? '' : ' ' + T('sbx_up_to', { d: fmtDur(ms) }) }) });
+      const tid = (t, i) => (t.id != null ? String(t.id) : String(i));
+      // template triggers fire on becoming true: what they are when the wait starts
+      const tplWas = new Map();
+      for (let i = 0; i < ts.length; i++) {
+        if (this._plat(ts[i]) === 'template') { const r = await this._tpl(ts[i].value_template, run); tplWas.set(i, r.ok ? asBool(r.value) : null); }
+      }
       const done = await this._waitFor(run, ms, (w) => ({
-        onState: (id, old, nu) => { ts.forEach((t, i) => { const p = this._plat(t); if (p === 'state' && this._stateMatch(t, id, old, nu)) w.res({ platform: p, idx: String(i), id: t.id != null ? String(t.id) : String(i), entity_id: id, to_state: this.obj0(id, nu) }); }); },
-        onEvent: (ev) => { ts.forEach((t, i) => { if (this._plat(t) === 'event' && toList(t.event_type).includes(ev.event_type) && subsetOf(t.event_data, ev.data)) w.res({ platform: 'event', idx: String(i), id: t.id != null ? String(t.id) : String(i), event: ev }); }); },
+        onState: async (id, old, nu) => {
+          this.busy++;
+          try {
+            for (let i = 0; i < ts.length && !w.fin; i++) {
+              const t = ts[i], p = this._plat(t), spec = this._espec(p), base = { platform: p, idx: String(i), id: tid(t, i), entity_id: id, from_state: old ? this.obj0(id, old) : null, to_state: this.obj0(id, nu) };
+              if (p === 'state' && this._stateMatch(t, id, old, nu)) w.res(base);
+              else if (p === 'numeric_state' && toList(t.entity_id).includes(id) && !this._inRange(t, await this._numVal(t, id, old, run)) && this._inRange(t, await this._numVal(t, id, nu, run))) w.res(base);
+              else if (spec && this._eFires(spec, t, id, old, nu)) w.res(base);
+              else if (p === 'template' && this._reads(t.value_template, id)) {
+                const r = await this._tpl(t.value_template, run), v = r.ok ? asBool(r.value) : null;
+                if (v === true && tplWas.get(i) === false) w.res({ platform: 'template', idx: String(i), id: tid(t, i), entity_id: null });
+                tplWas.set(i, v);
+              }
+            }
+          } finally { this.busy--; }
+        },
+        onEvent: (ev) => { ts.forEach((t, i) => { if (this._plat(t) === 'event' && toList(t.event_type).includes(ev.event_type) && subsetOf(t.event_data, ev.data)) w.res({ platform: 'event', idx: String(i), id: tid(t, i), event: ev }); }); },
+        onMqtt: async (msg) => {
+          this.busy++;
+          try { for (let i = 0; i < ts.length && !w.fin; i++) if (this._plat(ts[i]) === 'mqtt' && await this._mqttMatch(ts[i], msg)) w.res(Object.assign({ platform: 'mqtt', idx: String(i), id: tid(ts[i], i) }, msg)); } finally { this.busy--; }
+        },
       }), T('sbx_wait_label', { name: this._name(run.item.id) }));
       run.vars.wait = { trigger: done || null, remaining: 0, completed: !!done };
       if (!done && a.continue_on_timeout === false) throw Object.assign({}, SBX_STOP, { text: T('sbx_timed_out') });
@@ -3880,6 +4093,10 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     '{%- set fb_expand = _fb_expand | as_function -%}',
     "{%- macro _fb_domain(d, returns) -%}{%- do returns(states[d] | map(attribute='entity_id') | map('apply', fb_obj) | list) -%}{%- endmacro -%}",
     '{%- set fb_domain = _fb_domain | as_function -%}',
+    "{%- macro _fb_index(x, returns) -%}{%- if x is string and '.' in x -%}{%- do returns(fb_obj(x)) -%}{%- else -%}{%- do returns(fb_domain(x)) -%}{%- endif -%}{%- endmacro -%}",
+    '{%- set fb_index = _fb_index | as_function -%}',
+    "{%- macro _fb_all(returns) -%}{%- do returns(states | map(attribute='entity_id') | map('apply', fb_obj) | list) -%}{%- endmacro -%}",
+    '{%- set fb_all = _fb_all | as_function -%}',
     "{%- macro _fb_now(returns) -%}{%- do returns((as_datetime(fb_t) | as_local) if fb_t else now()) -%}{%- endmacro -%}",
     '{%- set fb_now = _fb_now | as_function -%}',
     "{%- macro _fb_utcnow(returns) -%}{%- do returns(as_datetime(fb_t) if fb_t else utcnow()) -%}{%- endmacro -%}",
@@ -3907,6 +4124,22 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     s = s.replace(/(?<![\w.])states\s*\[\s*(['"])([a-z_]+)\1\s*\]/g, (m, q, d) => `fb_domain('${d}')`);
     // calls: is_state( → fb_is_state(
     s = s.replace(new RegExp('(?<![\\w.])(' + SBX_FNS.join('|') + ')\\s*\\(', 'g'), (m, f) => `fb_${f}(`);
+    // states[anything] → fb_index(anything): an entity or a domain, looked up when it renders
+    const sub = /(?<![\w.'"])states\s*\[/g;
+    let out = '', from = 0, m0;
+    while ((m0 = sub.exec(s))) {
+      let depth = 1, j = sub.lastIndex, q = null;
+      for (; j < s.length && depth; j++) {
+        const c = s[j];
+        if (q) { if (c === q) q = null; } else if (c === '"' || c === "'") q = c; else if (c === '[') depth++; else if (c === ']') depth--;
+      }
+      if (depth) break;
+      out += s.slice(from, m0.index) + 'fb_index(' + s.slice(sub.lastIndex, j - 1) + ')';
+      from = j; sub.lastIndex = j;
+    }
+    s = out + s.slice(from);
+    // every state at once: states | ..., for x in states
+    s = s.replace(/(?<![\w.'"])states(?![\w(.[])/g, 'fb_all()');
     const left = new Set();
     if (/(?<![\w.'"])states(?![\w(])/.test(s)) left.add('states');
     ['closest', 'distance', 'state_translated', 'device_attr', 'is_device_attr'].forEach((f) => { if (new RegExp('(?<![\\w.])' + f + '\\b').test(s)) left.add(f); });
@@ -5966,6 +6199,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     _onChange(e) {
       const t = e.target, g = this._mgr;
       if (t.classList && t.classList.contains('sbent')) { this._sbxPick(t.value); return; }
+      if (t.classList && t.classList.contains('sbrun')) { this._sbxTrigs(); return; }
       if (t.hasAttribute && t.hasAttribute('data-nr')) {
         // the Node-RED switch is yours, for every function: off means no request to Node-RED at all
         this._data.ui.nodered = t.checked; this._save(); this._nrCache = null;
@@ -7427,13 +7661,31 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const evs = [...m.nodes.keys()].filter((k) => k.startsWith('event:')).map((k) => k.slice(6));
       ['timer.finished', 'timer.cancelled'].forEach((x) => { if (!evs.includes(x) && ents.some((e) => e.startsWith('timer.'))) evs.push(x); });
       const runs = [...g.eng.items.keys()].sort((a, b) => nm(a).localeCompare(nm(b)));
+      const topics = new Set([...m.nodes.keys()].filter((k) => k.startsWith('mqtt:')).map((k) => k.slice(5)));
+      g.eng.items.forEach((it) => { if (it.kind === 'automation') g.eng._trigs(it).forEach((t) => { if (g.eng._plat(t) === 'mqtt' && t.topic && !/[+#]/.test(t.topic)) topics.add(String(t.topic)); }); });
       const opt = (k) => `<option value="${esc(k)}">${esc(nm(k))}</option>`;
       box.innerHTML = `<div class="sbrow"><span class="sbl">${T('sbx_set')}</span><select class="sbent" aria-label="${T('sbx_entity')}">${ents.map(opt).join('')}</select><input class="sbval" list="sbvals" aria-label="${T('sbx_state')}" placeholder="${T('sbx_state')}"><datalist id="sbvals"></datalist><button class="chip" data-act="sbx-set">${T('sbx_set_b')}</button></div>`
         + `<div class="sbrow"><span class="sbl">${T('sbx_event')}</span><input class="sbev" list="sbevs" aria-label="${T('sbx_event_type')}" placeholder="${T('sbx_event_type')}"><datalist id="sbevs">${evs.map((x) => `<option value="${esc(x)}"></option>`).join('')}</datalist><input class="sbevd" aria-label="${T('sbx_event_data')}" placeholder='${T('sbx_event_data_ph')}'><button class="chip" data-act="sbx-fire">${T('sbx_fire')}</button></div>`
-        + `<div class="sbrow"><span class="sbl">${T('sbx_run')}</span><select class="sbrun" aria-label="${T('sbx_run_what')}">${runs.map(opt).join('')}</select><label class="sbcb"><input type="checkbox" class="sbconds" checked>${T('sbx_check_conds')}</label><button class="chip" data-act="sbx-run">${T('sbx_run_b')}</button></div>`
+        + (topics.size ? `<div class="sbrow"><span class="sbl">MQTT</span><input class="sbtop" list="sbtops" aria-label="${T('sbx_topic')}" placeholder="${T('sbx_topic')}"><datalist id="sbtops">${[...topics].map((x) => `<option value="${esc(x)}"></option>`).join('')}</datalist><input class="sbpay" aria-label="${T('sbx_payload')}" placeholder="${T('sbx_payload')}"><button class="chip" data-act="sbx-mqtt">${T('sbx_send')}</button></div>` : '')
+        + `<div class="sbrow"><span class="sbl">${T('sbx_run')}</span><select class="sbrun" aria-label="${T('sbx_run_what')}">${runs.map(opt).join('')}</select><select class="sbtrig" aria-label="${T('sbx_as_if')}"></select><label class="sbcb"><input type="checkbox" class="sbconds" checked>${T('sbx_check_conds')}</label><button class="chip" data-act="sbx-run">${T('sbx_run_b')}</button></div>`
         + `<div class="sbrow"><span class="sbl">${T('sbx_clock')}</span><button class="chip" data-act="sbx-adv" data-ms="60000">+1 min</button><button class="chip" data-act="sbx-adv" data-ms="600000">+10 min</button><button class="chip" data-act="sbx-adv" data-ms="3600000">+1 h</button><button class="chip sbnext" data-act="sbx-next"></button></div>`;
       const pick = this._sel && ents.includes(this._sel) ? this._sel : ents[0];
       if (pick) this._sbxPick(pick);
+      this._sbxTrigs();
+    }
+    // the triggers of the automation picked under Run: run it as if one of them fired
+    _sbxTrigs() {
+      const d = this._$.drawer, run = d.querySelector('.sbrun'), sel = d.querySelector('.sbtrig'), g = this._sbx;
+      if (!run || !sel || !g) return;
+      const it = g.eng.items.get(run.value), ts = it && it.kind === 'automation' ? g.eng._trigs(it) : [];
+      const what = (t) => {
+        const p = g.eng._plat(t), spec = g.eng._espec(p);
+        const ents = p === 'state' || p === 'numeric_state' ? toList(t.entity_id) : spec ? g.eng._etargets(t, spec) : [];
+        const x = ents.length ? ents.map((e) => this._boxName(e)).join(', ') : p === 'event' ? toList(t.event_type).join(', ') : p === 'mqtt' ? t.topic : p === 'time' ? toList(t.at).join(', ') : '';
+        return `${p}${x ? ': ' + x : ''}${t.id != null ? ` (id ${t.id})` : ''}`;
+      };
+      sel.innerHTML = ts.map((t, i) => `<option value="${i}">${esc(T('sbx_as_trigger', { n: i + 1, what: shorten(what(t), 50) }))}</option>`).join('') + `<option value="">${esc(T('sbx_no_trigger'))}</option>`;
+      sel.hidden = !ts.length;
     }
     _sbxPick(k) {
       const d = this._$.drawer, sel = d.querySelector('.sbent'), dl = d.querySelector('#sbvals'), val = d.querySelector('.sbval');
@@ -7484,7 +7736,17 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           this._sbxDo((e) => e.userEvent(type, data));
           break;
         }
-        case 'sbx-run': { const id = q('.sbrun').value; if (id) this._sbxDo((e) => e.userRun(id, q('.sbconds').checked)); break; }
+        case 'sbx-run': {
+          const id = q('.sbrun').value, tv = q('.sbtrig') && !q('.sbtrig').hidden ? q('.sbtrig').value : '';
+          if (id) this._sbxDo((e) => e.userRun(id, q('.sbconds').checked, tv === '' ? null : +tv));
+          break;
+        }
+        case 'sbx-mqtt': {
+          const topic = q('.sbtop').value.trim();
+          if (!topic) { this._toast(T('sbx_pick_topic')); return; }
+          this._sbxDo((e) => e.userMqtt(topic, q('.sbpay').value));
+          break;
+        }
         case 'sbx-adv': this._sbxDo((e) => e.advance(+el.dataset.ms)); break;
         case 'sbx-next': this._sbxDo((e) => e.toNext()); break;
         case 'sbx-reset': this._sbxReset(); break;
@@ -7504,7 +7766,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         if (e.kind === 'state') return { kind: 'state', key: e.key, state: e.to };
         if (e.kind === 'trigger') return { kind: 'run', key: e.key };
         if (e.kind === 'call') return { kind: 'call', key: (e.ents && e.ents[0]) || e.key, svc: e.svc };
-        if (e.kind === 'event') return { kind: 'note', key: e.key, text: e.text };
+        if (e.kind === 'event' || e.kind === 'mqtt') return { kind: 'note', key: e.key, text: e.text };
         return { kind: 'note', key: e.key, text: this._sbxText(e).main };
       });
       if (!auto) this._renderSbx();
@@ -7517,7 +7779,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         case 'event': return { main: T('sbx_event_x', { type: e.text }), sub: e.by === 'you' ? T('sbx_by_you') : (by(e.cause) && by(e.cause).key ? T('sbx_by', { name: nm(by(e.cause).key) }) : '') };
         case 'trigger': return { main: T('sbx_triggered', { name: nm(e.key) }), sub: e.ent ? `${nm(e.ent)} → ${this._fmtState(e.ent, e.to)}` : e.text, cls: 'blue' };
         case 'cond': return { main: `${e.text}: ${e.ok ? T('sbx_true') : T('sbx_false')}`, sub: e.why || '', cls: e.ok ? '' : 'red' };
-        case 'call': return { main: `${e.svc}${e.ents && e.ents.length ? ' → ' + e.ents.map(nm).join(', ') : ''}`, sub: e.unknown ? T('sbx_unknown') : nm(e.key), cls: e.unknown ? 'amber' : '' };
+        case 'call': return { main: `${e.svc}${e.ents && e.ents.length ? ' → ' + e.ents.map(nm).join(', ') : ''}`, sub: e.msg ? T('sbx_msg') : e.unknown ? T('sbx_unknown') : nm(e.key), cls: e.unknown && !e.msg ? 'amber' : '' };
+        case 'mqtt': return { main: `MQTT ${e.text}${e.payload ? ': ' + shorten(e.payload, 60) : ''}`, sub: e.by === 'you' ? T('sbx_by_you') : (by(e.cause) && by(e.cause).key ? T('sbx_by', { name: nm(by(e.cause).key) }) : '') };
         case 'run': return { main: `${nm(e.key)} · ${({ stopped: T('sbx_out_stopped'), cancelled: T('sbx_out_cancelled'), error: T('sbx_out_error') })[e.outcome] || T('sbx_out_finished')}`, sub: e.why || '', cls: e.outcome === 'error' ? 'red' : e.outcome === 'finished' ? '' : 'muted' };
         case 'ask': return { main: e.text, sub: e.answer === undefined ? T('sbx_waiting_you') : T('sbx_you_said', { a: typeof e.answer === 'boolean' ? (e.answer ? T('sbx_true') : T('sbx_false')) : JSON.stringify(e.answer) }), cls: 'amber' };
         default: return { main: e.text || '', sub: '', cls: e.warn ? 'amber' : '' };
@@ -7548,11 +7811,11 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         ? `<input class="sbav" data-i="${i}" aria-label="${T('sbx_value')}"><button class="chip" data-act="sbx-ans" data-i="${i}">${T('sbx_use')}</button>`
         : `<button class="chip" data-act="sbx-ans" data-i="${i}" data-v="1">${T('sbx_true')}</button><button class="chip" data-act="sbx-ans" data-i="${i}" data-v="0">${T('sbx_false')}</button>`}</div>`).join('');
       if (!box) return;
-      const icon = { state: 'mdi:swap-horizontal', event: 'mdi:lightning-bolt-outline', trigger: 'mdi:play-circle-outline', cond: 'mdi:help-rhombus-outline', call: 'mdi:arrow-right-bold-outline', run: 'mdi:flag-checkered', wait: 'mdi:timer-sand', note: 'mdi:information-outline', ask: 'mdi:account-question-outline' };
+      const icon = { mqtt: 'mdi:access-point', state: 'mdi:swap-horizontal', event: 'mdi:lightning-bolt-outline', trigger: 'mdi:play-circle-outline', cond: 'mdi:help-rhombus-outline', call: 'mdi:arrow-right-bold-outline', run: 'mdi:flag-checkered', wait: 'mdi:timer-sand', note: 'mdi:information-outline', ask: 'mdi:account-question-outline' };
       const atEnd = box.scrollTop + box.clientHeight >= box.scrollHeight - 40;
       box.innerHTML = eng.log.length ? eng.log.map((e) => {
         const t = this._sbxText(e), p = tzParts(e.t, eng.tz), tm = `${String(p.h).padStart(2, '0')}:${String(p.mi).padStart(2, '0')}:${String(p.s).padStart(2, '0')}`;
-        const ic = e.kind === 'cond' ? (e.ok ? 'mdi:check-circle-outline' : 'mdi:close-circle-outline') : icon[e.kind] || 'mdi:circle-small';
+        const ic = e.kind === 'cond' ? (e.ok ? 'mdi:check-circle-outline' : 'mdi:close-circle-outline') : e.msg ? 'mdi:message-text-outline' : icon[e.kind] || 'mdi:circle-small';
         const partly = e.partly && e.partly.length ? `<span class="sbpart">${T('sbx_partly', { what: e.partly.map((x) => ({ states: T('sbx_reads_states'), closest: T('sbx_reads_places'), distance: T('sbx_reads_places'), state_translated: T('sbx_reads_translated') })[x] || T('sbx_reads_other')).join(', ') })}</span>` : '';
         return `<button class="dbrow k-${e.kind} ${t.cls || ''} ${g.sel === e.id ? 'on' : ''}" data-act="sbx-pick" data-id="${e.id}"><span class="rt">${tm}</span><ha-icon icon="${ic}"></ha-icon><span class="dm"><b>${esc(t.main)}</b>${t.sub ? `<span>${esc(t.sub)}</span>` : ''}${partly}</span></button>`;
       }).join('') : `<div class="muted pad">${T('sbx_empty')}</div>`;
@@ -7567,6 +7830,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         case 'run': await run((e) => e.userRun(id, !t.skip_condition)); return true;
         case 'action': await run((e) => e.userCall(t.service, t.data || {}, [id])); return true;
         case 'notify': await run((e) => e.userCall(t.service, t.data || {}, id.includes(':') ? [] : [id])); return true;
+        case 'mqtt': await run((e) => e.userMqtt(t.topic, t.payload)); return true;
         default: this._toast(T('sbx_no_test')); return false;
       }
     }
