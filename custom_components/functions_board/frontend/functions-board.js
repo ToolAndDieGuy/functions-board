@@ -279,7 +279,7 @@
   let CURVED = false;
   const PROTO = () => Object.assign({ color: 1, ortho: !CURVED, align: 1, bands: 1, pack: 1 }, (typeof window !== 'undefined' && window.__fbStyle) || {});
   // SEP: the least room between two arrows that run side by side
-  const STUB = 18, SEP = 16, RAD = 8;
+  const STUB = 18, SEP = 16, RAD = 14, HOP = 5;
   // right side to left side whenever the boxes stand apart sideways (a target to the left is reached round the
   // outside), so every arrow reads left to right at both ends; top and bottom only for boxes stacked in a column
   function orthoSides(a, b) {
@@ -464,14 +464,17 @@
           const own = o[0] && (firstV < 0 || i <= firstV) ? o[0] : o[1] && (lastV < 0 || i >= lastV) ? o[1] : null;
           // a level stub at either end can slide along its box's side
           const stub = !own && a === 1 && last > 1 && (i === 1 || i === last) ? (i === 1 ? ends[ri][0] : ends[ri][1]) : null;
-          out.push({ ri, i, a, own, c: u[a], lo: Math.min(u[b], v[b]), hi: Math.max(u[b], v[b]), stub, fixed: !stub && (i === 1 || i === last || !!own) });
+          // (end: the side of a box it starts or ends at; arrows there are as far apart as that side allows)
+          const endBox = i === 1 ? ends[ri][0] : i === last ? ends[ri][1] : null;
+          out.push({ ri, i, a, own, c: u[a], lo: Math.min(u[b], v[b]), hi: Math.max(u[b], v[b]), stub, end: endBox ? (i === 1 ? 'a' : 'b') : null, endBox, fixed: !stub && (i === 1 || i === last || !!own) });
         }
       });
       return out;
     };
     // (an arrow running into or out of its own trunk's line is that trunk, not alongside it)
     const mine = (s, t) => s.own && (owners[t.ri] || []).includes(s.own);
-    const near = (s, t) => s.ri !== t.ri && s.a === t.a && !mine(s, t) && !mine(t, s) && Math.abs(s.c - t.c) < SEP - 0.5 && Math.min(s.hi, t.hi) - Math.max(s.lo, t.lo) > 1;
+    const sameSide = (s, t) => s.end && s.end === t.end && s.endBox === t.endBox && Math.abs(s.c - t.c) >= 10;
+    const near = (s, t) => s.ri !== t.ri && s.a === t.a && !mine(s, t) && !mine(t, s) && !sameSide(s, t) && Math.abs(s.c - t.c) < SEP - 0.5 && Math.min(s.hi, t.hi) - Math.max(s.lo, t.lo) > 1;
     const blocked = (ri, p, q) => boxes.some((bx) => bx !== ends[ri][0] && bx !== ends[ri][1] && hitsBox(p[0], p[1], q[0], q[1], bx, 4));
     for (let pass = 0; pass < 4; pass++) {
         const S = segs();
@@ -516,13 +519,38 @@
         });
         if (!moved) break;
       }
+    // a short step up or down in the middle of a level run (two lanes that happen to sit at different heights)
+    // reads as a turn the wrong way: the run goes straight instead, where that is clear of boxes and other arrows
+    const S = segs(), seg = (ri, a, p, q) => ({ ri, a, own: null, c: p[a], lo: Math.min(p[1 - a], q[1 - a]), hi: Math.max(p[1 - a], q[1 - a]) });
+    const fine = (ri, list) => list.every(([p, q]) => !blocked(ri, p, q) && !S.some((s) => s.ri !== ri && near(s, seg(ri, Math.abs(p[0] - q[0]) < 0.5 ? 0 : 1, p, q))));
+    routes.forEach((pts, ri) => {
+      if ((owners[ri] || []).some(Boolean)) return;
+      for (let i = 2; i < pts.length - 1; i++) {
+        const a0 = pts[i - 2], u = pts[i - 1], v = pts[i], b1 = pts[i + 1], dy = v[1] - u[1];
+        if (Math.abs(u[0] - v[0]) > 0.5 || Math.abs(dy) < 0.5 || Math.abs(dy) > 48) continue;
+        if (Math.abs(a0[1] - u[1]) > 0.5 || Math.abs(b1[1] - v[1]) > 0.5 || Math.sign(u[0] - a0[0]) !== Math.sign(b1[0] - v[0])) continue;
+        const last = pts.length - 1;
+        // the later run up (or down) to the earlier one's height, or the earlier one to the later one's
+        if (i + 1 < last) {
+          const nb = [b1[0], u[1]], c2 = pts[i + 2];
+          if (fine(ri, [[u, nb], [nb, c2]])) { v[1] = u[1]; b1[1] = u[1]; continue; }
+        }
+        if (i - 2 >= 1) {
+          const na = [a0[0], v[1]], c0 = pts[i - 3];
+          if (fine(ri, [[na, v], [c0, na]])) { a0[1] = v[1]; u[1] = v[1]; }
+        }
+      }
+    });
   }
   // each arrow leaves and enters the sides that face each other; arrows sharing a side spread along it, in the
   // order of where their other ends are, so they don't stack (7.3)
+  // the three points on each side of a box where square-cornered arrows leave and enter (they show as dots)
+  const portYs = (h) => { const st = Math.min(18, (h - 16) / 2); return [h / 2 - st, h / 2, h / 2 + st]; };
   function arrowGeo(E, boxOf, sideFn) {
     return spreadEnds(E.map((e) => { const a = boxOf(e.from), b = boxOf(e.to); return { e, a, b, s: sideFn(a, b), fa: 0.5, fb: 0.5 }; }));
   }
-  function spreadEnds(geo) {
+  // (bus: per side key, the arrows that run as one line there; they share one point on that side)
+  function spreadEnds(geo, bus, ports) {
     const slots = new Map();
     geo.forEach((g) => {
       [[g.e.from, g.s[0], g.b, 0], [g.e.to, g.s[1], g.a, 1]].forEach(([k, side, other, end]) => {
@@ -531,10 +559,22 @@
         slots.get(key).push({ g, end, at: side === 'l' || side === 'r' ? other.y + other.h / 2 : other.x + other.w / 2 });
       });
     });
-    slots.forEach((list) => {
-      if (list.length < 2) return;
-      list.sort((x, y) => x.at - y.at);
-      list.forEach((it, i) => { const f = 0.22 + (0.56 * i) / (list.length - 1); if (it.end === 0) it.g.fa = f; else it.g.fb = f; });
+    slots.forEach((list, key) => {
+      const bs = (bus && bus.get(key)) || [], b = bs.length;
+      // a bus counts as one, where the middle of its arrows' other ends is
+      let items = list.map((it) => ({ at: it.at, its: [it] }));
+      bs.forEach((set) => {
+        const mine = items.filter((x) => x.its.length === 1 && set.has(x.its[0].g)), ats = mine.map((x) => x.at).sort((p, q) => p - q);
+        if (mine.length) items = items.filter((x) => !mine.includes(x)).concat([{ at: ats[Math.floor(ats.length / 2)], its: mine.map((x) => x.its[0]) }]);
+      });
+      if (items.length < 2 && !b) return;
+      items.sort((x, y) => x.at - y.at);
+      const g0 = list[0].g, box = list[0].end === 0 ? g0.a : g0.b, side = key.slice(key.lastIndexOf('|') + 1), H = side === 'l' || side === 'r' ? box.h : box.w;
+      // at the side's three points (one arrow in the middle, two at the outer ones) when they fit there,
+      // otherwise evenly along the side, up to 18 px apart, clear of its corners
+      const P = portYs(H), at = ports && (side === 'l' || side === 'r') && items.length <= 3 ? (items.length === 1 ? [P[1]] : items.length === 2 ? [P[0], P[2]] : P) : null;
+      const step = items.length > 1 ? Math.min(18, (H - 16) / (items.length - 1)) : 0, top = H / 2 - (step * (items.length - 1)) / 2;
+      items.forEach((x, i) => { const f = (at ? at[i] : top + step * i) / H; x.its.forEach((it) => { if (it.end === 0) it.g.fa = f; else it.g.fb = f; }); });
     });
     return geo;
   }
@@ -549,33 +589,133 @@
       if (r.length > 4) { g.s = ['r', 'l']; swapped = true; }
     });
     if (swapped) { geo.forEach((g) => { g.fa = 0.5; g.fb = 0.5; }); spreadEnds(geo); }
-    // three or more arrows out of one side leave from one point and run as a trunk; likewise in
-    const cnt = new Map(), bump = (k) => cnt.set(k, (cnt.get(k) || 0) + 1);
-    geo.forEach((g) => { bump(g.e.from + '|' + g.s[0]); bump(g.e.to + '|' + g.s[1]); });
+    // up to three arrows leave (or enter) one side of a box at points of their own; more than that share three
+    // points, the arrows at each running as one line that branches, a bus, with a dot at each branch. A bus holds
+    // one kind of arrow, and an arrow is in one bus at most (the bigger), so two buses never share a line.
+    const sideOf = new Map();
+    geo.forEach((g) => {
+      [['out:' + g.e.from, g.s[0] === 'r', g.b], ['in:' + g.e.to, g.s[1] === 'l', g.a]].forEach(([k, ok, other]) => {
+        if (!ok) return;
+        if (!sideOf.has(k)) sideOf.set(k, []);
+        sideOf.get(k).push({ g, at: other.y + other.h / 2 });
+      });
+    });
+    let buses = new Map();
+    sideOf.forEach((list, k) => {
+      if (list.length <= 3) return;
+      list.sort((p, q) => p.at - q.at);
+      // three points shared out between the kinds there by how many each has (each kind gets one at least), each
+      // kind's arrows split between its points in the order of their other ends
+      const byRole = new Map();
+      list.forEach((x) => { if (!byRole.has(x.g.e.role)) byRole.set(x.g.e.role, []); byRole.get(x.g.e.role).push(x.g); });
+      const roles = [...byRole.entries()].sort((p, q) => q[1].length - p[1].length), pts = roles.map(() => 1);
+      for (let left = 3 - roles.length, j = 0; left > 0; left--, j = (j + 1) % roles.length) if (roles[j][1].length > pts[j]) pts[j]++;
+      roles.forEach(([role, gs], j) => {
+        for (let q = 0; q < pts[j]; q++) {
+          const set = new Set(gs.slice(Math.round((q * gs.length) / pts[j]), Math.round(((q + 1) * gs.length) / pts[j])));
+          if (set.size >= 2) buses.set(k + '#' + role + q, set);
+        }
+      });
+    });
+    for (let pass = 0; pass < 2; pass++) {
+      const of = (g) => [...buses].filter(([, set]) => set.has(g));
+      geo.forEach((g) => { const in2 = of(g); if (in2.length > 1) in2.sort((p, q) => q[1].size - p[1].size).slice(1).forEach(([, set]) => set.delete(g)); });
+      buses = new Map([...buses].filter(([, set]) => set.size >= 2));
+    }
     const owners = geo.map((g) => {
       const o = [null, null];
-      if (cnt.get(g.e.from + '|' + g.s[0]) >= 3 && g.s[0] === 'r') { g.fa = 0.5; o[0] = 'out:' + g.e.from; }
-      if (cnt.get(g.e.to + '|' + g.s[1]) >= 3 && g.s[1] === 'l') { g.fb = 0.5; o[1] = 'in:' + g.e.to; }
+      buses.forEach((set, k) => { if (set.has(g)) o[k.startsWith('out:') ? 0 : 1] = k; });
       return o;
     });
+    // per side of a box, the buses there
+    const sideBus = new Map();
+    buses.forEach((set, k) => {
+      const key = (k.startsWith('out:') ? k.slice(4, k.lastIndexOf('#')) + '|r' : k.slice(3, k.lastIndexOf('#')) + '|l');
+      if (!sideBus.has(key)) sideBus.set(key, []);
+      sideBus.get(key).push(set);
+    });
+    geo.forEach((g) => { g.fa = 0.5; g.fb = 0.5; });
+    spreadEnds(geo, sideBus, true);
     const ways = geo.map((g) => wayOf(g.e, g.s)), routes = geo.map((g, i) => orthoRoute(g.a, g.b, g.s, g.fa, g.fb, ways[i], boxes));
     // the automatic layout's slots for arrows passing a column bound the gaps either side of them like boxes do
     const slotBoxes = ways.flat().filter(Boolean).map((w) => ({ x: w[0] - (w[2] || NW / 2), y: w[1] - 12, w: 2 * (w[2] || NW / 2), h: 24 }));
     laneSpread(routes, owners, boxes.concat(slotBoxes), short);
     untangle(routes, owners, geo.map((g) => [g.a, g.b]), boxes);
-    return { routes, owners };
+    const R = routes.map((pts) => {
+      const q = pts.filter((p, i) => !i || Math.hypot(p[0] - pts[i - 1][0], p[1] - pts[i - 1][1]) > 0.5);
+      // (and no corner where a run just carries on)
+      return q.filter((p, i) => i === 0 || i === q.length - 1 || !((Math.abs(q[i - 1][0] - p[0]) < 0.5 && Math.abs(q[i + 1][0] - p[0]) < 0.5) || (Math.abs(q[i - 1][1] - p[1]) < 0.5 && Math.abs(q[i + 1][1] - p[1]) < 0.5)));
+    });
+    return { routes: R, owners, dots: busDots(R, owners, geo), hops: hopsOf(R, owners) };
+  }
+  // a dot where a bus branches (or is joined), as on a wiring diagram: where lines cross without one, they don't meet
+  function busDots(routes, owners, geo) {
+    const by = new Map();
+    routes.forEach((pts, ri) => {
+      (owners[ri] || []).forEach((own, end) => {
+        if (!own) return;
+        let v = -1;
+        for (let i = 1; i < pts.length; i++) if (Math.abs(pts[i - 1][0] - pts[i][0]) < 0.5 && Math.abs(pts[i - 1][1] - pts[i][1]) > 0.5) { v = i; if (end === 0) break; }
+        if (!by.has(own)) by.set(own, { own, role: geo[ri].e.role, x: null, ys: [] });
+        const b = by.get(own);
+        // a member with no turn joins the bus line where it runs straight through it
+        if (v < 0) { b.ys.push(pts[0][1]); return; }
+        b.x = pts[v][0];
+        b.ys.push(pts[v - 1][1], pts[v][1]);
+      });
+    });
+    const dots = [];
+    by.forEach((b) => {
+      if (b.x == null) return;
+      const lo = Math.min(...b.ys), hi = Math.max(...b.ys), seen = [];
+      b.ys.forEach((y) => { if (y > lo + 1 && y < hi - 1 && !seen.some((z) => Math.abs(z - y) < 1)) { seen.push(y); dots.push({ x: b.x, y, role: b.role, own: b.own }); } });
+    });
+    return dots;
+  }
+  // where a level run crosses another arrow's upright run, it hops over it: per arrow, the runs and where
+  function hopsOf(routes, owners) {
+    const ups = [];
+    routes.forEach((pts, ri) => { for (let i = 1; i < pts.length; i++) if (Math.abs(pts[i - 1][0] - pts[i][0]) < 0.5) ups.push({ ri, x: pts[i][0], lo: Math.min(pts[i - 1][1], pts[i][1]), hi: Math.max(pts[i - 1][1], pts[i][1]) }); });
+    return routes.map((pts, ri) => {
+      const out = new Map(), mine = owners[ri] || [];
+      for (let i = 1; i < pts.length; i++) {
+        const u = pts[i - 1], v = pts[i];
+        if (Math.abs(u[1] - v[1]) > 0.5) continue;
+        const lo = Math.min(u[0], v[0]) + RAD + HOP + 2, hi = Math.max(u[0], v[0]) - RAD - HOP - 2, xs = [];
+        ups.forEach((w) => {
+          if (w.ri === ri || w.x <= lo || w.x >= hi || u[1] <= w.lo + 2 || u[1] >= w.hi - 2) return;
+          if ((owners[w.ri] || []).some((o) => o && mine.includes(o))) return;
+          xs.push(w.x);
+        });
+        xs.sort((p, q) => (v[0] > u[0] ? p - q : q - p));
+        const keep = [];
+        xs.forEach((x) => { if (!keep.length || Math.abs(x - keep[keep.length - 1]) > 2 * HOP + 4) keep.push(x); });
+        if (keep.length) out.set(i, keep);
+      }
+      return out;
+    });
   }
   // a path through the corner points with small rounded turns; mid is halfway along it
-  function roundPath(pts) {
+  // (hops: per run, where it hops over another arrow)
+  function roundPath(pts, hops) {
     const P = pts.filter((p, i) => !i || Math.hypot(p[0] - pts[i - 1][0], p[1] - pts[i - 1][1]) > 0.5);
     const fmt = (p) => `${Math.round(p[0] * 10) / 10},${Math.round(p[1] * 10) / 10}`;
     let d = `M${fmt(P[0])}`, total = 0;
     const lens = P.map((p, i) => (i ? Math.hypot(p[0] - P[i - 1][0], p[1] - P[i - 1][1]) : 0));
+    // a little arch, bulging up, over each crossing on run i
+    const hop = (i) => {
+      const xs = hops && hops.get(i), a = P[i - 1], c = P[i];
+      if (!xs) return;
+      const dir = c[0] > a[0] ? 1 : -1;
+      xs.forEach((x) => { d += ` L${fmt([x - dir * HOP, a[1]])} A${HOP},${HOP} 0 0 ${dir > 0 ? 1 : 0} ${fmt([x + dir * HOP, a[1]])}`; });
+    };
     for (let i = 1; i < P.length - 1; i++) {
       const a = P[i - 1], c = P[i], e = P[i + 1], r = Math.min(RAD, lens[i] / 2, lens[i + 1] / 2);
       const u = [(c[0] - a[0]) / lens[i], (c[1] - a[1]) / lens[i]], w = [(e[0] - c[0]) / lens[i + 1], (e[1] - c[1]) / lens[i + 1]];
+      hop(i);
       d += ` L${fmt([c[0] - u[0] * r, c[1] - u[1] * r])} Q${fmt(c)} ${fmt([c[0] + w[0] * r, c[1] + w[1] * r])}`;
     }
+    hop(P.length - 1);
     d += ` L${fmt(P[P.length - 1])}`;
     lens.forEach((l) => { total += l; });
     let half = total / 2, mid = P[0];
@@ -850,7 +990,7 @@
       const need = layers.map(() => []), back = layers.map(() => 0), cy = (u) => yv[u] + hOf(u) / 2;
       for (let u = 0; u < all; u++) for (const v of oo[u]) {
         if (Lx[v] !== Lx[u] + 1) continue;
-        const own = u < n && oo[u].length >= 3 ? 'o' + u : v < n && ii[v].length >= 3 ? 'i' + v : null;
+        const own = u < n && oo[u].length >= 5 ? 'o' + u : v < n && ii[v].length >= 5 ? 'i' + v : null;
         if (!own && Math.abs(cy(u) - cy(v)) < 1) continue;
         need[Lx[u]].push({ own, c: 0, lo: Math.min(cy(u), cy(v)), hi: Math.max(cy(u), cy(v)), ats: [[cy(u), -1], [cy(v), 1]] });
       }
@@ -1541,6 +1681,11 @@ button{font:inherit;color:inherit}
 .board.pc .edges path.hi.role-action{stroke:var(--fb-act);stroke-width:2.6}
 .board.pc .edges path.hi.role-call{stroke:var(--fb-call);stroke-width:3.2}
 .board.pc .edges path.live{stroke:var(--primary-text-color);stroke-width:2.6}
+.edges circle.jd{fill:var(--fb-edge);stroke:none}
+.board.pc .edges circle.jd.role-trigger{fill:var(--fb-trig)}
+.board.pc .edges circle.jd.role-action{fill:var(--fb-act)}
+.board.pc .edges circle.jd.role-call{fill:var(--fb-call)}
+.edges circle.jd.dim{opacity:.18}
 .board.pc .lg svg path.role-trigger{stroke:var(--fb-trig)}
 .board.pc .lg svg path.ah.role-trigger,.board.pc .lg svg .ah.trig{fill:var(--fb-trig)}
 .board.pc .lg svg path.role-action{stroke:var(--fb-act)}
@@ -1718,6 +1863,11 @@ button{font:inherit;color:inherit}
 .mdepth .chip{padding:2px 8px;font-size:12px}
 .node .wr.hid{border-style:dashed}
 .node .kept{--mdc-icon-size:13px;color:var(--secondary-text-color)}
+.node .port{position:absolute;width:8px;height:8px;border-radius:50%;box-sizing:border-box;border:1.5px solid var(--fb-edge);background:var(--card-background-color,#1c1c1c);pointer-events:none}
+.node .port.pl{left:-4px}
+.node .port.pr{right:-4px}
+.board.full .node .port{pointer-events:auto;cursor:crosshair}
+.board.full .node .port:hover{border-color:var(--primary-color);background:var(--primary-color);transform:scale(1.5)}
 .dtext{margin:0;font-size:13.5px;line-height:1.5}
 .dtext.dno{color:var(--fb-amber)}
 .dwarn{display:flex;align-items:flex-start;gap:6px;font-size:12.5px;color:var(--fb-amber);margin-top:2px}
@@ -2102,6 +2252,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       highlight_around_a_selected_box: 'Highlight around a selected box',
       reach: 'Reach',
       live: 'Live',
+      one_line_that_branches_dot: 'one line that branches (a dot at each branch)',
+      crosses_without_meeting: 'crosses another without meeting it',
       arrow_style: 'Style',
       curved_arrows: 'Curved arrows',
       curved_arrows_take_the_shortest: 'Curved arrows take the shortest way between boxes; otherwise arrows run in square-cornered lanes, left to right',
@@ -2411,6 +2563,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       it_is_also_read_inside: 'It is also read inside {indirect}; those can only be changed in the editor.',
       saving_writes_s_yaml_the: 'Saving writes {dom}s.yaml the way Home Assistant\'s own editor does: comments in that file are lost. You can undo the change itself.',
       now_click_the_box_to: 'Now click the box to connect {name} to. Esc cancels.',
+      now_click_the_box_that_leads_to: 'Now click the box that leads into {name}. Esc cancels.',
       an_arrow_can_t_go: 'An arrow can\'t go from {name} to {name2}: arrows go from an entity into an automation, or from an automation or script to what it changes or runs.',
       reading_what_home_assistant_offers: 'Reading what Home Assistant offers…',
       home_assistant_offers_nothing_that: 'Home Assistant offers nothing that links these two.',
@@ -2874,7 +3027,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       // another open board (another admin, or this admin on another device) saved: take its changes
       const d = msg || {};
       if (this._storeMode !== 'shared' || !this._data) return;
-      if (d.what === 'mode') { this._fbMode = d.mode === 'full' ? 'full' : 'organise'; this._renderHeader(); this._renderNodebar(); return; }
+      if (d.what === 'mode') { this._fbMode = d.mode === 'full' ? 'full' : 'organise'; this._$.board.classList.toggle('full', this._fbMode === 'full'); this._renderHeader(); this._renderNodebar(); return; }
       if (d.client && d.client === this._client()) return;
       const act = this.shadowRoot.activeElement;
       if (this._drag || (act && /^(INPUT|TEXTAREA|SELECT)$/.test(act.tagName))) {
@@ -3733,7 +3886,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       return `<div class="node ${n.kind} d-${esc(n.domain)}" data-key="${esc(n.key)}" role="button" tabindex="-1" style="left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${n.h}px">`
         + `<span class="tag">${esc(this._tagOf(n.key))}</span><ha-icon class="ic" icon="${esc(n.icon)}"></ha-icon><div class="txt"><div class="name">${esc(n.name)}</div>`
         + (n.kind === 'outside' ? '' : '<div class="sub"></div>') + '</div>'
-        + (b ? `<div class="badges">${b}</div>` : '') + '</div>';
+        + (b ? `<div class="badges">${b}</div>` : '')
+        // the points arrows leave from (right) and enter by (left); in Full manager, drag from one to draw an arrow
+        + (PROTO().ortho ? portYs(n.h).map((y) => `<span class="port pl" style="top:${y - 4}px"></span><span class="port pr" style="top:${y - 4}px"></span>`).join('') : '') + '</div>';
     }
 
     _renderFrames() {
@@ -3851,14 +4006,18 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       CURVED = this._data.ui.curved === true;
       const E = this._visEdges(), F = this._focus, out = [DEFS], labels = [], hits = [], now = Date.now(), PR = PROTO();
       this._$.board.classList.toggle('pc', !!PR.color);
+      this._$.board.classList.toggle('full', !!this._full());
       this._$.board.classList.toggle('light', !(this._hass && this._hass.themes && this._hass.themes.darkMode));
       const boxes = [...this._visibleKeys()].map((k) => m.nodes.get(k));
       const marks = [], condOn = this._data.ui.condres !== false;
       const geo = arrowGeo(E, (k) => m.nodes.get(k), PR.ortho ? orthoSides : sides);
+      let dots = [];
       if (PR.ortho) {
         const r = orthoAll(geo, (e, sd) => this._routeFor(e, sd), boxes);
         this._ortho = { ids: geo.map((g) => g.e.id), routes: r.routes, owners: r.owners, boxes: geo.map((g) => [g.e.from, g.e.to]) };
-        geo.forEach((g, i) => { const rp = roundPath(r.routes[i]); g.gm = { d: rp.d, mx: rp.mid[0], my: rp.mid[1] }; });
+        geo.forEach((g, i) => { const rp = roundPath(r.routes[i], r.hops[i]); g.gm = { d: rp.d, mx: rp.mid[0], my: rp.mid[1] }; });
+        // a bus's dots light with it
+        dots = r.dots.map((dt) => Object.assign({ lit: !F || geo.some((g, i) => (r.owners[i] || []).includes(dt.own) && this._focusEdges.has(g.e.id)) }, dt));
       }
       for (const g of geo) {
         const e = g.e, way = g.gm ? null : this._routeFor(e, g.s);
@@ -3885,7 +4044,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           marks.push(`<g class="cres ${kind}${F && !hi ? ' dim' : ''}" data-edge="${esc(e.id)}" transform="translate(${gm.mx},${gm.my})"><circle r="8"></circle>${glyph}<title>${esc(this._condTitle(e, c))}</title></g>`);
         }
       }
-      this._$.edges.innerHTML = out.join('') + hits.join('') + labels.join('') + marks.join('');
+      const jd = dots.map((dt) => `<circle class="jd role-${esc(dt.role)}${dt.lit ? '' : ' dim'}" cx="${dt.x}" cy="${dt.y}" r="3.6"></circle>`);
+      this._$.edges.innerHTML = out.join('') + jd.join('') + hits.join('') + labels.join('') + marks.join('');
     }
 
     /* ---------- the Arrows menu: highlight modes (7.1) and filters (7.2) ---------- */
@@ -4179,7 +4339,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const open = this._compact ? !!this._legendOpen : u.legend;
       const line = (cls) => `<svg width="38" height="10"><path class="${cls}" d="M4,5 L30,5"></path><path class="ah ${cls}" d="M30,1 L37,5 L30,9 z"></path>${cls === 'role-trigger' ? '<circle class="ah trig" cx="4" cy="5" r="3.5"></circle>' : ''}</svg>`;
       this._$.legend.innerHTML = `<button class="lgt" data-act="legend"><ha-icon icon="mdi:map-legend"></ha-icon>${open ? T('hide_key') : T('key')}</button>`
-        + (open ? `<div class="lg">${line('role-trigger')}<span>${T('triggers')}</span>${line('role-condition')}<span>${T('is_checked_or_read_by')}</span>${line('role-action')}<span>${T('changes_2')}</span>${line('role-call')}<span>${T('runs_script_call')}</span>${line('role-source')}<span>${T('is_read_by_a_helper')}</span>${line('loop')}<span>${T('loop_can_retrigger_itself')}</span>${line('role-tool')}<span>${T('a_test_button_or_a')}</span></div><div class="lgn"><span class="sw dashed"></span>${T('related_not_in_this_function')}<br><span class="sw pill"></span>${T('outside_item_it_touches')}<br><span class="sw st amber"></span>${T('unavailable')}<span class="sw st red"></span>${T('last_run_failed')}<span class="sw st blue"></span>${T('running')}<br><span class="cres-k ok">✓</span><span class="cres-k bad">✕</span> ${T('a_check_passes_or_fails')}<span class="sw dashed2"></span>${T('simulated_state')}</div><label class="tg"><input type="checkbox" data-tog="outside" ${u.outside ? 'checked' : ''}>${T('show_outside_items')}</label><label class="tg"><input type="checkbox" data-tog="suggest" ${u.suggest ? 'checked' : ''}>${T('show_related_suggestions')}</label><label class="tg" title="${T('reads_your_node_red_app')}"><input type="checkbox" data-nr ${u0.nodered === true ? 'checked' : ''}>${T('show_node_red_flows')}</label>${u0.nodered === true && this._nrCache && this._nrCache.err ? `<div class="lgerr">${esc(this._nrCache.err)}</div>` : ''}` : '');
+        + (open ? `<div class="lg">${line('role-trigger')}<span>${T('triggers')}</span>${line('role-condition')}<span>${T('is_checked_or_read_by')}</span>${line('role-action')}<span>${T('changes_2')}</span>${line('role-call')}<span>${T('runs_script_call')}</span>${line('role-source')}<span>${T('is_read_by_a_helper')}</span>${line('loop')}<span>${T('loop_can_retrigger_itself')}</span>${line('role-tool')}<span>${T('a_test_button_or_a')}</span>`
+          + `<svg width="38" height="14"><path d="M4,3 L16,3 L16,11 L30,11"></path><path d="M16,3 L30,3"></path><circle class="ah" cx="16" cy="3" r="2.6"></circle></svg><span>${T('one_line_that_branches_dot')}</span>`
+          + `<svg width="38" height="14"><path d="M19,1 L19,13"></path><path d="M4,8 L15,8 A4,4 0 0 1 23,8 L34,8"></path></svg><span>${T('crosses_without_meeting')}</span></div><div class="lgn"><span class="sw dashed"></span>${T('related_not_in_this_function')}<br><span class="sw pill"></span>${T('outside_item_it_touches')}<br><span class="sw st amber"></span>${T('unavailable')}<span class="sw st red"></span>${T('last_run_failed')}<span class="sw st blue"></span>${T('running')}<br><span class="cres-k ok">✓</span><span class="cres-k bad">✕</span> ${T('a_check_passes_or_fails')}<span class="sw dashed2"></span>${T('simulated_state')}</div><label class="tg"><input type="checkbox" data-tog="outside" ${u.outside ? 'checked' : ''}>${T('show_outside_items')}</label><label class="tg"><input type="checkbox" data-tog="suggest" ${u.suggest ? 'checked' : ''}>${T('show_related_suggestions')}</label><label class="tg" title="${T('reads_your_node_red_app')}"><input type="checkbox" data-nr ${u0.nodered === true ? 'checked' : ''}>${T('show_node_red_flows')}</label>${u0.nodered === true && this._nrCache && this._nrCache.err ? `<div class="lgerr">${esc(this._nrCache.err)}</div>` : ''}` : '');
     }
 
     /* ---------- view ---------- */
@@ -4299,10 +4461,20 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         if (this._linking) { this._linking.sx = e.clientX; this._linking.sy = e.clientY; }
         return;
       }
+      // or from one of a box's points: from a right-hand one out of the box, from a left-hand one into it
+      const port = this._full() && e.target.closest('.port');
+      if (port) {
+        const key = port.closest('.node').dataset.key;
+        this._pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        this._listen(true);
+        this._startLink(key, true, port.classList.contains('pl'));
+        if (this._linking) { this._linking.sx = e.clientX; this._linking.sy = e.clientY; }
+        return;
+      }
       if (this._linking) {
-        const node = e.target.closest('.node'), from = this._linking.from;
+        const node = e.target.closest('.node'), L = this._linking;
         this._endLink();
-        if (node && node.dataset.key !== from) this._linkDialog(from, node.dataset.key);
+        if (node && node.dataset.key !== L.from) this._linkDialog(L.rev ? node.dataset.key : L.from, L.rev ? L.from : node.dataset.key);
         return;
       }
       if (e.target.closest('button, select, input, textarea, .nodebar, .edgebar, .zoom, .legend, .toast, .litbar')) return;
@@ -4411,7 +4583,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (this._linking && this._linking.drag) {
         const L = this._linking, hit = this.shadowRoot.elementFromPoint(e.clientX, e.clientY), node = hit && hit.closest && hit.closest('.node');
         const moved = Math.hypot(e.clientX - (L.sx || e.clientX), e.clientY - (L.sy || e.clientY)) > 6;
-        if (node && node.dataset.key !== L.from) { this._endLink(); this._linkDialog(L.from, node.dataset.key); }
+        if (node && node.dataset.key !== L.from) { this._endLink(); this._linkDialog(L.rev ? node.dataset.key : L.from, L.rev ? L.from : node.dataset.key); }
         else if (moved) this._endLink();
         else L.drag = false;  // a click on the handle: now click the other box
         return;
@@ -6201,20 +6373,21 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const k = n.key;
       return /^(automation|script)\./.test(k) || /^(event|nact):/.test(k) || TGT_RE.test(k) || (!k.includes(':') && !!this._hass.states[k]);
     }
-    _startLink(key, drag) {
+    // rev: the arrow is to go into this box, from the box picked next
+    _startLink(key, drag, rev) {
       if (!this._full()) { this._toast(T('drawing_arrows_needs_full_manager')); return; }
       const n = this._model && this._model.nodes.get(key);
       if (!this._canLink(n)) return;
-      this._linking = { from: key, drag: !!drag, moved: false };
+      this._linking = { from: key, drag: !!drag, moved: false, rev: !!rev };
       this._$.board.classList.add('linking');
-      this._toast(T('now_click_the_box_to', { name: n.name }));
+      this._toast(rev ? T('now_click_the_box_that_leads_to', { name: n.name }) : T('now_click_the_box_to', { name: n.name }));
     }
     _linkMove(ev) {
       const L = this._linking, m = this._model, n = L && m && m.nodes.get(L.from);
       if (!n) return;
       const r = this._$.vp.getBoundingClientRect(), v = this._view;
       const x = (ev.clientX - r.left - v.x) / v.k, y = (ev.clientY - r.top - v.y) / v.k;
-      const sx = x >= n.x + n.w / 2 ? n.x + n.w : n.x, sy = n.y + n.h / 2;
+      const sx = L.rev ? n.x : x >= n.x + n.w / 2 ? n.x + n.w : n.x, sy = n.y + n.h / 2;
       this._$.links.innerHTML = `<path class="ltmp" d="M${sx},${sy} C${(sx + x) / 2},${sy} ${(sx + x) / 2},${y} ${x},${y}"></path>`;
       L.moved = true;
     }

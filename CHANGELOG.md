@@ -7,9 +7,15 @@ New arrows and a new automatic layout.
 - Arrows are coloured by what they do: orange for what sets something off, blue for what it changes, aqua for
   running a script. Checks stay grey dashed and template reads grey dotted. The colours were checked for colour
   blindness in both the light and the dark theme. The Key shows them.
-- Arrows run square-cornered, always left to right: out of a box's right side, into the next one's left side, in
-  lanes in the gaps between columns. One that goes back runs round the outside of the boxes. Three or more arrows
-  out of one side of a box leave from one point as one line that branches (a trunk), and likewise into a box.
+- Arrows run square-cornered with rounder turns, always left to right: out of a box's right side, into the next
+  one's left side, in lanes in the gaps between columns. One that goes back runs round the outside of the boxes.
+- Each side of a box has three points, shown as small dots, where arrows leave and enter. Up to three arrows on a
+  side each have a point of their own and their own line. More than three share the three points (split by kind
+  and by where they go): the arrows at a point run as one line that branches, with a dot at each branch. Where two
+  lines cross without meeting, one hops over the other, so a dot always means a branch and a hop a crossing.
+- In Full manager, drag from a box's right-hand point to another box to draw an arrow out of it, or from a
+  left-hand point to draw one into it.
+- A short step up or down in the middle of a level run is straightened out where that's clear.
 - No two arrows run alongside each other closer than 16 px. The automatic layout widens each gap between
   columns to fit the arrows that turn in it, and a last pass moves any run that is still too close to the nearest
   clear spot.

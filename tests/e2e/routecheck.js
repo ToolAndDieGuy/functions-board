@@ -15,7 +15,7 @@ function routeCheck(el, opt) {
       // the part of an arrow that belongs to a trunk: from its box up to and along the trunk line
       // (with no upright run at all, the whole level arrow is part of its trunk)
       const own = o[0] && (firstV < 0 || i <= firstV) ? o[0] : o[1] && (lastV < 0 || i >= lastV) ? o[1] : null;
-      segs.push({ ri, i, vert, c: vert ? u[0] : u[1], lo: Math.min(vert ? u[1] : u[0], vert ? v[1] : v[0]), hi: Math.max(vert ? u[1] : u[0], vert ? v[1] : v[0]), own, end: i === 1 ? 'a' : i === last ? 'b' : null });
+      segs.push({ ri, i, vert, endBox: i === 1 ? R.boxes[ri][0] : i === last ? R.boxes[ri][1] : null, end: i === 1 ? 'a' : i === last ? 'b' : null, c: vert ? u[0] : u[1], lo: Math.min(vert ? u[1] : u[0], vert ? v[1] : v[0]), hi: Math.max(vert ? u[1] : u[0], vert ? v[1] : v[0]), own, end: i === 1 ? 'a' : i === last ? 'b' : null });
     }
   });
   const close = [], through = [];
@@ -26,6 +26,8 @@ function routeCheck(el, opt) {
     if ((s.own && (R.owners[t.ri] || []).includes(s.own)) || (t.own && (R.owners[s.ri] || []).includes(t.own))) continue;
     // two arrows leaving (or entering) the same side of one box start apart along it, so their stubs are judged
     // by how far apart they start
+    // arrows at the same side of one box start (or end) as far apart as that side allows, at least 10 px
+    if (s.end && s.end === t.end && s.endBox === t.endBox && Math.abs(s.c - t.c) >= 10) continue;
     const d = Math.abs(s.c - t.c), ov = Math.min(s.hi, t.hi) - Math.max(s.lo, t.lo);
     if (d < min - 0.5 && ov > 1) close.push({ a: R.ids[s.ri], b: R.ids[t.ri], gap: Math.round(d * 10) / 10, along: Math.round(ov), vert: s.vert, at: [Math.round(s.c), Math.round(Math.max(s.lo, t.lo))], segs: [s.i, t.i], pa: opt && opt.pts ? R.routes[s.ri].map((p) => p.map(Math.round)) : undefined, pb: opt && opt.pts ? R.routes[t.ri].map((p) => p.map(Math.round)) : undefined });
   }

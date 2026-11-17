@@ -670,6 +670,9 @@ test('Phase 7: highlight modes, filters, nearest sides, new boxes by their neigh
   await page.keyboard.press('Escape');
   // 7.3 drag the script to the left of the automation that runs it: the arrow flips to the facing sides
   const src = 'automation.garage_left_open', dst = 'script.close_garage';
+  // (both on screen, with room on the left)
+  await el(page, (b, k) => { const n = b._model.nodes.get(k); b._view = { k: 0.6, x: 650 - n.x * 0.6, y: 420 - n.y * 0.6 }; b._applyView(); }, src);
+  await page.waitForTimeout(300);
   const sb = await fbq(page, `.node[data-key="${src}"]`).boundingBox(), db = await fbq(page, `.node[data-key="${dst}"]`).boundingBox();
   await page.mouse.move(db.x + 30, db.y + 20); await page.mouse.down();
   await page.mouse.move(sb.x - db.width - 120, sb.y + 20, { steps: 10 }); await page.mouse.up();
@@ -912,6 +915,35 @@ test('0.6.0 square-cornered arrows: never alongside each other, colours by meani
   await fbq(page, '.nodebar [data-act="keep"]').click();
   await page.waitForTimeout(300);
   check('0.6.0 Let Auto-arrange move it takes the pin off', await fbq(page, `.node[data-key="${kk}"] .kept`).count() === 0 && !(await el(page, (b) => (b._layout(b._model.label).keep || []).length)));
+  // each box has three points a side; arrows leave and enter at them
+  const pts = await el(page, (b) => {
+    const R = b._ortho, ys = (k) => { const n = b._model.nodes.get(k), st = Math.min(18, (n.h - 16) / 2); return [n.y + n.h / 2 - st, n.y + n.h / 2, n.y + n.h / 2 + st]; };
+    const off = [];
+    R.routes.forEach((p, i) => {
+      const [f, t] = R.boxes[i], a = b._model.nodes.get(f), z = p[p.length - 1];
+      if (Math.abs(p[0][0] - (a.x + a.w)) < 1 && !(R.owners[i] || [])[0] && !ys(f).some((y) => Math.abs(y - p[0][1]) < 0.6)) off.push(R.ids[i] + ' start');
+      if (!(R.owners[i] || [])[1] && Math.abs(z[0] - b._model.nodes.get(t).x) < 3 && !ys(t).some((y) => Math.abs(y - z[1]) < 0.6)) off.push(R.ids[i] + ' end');
+    });
+    return { dots: b.shadowRoot.querySelectorAll('.node[data-key="automation.garage_left_open"] .port').length, off };
+  });
+  check('0.6.0 a box shows three points on each side', pts.dots === 6, pts.dots);
+  check('0.6.0 arrows leave and enter boxes at those points', !pts.off.length, pts.off);
+  // in Full manager, dragging from a right-hand point draws an arrow out of the box, from a left-hand one into it
+  await setMode(page, 'full');
+  await el(page, (b) => { b.__ld = []; b._linkDialog = (f, t) => { b.__ld.push([f, t]); }; b._select(null); b._fit(); });
+  await page.waitForTimeout(500);
+  const drag = async (fromSel, toKey) => {
+    const p = await fbq(page, fromSel).boundingBox(), t = await fbq(page, `.node[data-key="${toKey}"]`).boundingBox();
+    await page.mouse.move(p.x + p.width / 2, p.y + p.height / 2); await page.mouse.down();
+    await page.mouse.move(t.x + t.width / 2, t.y + t.height / 2, { steps: 8 }); await page.mouse.up();
+    await page.waitForTimeout(300);
+  };
+  await drag('.node[data-key="input_boolean.garage_auto_close"] .port.pr >> nth=1', GARAGE[1]);
+  await drag(`.node[data-key="${GARAGE[1]}"] .port.pl >> nth=0`, 'input_boolean.garage_auto_close');
+  const ld = await el(page, (b) => b.__ld);
+  check('0.6.0 drag from a box\'s right-hand point to another box: an arrow out of it', ld[0] && ld[0][0] === 'input_boolean.garage_auto_close' && ld[0][1] === GARAGE[1], ld);
+  check('0.6.0 drag from a left-hand point: an arrow into it, from the box dropped on', ld[1] && ld[1][0] === 'input_boolean.garage_auto_close' && ld[1][1] === GARAGE[1], ld);
+  await setMode(page, 'organise');
   // separate chains are each laid out on their own and packed together, not spread through one set of columns
   const pk = await el(page, (b) => {
     const mk = (key, kind) => ({ key, kind, domain: key.split('.')[0], name: key, icon: 'mdi:circle', badges: new Set(), w: kind === 'outside' ? 204 : 240, h: kind === 'outside' ? 40 : 62, x: 0, y: 0 });
