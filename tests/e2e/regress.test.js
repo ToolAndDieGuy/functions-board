@@ -5,6 +5,7 @@ const { chromium, BASE, SHOTS, session, ws, svc, states, ready, fbq, board, unti
 const { check, done } = suite('regress');
 const only = process.argv[2] ? new RegExp(process.argv[2], 'i') : null;
 const { routeCheck } = require('./routecheck');
+const { hopCheck } = require('./hopcheck');
 const GARAGE = ['automation.garage_start_open_timer', 'automation.garage_left_open', 'automation.garage_closed_stop_timer'];
 
 // a fresh owner board with every detected group imported; returns { ctx, page }
@@ -862,9 +863,10 @@ test('0.6.0 square-cornered arrows: never alongside each other, colours by meani
     await el(page, (b, id) => b._open(id), id);
     await page.waitForTimeout(700);
     const r = await el(page, (b) => { b._layout(b._model.label).nodes = {}; b._place(); b._render(); return null; }).then(() => board(page).evaluate(routeCheck, { min: 16 }));
-    if (r.error || r.close || r.through) bad.push({ id, r });
+    const h = await board(page).evaluate(hopCheck);
+    if (r.error || r.close || r.through || h.error || h.missed) bad.push({ id, r, h });
   }
-  check('0.6.0 in every function no two arrows run within 16 px of each other or through a box', fns.length > 0 && !bad.length, bad);
+  check('0.6.0 in every function no two arrows run within 16 px of each other or through a box, and every crossing hops', fns.length > 0 && !bad.length, bad);
   await openFn(page, /garage/i);
   // colour by meaning: what sets things off, what they change
   const col = await el(page, (b) => {
