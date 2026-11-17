@@ -7833,15 +7833,18 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       sel.innerHTML = ts.map((t, i) => `<option value="${i}">${esc(T('sbx_as_trigger', { n: i + 1, what: shorten(what(t), 50) }))}</option>`).join('') + `<option value="">${esc(T('sbx_no_trigger'))}</option>`;
       sel.hidden = !ts.length;
     }
-    _sbxPick(k) {
+    // soft: only bring the suggestions and the "now …" hint up to date, if that entity is still the one picked, and
+    // leave what's typed (after a Set settles, the person may already be on the next one)
+    _sbxPick(k, soft) {
       const d = this._$.drawer, sel = d.querySelector('.sbent'), dl = d.querySelector('#sbvals'), val = d.querySelector('.sbval');
       if (!sel || !this._sbx) return;
+      if (soft && sel.value !== k) return;
       sel.value = k;
       const n = this._model.nodes.get(k), s = this._sbx.eng.get(k);
       const hints = new Set(n ? this._stateHints(n) : []);
       if (s) hints.add(String(s.state));
       if (dl) dl.innerHTML = [...hints].map((x) => `<option value="${esc(x)}"></option>`).join('');
-      if (val) { val.value = ''; val.placeholder = s ? T('sbx_now_is', { state: String(s.state) }) : T('sbx_state'); }
+      if (val) { if (!soft) val.value = ''; val.placeholder = s ? T('sbx_now_is', { state: String(s.state) }) : T('sbx_state'); }
     }
     async _sbxDo(fn) {
       const g = this._sbx;
@@ -7871,7 +7874,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         case 'sbx-set': {
           const id = q('.sbent').value, v = q('.sbval').value.trim();
           if (!id || !v) { this._toast(T('sbx_pick_state')); return; }
-          this._sbxDo((e) => e.userSet(id, v)).then(() => this._sbxPick(id));
+          q('.sbval').value = '';
+          this._sbxDo((e) => e.userSet(id, v)).then(() => this._sbxPick(id, true));
           break;
         }
         case 'sbx-fire': {

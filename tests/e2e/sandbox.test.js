@@ -58,6 +58,12 @@ const DOOR = 'cover.garage_door', TIMER = 'timer.garage_open', AUTO = 'input_boo
   await fbq(page, '.drawer .sbval').fill('on');
   await fbq(page, '.drawer [data-act="sbx-set"]').click();
   await until(() => el(page, (b, k) => b._sbx.eng.get(k).state === 'on', AUTO), 5000);
+  // the next entity picked and typed straight away, before the first Set has settled: what's typed stays
+  await fbq(page, '.drawer .sbent').selectOption(DOOR);
+  await fbq(page, '.drawer .sbval').fill('open');
+  await until(() => el(page, (b) => !b._sbx.busy || null), 8000);
+  await page.waitForTimeout(300);
+  check('a Set settling later doesn\'t change the entity picked next or clear what\'s typed', await el(page, (b) => b._$.drawer.querySelector('.sbent').value === 'cover.garage_door' && b._$.drawer.querySelector('.sbval').value === 'open'));
   // open the door
   await fbq(page, '.drawer .sbent').selectOption(DOOR);
   await fbq(page, '.drawer .sbval').fill('open');
