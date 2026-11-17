@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.7.0 (2026-11-17)
+
+New: a sandbox, to try a function out without anything changing in your home.
+
+- **Sandbox**, in a function's toolbar, runs the function on a copy of its states with its own clock. Set a
+  state, fire an event or run an automation, and the drawer lists what the function does, step by step: what
+  triggers, which conditions pass or fail and why, what each action changes, and what that sets off next. The
+  chain is lit up on the board, boxes show the sandbox's states, and what the sandbox changed is marked in amber.
+  Closing it puts the board back to your home's states.
+- Delays, timers, `for:` durations, time triggers and time patterns run on the sandbox clock: +1 min, +10 min,
+  +1 h, or Next to jump to the next thing due.
+- Templates are rendered by Home Assistant itself, reading the sandbox's states and clock: `states()`,
+  `is_state()`, `state_attr()`, `is_state_attr()`, `has_value()`, `states.x.y` and `states['x.y']`, whole
+  domains, `expand()`, `now()`, `utcnow()` and `today_at()`, as functions, filters and tests. A template that
+  reads something the sandbox can't stand in for is marked partly real.
+- It asks what it can't know (a sun, zone or device condition, a template Home Assistant couldn't render) and
+  uses your answer. A call it doesn't know the effect of, like a notification, is listed as one it would make.
+- Run modes (single, restart, queued, parallel), scripts, `choose`, `if`, `repeat`, `parallel`, `variables`,
+  waits and `stop` behave as in Home Assistant. One change that leads to more than 2,000 steps is stopped as a
+  loop.
+- While the sandbox is open, test buttons and the Test dialog act on the sandbox, and Pause is off. The sandbox
+  never calls a service, fires an event or sets a state in Home Assistant, and works in Organise only mode too.
+
 ## 0.6.2 (2026-11-17)
 
 - Node-RED flows: the board no longer signs itself in to the Node-RED app. Before, when the app's page didn't

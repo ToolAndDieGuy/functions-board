@@ -1,5 +1,5 @@
 /*!
- * Functions board v0.6.2 (prototype) for Home Assistant
+ * Functions board v0.7.0 (prototype) for Home Assistant
  *
  * One page per "function": every automation, script, helper and device that makes one job work,
  * grouped by a Home Assistant label and wired together from their own configs.
@@ -13,7 +13,7 @@
  */
 (() => {
   'use strict';
-  const VERSION = '0.6.2';
+  const VERSION = '0.7.0';
   const loaded = customElements.get('functions-board');
   if (loaded) {
     if (loaded.VERSION !== VERSION) {
@@ -1950,7 +1950,31 @@ button{font:inherit;color:inherit}
 .cres-k{display:inline-flex;width:15px;height:15px;border-radius:50%;align-items:center;justify-content:center;font-size:10px;font-weight:700;border:1.5px solid;margin-right:3px}
 .cres-k.ok{color:var(--success-color,#43a047)}.cres-k.bad{color:var(--fb-red)}
 .sw.dashed2{border:2px dashed var(--fb-blue)}
+.sw.sbk{border:2px dashed var(--fb-amber)}
 .node.sim{outline:2px dashed var(--fb-blue);outline-offset:2px}
+.board.sbx .vp{background-image:repeating-linear-gradient(45deg,color-mix(in srgb,var(--fb-amber) 6%,transparent) 0 14px,transparent 14px 28px)}
+.sbxpill{position:absolute;top:12px;left:12px;display:flex;align-items:center;gap:6px;white-space:nowrap;background:color-mix(in srgb,var(--fb-amber) 20%,var(--card-background-color));border:1px solid var(--fb-amber);color:var(--primary-text-color);border-radius:14px;padding:4px 12px;font-size:12px;z-index:5;pointer-events:none}
+.sbxpill ha-icon{--mdc-icon-size:16px;color:var(--fb-amber)}
+.board.sbx .node.sbch{outline:2px dashed var(--fb-amber);outline-offset:2px}
+.board.sbx .node[data-sbx]::after{content:attr(data-sbx);position:absolute;right:8px;bottom:-9px;font-size:10px;line-height:14px;padding:0 6px;border-radius:7px;background:var(--secondary-background-color);border:1px solid var(--divider-color);color:var(--primary-text-color)}
+.board.sbx .node.sbch[data-sbx]::after{background:var(--fb-amber);border-color:var(--fb-amber);color:#000}
+.board.sbx .node.sbch::before{content:'';position:absolute;left:-5px;top:-5px;width:9px;height:9px;border-radius:50%;background:var(--fb-amber)}
+.sbclock{font-variant-numeric:tabular-nums;font-size:12.5px;margin-right:4px;padding:2px 8px;border-radius:8px;background:var(--secondary-background-color);white-space:nowrap}
+.sbnote{padding:8px 10px;font-size:12px;color:var(--secondary-text-color);border-bottom:1px solid var(--divider-color)}
+.sbctl{display:flex;flex-direction:column;gap:6px;padding:8px 10px;border-bottom:1px solid var(--divider-color)}
+.sbrow{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.sbl{width:44px;font-size:12px;color:var(--secondary-text-color)}
+.sbrow select,.sbrow input:not([type=checkbox]){font:inherit;font-size:12.5px;padding:4px 8px;border-radius:8px;border:1px solid var(--divider-color);background:var(--card-background-color);color:var(--primary-text-color);min-width:0}
+.sbrow .sbent,.sbrow .sbrun{flex:1 1 170px}.sbrow .sbval{flex:0 1 130px}.sbrow .sbev{flex:1 1 140px}.sbrow .sbevd{flex:2 1 170px}
+.sbrow .chip:disabled{opacity:.5;cursor:default}
+.sbcb{display:inline-flex;gap:4px;align-items:center;font-size:12px;color:var(--secondary-text-color)}
+.sbdue{display:flex;flex-wrap:wrap;gap:4px 10px;padding:6px 10px;font-size:11.5px;border-bottom:1px solid var(--divider-color)}.sbdue:empty{display:none}
+.sbask:empty{display:none}
+.sbq{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 10px;background:color-mix(in srgb,var(--fb-amber) 14%,transparent);border-bottom:1px solid var(--divider-color);font-size:12.5px}
+.sbq ha-icon{--mdc-icon-size:18px;color:var(--fb-amber)}.sbq span{flex:1 1 200px}
+.sbq input{font:inherit;font-size:12.5px;padding:4px 8px;border-radius:8px;border:1px solid var(--divider-color);background:var(--card-background-color);color:var(--primary-text-color)}
+.dbrow .dm .sbpart{color:var(--fb-amber)}
+.nbsbx{font-size:11.5px;color:var(--fb-amber);padding:0 6px;white-space:nowrap}
 .node.watching{box-shadow:0 0 0 2px color-mix(in srgb,var(--fb-blue) 55%,transparent)}
 .node.watching::after{content:attr(data-watch);position:absolute;right:8px;top:-9px;font-size:10px;line-height:14px;padding:0 6px;border-radius:7px;background:var(--fb-blue);color:#fff;letter-spacing:.02em}
 .node.wpulse{animation:pulse 1.4s ease-out}
@@ -2407,6 +2431,106 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       node_red_flows_as_of: 'Node-RED flows as of {when}. Open Node-RED to read them again.',
       open_node_red_once_so_the: 'Open Node-RED once, so the board can read its flows.',
       open_node_red: 'Open Node-RED',
+      sbx_changed_key: 'changed in the sandbox',
+      sbx_running: 'running in the sandbox',
+      sbx_ran_n: { one: 'ran once in the sandbox', other: 'ran {n} times in the sandbox' },
+      sbx_not_run: 'not run in the sandbox yet',
+      sbx_bad_data: 'The event data isn\'t JSON or YAML.',
+      sbx_bar_note: 'Sandbox: nothing here changes your home',
+      sbx_button: 'Sandbox',
+      sbx_button_t: 'Sandbox: try the function on a copy of its states. Nothing is sent to your devices.',
+      sbx_by: 'by {name}',
+      sbx_by_you: 'by you',
+      sbx_check_conds: 'check its conditions',
+      sbx_clock: 'Clock',
+      sbx_close_t: 'Close the sandbox: the board shows your home again',
+      sbx_due: 'Coming up:',
+      sbx_empty: 'Set a state, fire an event or run an automation, and watch what the function does. Nothing changes in your home.',
+      sbx_entity: 'Entity',
+      sbx_event: 'Event',
+      sbx_event_data: 'Event data',
+      sbx_event_data_ph: 'data, e.g. {"entity_id": "timer.hall"}',
+      sbx_event_type: 'event type',
+      sbx_event_x: 'Event {type}',
+      sbx_fire: 'Fire',
+      sbx_fire_here: 'Fire in the sandbox',
+      sbx_needs_newer: 'reading templates in the sandbox needs a newer Home Assistant (one with the as_function template function)',
+      sbx_next: 'Next: {label} in {d}',
+      sbx_no_pause: 'Pause changes your real automations. Close the sandbox first.',
+      sbx_no_test: 'The sandbox can\'t run that kind of test.',
+      sbx_note: 'A copy of this function\'s states, with its own clock. Only the automations and scripts on this board run. Templates are read by Home Assistant from the sandbox\'s states. Nothing is sent to your devices.',
+      sbx_nothing_due: 'Nothing due',
+      sbx_now_is: 'now {state}',
+      sbx_out_cancelled: 'cancelled',
+      sbx_out_error: 'error',
+      sbx_out_finished: 'finished',
+      sbx_out_stopped: 'stopped',
+      sbx_partly: 'Partly real: it {what} from your home, not the sandbox.',
+      sbx_pick_event: 'Type an event type to fire.',
+      sbx_pick_state: 'Pick an entity and type a state.',
+      sbx_pill: 'Sandbox: nothing here changes your home',
+      sbx_reads_other: 'reads something',
+      sbx_reads_places: 'reads locations',
+      sbx_reads_states: 'reads all states',
+      sbx_reads_translated: 'reads translated states',
+      sbx_reset_t: 'Start over from your home\'s current states',
+      sbx_run: 'Run',
+      sbx_run_b: 'Run',
+      sbx_run_here: 'Run in the sandbox',
+      sbx_run_what: 'Automation or script to run',
+      sbx_set: 'Set',
+      sbx_set_b: 'Set',
+      sbx_set_here: 'Set in the sandbox',
+      sbx_state: 'state',
+      sbx_test_here: 'Test in the sandbox',
+      sbx_title: 'Sandbox · {fnName}',
+      sbx_triggered: '{name} triggered',
+      sbx_unknown: 'would call: the sandbox doesn\'t know what this changes',
+      sbx_use: 'Use',
+      sbx_value: 'Value',
+      sbx_waiting_you: 'waiting for your answer above',
+      sbx_was: 'was {s}',
+      sbx_already: '{name} is already {state}: nothing changes.',
+      sbx_ask_cond: 'The sandbox can\'t check "{c}". Is it true?',
+      sbx_ask_tpl: 'Home Assistant couldn\'t render {t} ({e}). Is it true?',
+      sbx_ask_value: 'Home Assistant couldn\'t render {t}. What should it give?',
+      sbx_cond_stopped: 'a condition was false',
+      sbx_delay: 'Waits {d}',
+      sbx_delay_label: '{name}: waits {d}',
+      sbx_device_act: 'device action: {type}',
+      sbx_err_continue: 'An error, carried on (continue_on_error): {e}',
+      sbx_error: 'The sandbox hit a problem: {e}',
+      sbx_false: 'false',
+      sbx_fires: 'fires {type}',
+      sbx_for_label: '{name}: once it has stayed so for {d}',
+      sbx_it_is: 'it is {t}',
+      sbx_loop: 'Stopped: one change led to more than {n} steps. That is probably a loop.',
+      sbx_max: 'Not started: already {max} runs (mode {mode}).',
+      sbx_none_true: 'none was true',
+      sbx_not_true: 'one was true',
+      sbx_pattern_label: '{name}: time pattern',
+      sbx_queued: 'Queued until the run before it ends.',
+      sbx_restart: 'Restarted: the run in progress is cancelled.',
+      sbx_run_by_you: 'Run by you',
+      sbx_script_failed: '{name} failed',
+      sbx_single: '{name} is already running: not started again (mode single).',
+      sbx_stop: 'Stops: {t}',
+      sbx_time_label: '{name}: time trigger',
+      sbx_timed_out: 'timed out',
+      sbx_timer_label: '{name} finishes',
+      sbx_tpl_gave: 'the template gave {v}',
+      sbx_trig_event: 'Event {type}',
+      sbx_trig_state: '{name} → {state}',
+      sbx_trig_template: 'Its template became true',
+      sbx_trig_time: 'The time came',
+      sbx_trig_was: 'the trigger was {id}',
+      sbx_true: 'true',
+      sbx_unknown_step: 'A step the sandbox doesn\'t know ({k}): skipped.',
+      sbx_up_to: 'up to {d}',
+      sbx_wait_label: '{name}: waiting',
+      sbx_wait_tpl: 'Waits until {t}{d}',
+      sbx_wait_trig: 'Waits for a trigger{d}',
+      sbx_you_said: 'you said {a}',
       show_node_red_flows: 'Show Node-RED flows',
       zoom_out_to_show_everything: 'Zoom out to show everything',
       back_to_a_readable_size: 'Back to a readable size',
@@ -2859,6 +2983,937 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
   };
   setLang('en');
 
+  /* ---------- Sandbox (Phase 10): a function run on a copy of Home Assistant's states ----------
+     Nothing is sent to Home Assistant but templates to render, which only read. The sandbox keeps its own states
+     (the real ones until it changes them), its own clock, and runs the function's automations and scripts the way
+     Home Assistant does: triggers, conditions, actions and their effects, delays and waits, run modes. What it
+     can't know (a device's action, a sun or zone condition, a template Home Assistant couldn't render) it asks.
+     Times are milliseconds on the sandbox clock; times of day are read in Home Assistant's time zone. */
+  const SBX_LIMIT = 2000;  // steps one change may cause before the sandbox calls it a loop and stops
+  const SBX_CANCEL = { cancel: true }, SBX_STOP = { stop: true };
+  const SBX_COND_FAIL = { condFail: true };
+  const WD = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+  function tzParts(ms, tz) {
+    const f = tzParts.f || (tzParts.f = new Map());
+    let fmt = f.get(tz || '');
+    if (!fmt) {
+      const o = { hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric', weekday: 'short' };
+      try { fmt = new Intl.DateTimeFormat('en-US', Object.assign({ timeZone: tz || undefined }, o)); } catch (e) { fmt = new Intl.DateTimeFormat('en-US', o); }
+      f.set(tz || '', fmt);
+    }
+    const p = {};
+    fmt.formatToParts(new Date(ms)).forEach((x) => { p[x.type] = x.value; });
+    return { y: +p.year, mo: +p.month, d: +p.day, h: +p.hour % 24, mi: +p.minute, s: +p.second, wd: WD.indexOf(String(p.weekday).toLowerCase().slice(0, 3)) };
+  }
+  // the moment a time of day ([h, m, s]) falls on, on the same local date as ms
+  function localAt(ms, hms, tz) {
+    const p = tzParts(ms, tz), wall = Date.UTC(p.y, p.mo - 1, p.d, hms[0], hms[1], hms[2] || 0);
+    let t = wall;
+    for (let i = 0; i < 3; i++) { const q = tzParts(t, tz); t = wall - (Date.UTC(q.y, q.mo - 1, q.d, q.h, q.mi, q.s) - t); }
+    return t;
+  }
+  const tzOffset = (ms, tz) => { const q = tzParts(ms, tz); return Date.UTC(q.y, q.mo - 1, q.d, q.h, q.mi, q.s) - Math.floor(ms / 1000) * 1000; };
+  function parseHMS(v) {
+    const m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?/.exec(String(v == null ? '' : v).trim());
+    return m ? [+m[1], +m[2], +(m[3] || 0)] : null;
+  }
+  // a duration as Home Assistant reads it: seconds, "HH:MM:SS(.ms)", "HH:MM", or { days, hours, minutes, seconds, milliseconds }
+  function durMs(v) {
+    if (v == null || v === '') return null;
+    if (typeof v === 'number' && isFinite(v)) return v * 1000;
+    if (typeof v === 'string') {
+      const s = v.trim();
+      if (/^-?\d+(\.\d+)?$/.test(s)) return parseFloat(s) * 1000;
+      const m = /^(-)?(\d+):(\d{1,2})(?::(\d{1,2})(\.\d+)?)?$/.exec(s);
+      if (!m) return null;
+      const ms = ((+m[2] * 60 + +m[3]) * 60 + +(m[4] || 0) + parseFloat(m[5] || 0)) * 1000;
+      return m[1] ? -ms : ms;
+    }
+    if (typeof v === 'object' && !Array.isArray(v)) {
+      const n = (k) => { const x = v[k]; return x == null ? 0 : parseFloat(x) || 0; };
+      return (((n('days') * 24 + n('hours')) * 60 + n('minutes')) * 60 + n('seconds')) * 1000 + n('milliseconds');
+    }
+    return null;
+  }
+  const fmtDur = (ms) => {
+    const s = Math.round(ms / 1000), h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
+    return h ? `${h}:${String(m).padStart(2, '0')}:${String(x).padStart(2, '0')}` : `${m}:${String(x).padStart(2, '0')}`;
+  };
+  // a template's result as a condition reads it (Home Assistant's result_as_boolean)
+  function asBool(v) {
+    if (typeof v === 'boolean') return v;
+    if (typeof v === 'number') return v !== 0;
+    if (typeof v === 'string') return ['1', 'true', 'yes', 'on', 'enable'].includes(v.trim().toLowerCase());
+    return false;
+  }
+  // part of an event's data matching what a trigger asks for
+  function subsetOf(want, got) {
+    if (want == null) return true;
+    if (typeof want !== 'object' || Array.isArray(want)) return canon(want) === canon(got) || String(want) === String(got);
+    if (!got || typeof got !== 'object') return false;
+    return Object.entries(want).every(([k, v]) => subsetOf(v, got[k]));
+  }
+  // what a service does to an entity's state: [state, attributes] or null when the sandbox doesn't know
+  const SBX_ONOFF = new Set(['light', 'switch', 'fan', 'input_boolean', 'siren', 'humidifier', 'automation', 'remote', 'media_player', 'climate', 'water_heater', 'group']);
+  const SBX_ARM = { alarm_arm_home: 'armed_home', alarm_arm_away: 'armed_away', alarm_arm_night: 'armed_night', alarm_arm_vacation: 'armed_vacation',
+    alarm_arm_custom_bypass: 'armed_custom_bypass', alarm_disarm: 'disarmed', alarm_trigger: 'triggered' };
+  function sbxEffect(dom, svc, cur, d, nowIso) {
+    const st = cur ? cur.state : null, A = (cur && cur.attributes) || {};
+    const num = (x) => { const n = parseFloat(x); return isFinite(n) ? n : null; };
+    const clamp = (v) => { const lo = num(A.min), hi = num(A.max); return Math.min(hi == null ? Infinity : hi, Math.max(lo == null ? -Infinity : lo, v)); };
+    const fmtN = (v) => String(Number.isInteger(v) ? v : Math.round(v * 1e6) / 1e6);
+    const opts = toList(A.options).map(String);
+    const isOn = st != null && !['off', 'closed', 'locked', 'idle', 'unavailable', 'unknown', 'standby'].includes(st);
+    if (svc === 'toggle' && (SBX_ONOFF.has(dom) || dom === 'cover' || dom === 'valve')) {
+      if (dom === 'cover' || dom === 'valve') return sbxEffect(dom, st === 'open' || st === 'opening' ? 'close_' + dom : 'open_' + dom, cur, d, nowIso);
+      return sbxEffect(dom, isOn ? 'turn_off' : 'turn_on', cur, d, nowIso);
+    }
+    switch (dom + '.' + svc) {
+      case 'cover.open_cover': case 'valve.open_valve': return ['open', { current_position: 100 }];
+      case 'cover.close_cover': case 'valve.close_valve': return ['closed', { current_position: 0 }];
+      case 'cover.stop_cover': case 'valve.stop_valve': return [st === 'opening' ? 'open' : st === 'closing' ? 'closed' : st, {}];
+      case 'cover.set_cover_position': case 'valve.set_valve_position': { const p = num(d.position); return p == null ? null : [p > 0 ? 'open' : 'closed', { current_position: p }]; }
+      case 'lock.lock': return ['locked', {}];
+      case 'lock.unlock': return ['unlocked', {}];
+      case 'lock.open': return ['open', {}];
+      case 'input_number.set_value': case 'number.set_value': { const v = num(d.value); return v == null ? null : [fmtN(clamp(v)), {}]; }
+      case 'input_number.increment': case 'input_number.decrement': {
+        const v = num(st), s = num(A.step) || 1;
+        return v == null ? null : [fmtN(clamp(v + (svc === 'increment' ? s : -s))), {}];
+      }
+      case 'counter.increment': case 'counter.decrement': {
+        const v = num(st) || 0, s = num(A.step) || 1, n = v + (svc === 'increment' ? s : -s);
+        const lo = num(A.minimum), hi = num(A.maximum);
+        return [String(Math.min(hi == null ? Infinity : hi, Math.max(lo == null ? -Infinity : lo, n))), {}];
+      }
+      case 'counter.reset': return [String(num(A.initial) || 0), {}];
+      case 'counter.set_value': { const v = num(d.value); return v == null ? null : [String(v), {}]; }
+      case 'input_select.select_option': case 'select.select_option': return d.option == null ? null : [String(d.option), {}];
+      case 'input_select.select_first': case 'select.select_first': return opts.length ? [opts[0], {}] : null;
+      case 'input_select.select_last': case 'select.select_last': return opts.length ? [opts[opts.length - 1], {}] : null;
+      case 'input_select.select_next': case 'select.select_next': case 'input_select.select_previous': case 'select.select_previous': {
+        if (!opts.length) return null;
+        const i = opts.indexOf(st), step = svc.endsWith('next') ? 1 : -1, cyc = d.cycle !== false;
+        let j = i < 0 ? 0 : i + step;
+        if (j >= opts.length) j = cyc ? 0 : opts.length - 1;
+        if (j < 0) j = cyc ? opts.length - 1 : 0;
+        return [opts[j], {}];
+      }
+      case 'input_text.set_value': case 'text.set_value': return d.value == null ? null : [String(d.value), {}];
+      case 'input_datetime.set_datetime': {
+        if (d.datetime != null) return [String(d.datetime).replace('T', ' ').slice(0, 19), {}];
+        if (d.date != null && d.time != null) return [`${d.date} ${parseHMS(d.time) ? String(d.time).padEnd(8, ':00').slice(0, 8) : d.time}`, {}];
+        if (d.date != null) return [String(d.date), {}];
+        if (d.time != null) { const t = parseHMS(d.time); return t ? [t.map((x) => String(x).padStart(2, '0')).join(':'), {}] : null; }
+        return null;
+      }
+      case 'input_button.press': case 'button.press': return [nowIso, {}];
+      case 'light.turn_on': {
+        const at = {};
+        if (d.brightness != null) at.brightness = num(d.brightness);
+        if (d.brightness_pct != null) at.brightness = Math.round((num(d.brightness_pct) || 0) * 2.55);
+        ['color_temp_kelvin', 'rgb_color', 'hs_color', 'xy_color', 'effect'].forEach((k) => { if (d[k] != null) at[k] = d[k]; });
+        if (at.brightness === 0) return ['off', {}];
+        return ['on', at];
+      }
+      case 'fan.turn_on': return ['on', d.percentage != null ? { percentage: num(d.percentage) } : {}];
+      case 'fan.set_percentage': { const p = num(d.percentage); return p == null ? null : [p > 0 ? 'on' : 'off', { percentage: p }]; }
+      case 'climate.turn_on': return [toList(A.hvac_modes).find((x) => x !== 'off') || 'heat', {}];
+      case 'climate.set_hvac_mode': return d.hvac_mode == null ? null : [String(d.hvac_mode), {}];
+      case 'climate.set_temperature': {
+        const at = {};
+        ['temperature', 'target_temp_high', 'target_temp_low'].forEach((k) => { if (d[k] != null) at[k] = num(d[k]); });
+        return [d.hvac_mode != null ? String(d.hvac_mode) : st, at];
+      }
+      case 'climate.set_preset_mode': return [st, { preset_mode: d.preset_mode }];
+      case 'climate.set_fan_mode': return [st, { fan_mode: d.fan_mode }];
+      case 'water_heater.set_temperature': return [d.operation_mode != null ? String(d.operation_mode) : st, { temperature: num(d.temperature) }];
+      case 'water_heater.set_operation_mode': return d.operation_mode == null ? null : [String(d.operation_mode), {}];
+      case 'media_player.media_play': case 'media_player.play_media': return ['playing', {}];
+      case 'media_player.media_pause': return ['paused', {}];
+      case 'media_player.media_stop': return ['idle', {}];
+      case 'media_player.volume_set': return [st, { volume_level: num(d.volume_level) }];
+      case 'media_player.volume_mute': return [st, { is_volume_muted: !!d.is_volume_muted }];
+      case 'vacuum.start': return ['cleaning', {}];
+      case 'vacuum.pause': return ['paused', {}];
+      case 'vacuum.stop': return ['idle', {}];
+      case 'vacuum.return_to_base': return ['returning', {}];
+      default:
+        if (dom === 'alarm_control_panel' && SBX_ARM[svc]) return [SBX_ARM[svc], {}];
+        if (SBX_ONOFF.has(dom) && svc === 'turn_on') return ['on', {}];
+        if (SBX_ONOFF.has(dom) && svc === 'turn_off') return ['off', {}];
+        return null;
+    }
+  }
+  // homeassistant.turn_on and friends, per entity: the entity's own domain's service
+  const HA_GENERIC = { cover: { turn_on: 'open_cover', turn_off: 'close_cover', toggle: 'toggle' }, valve: { turn_on: 'open_valve', turn_off: 'close_valve', toggle: 'toggle' },
+    lock: { turn_on: 'lock', turn_off: 'unlock' } };
+
+  class Sandbox {
+    // o: { states (Home Assistant's, read, never written), items: [{ id, cfg }], now, tz, tpl(template, vars) → { ok, value,
+    //      partly } | { ok: false, err }, ask({ text, key }) → Promise<boolean>, resolve(ref) → entity ids, fetch(id) → cfg, onLog(entry) }
+    constructor(o) {
+      this.o = o; this.real = o.states || {}; this.tz = o.tz; this.now = o.now == null ? Date.now() : o.now;
+      this.changed = new Map(); this.items = new Map(); this.log = []; this.timers = []; this.runs = new Map();
+      this.pend = new Map(); this.waiters = new Set(); this.tplLast = new Map(); this.queue = new Map();
+      this.busy = 0; this.seq = 0; this.steps = 0; this.halted = false; this.n = 0;
+      (o.items || []).forEach((x) => this.add(x.id, x.cfg));
+    }
+    add(id, cfg) { if (cfg) this.items.set(id, { id, cfg, kind: id.startsWith('script.') ? 'script' : 'automation' }); }
+    get(id) {
+      if (this.changed.has(id)) return this.changed.get(id);
+      const s = this.real[id];
+      return s ? { state: s.state, attributes: s.attributes || {}, last_changed: s.last_changed, last_updated: s.last_updated || s.last_changed } : null;
+    }
+    obj(id) { const s = this.get(id); return s ? { entity_id: id, state: s.state, attributes: s.attributes, last_changed: s.last_changed, last_updated: s.last_updated } : null; }
+    iso(ms) { return new Date(ms == null ? this.now : ms).toISOString(); }
+    _log(e) {
+      e.id = ++this.seq; e.t = this.now;
+      this.log.push(e);
+      if (this.o.onLog) this.o.onLog(e);
+      return e.id;
+    }
+    // ---- the clock and the work in hand
+    _task(fn) { this.busy++; return Promise.resolve().then(fn).catch((e) => { if (e !== SBX_CANCEL) this._log({ kind: 'note', warn: true, text: T('sbx_error', { e: (e && e.message) || String(e) }) }); }).finally(() => { this.busy--; }); }
+    async settle() {
+      for (let i = 0; i < 6000 && this.busy > 0; i++) await new Promise((r) => setTimeout(r, i < 50 ? 0 : 10));
+    }
+    _at(at, fn, run, label, key) {
+      const t = { at, fn, run, label, key, n: ++this.n };
+      this.timers.push(t);
+      if (run) run.timers.add(t);
+      return t;
+    }
+    _drop(t) { const i = this.timers.indexOf(t); if (i >= 0) this.timers.splice(i, 1); if (t && t.run) t.run.timers.delete(t); }
+    _sleep(ms, run, label) {
+      return new Promise((res, rej) => {
+        const t = this._at(this.now + Math.max(0, ms), () => { this.busy++; res(); }, run, label);
+        t.rej = (e) => { this.busy++; rej(e); };
+        this.busy--;
+      });
+    }
+    nextAt() { return this.timers.reduce((m, t) => Math.min(m, t.at), Infinity); }
+    pending() { return this.timers.filter((t) => t.label).sort((a, b) => a.at - b.at).map((t) => ({ at: t.at, label: t.label, key: t.key || (t.run && t.run.item.id) })); }
+    async advance(ms) {
+      await this.settle();
+      const end = this.now + Math.max(0, ms);
+      this._fresh();
+      for (let guard = 0; guard < 10000 && !this.halted; guard++) {
+        this.timers.sort((a, b) => a.at - b.at || a.n - b.n);
+        const t = this.timers[0];
+        if (!t || t.at > end) break;
+        this._drop(t);
+        this.now = Math.max(this.now, t.at);
+        t.fn();
+        await this.settle();
+      }
+      this.now = Math.max(this.now, end);
+      await this._timeTemplates();
+      await this.settle();
+    }
+    async toNext() { const at = this.nextAt(); if (isFinite(at)) await this.advance(at - this.now); }
+    // a new change from the person: its consequences get a fresh step budget
+    _fresh() { this.steps = 0; this.halted = false; }
+    _step() {
+      if (++this.steps <= SBX_LIMIT || this.halted) return;
+      this.halted = true;
+      this._log({ kind: 'note', warn: true, text: T('sbx_loop', { n: SBX_LIMIT }) });
+      this.stopAll();
+      throw SBX_CANCEL;
+    }
+    stopAll() {
+      this.runs.forEach((list) => list.slice().forEach((r) => this._cancel(r)));
+      this.queue.clear();
+    }
+    // ---- start: arm the time and template triggers
+    async start() {
+      this._fresh();
+      this.items.forEach((it) => { if (it.kind === 'automation') this._trigs(it).forEach((t, i) => this._armTime(it, t, i)); });
+      for (const it of this.items.values()) {
+        if (it.kind !== 'automation') continue;
+        const ts = this._trigs(it);
+        for (let i = 0; i < ts.length; i++) {
+          const t = ts[i];
+          if (this._plat(t) === 'template' && t.enabled !== false) {
+            const r = await this.o.tpl(String(t.value_template), this._vars(null));
+            this.tplLast.set(it.id + '#' + i, r.ok ? asBool(r.value) : null);
+          }
+        }
+      }
+    }
+    _trigs(it) { return toList(it.cfg.triggers != null ? it.cfg.triggers : it.cfg.trigger).filter((t) => t && typeof t === 'object'); }
+    _plat(t) { return t.trigger || t.platform; }
+    _on(it) { const s = this.get(it.id); return !s || s.state !== 'off'; }
+    // ---- what the person does
+    async userSet(id, state, attrs) {
+      this._fresh();
+      const s = this.get(id);
+      await new Promise((r) => { this._task(async () => { await this.setState(id, state == null ? (s ? s.state : '') : String(state), attrs || {}, null, true); r(); }); });
+      await this.settle();
+    }
+    async userEvent(type, data) {
+      this._fresh();
+      this._task(() => this.fireEvent(type, data || {}, null, true));
+      await this.settle();
+    }
+    async userRun(id, checkConds) {
+      this._fresh();
+      const it = this.items.get(id);
+      if (!it) return;
+      const cause = this._log({ kind: 'trigger', key: id, text: T('sbx_run_by_you'), by: 'you' });
+      this._start(it, { trigger: { platform: null, id: 'manual', idx: 'manual' } }, cause, { conds: checkConds });
+      await this.settle();
+    }
+    // a service call made by you (a kept test button, say): done on the sandbox like one in a script
+    async userCall(svc, data, ids) {
+      this._fresh();
+      const run = { item: { id: null, cfg: {}, kind: 'script' }, vars: {}, cause: null, timers: new Set(), done: false };
+      await new Promise((r) => { this._task(async () => { try { await this._call(svc, { action: svc, data: data || {}, target: { entity_id: ids } }, run); } finally { r(); } }); });
+      await this.settle();
+    }
+    // ---- states and events
+    async setState(id, state, attrs, cause, byYou) {
+      const old = this.get(id), was = old ? old.state : null;
+      const A = Object.assign({}, old ? old.attributes : {}, attrs || {});
+      const sameAttrs = canon(A) === canon(old ? old.attributes : {});
+      if (old && was === state && sameAttrs) {
+        if (byYou) this._log({ kind: 'note', key: id, text: T('sbx_already', { name: this._name(id), state }) });
+        return null;
+      }
+      const nu = { state, attributes: A, last_changed: was === state && old ? old.last_changed : this.iso(), last_updated: this.iso() };
+      this.changed.set(id, nu);
+      const lid = this._log({ kind: 'state', key: id, from: was, to: state, cause, by: byYou ? 'you' : null });
+      await this._onState(id, old, nu, lid);
+      return lid;
+    }
+    async fireEvent(type, data, cause, byYou) {
+      const lid = this._log({ kind: 'event', key: 'event:' + type, text: type, data, cause, by: byYou ? 'you' : null });
+      const ev = { event_type: type, data: data || {} };
+      for (const it of this.items.values()) {
+        if (it.kind !== 'automation' || !this._on(it)) continue;
+        this._trigs(it).forEach((t, i) => {
+          if (t.enabled === false || this._plat(t) !== 'event') return;
+          if (!toList(t.event_type).includes(type) || !subsetOf(t.event_data, data)) return;
+          this._fire(it, i, { platform: 'event', event: ev }, lid);
+        });
+      }
+      [...this.waiters].forEach((w) => w.onEvent && w.onEvent(ev, lid));
+      return lid;
+    }
+    _sval(t, s) { return s == null ? null : t.attribute != null ? s.attributes[t.attribute] : s.state; }
+    _stateMatch(t, id, old, nu) {
+      if (!toList(t.entity_id).includes(id)) return false;
+      const ov = this._sval(t, old), nv = this._sval(t, nu), any = t.from === undefined && t.to === undefined && t.not_from === undefined && t.not_to === undefined && t.attribute == null;
+      if (!any && old && canon(ov) === canon(nv)) return false;
+      const inList = (v, l) => toList(l).map(String).includes(String(v));
+      if (t.from != null && !inList(ov, t.from)) return false;
+      if (t.not_from != null && inList(ov, t.not_from)) return false;
+      if (t.to != null && !inList(nv, t.to)) return false;
+      if (t.not_to != null && inList(nv, t.not_to)) return false;
+      return true;
+    }
+    // a numeric_state trigger's value, or null when it isn't a number
+    async _numVal(t, id, s, run) {
+      if (!s) return null;
+      if (t.value_template) {
+        const r = await this.o.tpl(String(t.value_template), Object.assign(this._vars(run), { state: this.obj(id) }));
+        const v = r.ok ? parseFloat(r.value) : NaN;
+        return isFinite(v) ? v : null;
+      }
+      const v = parseFloat(this._sval(t, s));
+      return isFinite(v) ? v : null;
+    }
+    _limit(x) {
+      if (x == null) return null;
+      if (typeof x === 'number') return x;
+      if (EXACT_RE.test(String(x))) { const s = this.get(String(x)); const v = s ? parseFloat(s.state) : NaN; return isFinite(v) ? v : null; }
+      const v = parseFloat(x);
+      return isFinite(v) ? v : null;
+    }
+    _inRange(t, v) {
+      if (v == null) return false;
+      const a = this._limit(t.above), b = this._limit(t.below);
+      return (t.above == null || (a != null && v > a)) && (t.below == null || (b != null && v < b));
+    }
+    async _onState(id, old, nu, lid) {
+      // a `for:` waiting on this entity: still matching, or let go
+      for (const [k, p] of [...this.pend]) {
+        if (p.id !== id) continue;
+        if (!(await p.still(nu))) { this._drop(p.timer); this.pend.delete(k); }
+      }
+      for (const it of this.items.values()) {
+        if (it.kind !== 'automation' || !this._on(it)) continue;
+        const ts = this._trigs(it);
+        for (let i = 0; i < ts.length; i++) {
+          const t = ts[i], p = this._plat(t);
+          if (t.enabled === false) continue;
+          if (p === 'state' && this._stateMatch(t, id, old, nu)) {
+            const vars = { platform: 'state', entity_id: id, from_state: old ? this.obj0(id, old) : null, to_state: this.obj0(id, nu) };
+            const nv = this._sval(t, nu);
+            await this._fireFor(it, i, t, vars, lid, id, async (s) => canon(this._sval(t, s)) === canon(nv));
+          } else if (p === 'numeric_state' && toList(t.entity_id).includes(id)) {
+            const was = this._inRange(t, await this._numVal(t, id, old));
+            const now = this._inRange(t, await this._numVal(t, id, nu));
+            if (!was && now) {
+              const vars = { platform: 'numeric_state', entity_id: id, from_state: old ? this.obj0(id, old) : null, to_state: this.obj0(id, nu), above: t.above, below: t.below };
+              await this._fireFor(it, i, t, vars, lid, id, async (s) => this._inRange(t, await this._numVal(t, id, s)));
+            }
+          } else if (p === 'template' && this._reads(t.value_template, id)) {
+            await this._tplTrig(it, i, t, lid);
+          } else if (p === 'time' && toList(t.at).includes(id)) {
+            this._armTime(it, t, i);
+          }
+        }
+      }
+      [...this.waiters].forEach((w) => w.onState && w.onState(id, old, nu, lid));
+    }
+    obj0(id, s) { return { entity_id: id, state: s.state, attributes: s.attributes, last_changed: s.last_changed, last_updated: s.last_updated }; }
+    // does a template read this entity (or read states broadly, so it might)
+    _reads(tpl, id) { const s = String(tpl || ''); return s.includes(id) || /\bexpand\b|states\s*[|[]|states\.[a-z_]+\s*[|)]|\bstates\.[a-z_]+\s*$/.test(s); }
+    async _fireFor(it, i, t, vars, lid, id, still) {
+      const key = it.id + '#' + i + '#' + id;
+      const old = this.pend.get(key);
+      if (old) { this._drop(old.timer); this.pend.delete(key); }
+      if (t.for == null) { this._fire(it, i, vars, lid); return; }
+      let ms = durMs(t.for);
+      if (ms == null && TPL_RE.test(String(t.for))) { const r = await this.o.tpl(String(t.for), this._vars(null)); ms = r.ok ? durMs(r.value) : null; }
+      if (ms == null && typeof t.for === 'object') { const r = await this._render(t.for, null); ms = durMs(r); }
+      if (ms == null) ms = 0;
+      vars.for = fmtDur(ms);
+      const timer = this._at(this.now + ms, () => { this.pend.delete(key); this._task(() => this._fire(it, i, vars, lid)); }, null, T('sbx_for_label', { name: this._name(it.id), d: fmtDur(ms) }), it.id);
+      this.pend.set(key, { id, timer, still });
+    }
+    async _tplTrig(it, i, t, lid) {
+      const k = it.id + '#' + i, r = await this.o.tpl(String(t.value_template), this._vars(null));
+      const v = r.ok ? asBool(r.value) : null, was = this.tplLast.get(k);
+      this.tplLast.set(k, v);
+      if (v === true && was === false) this._fire(it, i, { platform: 'template', entity_id: null }, lid, r.partly);
+    }
+    async _timeTemplates() {
+      for (const it of this.items.values()) {
+        if (it.kind !== 'automation' || !this._on(it)) continue;
+        const ts = this._trigs(it);
+        for (let i = 0; i < ts.length; i++) {
+          const t = ts[i];
+          if (t.enabled !== false && this._plat(t) === 'template' && /\b(now|utcnow|today_at)\s*\(/.test(String(t.value_template))) await this._tplTrig(it, i, t, null);
+        }
+      }
+    }
+    // time triggers: the next time each `at` comes round, on the sandbox clock
+    _timeAt(at, from) {
+      if (EXACT_RE.test(String(at))) {
+        const s = this.get(String(at));
+        if (!s) return null;
+        if (String(at).startsWith('input_datetime.')) {
+          const A = s.attributes || {};
+          if (A.has_time === false) return null;
+          if (A.has_date) { const ms = Date.parse(String(s.state).replace(' ', 'T')); return isFinite(ms) && ms > from ? ms : null; }
+          const hms = parseHMS(s.state);
+          if (!hms) return null;
+          let t = localAt(from, hms, this.tz);
+          if (t <= from) t = localAt(from + 86400000, hms, this.tz);
+          return t;
+        }
+        const ms = Date.parse(s.state);
+        return isFinite(ms) && ms > from ? ms : null;
+      }
+      const hms = parseHMS(at);
+      if (!hms) return null;
+      let t = localAt(from, hms, this.tz);
+      if (t <= from) t = localAt(from + 86400000, hms, this.tz);
+      return t;
+    }
+    _armTime(it, t, i) {
+      const p = this._plat(t);
+      if (t.enabled === false || (p !== 'time' && p !== 'time_pattern')) return;
+      const key = 'time:' + it.id + '#' + i;
+      this.timers.filter((x) => x.slot === key).forEach((x) => this._drop(x));
+      let at = null, label = '';
+      if (p === 'time') {
+        toList(t.at).forEach((a) => { const x = this._timeAt(a, this.now); if (x != null && (at == null || x < at)) at = x; });
+        label = T('sbx_time_label', { name: this._name(it.id) });
+      } else { at = this._patternNext(t, this.now); label = T('sbx_pattern_label', { name: this._name(it.id) }); }
+      if (at == null) return;
+      this._at(at, () => {
+        const wd = t.weekday ? toList(t.weekday) : null, ok = !wd || wd.includes(WD[tzParts(this.now, this.tz).wd]);
+        if (ok && this._on(it)) this._task(() => this._fire(it, i, { platform: p, now: this.iso() }, null));
+        this._armTime(it, t, i);
+      }, null, label, it.id).slot = key;
+    }
+    _patternNext(t, from) {
+      const f = (v, dflt) => {
+        if (v == null) v = dflt;
+        const s = String(v).trim();
+        if (s === '*') return () => true;
+        const m = /^\/(\d+)$/.exec(s);
+        if (m) return (n) => n % (+m[1]) === 0;
+        return (n) => n === +s;
+      };
+      let { hours: h, minutes: mi, seconds: s } = t;
+      if (mi == null && h != null) mi = 0;
+      if (s == null && mi != null) s = 0;
+      const H = f(h, '*'), M = f(mi, '*'), S = f(s, '*'), off = tzOffset(from, this.tz);
+      let w = Math.floor((from + off) / 1000) * 1000 + 1000;
+      for (let i = 0; i < 200000; i++, w += 1000) {
+        const d = new Date(w);
+        if (!H(d.getUTCHours())) { w += (3599 - d.getUTCMinutes() * 60 - d.getUTCSeconds()) * 1000; continue; }
+        if (!M(d.getUTCMinutes())) { w += (59 - d.getUTCSeconds()) * 1000; continue; }
+        if (S(d.getUTCSeconds())) return w - off;
+      }
+      return null;
+    }
+    // ---- runs
+    _name(id) { return this.o.name ? this.o.name(id) : id; }
+    _vars(run) { return run ? Object.assign({}, run.vars) : {}; }
+    _active(id) { return (this.runs.get(id) || []).filter((r) => !r.done); }
+    running(id) { return this._active(id).length > 0; }
+    _fire(it, i, tv, cause, partly) {
+      const t = this._trigs(it)[i] || {};
+      const trigger = Object.assign({ id: t.id != null ? String(t.id) : String(i), idx: String(i) }, tv);
+      const lid = this._log({ kind: 'trigger', key: it.id, text: this._trigText(t, trigger), ent: trigger.entity_id || null, to: trigger.to_state ? trigger.to_state.state : null, cause, partly });
+      this._start(it, { trigger }, lid, { conds: true });
+    }
+    _trigText(t, tv) {
+      const p = this._plat(t);
+      if (p === 'state' || p === 'numeric_state') return T('sbx_trig_state', { name: this._name(tv.entity_id), state: tv.to_state ? tv.to_state.state : '' });
+      if (p === 'event') return T('sbx_trig_event', { type: tv.event.event_type });
+      if (p === 'time' || p === 'time_pattern') return T('sbx_trig_time');
+      if (p === 'template') return T('sbx_trig_template');
+      return String(p || '');
+    }
+    _start(it, vars, cause, opt) {
+      const cfg = it.cfg, mode = cfg.mode || 'single', max = cfg.max || 10, act = this._active(it.id);
+      if (act.length) {
+        if (mode === 'single') { this._log({ kind: 'note', key: it.id, cause, text: T('sbx_single', { name: this._name(it.id) }) }); return null; }
+        if (mode === 'restart') act.forEach((r) => { this._cancel(r); this._log({ kind: 'note', key: it.id, cause, text: T('sbx_restart') }); });
+        else if (act.length >= max) { this._log({ kind: 'note', key: it.id, cause, warn: true, text: T('sbx_max', { mode, max }) }); return null; }
+        else if (mode === 'queued') {
+          const q = this.queue.get(it.id) || [];
+          q.push([vars, cause, opt]); this.queue.set(it.id, q);
+          this._log({ kind: 'note', key: it.id, cause, text: T('sbx_queued') });
+          return null;
+        }
+      }
+      const run = { item: it, vars: Object.assign({ this: this.obj(it.id) }, vars), cause, timers: new Set(), done: false, cancelled: false };
+      const list = this.runs.get(it.id) || [];
+      list.push(run); this.runs.set(it.id, list);
+      const p = this._task(() => this._run(run, opt || {}));
+      run.promise = p;
+      return run;
+    }
+    _cancel(run) {
+      if (run.done) return;
+      run.cancelled = true;
+      [...run.timers].forEach((t) => { this._drop(t); if (t.rej) t.rej(SBX_CANCEL); });
+      [...this.waiters].forEach((w) => { if (w.run === run) { this.waiters.delete(w); w.rej(SBX_CANCEL); } });
+    }
+    async _run(run, opt) {
+      const it = run.item, cfg = it.cfg;
+      let outcome = 'finished', why = '';
+      try {
+        if (it.kind === 'automation') {
+          if (cfg.variables) Object.assign(run.vars, await this._render(cfg.variables, run));
+          if (opt.conds !== false) {
+            const cs = toList(cfg.conditions != null ? cfg.conditions : cfg.condition);
+            for (const c of cs) {
+              const r = await this._condStep(c, run);
+              if (!r.ok) { outcome = 'stopped'; why = T('sbx_cond_stopped'); return; }
+            }
+          }
+          await this._seq(toList(cfg.actions != null ? cfg.actions : cfg.action), run);
+        } else {
+          if (cfg.variables) Object.assign(run.vars, await this._render(cfg.variables, run));
+          await this._seq(toList(cfg.sequence), run);
+        }
+      } catch (e) {
+        if (e === SBX_CANCEL) { outcome = 'cancelled'; }
+        else if (e === SBX_COND_FAIL) { outcome = 'stopped'; why = T('sbx_cond_stopped'); }
+        else if (e && e.stop) { outcome = e.error ? 'error' : 'stopped'; why = e.text || ''; }
+        else { outcome = 'error'; why = (e && e.message) || String(e); }
+      } finally {
+        run.done = true;
+        const list = (this.runs.get(it.id) || []).filter((r) => r !== run);
+        this.runs.set(it.id, list);
+        if (outcome !== 'cancelled' || !this.halted) this._log({ kind: 'run', key: it.id, outcome, why, cause: run.cause });
+        const q = this.queue.get(it.id);
+        if (q && q.length && !this.halted) { const [v, c, o] = q.shift(); this._start(it, v, c, o); }
+        if (run.onDone) run.onDone(outcome);
+      }
+    }
+    // ---- templates and conditions
+    async _tpl(s, run) {
+      const r = await this.o.tpl(String(s), this._vars(run));
+      return r;
+    }
+    async _render(v, run) {
+      if (typeof v === 'string') {
+        if (!TPL_RE.test(v)) return v;
+        const r = await this._tpl(v, run);
+        if (r.ok) return r.value;
+        const a = await this._ask({ text: T('sbx_ask_value', { t: shorten(v, 80) }), value: true, run });
+        return a;
+      }
+      if (Array.isArray(v)) { const out = []; for (const x of v) out.push(await this._render(x, run)); return out; }
+      if (v && typeof v === 'object') { const out = {}; for (const [k, x] of Object.entries(v)) out[k] = await this._render(x, run); return out; }
+      return v;
+    }
+    async _ask(q) {
+      const lid = this._log({ kind: 'ask', key: q.run ? q.run.item.id : null, text: q.text, cause: q.run ? q.run.cause : null });
+      this.busy--;
+      let a;
+      try { a = await this.o.ask(Object.assign({ lid }, q)); } finally { this.busy++; }
+      const e = this.log.find((x) => x.id === lid);
+      if (e) { e.answer = a; if (this.o.onLog) this.o.onLog(e, true); }
+      return a;
+    }
+    // one condition as a step of its own (logged), true or false
+    async _condStep(c, run) {
+      const r = await this._cond(c, run);
+      this._log({ kind: 'cond', key: run.item.id, ok: r.ok, text: this.o.condText ? this.o.condText(c) : '', why: r.why || '', partly: r.partly, cause: run.cause });
+      return r;
+    }
+    async _conds(list, run) {
+      for (const c of toList(list)) { const r = await this._condStep(c, run); if (!r.ok) return r; }
+      return { ok: true };
+    }
+    async _cond(c, run) {
+      this._step();
+      if (c == null) return { ok: true };
+      if (typeof c === 'string') return this._tplCond(c, run);
+      if (Array.isArray(c)) {
+        let partly = null;
+        for (const x of c) { const r = await this._cond(x, run); if (r.partly) partly = (partly || []).concat(r.partly); if (!r.ok) return Object.assign({}, r, { partly }); }
+        return { ok: true, partly };
+      }
+      if (typeof c !== 'object' || c.enabled === false) return { ok: true };
+      if (typeof c.condition === 'string' && TPL_RE.test(c.condition)) return this._tplCond(c.condition, run);  // condition: "{{ … }}"
+      const type = c.condition || (c.and ? 'and' : c.or ? 'or' : c.not ? 'not' : null);
+      const subs = () => toList(c.conditions != null ? c.conditions : c[type]);
+      const all = async (want) => {
+        let partly = null;
+        for (const x of subs()) {
+          const r = await this._cond(x, run);
+          if (r.partly) partly = (partly || []).concat(r.partly);
+          if (r.ok !== want) return { hit: true, r, partly };
+        }
+        return { hit: false, partly };
+      };
+      switch (type) {
+        case 'and': { const x = await all(false); return x.hit ? Object.assign({}, x.r, { partly: x.partly }) : { ok: true, partly: x.partly }; }
+        case 'or': { const x = await all(true); return x.hit ? { ok: true, partly: x.partly } : { ok: false, why: T('sbx_none_true'), partly: x.partly }; }
+        case 'not': { const x = await all(true); return x.hit ? { ok: false, why: T('sbx_not_true'), partly: x.partly } : { ok: true, partly: x.partly }; }
+        case 'state': {
+          const ents = toList(c.entity_id), any = c.match === 'any', want = toList(c.state);
+          const one = (id) => {
+            const s = this.get(id);
+            if (!s) return false;
+            const v = c.attribute != null ? s.attributes[c.attribute] : s.state;
+            const ok = want.some((w) => { const ws = String(w); const ref = EXACT_RE.test(ws) && this.get(ws); return String(v) === (ref ? ref.state : ws) || canon(v) === canon(w); });
+            if (!ok) return false;
+            const f = c.for != null ? durMs(c.for) : null;
+            return f == null || this.now - Date.parse(s.last_changed) >= f;
+          };
+          const res = ents.map(one), ok = ents.length ? (any ? res.some(Boolean) : res.every(Boolean)) : false;
+          return { ok, why: ok ? '' : ents.map((id) => `${this._name(id)}: ${(this.get(id) || {}).state}`).join(', ') };
+        }
+        case 'numeric_state': {
+          const ents = toList(c.entity_id), vals = [];
+          for (const id of ents) vals.push(await this._numVal(c, id, this.get(id), run));
+          const ok = ents.length > 0 && vals.every((v) => this._inRange(c, v));
+          return { ok, why: ok ? '' : ents.map((id, i) => `${this._name(id)}: ${vals[i] == null ? (this.get(id) || {}).state : vals[i]}`).join(', ') };
+        }
+        case 'template': return this._tplCond(String(c.value_template), run);
+        case 'time': {
+          const p = tzParts(this.now, this.tz), sec = p.h * 3600 + p.mi * 60 + p.s;
+          const tod = (v) => {
+            if (v == null) return null;
+            if (EXACT_RE.test(String(v))) {
+              const s = this.get(String(v));
+              if (!s) return null;
+              const hm = parseHMS(String(s.state).split(' ').pop()) || (isFinite(Date.parse(s.state)) ? (() => { const q = tzParts(Date.parse(s.state), this.tz); return [q.h, q.mi, q.s]; })() : null);
+              return hm ? hm[0] * 3600 + hm[1] * 60 + hm[2] : null;
+            }
+            const hm = parseHMS(v);
+            return hm ? hm[0] * 3600 + hm[1] * 60 + hm[2] : null;
+          };
+          const a = tod(c.after), b = tod(c.before);
+          let ok = true;
+          if (a != null && b != null) ok = a <= b ? sec >= a && sec < b : sec >= a || sec < b;
+          else if (a != null) ok = sec >= a;
+          else if (b != null) ok = sec < b;
+          if (c.weekday) ok = ok && toList(c.weekday).includes(WD[p.wd]);
+          return { ok, why: ok ? '' : T('sbx_it_is', { t: `${WD[p.wd]} ${String(p.h).padStart(2, '0')}:${String(p.mi).padStart(2, '0')}` }) };
+        }
+        case 'trigger': {
+          const id = run.vars.trigger ? String(run.vars.trigger.id) : null;
+          const ok = toList(c.id).map(String).includes(id);
+          return { ok, why: ok ? '' : T('sbx_trig_was', { id: id == null ? '—' : id }) };
+        }
+        default: {
+          const a = await this._ask({ text: T('sbx_ask_cond', { c: this.o.condText ? this.o.condText(c) : String(type) }), run });
+          return { ok: !!a, why: T('sbx_you_said', { a: a ? T('sbx_true') : T('sbx_false') }) };
+        }
+      }
+    }
+    async _tplCond(s, run) {
+      const r = await this._tpl(s, run);
+      if (r.ok) return { ok: asBool(r.value), why: T('sbx_tpl_gave', { v: shorten(typeof r.value === 'string' ? r.value : JSON.stringify(r.value), 40) }), partly: r.partly && r.partly.length ? r.partly : null };
+      const a = await this._ask({ text: T('sbx_ask_tpl', { t: shorten(s, 80), e: r.err || '' }), run });
+      return { ok: !!a, why: T('sbx_you_said', { a: a ? T('sbx_true') : T('sbx_false') }) };
+    }
+    // ---- actions
+    async _seq(list, run) {
+      for (const a of toList(list)) {
+        if (run.cancelled) throw SBX_CANCEL;
+        await this._act(a, run);
+      }
+    }
+    async _act(a, run) {
+      if (a == null || (typeof a === 'object' && a.enabled === false)) return;
+      if (Array.isArray(a)) return this._seq(a, run);
+      if (typeof a !== 'object') return;
+      this._step();
+      try { await this._act1(a, run); } catch (e) {
+        if (e === SBX_CANCEL || e === SBX_COND_FAIL || (e && e.stop)) throw e;
+        if (a.continue_on_error) { this._log({ kind: 'note', key: run.item.id, cause: run.cause, text: T('sbx_err_continue', { e: (e && e.message) || String(e) }) }); return; }
+        throw e;
+      }
+    }
+    async _act1(a, run) {
+      const svc = typeof a.action === 'string' ? a.action : typeof a.service === 'string' ? a.service : null;
+      if (svc) return this._call(svc, a, run);
+      if (a.delay !== undefined) {
+        let ms = durMs(typeof a.delay === 'object' ? a.delay : await this._render(a.delay, run));
+        if (ms == null && typeof a.delay === 'object') ms = durMs(await this._render(a.delay, run));
+        if (ms == null) ms = 0;
+        this._log({ kind: 'wait', key: run.item.id, cause: run.cause, text: T('sbx_delay', { d: fmtDur(ms) }) });
+        await this._sleep(ms, run, T('sbx_delay_label', { name: this._name(run.item.id), d: fmtDur(ms) }));
+        return;
+      }
+      if (a.wait_template !== undefined) return this._waitTpl(a, run);
+      if (a.wait_for_trigger !== undefined) return this._waitTrig(a, run);
+      if (typeof a.condition === 'string' || a.and || a.or || a.not) {
+        const r = await this._condStep(a, run);
+        if (!r.ok) throw SBX_COND_FAIL;
+        return;
+      }
+      if (a.choose !== undefined) {
+        for (const opt of toList(a.choose)) {
+          const r = await this._conds(opt.conditions, run);
+          if (r.ok) return this._seq(opt.sequence, run);
+        }
+        if (a.default) return this._seq(a.default, run);
+        return;
+      }
+      if (a.if !== undefined) {
+        const r = await this._conds(a.if, run);
+        if (r.ok) return this._seq(a.then, run);
+        if (a.else) return this._seq(a.else, run);
+        return;
+      }
+      if (a.repeat) return this._repeat(a.repeat, run);
+      if (a.sequence !== undefined) { try { await this._seq(a.sequence, run); } catch (e) { if (e !== SBX_COND_FAIL) throw e; } return; }
+      if (a.parallel !== undefined) {
+        const branches = toList(a.parallel);
+        const out = await Promise.allSettled(branches.map((b) => this._seq(b && b.sequence !== undefined ? b.sequence : b, run).catch((e) => { if (e !== SBX_COND_FAIL) throw e; })));
+        const bad = out.find((x) => x.status === 'rejected');
+        if (bad) throw bad.reason;
+        return;
+      }
+      if (a.variables) { Object.assign(run.vars, await this._render(a.variables, run)); return; }
+      if (a.stop !== undefined) {
+        const text = String(await this._render(a.stop, run) || '');
+        this._log({ kind: 'note', key: run.item.id, cause: run.cause, text: T('sbx_stop', { t: text }) });
+        throw Object.assign({}, SBX_STOP, { text, error: !!a.error });
+      }
+      if (a.event !== undefined) {
+        const type = String(await this._render(a.event, run)), data = await this._render(a.event_data || {}, run);
+        const cid = this._log({ kind: 'call', key: run.item.id, cause: run.cause, svc: T('sbx_fires', { type }), ents: ['event:' + type] });
+        await this.fireEvent(type, data, cid);
+        return;
+      }
+      if (a.scene !== undefined) { this._log({ kind: 'call', key: run.item.id, cause: run.cause, svc: 'scene.turn_on', ents: [String(a.scene)], unknown: true }); return; }
+      if (a.device_id && a.domain && a.type) { this._log({ kind: 'call', key: run.item.id, cause: run.cause, svc: T('sbx_device_act', { type: a.type }), ents: ['device:' + a.device_id], unknown: true }); return; }
+      if (a.set_conversation_response !== undefined) return;
+      this._log({ kind: 'note', key: run.item.id, cause: run.cause, text: T('sbx_unknown_step', { k: Object.keys(a).join(', ') }) });
+    }
+    async _repeat(r, run) {
+      const outer = run.vars.repeat;
+      const body = async (i, item) => {
+        run.vars.repeat = Object.assign({ index: i + 1, first: i === 0 }, item !== undefined ? { item } : {});
+        await this._seq(r.sequence, run);
+      };
+      try {
+        if (r.count != null) {
+          const n = parseInt(await this._render(r.count, run), 10) || 0;
+          for (let i = 0; i < n; i++) { run.vars.repeat = { index: i + 1, first: i === 0, last: i === n - 1 }; await this._seq(r.sequence, run); }
+        } else if (r.for_each != null) {
+          const items = toList(await this._render(r.for_each, run));
+          for (let i = 0; i < items.length; i++) { run.vars.repeat = { index: i + 1, first: i === 0, last: i === items.length - 1, item: items[i] }; await this._seq(r.sequence, run); }
+        } else if (r.while != null) {
+          for (let i = 0; ; i++) { run.vars.repeat = { index: i + 1, first: i === 0 }; if (!(await this._conds(r.while, run)).ok) break; await body(i); }
+        } else if (r.until != null) {
+          for (let i = 0; ; i++) { await body(i); if ((await this._conds(r.until, run)).ok) break; }
+        }
+      } finally { run.vars.repeat = outer; }
+    }
+    // a service call: what it would change, done on the sandbox's states
+    _targets(a, data) {
+      const out = new Set(), t = a.target || {};
+      [t.entity_id, a.entity_id, data.entity_id].forEach((v) => toList(v).forEach((x) => { if (typeof x === 'string') x.split(',').map((s) => s.trim()).filter((s) => EXACT_RE.test(s)).forEach((s) => out.add(s)); }));
+      [[t, ''], [a, ''], [data, '']].forEach(([o]) => ['area_id', 'floor_id', 'label_id', 'device_id'].forEach((k) => toList(o && o[k]).forEach((x) => {
+        if (typeof x !== 'string' || !this.o.resolve) return;
+        this.o.resolve((k === 'device_id' ? 'device' : k.slice(0, -3)) + ':' + x).forEach((e) => out.add(e));
+      })));
+      return [...out];
+    }
+    async _call(svc, a, run) {
+      svc = String(await this._render(svc, run));
+      const [dom, s] = svc.split('.');
+      const data = (await this._render(a.data || a.data_template || {}, run)) || {};
+      const tgt = await this._render(a.target || {}, run);
+      let ents = this._targets(Object.assign({}, a, { target: tgt }), data);
+      const generic = dom === 'homeassistant';
+      if (!generic && dom !== 'script' && dom !== 'automation') ents = ents.filter((e) => e.split('.')[0] === dom || (dom === 'counter' && e.startsWith('counter.')));
+      const cid = this._log({ kind: 'call', key: run.item.id, cause: run.cause, svc, ents: dom === 'script' && !['turn_on', 'turn_off', 'toggle'].includes(s) ? ['script.' + s] : ents });
+      const entry = this.log[this.log.length - 1];
+      // scripts: called directly, the caller waits; started with script.turn_on, it doesn't
+      if (dom === 'script') {
+        if (s === 'turn_off') { ents.forEach((e) => this._active(e).forEach((r) => this._cancel(r))); return; }
+        const ids = ['turn_on', 'toggle'].includes(s) ? ents : ['script.' + s];
+        for (const id of ids) {
+          let it = this.items.get(id);
+          if (!it && this.o.fetch) { this.add(id, await this.o.fetch(id)); it = this.items.get(id); }
+          if (!it) { entry.unknown = true; continue; }
+          const vars = Object.assign({}, s === 'turn_on' ? (data.variables || {}) : data);
+          const r = this._start(it, vars, cid, {});
+          if (r && !['turn_on', 'toggle'].includes(s)) await new Promise((res, rej) => { this.busy--; r.onDone = (o) => { this.busy++; if (o === 'error') rej(new Error(T('sbx_script_failed', { name: this._name(id) }))); else res(); }; });
+        }
+        return;
+      }
+      if (svc === 'automation.trigger') {
+        ents.forEach((id) => { const it = this.items.get(id); if (it) this._start(it, { trigger: { platform: null, id: 'trigger', idx: 'trigger' } }, cid, { conds: data.skip_condition === false }); else entry.unknown = true; });
+        return;
+      }
+      if (dom === 'timer') { for (const id of ents) await this._timer(id, s, data, cid); return; }
+      let known = ents.length > 0;
+      for (const id of ents) {
+        const ed = id.split('.')[0], sv = generic ? ((HA_GENERIC[ed] || {})[s] || s) : s;
+        const eff = sbxEffect(ed, sv, this.get(id), data, this.iso());
+        if (!eff) { known = false; continue; }
+        await this.setState(id, eff[0] == null ? (this.get(id) || {}).state : eff[0], eff[1], cid);
+      }
+      if (!known) entry.unknown = true;
+      if (this.o.onLog && entry.unknown) this.o.onLog(entry, true);
+    }
+    async _timer(id, s, d, cid) {
+      const cur = this.get(id) || { state: 'idle', attributes: {} }, A = cur.attributes || {};
+      const key = 'timer:' + id;
+      const clear = () => this.timers.filter((x) => x.slot === key).forEach((x) => this._drop(x));
+      const finish = async (ev) => { clear(); await this.setState(id, 'idle', { finishes_at: null, remaining: '0:00:00' }, cid); await this.fireEvent(ev, { entity_id: id }, cid); };
+      if (s === 'start' || s === 'change') {
+        let ms = durMs(d.duration != null ? d.duration : s === 'start' && cur.state === 'paused' ? A.remaining : A.duration);
+        if (s === 'change') { const left = A.finishes_at ? Date.parse(A.finishes_at) - this.now : 0; ms = left + (ms || 0); }
+        if (ms == null) ms = 0;
+        clear();
+        const at = this.now + ms;
+        await this.setState(id, 'active', { finishes_at: this.iso(at), remaining: fmtDur(ms) }, cid);
+        this._at(at, () => this._task(async () => { await this.setState(id, 'idle', { finishes_at: null, remaining: '0:00:00' }, cid); await this.fireEvent('timer.finished', { entity_id: id }, cid); }), null, T('sbx_timer_label', { name: this._name(id) }), id).slot = key;
+        return;
+      }
+      if (s === 'cancel') return finish('timer.cancelled');
+      if (s === 'finish') return finish('timer.finished');
+      if (s === 'pause') { const left = A.finishes_at ? Date.parse(A.finishes_at) - this.now : 0; clear(); await this.setState(id, 'paused', { remaining: fmtDur(Math.max(0, left)), finishes_at: null }, cid); }
+    }
+    async _waitTpl(a, run) {
+      const tpl = String(a.wait_template), ms = a.timeout != null ? durMs(await this._render(a.timeout, run)) : null;
+      const first = await this._tplCond(tpl, run);
+      if (first.ok) { run.vars.wait = { completed: true, remaining: ms == null ? null : ms / 1000 }; return; }
+      this._log({ kind: 'wait', key: run.item.id, cause: run.cause, text: T('sbx_wait_tpl', { t: shorten(tpl, 50), d: ms == null ? '' : ' ' + T('sbx_up_to', { d: fmtDur(ms) }) }) });
+      const done = await this._waitFor(run, ms, (w) => ({ onState: async (id) => { if (!this._reads(tpl, id)) return; this.busy++; try { const r = await this._tplCond(tpl, run); if (r.ok) w.res(true); } finally { this.busy--; } } }), T('sbx_wait_label', { name: this._name(run.item.id) }));
+      run.vars.wait = { completed: done, remaining: 0 };
+      if (!done && a.continue_on_timeout === false) throw Object.assign({}, SBX_STOP, { text: T('sbx_timed_out') });
+    }
+    async _waitTrig(a, run) {
+      const ts = toList(a.wait_for_trigger), ms = a.timeout != null ? durMs(await this._render(a.timeout, run)) : null;
+      this._log({ kind: 'wait', key: run.item.id, cause: run.cause, text: T('sbx_wait_trig', { d: ms == null ? '' : ' ' + T('sbx_up_to', { d: fmtDur(ms) }) }) });
+      const done = await this._waitFor(run, ms, (w) => ({
+        onState: (id, old, nu) => { ts.forEach((t, i) => { const p = this._plat(t); if (p === 'state' && this._stateMatch(t, id, old, nu)) w.res({ platform: p, idx: String(i), id: t.id != null ? String(t.id) : String(i), entity_id: id, to_state: this.obj0(id, nu) }); }); },
+        onEvent: (ev) => { ts.forEach((t, i) => { if (this._plat(t) === 'event' && toList(t.event_type).includes(ev.event_type) && subsetOf(t.event_data, ev.data)) w.res({ platform: 'event', idx: String(i), id: t.id != null ? String(t.id) : String(i), event: ev }); }); },
+      }), T('sbx_wait_label', { name: this._name(run.item.id) }));
+      run.vars.wait = { trigger: done || null, remaining: 0, completed: !!done };
+      if (!done && a.continue_on_timeout === false) throw Object.assign({}, SBX_STOP, { text: T('sbx_timed_out') });
+    }
+    _waitFor(run, ms, mk, label) {
+      return new Promise((res, rej) => {
+        const w = { run, rej: (e) => { this.busy++; rej(e); } };
+        let t = null;
+        w.res = (v) => { if (w.fin) return; w.fin = true; this.waiters.delete(w); if (t) this._drop(t); this.busy++; res(v); };
+        Object.assign(w, mk(w));
+        this.waiters.add(w);
+        if (ms != null) t = this._at(this.now + ms, () => { if (!w.fin) { w.fin = true; this.waiters.delete(w); this.busy++; res(false); } }, run, label);
+        this.busy--;
+      });
+    }
+    // what changed since the start: [{ id, from, to }]
+    diff() { return [...this.changed].map(([id, s]) => ({ id, from: this.real[id] ? this.real[id].state : null, to: s.state })).filter((x) => x.from !== x.to); }
+  }
+
+  /* ---------- Sandbox templates: rendered by Home Assistant, reading the sandbox's states ----------
+     The template's state functions are renamed to stand-ins that read fb_s (the sandbox's states) first and the
+     real ones for everything else; the clock functions read fb_t (the sandbox clock). What still reads Home
+     Assistant directly is reported, so a result built partly on the real house is never passed off as the sandbox's. */
+  const SBX_PRELUDE = [
+    "{%- macro _fb_obj(e, returns) -%}{%- if e in fb_s -%}{%- set s = fb_s[e] -%}{%- do returns({'entity_id': e, 'domain': e.split('.')[0], 'object_id': e.split('.')[1], 'name': s.attributes.get('friendly_name', e), 'state': s.state, 'attributes': s.attributes, 'last_changed': as_datetime(s.last_changed), 'last_updated': as_datetime(s.last_updated), 'last_reported': as_datetime(s.last_updated)}) -%}{%- elif e is string and '.' in e -%}{%- do returns(states[e.split('.')[0]][e.split('.')[1]]) -%}{%- endif -%}{%- endmacro -%}",
+    '{%- set fb_obj = _fb_obj | as_function -%}',
+    "{%- macro _fb_states(e, rounded=False, with_unit=False, returns=None) -%}{%- if e in fb_s -%}{%- do returns(fb_s[e].state) -%}{%- else -%}{%- do returns(states(e, rounded=rounded, with_unit=with_unit)) -%}{%- endif -%}{%- endmacro -%}",
+    '{%- set fb_states = _fb_states | as_function -%}',
+    "{%- macro _fb_is_state(e, v, returns) -%}{%- set x = fb_s[e].state if e in fb_s else states(e) -%}{%- do returns(x in v if (v is iterable and v is not string) else x == v) -%}{%- endmacro -%}",
+    '{%- set fb_is_state = _fb_is_state | as_function -%}',
+    "{%- macro _fb_state_attr(e, a, returns) -%}{%- do returns(fb_s[e].attributes.get(a) if e in fb_s else state_attr(e, a)) -%}{%- endmacro -%}",
+    '{%- set fb_state_attr = _fb_state_attr | as_function -%}',
+    "{%- macro _fb_is_state_attr(e, a, v, returns) -%}{%- do returns(fb_state_attr(e, a) == v) -%}{%- endmacro -%}",
+    '{%- set fb_is_state_attr = _fb_is_state_attr | as_function -%}',
+    "{%- macro _fb_has_value(e, returns) -%}{%- if e in fb_s -%}{%- do returns(fb_s[e].state not in ['unknown', 'unavailable']) -%}{%- else -%}{%- do returns(has_value(e)) -%}{%- endif -%}{%- endmacro -%}",
+    '{%- set fb_has_value = _fb_has_value | as_function -%}',
+    "{%- macro _fb_expand(a1=None, a2=None, a3=None, a4=None, a5=None, a6=None, a7=None, a8=None, returns=None) -%}{%- set ns = namespace(ids=[]) -%}{%- for a in ([a1, a2, a3, a4, a5, a6, a7, a8] | reject('none') | list) + (varargs | list) -%}{%- for x in (a if (a is iterable and a is not string and a is not mapping) else [a]) -%}{%- set ns.ids = ns.ids + [x if x is string else x.entity_id] -%}{%- endfor -%}{%- endfor -%}{%- do returns(expand(ns.ids) | map(attribute='entity_id') | map('apply', fb_obj) | list) -%}{%- endmacro -%}",
+    '{%- set fb_expand = _fb_expand | as_function -%}',
+    "{%- macro _fb_domain(d, returns) -%}{%- do returns(states[d] | map(attribute='entity_id') | map('apply', fb_obj) | list) -%}{%- endmacro -%}",
+    '{%- set fb_domain = _fb_domain | as_function -%}',
+    "{%- macro _fb_now(returns) -%}{%- do returns((as_datetime(fb_t) | as_local) if fb_t else now()) -%}{%- endmacro -%}",
+    '{%- set fb_now = _fb_now | as_function -%}',
+    "{%- macro _fb_utcnow(returns) -%}{%- do returns(as_datetime(fb_t) if fb_t else utcnow()) -%}{%- endmacro -%}",
+    '{%- set fb_utcnow = _fb_utcnow | as_function -%}',
+    "{%- macro _fb_today_at(t='00:00', returns=None) -%}{%- set p = (t ~ ':0:0').split(':') -%}{%- do returns(fb_now().replace(hour=p[0] | int, minute=p[1] | int, second=p[2] | int, microsecond=0)) -%}{%- endmacro -%}",
+    '{%- set fb_today_at = _fb_today_at | as_function -%}',
+  ].join('');
+  const SBX_FNS = ['states', 'is_state', 'state_attr', 'is_state_attr', 'has_value', 'expand', 'now', 'utcnow', 'today_at'];
+  // the template with its state functions renamed; leftovers: what in it still reads Home Assistant directly
+  function sbxRewrite(t) {
+    let s = String(t);
+    const E = '([a-z_]+\\.[a-z0-9_]+)';
+    // tests: x is is_state('on') → x is apply(fb_is_state, 'on')
+    s = s.replace(/\bis\s+(not\s+)?(is_state|is_state_attr|has_value)\s*\(\s*\)/g, (m, n, f) => `is ${n || ''}apply(fb_${f})`);
+    s = s.replace(/\bis\s+(not\s+)?(is_state|is_state_attr|has_value)\s*\(/g, (m, n, f) => `is ${n || ''}apply(fb_${f}, `);
+    s = s.replace(/\bis\s+(not\s+)?has_value\b(?!\s*\()/g, (m, n) => `is ${n || ''}apply(fb_has_value)`);
+    // filters: 'x' | states → 'x' | apply(fb_states)
+    s = s.replace(/\|\s*(states|expand|has_value|state_attr)\s*\(\s*\)/g, (m, f) => `| apply(fb_${f})`);
+    s = s.replace(/\|\s*(states|expand|has_value|state_attr)\s*\(/g, (m, f) => `| apply(fb_${f}, `);
+    s = s.replace(/\|\s*(states|expand|has_value)\b(?!\s*\()/g, (m, f) => `| apply(fb_${f})`);
+    // states.light.kitchen, states['light.kitchen'] → fb_obj('light.kitchen'); states.light, states['light'] → fb_domain('light')
+    s = s.replace(new RegExp('(?<![\\w.])states\\.' + E.replace('\\.', '\\.'), 'g'), (m, id) => `fb_obj('${id}')`);
+    s = s.replace(new RegExp("(?<![\\w.])states\\s*\\[\\s*(['\"])" + E + '\\1\\s*\\]', 'g'), (m, q, id) => `fb_obj('${id}')`);
+    s = s.replace(/(?<![\w.])states\.([a-z_]+)(?![\w.(])/g, (m, d) => `fb_domain('${d}')`);
+    s = s.replace(/(?<![\w.])states\s*\[\s*(['"])([a-z_]+)\1\s*\]/g, (m, q, d) => `fb_domain('${d}')`);
+    // calls: is_state( → fb_is_state(
+    s = s.replace(new RegExp('(?<![\\w.])(' + SBX_FNS.join('|') + ')\\s*\\(', 'g'), (m, f) => `fb_${f}(`);
+    const left = new Set();
+    if (/(?<![\w.'"])states(?![\w(])/.test(s)) left.add('states');
+    ['closest', 'distance', 'state_translated', 'device_attr', 'is_device_attr'].forEach((f) => { if (new RegExp('(?<![\\w.])' + f + '\\b').test(s)) left.add(f); });
+    if (/\|\s*(closest|state_translated)\b/.test(s)) left.add('filter');
+    return { text: s, leftovers: [...left] };
+  }
+
   class FunctionsBoard extends HTMLElement {
     constructor() {
       super();
@@ -3184,6 +4239,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         <span class="sep"></span>
         <button class="sec" data-act="runs" title="${T('every_run_of_every_automation')}"><ha-icon icon="mdi:timeline-clock-outline"></ha-icon><span>${T('runs')}</span></button>
         <button class="sec" data-act="debug" title="${T('debugger_what_happens_in_this')}"><ha-icon icon="mdi:bug-outline"></ha-icon><span>${T('debug_2')}</span></button>
+        <button class="sec" data-act="sandbox" title="${T('sbx_button_t')}"><ha-icon icon="mdi:flask-outline"></ha-icon><span>${T('sbx_button')}</span></button>
         <button data-act="pause" class="pause sec" hidden></button>
       </div>
     </header>
@@ -3198,6 +4254,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       <div class="zoom"><button data-act="zoomout" title="${T('zoom_out')}">&minus;</button><button data-act="fit" title="${T('fit_everything')}"><ha-icon icon="mdi:fit-to-screen-outline"></ha-icon></button><button data-act="zoomin" title="${T('zoom_in')}">+</button></div>
       <div class="legend"></div>
       <div class="loading" hidden>${T('reading_configs')}</div>
+      <div class="sbxpill" hidden><ha-icon icon="mdi:flask-outline"></ha-icon>${T('sbx_pill')}</div>
       <div class="litbar" hidden></div>
       <div class="ttip" hidden></div>
       <div class="toast" role="status" aria-live="polite" hidden></div>
@@ -3213,7 +4270,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         world: q('.world'), frames: q('.frames'), edges: q('.edges'), nodes: q('.nodes'), notes: q('.notes'),
         empty: q('.empty'), nodebar: q('.nodebar'), legend: q('.legend'), loading: q('.loading'), toast: q('.toast'),
         drawer: q('.drawer'), modal: q('.modal'), cardhint: q('.cardhint'), litbar: q('.litbar'), ttip: q('.ttip'),
-        edgebar: q('.edgebar'), links: q('.links'), lh: q('.lh'),
+        edgebar: q('.edgebar'), links: q('.links'), lh: q('.lh'), sbxpill: q('.sbxpill'),
       };
       // the shadow root outlives a rebuild in another language (_relang): it keeps its listeners
       if (!this._rootOn) {
@@ -3416,6 +4473,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
 
     async _open(label, keep, opt = {}) {
       if (!label) return;
+      if (this._sbx && this._sbx.label !== label) this._closeDrawer();
       if (this._capture && this._capture.label !== label) this._capture = null;
       this._data.ui.current = label;
       if (!keep && !opt.fromRoute) this._pushRoute(label, !!opt.replace);
@@ -3984,7 +5042,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       }
       else if (n.domain === 'mqtt') r = { text: T('mqtt_topic') };
       else {
-        const st = this._hass.states[n.key];
+        const st = this._stOf(n.key);
         if (!st) r = { text: T('not_found', { tn }), warn: true };
         else if (st.state === 'unavailable') r = { text: T('unavailable_2', { tn }), warn: true };
         else if (n.domain === 'automation') {
@@ -4000,6 +5058,21 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         }
       }
       if (n.kind === 'suggest') r.text = T('related', { text: r.text });
+      if (this._sbxOn()) {
+        // the sandbox: what runs there, and what it changed from the real state
+        const eng = this._sbx.eng;
+        if (/^(automation|script)\./.test(n.key)) {
+          // its runs in the sandbox, not its last real run
+          r.run = eng.running(n.key);
+          const runs = eng.log.filter((e) => e.kind === 'run' && e.key === n.key).length, st = this._stOf(n.key);
+          const on = n.domain === 'automation' ? (st && st.state === 'off' ? T('off') : T('on')) + ' · ' : '';
+          r.text = on + (r.run ? T('sbx_running') : runs ? P('sbx_ran_n', runs) : T('sbx_not_run'));
+          r.off = n.domain === 'automation' && !!st && st.state === 'off';
+        }
+        const was = this._hass.states[n.key], now = eng.changed.get(n.key);
+        r.sbch = !!(now && (!was || String(was.state) !== String(now.state)));
+        return r;
+      }
       // a simulated state stays marked until the device or its integration reports again (9.2)
       if (this._sim.has(n.key)) {
         const st = this._hass.states[n.key];
@@ -4029,10 +5102,14 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         el.classList.toggle('running', !!s.run);
         el.classList.toggle('err', this._errKeys.has(k));
         el.classList.toggle('sim', !!s.sim);
+        el.classList.toggle('sbch', !!s.sbch);
+        // outside boxes have no state line: in the sandbox, a tag with the state
+        if (this._sbxOn() && n.kind === 'outside') { const so = this._stOf(k), v = so ? this._fmtState(k, so.state) : ''; if (el.dataset.sbx !== v) el.dataset.sbx = v; }
+        else if (el.dataset.sbx) delete el.dataset.sbx;
         const w = this._tw.get(k);
         el.classList.toggle('watching', !!w);
         if (w) { const t = 'watching' + (w.hits ? ' · ' + w.hits : ''); if (el.dataset.watch !== t) el.dataset.watch = t; } else if (el.dataset.watch) delete el.dataset.watch;
-        const st = this._hass.states[k];
+        const st = this._stOf(k);
         if (st && n.domain !== 'automation' && n.domain !== 'script' && n.kind !== 'outside') {
           const prev = this._prev.get(k);
           if (prev && prev !== st.last_changed) this._pulse(k);
@@ -4188,6 +5265,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (this._selEdge || !this._$.edgebar.hidden) { this._selEdge = null; this._$.edgebar.hidden = true; }
       this._applyFocus();
       if (this._drawer && this._drawer.mode === 'debug') this._renderWhy();
+      if (this._sbxOn() && this._sel && !this._sel.includes(':') && this._sbx.eng.get(this._sel)) this._sbxPick(this._sel);
     }
     _applyFocus() {
       this._computeFocus();
@@ -4229,6 +5307,17 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         bar.innerHTML = `<span class="nbname">${esc(n.name)}</span>` + mk(inj
           ? [['tool-run', 'mdi:play', T('run_2'), full, tid], ['tool-edit', 'mdi:pencil-outline', T('edit_2'), full, tid], ['tool-del', 'mdi:delete-outline', T('remove'), null, tid]]
           : [['mon-clear', 'mdi:broom', T('clear'), null, tid], ['tool-del', 'mdi:delete-outline', T('remove'), null, tid]]);
+        bar.hidden = false;
+        this._positionNodebar();
+        return;
+      }
+      if (this._sbxOn()) {
+        const b = [], eng = this._sbx.eng;
+        if (!n.key.includes(':') && eng.get(n.key)) b.push(['sbx-setbox', 'mdi:pencil-box-outline', T('sbx_set_here')]);
+        if (eng.items.has(n.key)) b.push(['sbx-runbox', 'mdi:play', T('sbx_run_here')]);
+        if (n.key.startsWith('event:')) b.push(['sbx-firebox', 'mdi:lightning-bolt-outline', T('sbx_fire_here')]);
+        if (this._canTest(n)) b.push(['test', 'mdi:flask-outline', T('sbx_test_here')]);
+        bar.innerHTML = `<span class="nbname">${esc(n.name)}</span>` + mk(b) + `<span class="nbsbx">${T('sbx_bar_note')}</span>`;
         bar.hidden = false;
         this._positionNodebar();
         return;
@@ -4398,6 +5487,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     _pause(b) {
       const p = this._pauseState(), label = this._data.ui.current;
       if (!p) return;
+      if (this._sbxOn()) { this._toast(T('sbx_no_pause')); return; }
       const L = this._layout(label), name = this._fnName(label);
       const call = (service, ids) => this._hass.callService('automation', service, {}, { entity_id: ids });
       const done = () => { delete b.dataset.sig; this._renderPause(); };
@@ -4441,7 +5531,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         + (open ? `<div class="lg">${line('role-trigger')}<span>${T('triggers')}</span>${line('role-condition')}<span>${T('is_checked_or_read_by')}</span>${line('role-action')}<span>${T('changes_2')}</span>${line('role-call')}<span>${T('runs_script_call')}</span>${line('role-source')}<span>${T('is_read_by_a_helper')}</span>${line('loop')}<span>${T('loop_can_retrigger_itself')}</span>${line('role-tool')}<span>${T('a_test_button_or_a')}</span>`
           + `<svg width="38" height="14"><path d="M4,3 L16,3 L16,11 L30,11"></path><path d="M16,3 L30,3"></path><circle cx="16" cy="3" r="3.2" style="fill:${TAGS[0]};stroke:var(--fb-edge);stroke-width:1.4"></circle><circle cx="32" cy="11" r="3.2" style="fill:${TAGS[0]};stroke:var(--fb-edge);stroke-width:1.4"></circle></svg><span>${T('one_line_that_branches_dot')}</span>`
           + `<svg width="38" height="14"><path d="M19,1 L19,13"></path><path d="M4,8 L15,8 A4,4 0 0 1 23,8 L34,8"></path></svg><span>${T('crosses_without_meeting')}</span>`
-          + `<svg width="38" height="14"><path d="M4,7 L34,7"></path><path class="ah" d="M15,7 L23,2.5 L23,11.5 z"></path></svg><span>${T('runs_back')}</span></div><div class="lgn"><span class="sw dashed"></span>${T('related_not_in_this_function')}<br><span class="sw pill"></span>${T('outside_item_it_touches')}<br><span class="sw st amber"></span>${T('unavailable')}<span class="sw st red"></span>${T('last_run_failed')}<span class="sw st blue"></span>${T('running')}<br><span class="cres-k ok">✓</span><span class="cres-k bad">✕</span> ${T('a_check_passes_or_fails')}<span class="sw dashed2"></span>${T('simulated_state')}</div><label class="tg"><input type="checkbox" data-tog="outside" ${u.outside ? 'checked' : ''}>${T('show_outside_items')}</label><label class="tg"><input type="checkbox" data-tog="suggest" ${u.suggest ? 'checked' : ''}>${T('show_related_suggestions')}</label><label class="tg" title="${T('reads_your_node_red_app')}"><input type="checkbox" data-nr ${u0.nodered === true ? 'checked' : ''}>${T('show_node_red_flows')}</label>${u0.nodered === true && this._nrCache && this._nrCache.err ? `<div class="lgerr">${esc(this._nrCache.err)}${this._nrCache.need ? ` <button class="lgbtn" data-act="nr-open">${T('open_node_red')}</button>` : ''}</div>` : ''}` : '');
+          + `<svg width="38" height="14"><path d="M4,7 L34,7"></path><path class="ah" d="M15,7 L23,2.5 L23,11.5 z"></path></svg><span>${T('runs_back')}</span></div><div class="lgn"><span class="sw dashed"></span>${T('related_not_in_this_function')}<br><span class="sw pill"></span>${T('outside_item_it_touches')}<br><span class="sw st amber"></span>${T('unavailable')}<span class="sw st red"></span>${T('last_run_failed')}<span class="sw st blue"></span>${T('running')}<br><span class="cres-k ok">✓</span><span class="cres-k bad">✕</span> ${T('a_check_passes_or_fails')}<span class="sw dashed2"></span>${T('simulated_state')}${this._sbxOn() ? `<br><span class="sw sbk"></span>${T('sbx_changed_key')}` : ''}</div><label class="tg"><input type="checkbox" data-tog="outside" ${u.outside ? 'checked' : ''}>${T('show_outside_items')}</label><label class="tg"><input type="checkbox" data-tog="suggest" ${u.suggest ? 'checked' : ''}>${T('show_related_suggestions')}</label><label class="tg" title="${T('reads_your_node_red_app')}"><input type="checkbox" data-nr ${u0.nodered === true ? 'checked' : ''}>${T('show_node_red_flows')}</label>${u0.nodered === true && this._nrCache && this._nrCache.err ? `<div class="lgerr">${esc(this._nrCache.err)}${this._nrCache.need ? ` <button class="lgbtn" data-act="nr-open">${T('open_node_red')}</button>` : ''}</div>` : ''}` : '');
     }
 
     /* ---------- view ---------- */
@@ -4724,7 +5814,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (el.dataset.run != null) { this._openRun(+el.dataset.run); return; }
       const a = el.dataset.act, label = this._data && this._data.ui.current;
       const need = () => { if (!label) { this._toast(T('create_or_pick_a_function')); return false; } return true; };
+      if (a && a.startsWith('sbx-') && this._sbxOn()) { this._sbxBox(a, el); return; }
       switch (a) {
+        case 'sandbox': if (need()) { if (this._sbxOn()) this._closeDrawer(); else this._openSandbox(); } break;
         case 'togglelist':
           if (this._compact) this._listOpen = !this._listOpen;
           else if (this._data) { this._data.ui.list = !this._data.ui.list; this._save(); }
@@ -4873,6 +5965,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     }
     _onChange(e) {
       const t = e.target, g = this._mgr;
+      if (t.classList && t.classList.contains('sbent')) { this._sbxPick(t.value); return; }
       if (t.hasAttribute && t.hasAttribute('data-nr')) {
         // the Node-RED switch is yours, for every function: off means no request to Node-RED at all
         this._data.ui.nodered = t.checked; this._save(); this._nrCache = null;
@@ -5641,6 +6734,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       });
     }
     async _doTest(test) {
+      if (this._sbxOn()) return this._sbxTest(test);
       if (!this._full()) { this._toast(FULL_ONLY_TEST); return false; }
       this._testOk = true;
       let err = null;
@@ -5874,7 +6968,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     _testCondsSoon(ms) { this._debounce('conds', ms == null ? 400 : ms, () => this._testConds()); }
     async _testConds() {
       const m = this._model;
-      if (!m || this._data.ui.condres === false) { if (this._cond.size) { this._cond = new Map(); this._drawEdges(); } this._condKeys = null; return; }
+      if (!m || this._data.ui.condres === false || this._sbxOn()) { if (this._cond.size) { this._cond = new Map(); this._drawEdges(); } this._condKeys = null; return; }
       const E = m.edges.filter((e) => e.conds && e.conds.length);
       this._condKeys = new Set(E.map((e) => e.from).filter((k) => !k.includes(':')));
       if (!E.length) { if (this._cond.size) { this._cond = new Map(); this._drawEdges(); } return; }
@@ -6026,7 +7120,10 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (!quiet) this._dbgAdd({ kind: 'note', t: Date.now(), text: T('stopped_recording') });
     }
     // leaving the debug panel for another drawer stops recording
-    _leaveDrawerMode() { if (this._drawer && this._drawer.mode === 'debug') this._dbgStop(); }
+    _leaveDrawerMode() {
+      if (this._drawer && this._drawer.mode === 'debug') this._dbgStop();
+      if (this._drawer && this._drawer.mode === 'sandbox') { this._sbxEnd(); this._testCondsSoon(0); }
+    }
     _dbgAdd(e) {
       const g = this._dbg;
       if (!g) return null;
@@ -6206,6 +7303,272 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     _fmtState(k, state) {
       const st = this._hass.states[k];
       try { return st && this._hass.formatEntityState ? this._hass.formatEntityState(Object.assign({}, st, { state: String(state) })) : String(state); } catch (e) { return String(state); }
+    }
+    /* ---------- Sandbox (Phase 10): the drawer, the controls, the timeline ---------- */
+    _sbxOn() { return !!(this._sbx && this._drawer && this._drawer.mode === 'sandbox'); }
+    // a box's state as the board shows it: the sandbox's while it's open, Home Assistant's otherwise
+    _stOf(k) {
+      if (!this._sbxOn()) return this._hass.states[k];
+      const s = this._sbx.eng.get(k);
+      return s ? { entity_id: k, state: String(s.state), attributes: s.attributes || {}, last_changed: s.last_changed, last_updated: s.last_updated, context: {} } : undefined;
+    }
+    async _openSandbox() {
+      const label = this._data.ui.current;
+      if (!label || !this._model) return;
+      this._leaveDrawerMode();
+      this._capture = null;
+      this._clearLit(true);
+      this._drawer = { mode: 'sandbox' };
+      const d = this._$.drawer;
+      d.hidden = false;
+      d.innerHTML = `<div class="dhead"><span class="dtitle">${T('sbx_title', { fnName: esc(this._fnName(label)) })}</span><span class="sbclock"></span><button data-act="sbx-reset" title="${T('sbx_reset_t')}"><ha-icon icon="mdi:restore"></ha-icon></button><button data-act="close" title="${T('sbx_close_t')}"><ha-icon icon="mdi:close"></ha-icon></button></div><div class="dbg sbx"><div class="sbnote">${T('sbx_note')}</div><div class="sbask"></div><div class="sbctl"></div><div class="sbdue"></div><div class="dtl sbtl"><div class="muted pad">${T('reading_configs')}</div></div></div>`;
+      this._$.board.classList.add('sbx');
+      this._$.sbxpill.hidden = false;
+      this._fitLitbar();
+      await this._sbxNew(label);
+      if (!this._sbxOn()) return;
+      this._renderSbxCtl();
+      this._renderSbx();
+      this._refreshStates();
+      this._renderNodebar();
+      this._renderLegend();
+    }
+    async _sbxNew(label) {
+      const m = this._model;
+      const ids = [...m.nodes.keys()].filter((k) => /^(automation|script)\./.test(k));
+      const cfgs = await Promise.all(ids.map((k) => this._fetchConfig(k)));
+      const g = { label, asks: [], fn: null, tplN: 0 };
+      this._sbx = g;
+      const resolve = (ref) => {
+        if (ref.startsWith('device:')) return this._ents.filter((e) => e.device_id === ref.slice(7)).map((e) => e.entity_id);
+        const t = this._tgt.get(ref);
+        return t ? t.entities : [];
+      };
+      g.eng = new Sandbox({
+        states: this._hass.states, items: ids.map((id, i) => ({ id, cfg: cfgs[i] })), now: Date.now(), tz: this._hass.config && this._hass.config.time_zone,
+        tpl: (t, v) => this._sbxTpl(t, v), ask: (q) => this._sbxAsk(q), resolve, fetch: (id) => this._fetchConfig(id),
+        name: (id) => this._boxName(id), condText: (c) => condText(c, (x) => this._boxName(x)), onLog: () => this._sbxLogged(),
+      });
+      await g.eng.start();
+    }
+    _sbxEnd() {
+      const g = this._sbx;
+      if (!g) return;
+      g.ended = true;
+      g.asks.forEach((a) => a.res(false));
+      g.asks = [];
+      g.eng.stopAll();
+      this._sbx = null;
+      this._$.board.classList.remove('sbx');
+      this._$.sbxpill.hidden = true;
+      this._clearLit(true);
+      this._refreshStates();
+      this._renderNodebar();
+      this._renderLegend();
+    }
+    async _sbxReset() {
+      if (!this._sbx) return;
+      const label = this._sbx.label;
+      this._sbx.asks.forEach((a) => a.res(false));
+      this._sbx.eng.stopAll();
+      this._clearLit(true);
+      await this._sbxNew(label);
+      this._renderSbxCtl();
+      this._renderSbx();
+      this._refreshStates();
+    }
+    // Home Assistant renders the template, pointed at the sandbox's states and clock (sbxRewrite)
+    async _sbxTpl(t, vars) {
+      const g = this._sbx;
+      if (!g) return { ok: false, err: 'closed' };
+      if (g.fn == null) g.fn = await this._renderRaw('{%- macro m(returns) -%}{%- do returns(1) -%}{%- endmacro -%}{{ (m | as_function)() }}', {}).then((v) => String(v) === '1', () => false);
+      if (!g.fn) return { ok: false, err: T('sbx_needs_newer') };
+      const rw = sbxRewrite(t), eng = g.eng, fb_s = {};
+      const add = (id) => { const s = eng.get(id); if (s) fb_s[id] = { state: String(s.state), attributes: s.attributes || {}, last_changed: s.last_changed, last_updated: s.last_updated }; };
+      eng.changed.forEach((v, id) => add(id));
+      for (const x of String(t).matchAll(ENTITY_RE)) add(x[0]);
+      let variables = {};
+      try { variables = JSON.parse(JSON.stringify(vars || {})); } catch (e) { /* only what can be sent */ }
+      Object.assign(variables, { fb_s, fb_t: new Date(eng.now).toISOString() });
+      g.tplN++;
+      try { return { ok: true, value: await this._renderRaw(SBX_PRELUDE + rw.text, variables), partly: rw.leftovers }; }
+      catch (e) { return { ok: false, err: (e && e.message) || String(e) }; }
+    }
+    _renderRaw(template, variables) {
+      return new Promise((res, rej) => {
+        let done = false, un = null;
+        const fin = (f, v) => { if (done) return; done = true; clearTimeout(to); f(v); if (un) un.then((u) => u && u()).catch(() => {}); };
+        const to = setTimeout(() => fin(rej, new Error('timeout')), 8000);
+        un = this._hass.connection.subscribeMessage((m) => {
+          if (m && m.error) { if (m.level !== 'WARNING') fin(rej, new Error(String(m.error))); return; }
+          fin(res, m ? m.result : null);
+        }, { type: 'render_template', template, variables, strict: false, report_errors: true }).catch((e) => { fin(rej, new Error((e && (e.message || e.code)) || 'error')); return null; });
+      });
+    }
+    // what the sandbox can't know, answered by you
+    _sbxAsk(q) {
+      const g = this._sbx;
+      if (!g) return Promise.resolve(false);
+      return new Promise((res) => {
+        g.asks.push({ q, res: (v) => { g.asks = g.asks.filter((a) => a.q !== q); res(v); this._renderSbx(); } });
+        this._renderSbx();
+        if (q.key) this._centerOn(q.key);
+      });
+    }
+    _sbxLogged() {
+      this._throttle('sbx', 120, () => { this._renderSbx(); this._refreshStates(); });
+    }
+    // the entities you can set, the events you can fire, the automations and scripts you can run
+    _renderSbxCtl() {
+      const g = this._sbx, box = this._$.drawer.querySelector('.sbctl');
+      if (!g || !box) return;
+      const m = this._model, nm = (k) => this._boxName(k);
+      const ents = [...m.nodes.keys()].filter((k) => !k.includes(':') && g.eng.get(k)).sort((a, b) => nm(a).localeCompare(nm(b)));
+      const evs = [...m.nodes.keys()].filter((k) => k.startsWith('event:')).map((k) => k.slice(6));
+      ['timer.finished', 'timer.cancelled'].forEach((x) => { if (!evs.includes(x) && ents.some((e) => e.startsWith('timer.'))) evs.push(x); });
+      const runs = [...g.eng.items.keys()].sort((a, b) => nm(a).localeCompare(nm(b)));
+      const opt = (k) => `<option value="${esc(k)}">${esc(nm(k))}</option>`;
+      box.innerHTML = `<div class="sbrow"><span class="sbl">${T('sbx_set')}</span><select class="sbent" aria-label="${T('sbx_entity')}">${ents.map(opt).join('')}</select><input class="sbval" list="sbvals" aria-label="${T('sbx_state')}" placeholder="${T('sbx_state')}"><datalist id="sbvals"></datalist><button class="chip" data-act="sbx-set">${T('sbx_set_b')}</button></div>`
+        + `<div class="sbrow"><span class="sbl">${T('sbx_event')}</span><input class="sbev" list="sbevs" aria-label="${T('sbx_event_type')}" placeholder="${T('sbx_event_type')}"><datalist id="sbevs">${evs.map((x) => `<option value="${esc(x)}"></option>`).join('')}</datalist><input class="sbevd" aria-label="${T('sbx_event_data')}" placeholder='${T('sbx_event_data_ph')}'><button class="chip" data-act="sbx-fire">${T('sbx_fire')}</button></div>`
+        + `<div class="sbrow"><span class="sbl">${T('sbx_run')}</span><select class="sbrun" aria-label="${T('sbx_run_what')}">${runs.map(opt).join('')}</select><label class="sbcb"><input type="checkbox" class="sbconds" checked>${T('sbx_check_conds')}</label><button class="chip" data-act="sbx-run">${T('sbx_run_b')}</button></div>`
+        + `<div class="sbrow"><span class="sbl">${T('sbx_clock')}</span><button class="chip" data-act="sbx-adv" data-ms="60000">+1 min</button><button class="chip" data-act="sbx-adv" data-ms="600000">+10 min</button><button class="chip" data-act="sbx-adv" data-ms="3600000">+1 h</button><button class="chip sbnext" data-act="sbx-next"></button></div>`;
+      const pick = this._sel && ents.includes(this._sel) ? this._sel : ents[0];
+      if (pick) this._sbxPick(pick);
+    }
+    _sbxPick(k) {
+      const d = this._$.drawer, sel = d.querySelector('.sbent'), dl = d.querySelector('#sbvals'), val = d.querySelector('.sbval');
+      if (!sel || !this._sbx) return;
+      sel.value = k;
+      const n = this._model.nodes.get(k), s = this._sbx.eng.get(k);
+      const hints = new Set(n ? this._stateHints(n) : []);
+      if (s) hints.add(String(s.state));
+      if (dl) dl.innerHTML = [...hints].map((x) => `<option value="${esc(x)}"></option>`).join('');
+      if (val) { val.value = ''; val.placeholder = s ? T('sbx_now_is', { state: String(s.state) }) : T('sbx_state'); }
+    }
+    async _sbxDo(fn) {
+      const g = this._sbx;
+      if (!g || g.busy) return;
+      g.busy = true;
+      this._renderSbx();
+      const from = g.eng.seq;
+      try { await fn(g.eng); } finally { g.busy = false; }
+      if (this._sbx !== g) return;
+      this._renderSbx();
+      this._refreshStates();
+      // light up what the change set off: the last thing it led to, and how it got there
+      const last = g.eng.log.filter((e) => e.id > from && e.kind !== 'note').pop();
+      if (last) this._sbxLight(last.id, true);
+    }
+    // the box bar's sandbox buttons fill in the drawer's controls; the rest are the drawer's own
+    _sbxBox(act, el) {
+      const d = this._$.drawer, k = this._sel;
+      if (act === 'sbx-setbox' && k) { this._sbxPick(k); const v = d.querySelector('.sbval'); if (v) v.focus(); return; }
+      if (act === 'sbx-runbox' && k) { const r = d.querySelector('.sbrun'); if (r) r.value = k; this._sbxAction('sbx-run', el); return; }
+      if (act === 'sbx-firebox' && k) { const v = d.querySelector('.sbev'); if (v) { v.value = k.slice(6); d.querySelector('.sbevd').focus(); } return; }
+      this._sbxAction(act, el);
+    }
+    _sbxAction(act, el) {
+      const d = this._$.drawer, q = (s) => d.querySelector(s);
+      switch (act) {
+        case 'sbx-set': {
+          const id = q('.sbent').value, v = q('.sbval').value.trim();
+          if (!id || !v) { this._toast(T('sbx_pick_state')); return; }
+          this._sbxDo((e) => e.userSet(id, v)).then(() => this._sbxPick(id));
+          break;
+        }
+        case 'sbx-fire': {
+          const type = q('.sbev').value.trim(), raw = q('.sbevd').value.trim();
+          if (!type) { this._toast(T('sbx_pick_event')); return; }
+          let data = {};
+          if (raw) { try { data = JSON.parse(raw); } catch (e) { const p = parseLoose(raw); if (p && typeof p === 'object') data = p; else { this._toast(T('sbx_bad_data')); return; } } }
+          this._sbxDo((e) => e.userEvent(type, data));
+          break;
+        }
+        case 'sbx-run': { const id = q('.sbrun').value; if (id) this._sbxDo((e) => e.userRun(id, q('.sbconds').checked)); break; }
+        case 'sbx-adv': this._sbxDo((e) => e.advance(+el.dataset.ms)); break;
+        case 'sbx-next': this._sbxDo((e) => e.toNext()); break;
+        case 'sbx-reset': this._sbxReset(); break;
+        case 'sbx-ans': { const a = this._sbx && this._sbx.asks[+el.dataset.i]; if (!a) return; if (a.q.value) { const inp = d.querySelector(`.sbav[data-i="${el.dataset.i}"]`); a.res(parseLoose(inp ? inp.value : '')); } else a.res(el.dataset.v === '1'); break; }
+        case 'sbx-pick': this._sbxLight(+el.dataset.id); break;
+        default: break;
+      }
+    }
+    // the chain that led to an entry, lit up on the board like a run
+    _sbxLight(id, auto) {
+      const g = this._sbx;
+      if (!g) return;
+      const by = new Map(g.eng.log.map((e) => [e.id, e])), chain = [];
+      for (let e = by.get(id); e && chain.length < 60; e = by.get(e.cause)) chain.unshift(e);
+      g.sel = id;
+      const steps = chain.map((e) => {
+        if (e.kind === 'state') return { kind: 'state', key: e.key, state: e.to };
+        if (e.kind === 'trigger') return { kind: 'run', key: e.key };
+        if (e.kind === 'call') return { kind: 'call', key: (e.ents && e.ents[0]) || e.key, svc: e.svc };
+        if (e.kind === 'event') return { kind: 'note', key: e.key, text: e.text };
+        return { kind: 'note', key: e.key, text: this._sbxText(e).main };
+      });
+      if (!auto) this._renderSbx();
+      if (steps.some((s) => s.key && this._model.nodes.has(s.key))) this._lightSteps(steps, null);
+    }
+    _sbxText(e) {
+      const nm = (k) => (k ? this._boxName(k) : ''), g = this._sbx, by = (x) => g && g.eng.log.find((y) => y.id === x);
+      switch (e.kind) {
+        case 'state': return { main: `${nm(e.key)} → ${this._fmtState(e.key, e.to)}`, sub: [e.from != null ? T('sbx_was', { s: this._fmtState(e.key, e.from) }) : '', e.by === 'you' ? T('sbx_by_you') : (by(e.cause) && by(e.cause).kind === 'call' ? T('sbx_by', { name: nm(by(e.cause).key) }) : '')].filter(Boolean).join(' · ') };
+        case 'event': return { main: T('sbx_event_x', { type: e.text }), sub: e.by === 'you' ? T('sbx_by_you') : (by(e.cause) && by(e.cause).key ? T('sbx_by', { name: nm(by(e.cause).key) }) : '') };
+        case 'trigger': return { main: T('sbx_triggered', { name: nm(e.key) }), sub: e.ent ? `${nm(e.ent)} → ${this._fmtState(e.ent, e.to)}` : e.text, cls: 'blue' };
+        case 'cond': return { main: `${e.text}: ${e.ok ? T('sbx_true') : T('sbx_false')}`, sub: e.why || '', cls: e.ok ? '' : 'red' };
+        case 'call': return { main: `${e.svc}${e.ents && e.ents.length ? ' → ' + e.ents.map(nm).join(', ') : ''}`, sub: e.unknown ? T('sbx_unknown') : nm(e.key), cls: e.unknown ? 'amber' : '' };
+        case 'run': return { main: `${nm(e.key)} · ${({ stopped: T('sbx_out_stopped'), cancelled: T('sbx_out_cancelled'), error: T('sbx_out_error') })[e.outcome] || T('sbx_out_finished')}`, sub: e.why || '', cls: e.outcome === 'error' ? 'red' : e.outcome === 'finished' ? '' : 'muted' };
+        case 'ask': return { main: e.text, sub: e.answer === undefined ? T('sbx_waiting_you') : T('sbx_you_said', { a: typeof e.answer === 'boolean' ? (e.answer ? T('sbx_true') : T('sbx_false')) : JSON.stringify(e.answer) }), cls: 'amber' };
+        default: return { main: e.text || '', sub: '', cls: e.warn ? 'amber' : '' };
+      }
+    }
+    _renderSbxSoon() { this._throttle('sbxr', 120, () => this._renderSbx()); }
+    _renderSbx() {
+      const g = this._sbx, d = this._$.drawer;
+      if (!g || !this._sbxOn()) return;
+      const eng = g.eng, box = d.querySelector('.sbtl');
+      const ck = d.querySelector('.sbclock');
+      if (ck) {
+        const p = tzParts(eng.now, eng.tz);
+        let w = WD[p.wd];
+        try { w = new Intl.DateTimeFormat(this._hass.language || undefined, { weekday: 'short', timeZone: eng.tz || undefined }).format(new Date(eng.now)); } catch (e) { /* the short English name */ }
+        ck.textContent = `${w} ${String(p.h).padStart(2, '0')}:${String(p.mi).padStart(2, '0')}:${String(p.s).padStart(2, '0')}`;
+      }
+      const nx = d.querySelector('.sbnext'), due = eng.pending();
+      if (nx) {
+        nx.disabled = !due.length || g.busy;
+        nx.textContent = due.length ? T('sbx_next', { label: due[0].label, d: fmtDur(due[0].at - eng.now) }) : T('sbx_nothing_due');
+      }
+      d.querySelectorAll('.sbctl button').forEach((b) => { if (b !== nx) b.disabled = !!g.busy; });
+      const dueBox = d.querySelector('.sbdue');
+      if (dueBox) dueBox.innerHTML = due.length > 1 ? `<span class="muted">${T('sbx_due')}</span> ` + due.slice(0, 6).map((x) => `<span class="sbd">${esc(x.label)} · ${esc(fmtDur(x.at - eng.now))}</span>`).join('') : '';
+      const ask = d.querySelector('.sbask');
+      if (ask) ask.innerHTML = g.asks.map((a, i) => `<div class="sbq"><ha-icon icon="mdi:account-question-outline"></ha-icon><span>${esc(a.q.text)}</span>${a.q.value
+        ? `<input class="sbav" data-i="${i}" aria-label="${T('sbx_value')}"><button class="chip" data-act="sbx-ans" data-i="${i}">${T('sbx_use')}</button>`
+        : `<button class="chip" data-act="sbx-ans" data-i="${i}" data-v="1">${T('sbx_true')}</button><button class="chip" data-act="sbx-ans" data-i="${i}" data-v="0">${T('sbx_false')}</button>`}</div>`).join('');
+      if (!box) return;
+      const icon = { state: 'mdi:swap-horizontal', event: 'mdi:lightning-bolt-outline', trigger: 'mdi:play-circle-outline', cond: 'mdi:help-rhombus-outline', call: 'mdi:arrow-right-bold-outline', run: 'mdi:flag-checkered', wait: 'mdi:timer-sand', note: 'mdi:information-outline', ask: 'mdi:account-question-outline' };
+      const atEnd = box.scrollTop + box.clientHeight >= box.scrollHeight - 40;
+      box.innerHTML = eng.log.length ? eng.log.map((e) => {
+        const t = this._sbxText(e), p = tzParts(e.t, eng.tz), tm = `${String(p.h).padStart(2, '0')}:${String(p.mi).padStart(2, '0')}:${String(p.s).padStart(2, '0')}`;
+        const ic = e.kind === 'cond' ? (e.ok ? 'mdi:check-circle-outline' : 'mdi:close-circle-outline') : icon[e.kind] || 'mdi:circle-small';
+        const partly = e.partly && e.partly.length ? `<span class="sbpart">${T('sbx_partly', { what: e.partly.map((x) => ({ states: T('sbx_reads_states'), closest: T('sbx_reads_places'), distance: T('sbx_reads_places'), state_translated: T('sbx_reads_translated') })[x] || T('sbx_reads_other')).join(', ') })}</span>` : '';
+        return `<button class="dbrow k-${e.kind} ${t.cls || ''} ${g.sel === e.id ? 'on' : ''}" data-act="sbx-pick" data-id="${e.id}"><span class="rt">${tm}</span><ha-icon icon="${ic}"></ha-icon><span class="dm"><b>${esc(t.main)}</b>${t.sub ? `<span>${esc(t.sub)}</span>` : ''}${partly}</span></button>`;
+      }).join('') : `<div class="muted pad">${T('sbx_empty')}</div>`;
+      if (atEnd || !g.scrolled) { box.scrollTop = box.scrollHeight; g.scrolled = true; }
+    }
+    // a test in the sandbox: done on its states instead of your home's
+    async _sbxTest(t) {
+      const id = t.target, run = (fn) => this._sbxDo(fn);
+      switch (t.kind) {
+        case 'state': await run((e) => e.userSet(id, t.state)); return true;
+        case 'event': await run((e) => e.userEvent(t.event_type, t.event_data || {})); return true;
+        case 'run': await run((e) => e.userRun(id, !t.skip_condition)); return true;
+        case 'action': await run((e) => e.userCall(t.service, t.data || {}, [id])); return true;
+        case 'notify': await run((e) => e.userCall(t.service, t.data || {}, id.includes(':') ? [] : [id])); return true;
+        default: this._toast(T('sbx_no_test')); return false;
+      }
     }
     // "why did or didn't it run?": the selected automation's recent attempts, from its traces
     async _renderWhy() {
