@@ -31,6 +31,7 @@ from homeassistant.loader import async_get_integration
 from homeassistant.util.hass_dict import HassKey
 
 from . import websocket
+from .nodered import NodeRedKept
 from .const import (
     BOARD_FILE,
     CONF_CARD,
@@ -86,6 +87,7 @@ class BoardData:
     static: bool = False
     module_url: str | None = None
     extra_js: str | None = None
+    nodered: NodeRedKept | None = None
 
     def stored(self) -> dict[str, Any]:
         """The store's contents."""
@@ -121,6 +123,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             if isinstance(k, str) and isinstance(v, int)
         },
     )
+    hass.data[DATA_KEY].nodered = kept = NodeRedKept(hass)
+    await kept.async_load()
     websocket.async_register(hass)
     return True
 

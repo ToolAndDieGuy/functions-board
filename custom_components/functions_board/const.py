@@ -23,6 +23,7 @@ MAX_LAYOUT_BYTES: Final = 200_000
 MAX_LABEL_LEN: Final = 100
 MAX_CLIENT_LEN: Final = 64
 MAX_SOURCES: Final = 500
+MAX_NODERED_BYTES: Final = 1_000_000
 
 # options
 CONF_MODE: Final = "mode"

@@ -1,5 +1,5 @@
 /*!
- * Functions board v0.6.1 (prototype) for Home Assistant
+ * Functions board v0.6.2 (prototype) for Home Assistant
  *
  * One page per "function": every automation, script, helper and device that makes one job work,
  * grouped by a Home Assistant label and wired together from their own configs.
@@ -13,7 +13,7 @@
  */
 (() => {
   'use strict';
-  const VERSION = '0.6.1';
+  const VERSION = '0.6.2';
   const loaded = customElements.get('functions-board');
   if (loaded) {
     if (loaded.VERSION !== VERSION) {
@@ -2039,6 +2039,7 @@ button{font:inherit;color:inherit}
 .node.nodered{border-style:dashed;border-color:color-mix(in srgb,#8f0000 60%,var(--divider-color))}
 .node.nodered .ic{color:color-mix(in srgb,#c33 70%,var(--secondary-text-color))}
 .lgerr{font-size:11.5px;color:var(--fb-amber);margin:2px 0 0 22px}
+.lgbtn{font:inherit;font-size:11.5px;color:var(--primary-color);background:none;border:1px solid var(--primary-color);border-radius:6px;padding:1px 7px;margin-left:4px;cursor:pointer}
 /* v0.5: keyboard (4.8) */
 .node:focus{outline:none}
 .node:focus-visible{outline:2px solid var(--primary-color);outline-offset:3px}
@@ -2402,7 +2403,10 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       simulated_state: 'simulated state',
       show_outside_items: 'Show outside items',
       show_related_suggestions: 'Show related suggestions',
-      reads_your_node_red_app: 'Reads your Node-RED app\'s flows in your browser, to draw what they trigger on, read and change. Nothing from them is stored.',
+      reads_your_node_red_app: 'Reads your Node-RED app\'s flows in your browser, through the Node-RED page Home Assistant opens for you, to draw what they trigger on, read and change. The flows last read are kept by the integration, so every board shows them until the next read.',
+      node_red_flows_as_of: 'Node-RED flows as of {when}. Open Node-RED to read them again.',
+      open_node_red_once_so_the: 'Open Node-RED once, so the board can read its flows.',
+      open_node_red: 'Open Node-RED',
       show_node_red_flows: 'Show Node-RED flows',
       zoom_out_to_show_everything: 'Zoom out to show everything',
       back_to_a_readable_size: 'Back to a readable size',
@@ -2703,7 +2707,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       tests_full_manager_a_helper: 'Tests (Full manager): a helper changed through its own actions, a simulated state (Home Assistant\'s copy only; the device keeps its real state), a fired event, an automation or script run, a test notification. Each is written to the logbook and can\'t be undone; the first one of a session asks first.',
       this_install_is_set_to: 'This install is set to Organise only: the board doesn\'t edit or delete automations, scripts, helpers or devices, and doesn\'t run tests. Full manager, which adds deleting and tests, is in the Functions Board integration\'s options.',
       the_debugger_watch_triggers_monitor: 'The debugger, Watch triggers, monitor boxes and the live checks on arrows only read: watching a trigger never runs the automation.',
-      show_node_red_flows_in: 'Show Node-RED flows (in the Key, off until you switch it on) reads your Node-RED app\'s flows in your browser to draw what they use. Nothing from them is stored.',
+      show_node_red_flows_in: 'Show Node-RED flows (in the Key, off until you switch it on) reads your Node-RED app\'s flows in your browser to draw what they use. The flows last read (names and entity IDs, no flow code) are kept by the integration for every board.',
       every_change_is_shown_before: 'Every change is shown before it happens, and Undo (Ctrl+Z) takes it back, except tests and deleting a helper that an integration set up.',
       shared_between_administrators_functions_board: 'shared between administrators (Functions Board integration)',
       stored_for_your_user_only: 'stored for your user only (install the Functions Board integration to share them)',
@@ -3081,6 +3085,11 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (this._storeMode !== 'shared' || !this._data) return;
       if (d.what === 'mode') { this._fbMode = d.mode === 'full' ? 'full' : 'organise'; this._$.board.classList.toggle('full', this._fbMode === 'full'); this._renderHeader(); this._renderNodebar(); return; }
       if (d.client && d.client === this._client()) return;
+      // another board read Node-RED: one showing older flows takes the new ones (only with Node-RED switched on)
+      if (d.what === 'nodered') {
+        if (this._data.ui.nodered === true && this._nrCache && this._nrCache.need && this._model) { this._nrCache = null; this._open(this._model.label, true).then(() => this._renderLegend()); }
+        return;
+      }
       const act = this.shadowRoot.activeElement;
       if (this._drag || (act && /^(INPUT|TEXTAREA|SELECT)$/.test(act.tagName))) {
         // finish what's in hand first; pick the change up shortly after
@@ -4432,7 +4441,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         + (open ? `<div class="lg">${line('role-trigger')}<span>${T('triggers')}</span>${line('role-condition')}<span>${T('is_checked_or_read_by')}</span>${line('role-action')}<span>${T('changes_2')}</span>${line('role-call')}<span>${T('runs_script_call')}</span>${line('role-source')}<span>${T('is_read_by_a_helper')}</span>${line('loop')}<span>${T('loop_can_retrigger_itself')}</span>${line('role-tool')}<span>${T('a_test_button_or_a')}</span>`
           + `<svg width="38" height="14"><path d="M4,3 L16,3 L16,11 L30,11"></path><path d="M16,3 L30,3"></path><circle cx="16" cy="3" r="3.2" style="fill:${TAGS[0]};stroke:var(--fb-edge);stroke-width:1.4"></circle><circle cx="32" cy="11" r="3.2" style="fill:${TAGS[0]};stroke:var(--fb-edge);stroke-width:1.4"></circle></svg><span>${T('one_line_that_branches_dot')}</span>`
           + `<svg width="38" height="14"><path d="M19,1 L19,13"></path><path d="M4,8 L15,8 A4,4 0 0 1 23,8 L34,8"></path></svg><span>${T('crosses_without_meeting')}</span>`
-          + `<svg width="38" height="14"><path d="M4,7 L34,7"></path><path class="ah" d="M15,7 L23,2.5 L23,11.5 z"></path></svg><span>${T('runs_back')}</span></div><div class="lgn"><span class="sw dashed"></span>${T('related_not_in_this_function')}<br><span class="sw pill"></span>${T('outside_item_it_touches')}<br><span class="sw st amber"></span>${T('unavailable')}<span class="sw st red"></span>${T('last_run_failed')}<span class="sw st blue"></span>${T('running')}<br><span class="cres-k ok">✓</span><span class="cres-k bad">✕</span> ${T('a_check_passes_or_fails')}<span class="sw dashed2"></span>${T('simulated_state')}</div><label class="tg"><input type="checkbox" data-tog="outside" ${u.outside ? 'checked' : ''}>${T('show_outside_items')}</label><label class="tg"><input type="checkbox" data-tog="suggest" ${u.suggest ? 'checked' : ''}>${T('show_related_suggestions')}</label><label class="tg" title="${T('reads_your_node_red_app')}"><input type="checkbox" data-nr ${u0.nodered === true ? 'checked' : ''}>${T('show_node_red_flows')}</label>${u0.nodered === true && this._nrCache && this._nrCache.err ? `<div class="lgerr">${esc(this._nrCache.err)}</div>` : ''}` : '');
+          + `<svg width="38" height="14"><path d="M4,7 L34,7"></path><path class="ah" d="M15,7 L23,2.5 L23,11.5 z"></path></svg><span>${T('runs_back')}</span></div><div class="lgn"><span class="sw dashed"></span>${T('related_not_in_this_function')}<br><span class="sw pill"></span>${T('outside_item_it_touches')}<br><span class="sw st amber"></span>${T('unavailable')}<span class="sw st red"></span>${T('last_run_failed')}<span class="sw st blue"></span>${T('running')}<br><span class="cres-k ok">✓</span><span class="cres-k bad">✕</span> ${T('a_check_passes_or_fails')}<span class="sw dashed2"></span>${T('simulated_state')}</div><label class="tg"><input type="checkbox" data-tog="outside" ${u.outside ? 'checked' : ''}>${T('show_outside_items')}</label><label class="tg"><input type="checkbox" data-tog="suggest" ${u.suggest ? 'checked' : ''}>${T('show_related_suggestions')}</label><label class="tg" title="${T('reads_your_node_red_app')}"><input type="checkbox" data-nr ${u0.nodered === true ? 'checked' : ''}>${T('show_node_red_flows')}</label>${u0.nodered === true && this._nrCache && this._nrCache.err ? `<div class="lgerr">${esc(this._nrCache.err)}${this._nrCache.need ? ` <button class="lgbtn" data-act="nr-open">${T('open_node_red')}</button>` : ''}</div>` : ''}` : '');
     }
 
     /* ---------- view ---------- */
@@ -4857,6 +4866,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         case 'arw-edit': { const n = this._model && this._model.nodes.get(el.dataset.key); this._closeModal(); if (n) this._openItem(n); break; }
         case 'arw-save': this._arwSave(); break;
         case 'lnk-pick': if (this._arw) { this._arw.pick = +el.dataset.i; this._renderLinkDlg(); } break;
+        case 'nr-open': this._openNodeRed(); break;
         case 'lnk-kind': if (this._arw) { this._arw.pick = Math.max(0, this._arw.choices.findIndex((c) => c.kind === el.dataset.k)); this._renderLinkDlg(); } break;
         default: break;
       }
@@ -5007,7 +5017,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       return n.domain === 'script' ? n.key.slice(7) : null;
     }
     _openItem(n) {
-      if (n.kind === 'nodered') { if (n.nr.url) this._openDrawer(n.nr.url, T('node_red_2', { tabLabel: n.nr.tabLabel })); return; }
+      if (n.kind === 'nodered') { this._openNodeRed(n.nr.sub, T('node_red_2', { tabLabel: n.nr.tabLabel })); return; }
       if (n.domain === 'automation' || n.domain === 'script') {
         const id = this._itemId(n);
         if (id) { this._openDrawer(`/config/${n.domain}/edit/${encodeURIComponent(id)}`, n.name); return; }
@@ -5215,6 +5225,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._endCapture();
       this._hover(null);
       if (was && was.mode === 'frame') this._configChanged();  // whatever was saved in the editor shows at once
+      if (this._nrWait) { this._nrWait = false; this._nrCache = null; if (this._model) this._open(this._model.label, true).then(() => this._renderLegend()); }
       this._fitLitbar();
     }
     // Leaving the board for one of Home Assistant's pages (the phone app). The board stops while it's away, so
@@ -6634,11 +6645,14 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     }
 
     /* ---------- Node-RED flows (2.7, decision D1): read in the browser through the Node-RED app's own page, only
-       while the switch in the Key is on. Nothing from them is stored. ---------- */
+       while the switch in the Key is on. That page answers only once Home Assistant has let this browser in, which
+       it does when Node-RED is opened from its sidebar (the board never asks for that itself). Until then, the
+       flows last read by any board, kept by the integration (functions_board/nodered), stand in, marked with when
+       they were read. What's kept is the summary nrGroups makes: names and entity ids, no flow code. ---------- */
     async _nodered() {
       if (this._data.ui.nodered !== true) return null;
       const c = this._nrCache;
-      if (c && Date.now() - c.at < 60000) return c;
+      if (c && Date.now() - c.at < (c.need ? 5000 : 60000)) return c;
       if (this._nrLoading) return this._nrLoading;
       const done = (x) => { this._nrCache = Object.assign({ at: Date.now(), groups: [] }, x); return this._nrCache; };
       this._nrLoading = (async () => {
@@ -6652,20 +6666,32 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           const base = info && info.ingress_url;
           if (!base) return done({ err: T('the_node_red_app_has') });
           // through the app's page in Home Assistant, as opening Node-RED from the sidebar does
-          const get = () => fetch(base + 'flows', { credentials: 'same-origin', headers: { 'Node-RED-API-Version': 'v2' } });
-          let res = await get().catch(() => null);
-          if (!res || !res.ok) {
-            const ses = await this._ws({ type: 'supervisor/api', endpoint: '/ingress/session', method: 'post' });
-            document.cookie = `ingress_session=${ses.session};path=/api/hassio_ingress/;SameSite=Strict${location.protocol === 'https:' ? ';Secure' : ''}`;
-            res = await get();
+          const res = await fetch(base + 'flows', { credentials: 'same-origin', headers: { 'Node-RED-API-Version': 'v2' } }).catch(() => null);
+          if (!res || res.status === 401 || res.status === 403) {
+            // not let in (yet, or any more): the flows last read here, if any, until Node-RED is opened
+            const kept = await this._ws({ type: 'functions_board/nodered' }).then((x) => x && x.kept).catch(() => null);
+            const ok = kept && kept.slug === app.slug && Array.isArray(kept.groups) ? kept : null;
+            const when = ok ? new Date(ok.at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+            return done({ base, slug: app.slug, need: true, groups: ok ? ok.groups : [], asOf: ok ? ok.at : null,
+              err: ok ? T('node_red_flows_as_of', { when }) : T('open_node_red_once_so_the') });
           }
-          if (!res.ok) return done({ err: T('node_red_answered', { status: res.status }) });
+          if (!res.ok) return done({ slug: app.slug, err: T('node_red_answered', { status: res.status }) });
           const body = await res.json(), flows = Array.isArray(body) ? body : (body && body.flows) || [];
-          return done({ base, groups: nrGroups(flows, (x) => this._known(x)) });
+          const groups = nrGroups(flows, (x) => this._known(x));
+          this._ws({ type: 'functions_board/nodered_keep', slug: app.slug, groups, client: this._client() }).catch(() => { /* shown here, just not kept */ });
+          return done({ base, slug: app.slug, groups });
         } catch (e) { return done({ err: T('could_not_read_the_flows', { e: (e && (e.message || e.code)) || e }) }); }
         finally { this._nrLoading = null; }
       })();
       return this._nrLoading;
+    }
+    // Node-RED through Home Assistant's own page for it (which lets this browser in); on closing it, the flows
+    // are read again
+    _openNodeRed(sub, title) {
+      const c = this._nrCache;
+      if (!c || !c.slug) return;
+      this._nrWait = true;
+      this._openDrawer(c.need || !c.base ? `/hassio/ingress/${c.slug}` : c.base + (sub || ''), title || T('node_red'));
     }
     // the flows that trigger on, read, change or run a piece of the function: boxes wired to those pieces
     async _nrNodes(nodes, edges) {
@@ -6684,7 +6710,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         const key = 'nr:' + g.id;
         g.events.forEach((t) => { if (nodes.has('event:' + t)) links.push(['event:' + t, 'trigger']); });
         nodes.set(key, { key, kind: 'nodered', domain: 'nodered', name: g.name, icon: 'mdi:sitemap', badges: new Set(), writers: 0, x: 0, y: 0, w: NW, h: NH,
-          nr: { tabLabel: g.tabLabel, size: g.size, url: nr.base ? nr.base + '#flow/' + encodeURIComponent(g.tab) : null } });
+          nr: { tabLabel: g.tabLabel, size: g.size, sub: '#flow/' + encodeURIComponent(g.tab) } });
         links.forEach(([k, role]) => {
           used.add(k);
           const inbound = role === 'trigger' || role === 'condition', from = inbound ? k : key, to = inbound ? key : k, id = from + '>' + to;

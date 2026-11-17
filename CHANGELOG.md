@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.6.2 (2026-11-17)
+
+- Node-RED flows: the board no longer signs itself in to the Node-RED app. Before, when the app's page didn't
+  answer, it asked the Supervisor for an ingress session and wrote that session's cookie itself. Now it reads
+  the flows only once Home Assistant has let your browser in, which it does when you open Node-RED from the
+  sidebar. Until then, the Key says so, with an **Open Node-RED** button that opens it in the board's drawer;
+  closing the drawer reads the flows again.
+- The flows last read are kept by the integration, so every board on every device (the phone app included)
+  still shows them when Node-RED's page isn't open to it, marked "as of" the time they were read. A read on
+  any device updates the others. What's kept is the summary the board draws from: group and tab names and the
+  entity IDs they use, no flow code. A kept flow box opens Node-RED through Home Assistant's own page.
+- Node-RED is still read only while Node-RED flows is switched on in the Key: when a function opens, and again
+  when you close Node-RED in the drawer.
+
 ## 0.6.1 (2026-11-16)
 
 - Every place two arrows cross without meeting now gets a hop. Before, a crossing within about 20 px of a turn,

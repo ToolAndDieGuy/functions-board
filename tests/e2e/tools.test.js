@@ -540,7 +540,7 @@ test('2.7 Node-RED flows: off means no request; on, its groups are wired to the 
   check('2.7 switched on where there is no Node-RED app: it says so', !!err, err);
   // a Node-RED app's flows, as the reader returns them (the test Home Assistant has none to read)
   await el(page, (b) => {
-    b._nrCache = { at: Date.now() + 3600000, base: '/api/hassio_ingress/abc/', groups: [{ id: 't1:a1', tab: 't1', tabLabel: 'Garage flows', name: 'Door watcher', size: 6,
+    b._nrCache = { at: Date.now() + 3600000, base: '/api/hassio_ingress/abc/', slug: 'abc_nodered', groups: [{ id: 't1:a1', tab: 't1', tabLabel: 'Garage flows', name: 'Door watcher', size: 6,
       trig: ['cover.garage_door', 'input_boolean.garage_auto_close'], read: ['timer.garage_open'], change: ['input_boolean.garage_auto_close'], calls: ['script.close_garage'], events: [] }] };
     return b._open(b._model.label, true);
   });
@@ -557,6 +557,61 @@ test('2.7 Node-RED flows: off means no request; on, its groups are wired to the 
   const L = (await store(page)).layouts[await el(page, (b) => b._model.label)] || {};
   check('2.7 nothing from the flows is stored', !JSON.stringify(L).includes('Door watcher'), L);
   check('2.7 no errors', page.logs.length === 0, page.logs);
+  await ctx.close();
+});
+
+test('2.7 Node-RED flows: not let in yet, the board asks to open Node-RED and never makes a session itself', async (browser) => {
+  const { ctx, page } = await imported(browser);
+  await openFn(page, /garage/i);
+  const SLUG = 'a0d7b954_nodered_' + Date.now().toString(36);  // a fresh app each run: nothing kept for it yet
+  // a Supervisor with a started Node-RED app, whose page answers 401 until "opened", then the flows
+  await el(page, (b, slug) => {
+    const real = b._ws.bind(b), SLUG = slug;
+    window.__nr = { calls: [], open: false };
+    b._ws = (m) => {
+      if (m.type !== 'supervisor/api') return real(m);
+      window.__nr.calls.push(m.endpoint + ' ' + m.method);
+      if (m.endpoint === '/addons') return Promise.resolve({ addons: [{ slug: SLUG, state: 'started' }] });
+      if (m.endpoint === `/addons/${SLUG}/info`) return Promise.resolve({ ingress_url: '/api/hassio_ingress/xyz/' });
+      return Promise.reject(new Error('not expected: ' + m.endpoint));
+    };
+    const f = window.fetch;
+    window.fetch = (u, o) => /hassio_ingress\/xyz\/flows$/.test(String(u))
+      ? Promise.resolve(window.__nr.open ? new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } }) : new Response('', { status: 401 }))
+      : f(u, o);
+  }, SLUG);
+  if (await fbq(page, '.legend .lg').count() === 0) await fbq(page, '[data-act="legend"]').click();
+  await fbq(page, '.legend input[data-nr]').check();
+  const btn = fbq(page, '.legend [data-act="nr-open"]');
+  await btn.waitFor({ timeout: 8000 });
+  const t = await fbq(page, '.legend .lgerr').textContent();
+  check('2.7n not let in, nothing kept: it asks to open Node-RED once', /Open Node-RED once/.test(t), t);
+  check('2.7n no ingress session is made', !(await el(page, () => window.__nr.calls)).some((c) => /ingress/.test(c)), await el(page, () => window.__nr.calls));
+  check('2.7n no ingress cookie is written', !(await page.evaluate(() => document.cookie)).includes('ingress_session'));
+  await btn.click();
+  check('2.7n Open Node-RED opens Home Assistant\'s own Node-RED page in the drawer', await el(page, (b, slug) => b._drawer && b._drawer.url === '/hassio/ingress/' + slug, SLUG));
+  // the Node-RED page lets the browser in; on coming back the flows are read again and kept here
+  await el(page, (b) => { window.__nr.open = true; b._closeDrawer(); });
+  const kept = await until(async () => { const k = (await ws(page, { type: 'functions_board/nodered' })).kept; return k && k.slug === SLUG ? k : null; }, 8000);
+  check('2.7n on coming back, the flows are read and the last read is kept by the integration, for every board', kept && kept.slug === SLUG && Array.isArray(kept.groups) && kept.at > 0, kept);
+  check('2.7n read: no note any more', await until(async () => (await fbq(page, '.legend .lgerr').count()) === 0 || null, 5000));
+  // later, not let in any more, and another board (another device) had read these flows: they show, marked with when
+  await el(page, () => { window.__nr.open = false; });
+  await ws(page, { type: 'functions_board/nodered_keep', slug: SLUG, client: 'another-board', groups: [{ id: 't1:a1', tab: 't1', tabLabel: 'Garage flows', name: 'Door watcher', size: 6,
+    trig: ['input_boolean.garage_auto_close'], read: [], change: [], calls: ['script.close_garage'], events: [] }] });
+  await el(page, (b) => { b._nrCache = null; return b._open(b._model.label, true).then(() => b._renderLegend()); });
+  const t2 = await fbq(page, '.legend .lgerr').textContent();
+  check('2.7n not let in, flows kept: they show, marked "as of"', /Node-RED flows as of .+Open Node-RED to read them again/.test(t2) && await el(page, (b) => b._model.nodes.has('nr:t1:a1')), t2);
+  await el(page, (b) => b._openItem(b._model.nodes.get('nr:t1:a1')));
+  check('2.7n a kept flow box opens Home Assistant\'s Node-RED page (its own link would not load yet)', await el(page, (b, slug) => b._drawer && b._drawer.url === '/hassio/ingress/' + slug, SLUG));
+  await el(page, (b) => { b._nrWait = false; b._closeDrawer(); });
+  await fbq(page, '.legend input[data-nr]').uncheck();
+  await page.waitForTimeout(800);
+  const calls = (await el(page, () => window.__nr.calls)).length;
+  await el(page, (b) => { b._nrCache = null; return b._open(b._model.label, true); });
+  check('2.7n switched off: Node-RED is not read', (await el(page, () => window.__nr.calls)).length === calls && await el(page, (b) => ![...b._model.nodes.keys()].some((k) => k.startsWith('nr:'))));
+  check('2.7n still no session asked for', !(await el(page, () => window.__nr.calls)).some((c) => /ingress/.test(c)));
+  check('2.7n no errors', page.logs.length === 0, page.logs);
   await ctx.close();
 });
 

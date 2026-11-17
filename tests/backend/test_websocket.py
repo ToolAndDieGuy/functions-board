@@ -110,3 +110,29 @@ async def test_non_admin_refused(hass: HomeAssistant, hass_ws_client, hass_read_
         await ws.send_json_auto_id(msg)
         res = await ws.receive_json()
         assert not res["success"] and res["error"]["code"] == "unauthorized", msg
+
+
+async def test_nodered_kept_for_every_board(hass: HomeAssistant, hass_ws_client) -> None:
+    """A board's Node-RED read is kept (summary only, checked) and offered to every board."""
+    await _ready(hass)
+    ws = await hass_ws_client(hass)
+    await ws.send_json_auto_id({"type": "functions_board/nodered"})
+    assert (await ws.receive_json())["result"] == {"kept": None}
+    await ws.send_json_auto_id({"type": "functions_board/subscribe"})
+    sub = (await ws.receive_json())["id"]
+    group = {"id": "t1:a1", "tab": "t1", "tabLabel": "Flows", "name": "Watcher", "size": 3,
+             "trig": ["light.a"], "read": [], "change": ["light.b"], "calls": [], "events": [],
+             "code": "msg.payload = secret"}
+    await ws.send_json_auto_id({"type": "functions_board/nodered_keep", "slug": "x_nodered", "groups": [group], "client": "a"})
+    got = [await ws.receive_json(), await ws.receive_json()]
+    assert any(m.get("type") == "result" and m["success"] for m in got)
+    ev = next(m for m in got if m.get("type") == "event")
+    assert ev["id"] == sub and ev["event"] == {"what": "nodered", "client": "a"}
+    await ws.send_json_auto_id({"type": "functions_board/nodered"})
+    kept = (await ws.receive_json())["result"]["kept"]
+    assert kept["slug"] == "x_nodered" and kept["at"] > 0
+    assert kept["groups"] == [{k: v for k, v in group.items() if k != "code"}]  # nothing but the summary
+    await ws.send_json_auto_id({"type": "functions_board/nodered_keep", "slug": "x", "groups": [{"id": 5}]})
+    assert (await ws.receive_json())["error"]["code"] == "invalid_format"
+    await ws.send_json_auto_id({"type": "functions_board/nodered_keep", "slug": "x", "groups": [{**group, "trig": ["a" * 200]}] * 5000})
+    assert (await ws.receive_json())["error"]["code"] == "too_large"
