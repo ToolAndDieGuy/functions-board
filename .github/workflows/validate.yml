@@ -77,6 +77,11 @@ jobs:
         run: sh tests/start-ha.sh
       - name: Run every suite
         run: sh tests/run-all.sh --e2e
+      - name: Home Assistant's errors
+        if: failure()
+        run: |
+          python3 --version; ha_py=$(venv314/bin/python -V); echo "Home Assistant runs on $ha_py"
+          grep -nE "ERROR|Error setting up|Setup failed|Unable to (install|prepare)|Traceback|ModuleNotFoundError|ImportError" ha/hass.log | grep -v "websocket_api.http.connection" | cut -c1-400 | head -80 || true
       - name: Home Assistant log and screenshots
         if: failure()
         uses: actions/upload-artifact@v4
