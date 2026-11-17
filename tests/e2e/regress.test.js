@@ -708,6 +708,7 @@ test('Phase 7: highlight modes, filters, nearest sides, new boxes by their neigh
   // 7.4 a box new to an arranged function goes next to its neighbour
   // Auto-arrange is one click (it can be undone)
   await fbq(page, '[data-act="arrange"]').click();
+  await fbq(page, '.menu [data-act="arr-go"]').click();
   await page.waitForTimeout(500);
   await el(page, (b) => { const L = b._layout(b._model.label); b._model.nodes.forEach((n, k) => { if (n.kind === 'member') L.nodes[k] = { x: n.x, y: n.y }; }); b._save(); });
   await page.waitForTimeout(900);
@@ -884,9 +885,10 @@ test('0.6.0 square-cornered arrows: never alongside each other, colours by meani
   await page.waitForTimeout(400);
   const moved = await el(page, (b, k) => ({ x: b._model.nodes.get(k).x, y: b._model.nodes.get(k).y }), key);
   await fbq(page, '[data-act="arrange"]').click();
+  await fbq(page, '.menu [data-act="arr-go"]').click();
   await page.waitForTimeout(500);
   const after = await el(page, (b, k) => ({ x: b._model.nodes.get(k).x, y: b._model.nodes.get(k).y, saved: Object.keys(b._layout(b._model.label).nodes || {}).length }), key);
-  check('0.6.0 Auto-arrange takes one click and lays the moved box out again', (after.x !== moved.x || after.y !== moved.y) && after.saved === 0, { moved, after });
+  check('0.6.0 Auto-arrange (from its menu) lays the moved box out again', (after.x !== moved.x || after.y !== moved.y) && after.saved === 0, { moved, after });
   check('0.6.0 Auto-arrange asks nothing', !(await fbq(page, '[data-act="arrange"][data-confirm]').count()));
   await page.keyboard.press('Control+z');
   await page.waitForTimeout(500);
@@ -905,6 +907,7 @@ test('0.6.0 square-cornered arrows: never alongside each other, colours by meani
   await page.waitForTimeout(400);
   const kept = await el(page, (b, k) => ({ x: b._model.nodes.get(k).x, y: b._model.nodes.get(k).y }), kk);
   await fbq(page, '[data-act="arrange"]').click();
+  await fbq(page, '.menu [data-act="arr-go"]').click();
   await page.waitForTimeout(600);
   const ka = await el(page, (b, k) => {
     const n = b._model.nodes.get(k), others = [...b._visibleKeys()].filter((o) => o !== k && !o.startsWith('tool:')).map((o) => b._model.nodes.get(o));
@@ -980,6 +983,61 @@ test('0.6.0 square-cornered arrows: never alongside each other, colours by meani
   check('0.6.0 a chain packs beside or under the bigger one, without a column gap between its boxes', pk.b.x1 - pk.b.x0 < 900, pk);
   check('0.6.0 a box with no arrows goes under the chains', pk.c.y0 >= Math.max(pk.a.y1, pk.b.y1), pk);
   check('0.6.0 no errors', page.logs.length === 0, page.logs);
+});
+
+test('0.7.0 top to bottom: every function laid out turned, arrows still apart and hopping, ports on top and bottom, Undo', async (browser) => {
+  const { page } = await imported(browser);
+  const fns = await el(page, (b) => (b._data.functions || []).slice());
+  const bad = [];
+  for (const id of fns) {
+    await el(page, (b, id) => b._open(id), id);
+    await page.waitForTimeout(700);
+    await el(page, (b) => { const L = b._layout(b._model.label); L.dir = 'down'; L.nodes = {}; b._place(); b._render(); });
+    const r = await board(page).evaluate(routeCheck, { min: 16 }), h = await board(page).evaluate(hopCheck);
+    // the flow runs down: an arrow's start is above its end, more often than not (back runs go up)
+    const down = await el(page, (b) => { const ps = [...b.shadowRoot.querySelectorAll('.edges g > path.e')]; return { n: ps.length, flipped: !!b.shadowRoot.querySelector('.edges g[transform="matrix(0 1 1 0 0 0)"]') }; });
+    if (r.error || r.close || r.through || h.error || h.missed || !down.flipped || !down.n) bad.push({ id, r, h, down });
+    await el(page, (b) => { const L = b._layout(b._model.label); delete L.dir; L.nodes = {}; b._place(); b._render(); });
+  }
+  check('0.7.0 top to bottom, in every function no two arrows run within 16 px or through a box, and every crossing hops', fns.length > 0 && !bad.length, bad);
+
+  await openFn(page, /garage/i);
+  const G = 'automation.garage_start_open_timer';
+  // keep one box in place, then switch from the Auto-arrange menu
+  await el(page, (b, k) => { b._select(k); }, G);
+  await fbq(page, '.nodebar [data-act="keep"]').click();
+  await page.waitForTimeout(200);
+  const keptBefore = await el(page, (b) => (b._layout(b._model.label).keep || []).length);
+  await fbq(page, '[data-act="arrange"]').click();
+  const items = await fbq(page, '.menu .mi').allTextContents();
+  check('0.7.0 the Auto-arrange button offers Auto-arrange and the two directions', items.join('|').includes('Auto-arrange') && items.some((t) => /top to bottom/.test(t)) && items.some((t) => /left to right/.test(t)), items);
+  await fbq(page, '.menu [data-act="arr-dir"][data-dir="down"]').click();
+  await page.waitForTimeout(600);
+  const v = await el(page, (b) => {
+    const L = b._layout(b._model.label), m = b._model;
+    const ord = (a, c) => { const x = m.nodes.get(a), y = m.nodes.get(c); return x && y ? { dy: y.y - x.y, dx: Math.abs(y.x - x.x) } : null; };
+    const p = b._els.get('automation.garage_start_open_timer').querySelector('.port.pr');
+    const pr = p && getComputedStyle(p), nb = b._els.get('automation.garage_start_open_timer').getBoundingClientRect(), pb = p && p.getBoundingClientRect();
+    return { dir: L.dir, keep: (L.keep || []).length, vert: b._$.board.classList.contains('vert'), chain: ord('cover.garage_door', 'automation.garage_start_open_timer'),
+      outPort: pb ? { atBottom: Math.abs(pb.top + pb.height / 2 - nb.bottom) < 3, inside: pb.left > nb.left && pb.right < nb.right } : null };
+  });
+  check('0.7.0 switching to top to bottom is saved, and lets go of the boxes kept in place', keptBefore === 1 && v.dir === 'down' && v.keep === 0 && v.vert, { keptBefore, v });
+  check('0.7.0 what sets something off sits above it', v.chain && v.chain.dy > 0, v.chain);
+  check('0.7.0 arrows leave a box by its bottom edge', v.outPort && v.outPort.atBottom && v.outPort.inside, v.outPort);
+  check('0.7.0 it says the kept box was let go, with Undo', /let go/.test(await fbq(page, '.toast').textContent()));
+  const rc = await board(page).evaluate(routeCheck, { min: 16 });
+  check('0.7.0 the garage, top to bottom: arrows apart, none through a box', !rc.close && !rc.through, rc);
+  // a box dragged and Auto-arrange again keep the direction
+  await fbq(page, '[data-act="arrange"]').click();
+  await fbq(page, '.menu [data-act="arr-go"]').click();
+  await page.waitForTimeout(400);
+  check('0.7.0 Auto-arrange keeps the direction', await el(page, (b) => b._vert()));
+  // Undo (Auto-arrange straight after the switch changed nothing, so it left no step): back to left to right,
+  // with the box kept in place again
+  await page.keyboard.press('Control+z'); await page.waitForTimeout(500);
+  const u = await el(page, (b) => { const L = b._layout(b._model.label); return { dir: L.dir || 'right', keep: (L.keep || []).length, vert: b._$.board.classList.contains('vert'), ports: !!b.shadowRoot.querySelector('.node .port.pl[style*="top"]') }; });
+  check('0.7.0 Undo puts the direction back, and the kept box', u.dir === 'right' && u.keep === 1 && !u.vert && u.ports, u);
+  check('0.7.0 no errors', page.logs.length === 0, page.logs);
 });
 
 (async () => {

@@ -73,9 +73,13 @@ The screenshots come from the demo setup the tests run on: a garage door that st
 
 ![A test button "Garage Door → open (simulated)" wired to the garage door, and a monitor box listing a timer.finished event](https://raw.githubusercontent.com/ToolAndDieGuy/functions-board/main/docs/images/tools.png)
 
+### Top to bottom
+
+The **Auto-arrange** button's menu sets which way a function flows: **left to right** (the default) or **top to bottom**, like a sequential function chart: what sets things off at the top, arrows leaving each box by its bottom edge and entering the next by its top. Each function keeps its own direction. Switching lays the whole function out again and lets go of boxes kept in place (Undo puts it all back). A row that would get too wide wraps: inputs move up a row and end points down a row, so a script that drives thirty things doesn't make one row thirty boxes wide. The arrows follow the same rules both ways: never closer than 16 px, never through a box, a hop at every crossing.
+
 ### Sandbox
 
-**Sandbox** (in the function's toolbar) tries the function out on a copy of its states. Set a state, fire an event or run an automation, and the board shows what the function would do: what triggers, which conditions pass and why, what each action changes, and what that sets off next, lit up on the board and listed in the drawer. Nothing is sent to your devices, and the board goes back to your home's states when you close it.
+**Sandbox** (in the function's toolbar) tries the function out on a copy of its states. Each time it opens, a dialog explains what it's for and everything it can't show you, to click through. Set a state, fire an event or run an automation, and the board shows what the function would do: what triggers, which conditions pass and why, what each action changes, and what that sets off next, lit up on the board and listed in the drawer. Nothing is sent to your devices, and the board goes back to your home's states when you close it.
 
 ![The sandbox beside the Garage board: the door set to open started the open timer; 15 minutes on, the timer finished, "Garage: left open" ran, its condition passed, and auto-close being off stopped it from closing the door](https://raw.githubusercontent.com/ToolAndDieGuy/functions-board/main/docs/images/sandbox.png)
 

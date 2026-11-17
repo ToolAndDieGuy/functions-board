@@ -24,6 +24,14 @@ const DOOR = 'cover.garage_door', TIMER = 'timer.garage_open', AUTO = 'input_boo
   const changing = () => page.sent.filter((m) => /^(call_service|fire_event|execute_script)$/.test(m.type)).concat(changes);
 
   await fbq(page, '.tools [data-act="sandbox"]').click();
+  // a dialog first, every time: what it's for and what it can't do, to click through
+  await fbq(page, '.modal .sbxdlg').waitFor({ timeout: 5000 });
+  const intro = await fbq(page, '.modal .sbxdlg').textContent();
+  check('opening the sandbox shows what it is for, that nothing reaches your home, and its limits', /rehearsal/.test(intro) && /Nothing here reaches your home/.test(intro) && (await fbq(page, '.modal .sbxl li').count()) === 9 && /doesn't prove/.test(intro), intro.slice(0, 120));
+  await fbq(page, '.modal [data-act="modal-cancel"]').click();
+  check('Cancel: no sandbox', await el(page, (b) => !b._sbx && !b._$.board.classList.contains('sbx')));
+  await fbq(page, '.tools [data-act="sandbox"]').click();
+  await fbq(page, '.modal [data-act="sbx-start"]').click();
   await fbq(page, '.drawer .sbctl .sbent').waitFor({ timeout: 10000 });
   check('the sandbox opens in the drawer, the board is marked', await el(page, (b) => b._$.board.classList.contains('sbx') && !b._$.sbxpill.hidden && b._drawer.mode === 'sandbox'));
   check('it runs every automation and script on the board', await el(page, (b) => [...b._sbx.eng.items.keys()].filter((k) => k.startsWith('automation.')).length >= 3 && b._sbx.eng.items.has('script.close_garage')));

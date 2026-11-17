@@ -161,6 +161,8 @@
       if (!n || !SAFE_ID.test(String(n.id))) return;
       out.notes.push({ id: String(n.id), text: String(n.text == null ? '' : n.text).slice(0, 10000), x: num(n.x, 0), y: num(n.y, 0), w: Math.max(120, num(n.w, 240)) });
     });
+    // which way the function flows: left to right (the default) or top to bottom
+    if (src.dir != null) out.dir = src.dir === 'down' ? 'down' : 'right';
     // boxes Auto-arrange leaves where they are
     if (src.keep != null) out.keep = Array.isArray(src.keep) ? src.keep.filter((k) => typeof k === 'string' && k.length < 300).slice(0, 2000) : [];
     if (out.paused != null) out.paused = Array.isArray(out.paused) ? out.paused.filter((x) => typeof x === 'string') : null;
@@ -947,7 +949,10 @@
   }
 
   /* ---------- layered layout (left to right): inputs -> logic -> outputs ---------- */
-  function layeredOnce(keys, edges, size, gapMin) {
+  // wrap (top to bottom only): the most a row may span, in px. Boxes stand side by side there, so a script that
+  // drives thirty things would make one row thirty boxes wide; its end points (nothing comes after them) move down
+  // a row instead, as many as it takes
+  function layeredOnce(keys, edges, size, gapMin, wrap) {
     const n = keys.length, idx = new Map(keys.map((k, i) => [k, i]));
     const out = Array.from({ length: n }, () => []), inc = Array.from({ length: n }, () => []);
     edges.forEach((e) => {
@@ -976,6 +981,28 @@
     for (let u = 0; u < n; u++) {
       const ins = inc[u].filter((w) => fwd(w, u)), outs = out[u].filter((v) => fwd(u, v));
       if (!ins.length && outs.length) L[u] = Math.max(0, Math.min(...outs.map((v) => L[v])) - 1);
+    }
+    if (wrap) {
+      const ends = (u) => !out[u].some((v) => fwd(u, v)), wired = (u) => out[u].length || inc[u].length;
+      for (let l = 0; l <= Math.max(0, ...L); l++) {
+        const ly = [];
+        for (let u = 0; u < n; u++) if (L[u] === l && wired(u)) ly.push(u);
+        let ext = ly.reduce((s, u) => s + size(keys[u]).h + 30, 0);
+        const movable = ly.filter(ends);
+        for (let j = movable.length - 1; j >= 0 && ext > wrap; j--) { L[movable[j]] = l + 1; ext -= size(keys[movable[j]]).h + 30; }
+      }
+      // and its starting points (nothing comes before them: thirty inputs read by one automation) move up a row
+      const starts = (u) => !inc[u].some((w) => fwd(w, u));
+      for (let l = Math.max(0, ...L); l >= Math.min(0, ...L) - n; l--) {
+        const ly = [];
+        for (let u = 0; u < n; u++) if (L[u] === l && wired(u)) ly.push(u);
+        if (!ly.length && l < Math.min(...L)) break;
+        let ext = ly.reduce((s, u) => s + size(keys[u]).h + 30, 0);
+        const movable = ly.filter((u) => starts(u) && !ends(u));
+        for (let j = movable.length - 1; j >= 0 && ext > wrap; j--) { L[movable[j]] = l - 1; ext -= size(keys[movable[j]]).h + 30; }
+      }
+      const lo = Math.min(0, ...L);
+      if (lo < 0) for (let u = 0; u < n; u++) L[u] -= lo;
     }
     // boxes with no arrows at all go in a grid under the wired part instead of one tall first column
     const lone = [];
@@ -1108,7 +1135,11 @@
   // the automatic layout: each separate group of connected boxes laid out on its own (and, with square-cornered
   // arrows, re-laid with wider gaps where its arrows turned out to need them), the groups packed together, and boxes
   // with no arrows in a grid under them
-  function layered(keys, edges, size, kindOf) {
+  // vert: top to bottom. The groups are laid out and routed left to right on a board turned a quarter turn (each box's
+  // width and height swapped), then turned back: positions come out real, routes stay in the turned frame, the one
+  // the arrows are routed and drawn in (see _drawEdges)
+  function layered(keys, edges, size0, kindOf, vert) {
+    const size = vert ? (k) => { const s0 = size0(k); return { w: s0.h, h: s0.w }; } : size0;
     const PR = PROTO(), nb = new Map(keys.map((k) => [k, []]));
     edges.forEach((e) => { if (e.from !== e.to && nb.has(e.from) && nb.has(e.to)) { nb.get(e.from).push(e.to); nb.get(e.to).push(e.from); } });
     const lone = keys.filter((k) => !nb.get(k).length), seen = new Set(), parts = [];
@@ -1122,7 +1153,8 @@
     const groups = PR.pack ? parts.map((p) => new Set(p)) : [new Set(parts.flat())];
     const laid = groups.filter((g) => g.size).map((g) => {
       const ks = keys.filter((k) => g.has(k)), es = edges.filter((e) => g.has(e.from) && g.has(e.to));
-      let res = layeredOnce(ks, es, size), gap = null;
+      const wrap = vert ? 2000 : 0;
+      let res = layeredOnce(ks, es, size, undefined, wrap), gap = null;
       for (let it = 0; PR.ortho && it < 3; it++) {
         const pos = new Map(ks.map((k) => { const s = size(k), p = res.get(k); return [k, { x: p.x, y: p.y, w: s.w, h: s.h }]; }));
         const short = [], geo = arrowGeo(es, (k) => pos.get(k), orthoSides);
@@ -1134,7 +1166,7 @@
           if (g && g.x1 - g.x0 + sh.need > gap[g.l]) { gap[g.l] = Math.ceil(g.x1 - g.x0 + sh.need + 2); grew = true; }
         });
         if (!grew) break;
-        res = layeredOnce(ks, es, size, gap);
+        res = layeredOnce(ks, es, size, gap, wrap);
       }
       // its extent
       const ps = ks.map((k) => { const p = res.get(k), s = size(k); return [p.x, p.y, p.x + s.w, p.y + s.h]; });
@@ -1143,7 +1175,8 @@
     });
     // pack the groups, biggest first, each beside or under those already placed, wherever the whole stays
     // smallest and nearest a screen's shape: smaller groups fill in round the big one instead of leaving gaps
-    const GUT = 90, R = PR.ratio || 1.7, out = new Map(), put = [];
+    // turned, a screen's shape is tall: packed that way, the groups come out wide again
+    const GUT = 90, R = vert ? 1 / (PR.ratio || 1.7) : PR.ratio || 1.7, out = new Map(), put = [];
     out.routes = new Map(); out.heads = [];
     laid.sort((p, q) => q.w * q.h - p.w * p.h);
     laid.forEach((p) => {
@@ -1158,12 +1191,13 @@
       }));
       put.push({ x: best.x, y: best.y, w: p.w, h: p.h });
       const dx = best.x - p.x0, dy = best.y - p.y0;
-      p.ks.forEach((k) => { const q = p.res.get(k); out.set(k, { x: q.x + dx, y: q.y + dy }); });
+      p.ks.forEach((k) => { const q = p.res.get(k); out.set(k, vert ? { x: q.y + dy, y: q.x + dx } : { x: q.x + dx, y: q.y + dy }); });
       p.res.routes.forEach((pts, id) => out.routes.set(id, pts.map((q) => [q[0] + dx, q[1] + dy, q[2]])));
     });
-    const wide = put.length ? Math.max(...put.map((q) => q.x + q.w)) : 0, H = put.length ? Math.max(...put.map((q) => q.y + q.h)) : 0;
+    // the boxes wired to nothing: a grid under the rest, in real (unturned) sizes
+    const wide = put.length ? Math.max(...put.map((q) => (vert ? q.y + q.h : q.x + q.w))) : 0, H = put.length ? Math.max(...put.map((q) => (vert ? q.x + q.w : q.y + q.h))) : 0;
     if (lone.length) {
-      const cw = Math.max(...lone.map((k) => size(k).w)) + 40, rh = Math.max(...lone.map((k) => size(k).h)) + ROWG;
+      const cw = Math.max(...lone.map((k) => size0(k).w)) + 40, rh = Math.max(...lone.map((k) => size0(k).h)) + ROWG;
       const cols = Math.max(1, wide ? Math.min(lone.length, Math.max(3, Math.floor((wide + 40) / cw))) : Math.ceil(Math.sqrt(lone.length * 2)));
       // grouped by kind (automations, scripts, helpers, devices...), with a small heading each when a kind is given
       const kinds = [];
@@ -1733,6 +1767,9 @@ button{font:inherit;color:inherit}
 .node .port.tagd{width:10px;height:10px;border-width:2px;margin-top:-1px}
 .node .port.tagd.pl{left:-5px}
 .node .port.tagd.pr{right:-5px}
+.board.vert .node .port.tagd{margin-top:0;margin-left:-1px}
+.board.vert .node .port.tagd.pl{top:-5px}
+.board.vert .node .port.tagd.pr{bottom:-5px}
 .board.pc .node .port.tagd.role-trigger{border-color:var(--fb-trig)}
 .board.pc .node .port.tagd.role-action{border-color:var(--fb-act)}
 .board.pc .node .port.tagd.role-call{border-color:var(--fb-call)}
@@ -1917,6 +1954,8 @@ button{font:inherit;color:inherit}
 .node .port{position:absolute;width:8px;height:8px;border-radius:50%;box-sizing:border-box;border:1.5px solid var(--fb-edge);background:var(--card-background-color,#1c1c1c);pointer-events:none}
 .node .port.pl{left:-4px}
 .node .port.pr{right:-4px}
+.board.vert .node .port.pl{top:-4px}
+.board.vert .node .port.pr{top:auto;bottom:-4px;right:auto}
 .board.full .node .port{pointer-events:auto;cursor:crosshair}
 .board.full .node .port:hover{border-color:var(--primary-color);background:var(--primary-color);transform:scale(1.5)}
 .dtext{margin:0;font-size:13.5px;line-height:1.5}
@@ -1954,6 +1993,14 @@ button{font:inherit;color:inherit}
 .node.sim{outline:2px dashed var(--fb-blue);outline-offset:2px}
 .board.sbx .vp{background-image:repeating-linear-gradient(45deg,color-mix(in srgb,var(--fb-amber) 6%,transparent) 0 14px,transparent 14px 28px)}
 .sbxpill{position:absolute;top:12px;left:12px;display:flex;align-items:center;gap:6px;white-space:nowrap;background:color-mix(in srgb,var(--fb-amber) 20%,var(--card-background-color));border:1px solid var(--fb-amber);color:var(--primary-text-color);border-radius:14px;padding:4px 12px;font-size:12px;z-index:5;pointer-events:none}
+.sbxdlg{width:min(620px,94%);overflow:auto}
+.sbxdlg h3{display:flex;align-items:center;gap:8px}.sbxdlg h3 ha-icon{color:var(--fb-amber)}
+.sbxdlg p{margin:0;font-size:13.5px;line-height:1.45}
+.sbxdlg h4{margin:4px 0 0;font-size:13.5px}
+.sbxl{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px;font-size:13px;line-height:1.4;color:var(--secondary-text-color)}
+.sbxl b{color:var(--primary-text-color);font-weight:500}
+.okbox{display:flex;gap:8px;align-items:flex-start;padding:8px 10px;border-radius:10px;background:color-mix(in srgb,var(--fb-green,#43a047) 14%,transparent);font-size:13px;line-height:1.4}
+.okbox ha-icon{--mdc-icon-size:20px;color:var(--fb-green,#43a047);flex:none}
 .sbxpill ha-icon{--mdc-icon-size:16px;color:var(--fb-amber)}
 .board.sbx .node.sbch{outline:2px dashed var(--fb-amber);outline-offset:2px}
 .board.sbx .node[data-sbx]::after{content:attr(data-sbx);position:absolute;right:8px;bottom:-9px;font-size:10px;line-height:14px;padding:0 6px;border-radius:7px;background:var(--secondary-background-color);border:1px solid var(--divider-color);color:var(--primary-text-color)}
@@ -2445,6 +2492,27 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       sbx_send: 'Send',
       sbx_pick_topic: 'Type an MQTT topic.',
       sbx_msg: 'sends a message: nothing in your states changes',
+      auto_arrange_now: 'Auto-arrange',
+      flow_left_to_right: 'Flow left to right',
+      flow_top_to_bottom: 'Flow top to bottom',
+      flow_switch_t: 'Lays the whole function out again in that direction. Boxes kept in place are let go.',
+      flow_switched: 'Laid out again in the new direction.',
+      flow_switched_kept: { one: 'Laid out again in the new direction; the box kept in place was let go.', other: 'Laid out again in the new direction; the {n} boxes kept in place were let go.' },
+      sbxi_title: 'Sandbox: a rehearsal, not your home',
+      sbxi_why: 'The sandbox lets you try this function without touching anything real. Change a state, fire an event, send an MQTT message, run an automation, or move the clock forward, and watch what the function would do: what triggers, which conditions pass and why, what each action would change, and what that sets off next. Use it to check a change before you rely on it, to see why something didn\'t happen, or to walk through a chain that takes hours in real life.',
+      sbxi_safe: 'Nothing here reaches your home. The sandbox reads your states once when it opens and asks Home Assistant to render templates, which only reads. It never calls a service, fires an event, publishes to MQTT or sets a state: no device moves and no notification is sent.',
+      sbxi_limits_h: 'What it can\'t show you',
+      sbxi_l_board: '<b>Only the automations and scripts on this board run.</b> Anything else that would react to the same change, such as automations in other functions, blueprints, Node-RED flows, alerts or an integration\'s own logic, doesn\'t run here, so a chain that leaves this function stops at its edge.',
+      sbxi_l_devices: '<b>Devices don\'t answer.</b> A light turned on is simply on. There are no delays, failures, unavailable devices or values that change by themselves: a temperature stays where it is until you set it.',
+      sbxi_l_calls: '<b>Some calls change nothing here.</b> Notifications, TTS and log messages are listed as messages. Scenes, device actions and services the sandbox doesn\'t know are listed as calls it would make, without their effect.',
+      sbxi_l_triggers: '<b>Some triggers can\'t be followed:</b> zone, sun, Home Assistant starting, webhooks, device triggers, calendars and others. They\'re named when it opens. Use Run, as if that trigger fired, instead.',
+      sbxi_l_ask: '<b>Some answers come from you.</b> Sun, zone and device conditions, and templates Home Assistant can\'t render, are asked in the drawer. The result is only as good as your answer.',
+      sbxi_l_tpl: '<b>Templates are rendered by Home Assistant</b> from the sandbox\'s states and clock. Ones that read locations (closest, distance) read your real home, and are marked partly real.',
+      sbxi_l_nodered: '<b>Node-RED flows don\'t run.</b> Their boxes show what they use, but what a flow would do isn\'t simulated.',
+      sbxi_l_copy: '<b>It\'s a copy from the moment it opens.</b> Changes in your home after that aren\'t picked up. Start over to take a fresh copy.',
+      sbxi_l_time: '<b>Time only moves when you move it.</b> Everything else happens at once, so races between automations that depend on real timing won\'t show.',
+      sbxi_bottom: 'A sandbox run shows what your configuration says should happen. It doesn\'t prove your devices, integrations or the rest of your home will do it.',
+      sbxi_go: 'I understand: open the sandbox',
       sbx_bad_data: 'The event data isn\'t JSON or YAML.',
       sbx_bar_note: 'Sandbox: nothing here changes your home',
       sbx_button: 'Sandbox',
@@ -5137,7 +5205,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const saved = keys.filter((k) => L.nodes[k]), fresh = keys.filter((k) => !L.nodes[k]), keep = new Set(L.keep || []);
       // after Auto-arrange with boxes kept in place, everything else is laid out together, clear of the kept boxes
       const around = saved.length && fresh.length && saved.every((k) => keep.has(k));
-      const lay = around ? fresh : keys, auto = layered(lay, E.filter((e) => !around || (fresh.includes(e.from) && fresh.includes(e.to))), (k) => m.nodes.get(k), (k) => this._kindHead(k));
+      const V = L.dir === 'down';
+      const lay = around ? fresh : keys, auto = layered(lay, E.filter((e) => !around || (fresh.includes(e.from) && fresh.includes(e.to))), (k) => m.nodes.get(k), (k) => this._kindHead(k), V);
       let dx = 0, dy = 0;
       if (around) {
         const sz = (k) => m.nodes.get(k), kb = saved.map((k) => [L.nodes[k].x, L.nodes[k].y, L.nodes[k].x + sz(k).w, L.nodes[k].y + sz(k).h]);
@@ -5174,8 +5243,14 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           const best = [...score.entries()].sort((x, y) => y[1] - x[1])[0];
           if (best) {
             const b = m.nodes.get(best[0]), after = E.some((e) => e.from === best[0] && e.to === k);
-            n.x = Math.round(after ? b.x + b.w + 80 : b.x - n.w - 80); n.y = b.y;
-            for (let i = 0; i < 40 && overlaps(n); i++) n.y += n.h + 14;
+            if (V) {
+              // top to bottom: under what sets it off, over what it sets off
+              n.y = Math.round(after ? b.y + b.h + 70 : b.y - n.h - 70); n.x = b.x;
+              for (let i = 0; i < 40 && overlaps(n); i++) n.x += n.w + 20;
+            } else {
+              n.x = Math.round(after ? b.x + b.w + 80 : b.x - n.w - 80); n.y = b.y;
+              for (let i = 0; i < 40 && overlaps(n); i++) n.y += n.h + 14;
+            }
             this._autoPos.delete(k);
           }
           placed.push(n);
@@ -5194,10 +5269,13 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         all.push(n);
       });
       // the automatic layout's waypoints for arrows that skip columns, where both ends are still where it put them
-      this._routes = new Map([...(auto.routes || new Map())].map(([id, pts]) => [id, pts.map((p) => [p[0] + dx, p[1] + dy, p[2]])]));
+      // (in the turned frame for top to bottom, where a real shift right is a shift down)
+      this._routes = new Map([...(auto.routes || new Map())].map(([id, pts]) => [id, pts.map((p) => (V ? [p[0] + dy, p[1] + dx, p[2]] : [p[0] + dx, p[1] + dy, p[2]]))]));
       // a heading over unwired boxes stays only while none of them has been moved by hand
       this._heads = (auto.heads || []).filter((h) => h.keys.every((k) => !L.nodes[k])).map((h) => ({ x: Math.round(h.x + dx), y: Math.round(h.y + dy), text: h.text }));
     }
+    // top to bottom (the function's layout says so)
+    _vert() { return !!(this._model && this._layout(this._model.label).dir === 'down'); }
     _routeFor(e, sd) {
       const r = this._routes && this._routes.get(e.id);
       if (!r || sd[0] !== 'r' || sd[1] !== 'l') return null;
@@ -5240,7 +5318,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         + (n.kind === 'outside' ? '' : '<div class="sub"></div>') + '</div>'
         + (b ? `<div class="badges">${b}</div>` : '')
         // the points arrows leave from (right) and enter by (left); in Full manager, drag from one to draw an arrow
-        + (PROTO().ortho ? portYs(n.h).map((y) => `<span class="port pl" data-y="${y - 4}" style="top:${y - 4}px"></span><span class="port pr" data-y="${y - 4}" style="top:${y - 4}px"></span>`).join('') : '') + '</div>';
+        // (top to bottom: in by the top edge, out by the bottom one)
+        + (PROTO().ortho ? (() => { const V = this._vert(), at = V ? 'left' : 'top'; return portYs(V ? n.w : n.h).map((y) => `<span class="port pl" data-y="${y - 4}" style="${at}:${y - 4}px"></span><span class="port pr" data-y="${y - 4}" style="${at}:${y - 4}px"></span>`).join(''); })() : '') + '</div>';
     }
 
     _renderFrames() {
@@ -5379,14 +5458,26 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._$.board.classList.toggle('pc', !!PR.color);
       this._$.board.classList.toggle('full', !!this._full());
       this._$.board.classList.toggle('light', !(this._hass && this._hass.themes && this._hass.themes.darkMode));
-      const boxes = [...this._visibleKeys()].map((k) => m.nodes.get(k));
+      // top to bottom: the arrows are routed left to right between the boxes turned a quarter turn (proxies with x and
+      // y, width and height swapped), then drawn in a group reflected across the diagonal, which turns them back.
+      // Text and check marks are put outside it, at the turned-back point, so they aren't mirrored
+      const V = this._vert();
+      this._$.board.classList.toggle('vert', V);
+      const prox = new Map(), boxOf = (k) => {
+        const n = m.nodes.get(k);
+        if (!V || !n) return n;
+        if (!prox.has(k)) prox.set(k, { key: n.key, kind: n.kind, x: n.y, y: n.x, w: n.h, h: n.w });
+        return prox.get(k);
+      };
+      const tp = (x, y) => (V ? [y, x] : [x, y]);
+      const boxes = [...this._visibleKeys()].map(boxOf);
       const marks = [], condOn = this._data.ui.condres !== false;
-      const geo = arrowGeo(E, (k) => m.nodes.get(k), PR.ortho ? orthoSides : sides);
+      const geo = arrowGeo(E, boxOf, PR.ortho ? orthoSides : sides);
       let dots = [], tagged = null;
       const chev = [];
       if (PR.ortho) {
         const r = orthoAll(geo, (e, sd) => this._routeFor(e, sd), boxes);
-        this._ortho = { ids: geo.map((g) => g.e.id), routes: r.routes, owners: r.owners, hops: r.hops.map((m) => [...m]), boxes: geo.map((g) => [g.e.from, g.e.to]) };
+        this._ortho = { ids: geo.map((g) => g.e.id), routes: r.routes, owners: r.owners, hops: r.hops.map((m) => [...m]), boxes: geo.map((g) => [g.e.from, g.e.to]), vert: V };
         geo.forEach((g, i) => { const rp = roundPath(r.routes[i], r.hops[i]); g.gm = { d: rp.d, mx: rp.mid[0], my: rp.mid[1] }; });
         // a bus's dots light with it
         // a branch lights with its arrow
@@ -5424,31 +5515,35 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         out.push(`<path class="${cls.join(' ')}" data-edge="${esc(e.id)}" d="${gm.d}" marker-end="url(#fb-${mk})"${ms}></path>`);
         // a wider, invisible copy that is easier to hover; arrows from templates show their live value instead of a title
         hits.push(`<path class="hit${e.tpls && e.tpls.size ? ' tpl' : ''}" data-act="edge" data-e="${esc(e.id)}" d="${gm.d}">${title}</path>`);
-        if (hi && e.svcs.size) labels.push(`<text x="${gm.mx}" y="${gm.my - 6}" text-anchor="middle">${esc([...e.svcs].join(', '))}</text>`);
+        const [lx, ly] = tp(gm.mx, gm.my);
+        if (hi && e.svcs.size) labels.push(`<text x="${lx}" y="${ly - 6}" text-anchor="middle">${esc([...e.svcs].join(', '))}</text>`);
         // whether its check passes right now (9.3)
         const c = condOn && this._cond.get(e.id);
         if (c) {
           const kind = c.ok === true ? 'ok' : c.ok === false ? 'bad' : 'unk';
           const glyph = kind === 'ok' ? '<path d="M-3.6,0.2 L-1.1,2.8 L3.8,-2.6"></path>' : kind === 'bad' ? '<path d="M-3,-3 L3,3 M3,-3 L-3,3"></path>' : '<text y="3.6" text-anchor="middle">?</text>';
-          marks.push(`<g class="cres ${kind}${F && !hi ? ' dim' : ''}" data-edge="${esc(e.id)}" transform="translate(${gm.mx},${gm.my})"><circle r="8"></circle>${glyph}<title>${esc(this._condTitle(e, c))}</title></g>`);
+          marks.push(`<g class="cres ${kind}${F && !hi ? ' dim' : ''}" data-edge="${esc(e.id)}" transform="translate(${lx},${ly})"><circle r="8"></circle>${glyph}<title>${esc(this._condTitle(e, c))}</title></g>`);
         }
       }
       const jd = dots.map((dt) => (dt.tag == null ? `<circle class="jd split role-${esc(dt.role)}${dt.lit ? '' : ' dim'}" cx="${dt.x}" cy="${dt.y}" r="3.6"></circle>`
         : `<circle class="jd role-${esc(dt.role)}${dt.lit ? '' : ' dim'}" cx="${dt.x}" cy="${dt.y}" r="4.6" style="fill:${TAGS[dt.tag]}"></circle>`));
-      this._$.edges.innerHTML = out.join('') + chev.join('') + jd.join('') + hits.join('') + labels.join('') + marks.join('');
+      const drawn = out.slice(1).join('') + chev.join('') + jd.join('') + hits.join('');
+      this._$.edges.innerHTML = DEFS + (V ? `<g transform="matrix(0 1 1 0 0 0)">${drawn}</g>` : drawn) + labels.join('') + marks.join('');
       this._tagPorts(tagged, geo);
     }
 
     // the point on a box at the own end of an arrow that shares a line takes that arrow's colour, ringed in the
     // colour of its kind, like the dot where it branches off
     _tagPorts(tagged, geo) {
-      this.shadowRoot.querySelectorAll('.node .port.tagd').forEach((p) => { p.classList.remove('tagd'); p.removeAttribute('style'); p.style.top = p.dataset.y + 'px'; p.className = p.className.replace(/ role-\S+/g, ''); });
+      const V = this._vert();
+      this.shadowRoot.querySelectorAll('.node .port.tagd').forEach((p) => { p.classList.remove('tagd'); p.removeAttribute('style'); p.style[V ? 'left' : 'top'] = p.dataset.y + 'px'; p.className = p.className.replace(/ role-\S+/g, ''); });
       if (!tagged) return;
       const F = this._focus;
       tagged.forEach((t, ri) => {
         const g = geo[ri], into = t.own.startsWith('out:'), key = into ? g.e.to : g.e.from, n = this._model.nodes.get(key), el = this._els && this._els.get(key);
         if (!n || !el) return;
-        const ys = portYs(n.h), i = ys.findIndex((y) => Math.abs(n.y + y - t.far[1]) < 1.5);
+        // far is in the frame the arrows were routed in: turned for top to bottom, where its y is the real x
+        const ys = portYs(V ? n.w : n.h), i = ys.findIndex((y) => Math.abs((V ? n.x : n.y) + y - t.far[1]) < 1.5);
         const port = i >= 0 && el.querySelectorAll(into ? '.port.pl' : '.port.pr')[i];
         if (!port) return;
         port.classList.add('tagd', 'role-' + t.role);
@@ -5603,7 +5698,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       // the handle to draw an arrow from (7.5), on the box's right edge
       const lh = this._$.lh, show = this._full() && this._canLink(n);
       lh.hidden = !show;
-      if (show) { lh.style.left = ((n.x + n.w) * v.k + v.x) + 'px'; lh.style.top = ((n.y + n.h / 2) * v.k + v.y) + 'px'; }
+      // out by the right edge, or the bottom one top to bottom
+      if (show) { const V = this._vert(); lh.style.left = ((V ? n.x + n.w / 2 : n.x + n.w) * v.k + v.x) + 'px'; lh.style.top = ((V ? n.y + n.h : n.y + n.h / 2) * v.k + v.y) + 'px'; }
     }
 
     _setEmpty() {
@@ -5843,6 +5939,29 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._place(); this._render(); this._fit(); this._save();
       this._layoutStep(label, before, T('arrange'));
     }
+    // Auto-arrange, and which way the function flows
+    _arrangeMenu(btn) {
+      const V = this._vert(), chk = (on) => (on ? 'mdi:check' : 'mdi:blank');
+      this._menu(btn, [
+        { act: 'arr-go', icon: 'mdi:auto-fix', text: T('auto_arrange_now') },
+        { sep: true },
+        { act: 'arr-dir', data: { dir: 'right' }, icon: chk(!V), text: T('flow_left_to_right'), title: T('flow_switch_t') },
+        { act: 'arr-dir', data: { dir: 'down' }, icon: chk(V), text: T('flow_top_to_bottom'), title: T('flow_switch_t') },
+      ], T('arrange'));
+    }
+    // a new direction lays the whole function out again: boxes kept in place are let go too, since where they were
+    // kept makes no sense turned a quarter turn. Undo puts the direction, the places and what was kept back
+    _setDir(dir) {
+      const label = this._model.label, L = this._layout(label), want = dir === 'down' ? 'down' : 'right';
+      if ((L.dir || 'right') === want) return;
+      const before = this._snap(label), kept = (L.keep || []).length;
+      L.dir = want;
+      L.keep = [];
+      L.nodes = {};
+      this._place(); this._render(); this._fit(); this._save();
+      this._layoutStep(label, before, want === 'down' ? T('flow_top_to_bottom') : T('flow_left_to_right'));
+      this._toast(kept ? P('flow_switched_kept', kept) : T('flow_switched'), [{ text: T('undo'), fn: () => this._undo() }]);
+    }
 
     // moving a box by hand keeps every other box where it is now too: the function is arranged by hand from then
     // on, until Auto-arrange
@@ -6049,7 +6168,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const need = () => { if (!label) { this._toast(T('create_or_pick_a_function')); return false; } return true; };
       if (a && a.startsWith('sbx-') && this._sbxOn()) { this._sbxBox(a, el); return; }
       switch (a) {
-        case 'sandbox': if (need()) { if (this._sbxOn()) this._closeDrawer(); else this._openSandbox(); } break;
+        case 'sandbox': if (need()) { if (this._sbxOn()) this._closeDrawer(); else this._sbxIntro(); } break;
+        case 'sbx-start': this._closeModal(); this._openSandbox(); break;
         case 'togglelist':
           if (this._compact) this._listOpen = !this._listOpen;
           else if (this._data) { this._data.ui.list = !this._data.ui.list; this._save(); }
@@ -6107,7 +6227,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         case 'frame': if (need() && this._model) this._addFrame(); break;
         case 'note': if (need() && this._model) this._addNote(); break;
         // undoable, so no second click to confirm it
-        case 'arrange': if (this._model) this._arrange(); break;
+        case 'arrange': if (this._model) this._arrangeMenu(el); break;
+        case 'arr-go': this._closeMenu(); if (this._model) this._arrange(); break;
+        case 'arr-dir': this._closeMenu(); if (this._model) this._setDir(el.dataset.dir); break;
         case 'runs': if (need()) this._openRuns(); break;
         case 'pause': this._pause(el); break;
         case 'zoomin': this._zoomCenter(1.2); break;
@@ -7546,6 +7668,19 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const s = this._sbx.eng.get(k);
       return s ? { entity_id: k, state: String(s.state), attributes: s.attributes || {}, last_changed: s.last_changed, last_updated: s.last_updated, context: {} } : undefined;
     }
+    // every time it opens: what the sandbox is for, and everything it can't do, to click through
+    _sbxIntro() {
+      const m = this._$.modal, li = (xs) => xs.map((x) => `<li>${x}</li>`).join('');
+      m.hidden = false;
+      m.innerHTML = `<div class="dlg sbxdlg"><h3><ha-icon icon="mdi:flask-outline"></ha-icon> ${T('sbxi_title')}</h3>`
+        + `<p>${T('sbxi_why')}</p>`
+        + `<div class="okbox"><ha-icon icon="mdi:shield-check-outline"></ha-icon><span>${T('sbxi_safe')}</span></div>`
+        + `<h4>${T('sbxi_limits_h')}</h4><ol class="sbxl">${li([T('sbxi_l_board'), T('sbxi_l_devices'), T('sbxi_l_calls'), T('sbxi_l_triggers'), T('sbxi_l_ask'), T('sbxi_l_tpl'), T('sbxi_l_nodered'), T('sbxi_l_copy'), T('sbxi_l_time')])}</ol>`
+        + `<div class="warnbox"><ha-icon icon="mdi:alert-outline"></ha-icon><span>${T('sbxi_bottom')}</span></div>`
+        + `<div class="btns"><button data-act="modal-cancel">${T('cancel')}</button><button class="primary" data-act="sbx-start">${T('sbxi_go')}</button></div></div>`;
+      const b = m.querySelector('[data-act="sbx-start"]');
+      if (b) b.focus();
+    }
     async _openSandbox() {
       const label = this._data.ui.current;
       if (!label || !this._model) return;
@@ -8497,7 +8632,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       else if (this._model) { this._place(); this._render(); }
     }
     // layout steps: moving boxes, Arrange, frames and notes restore the function's previous layout
-    _snap(label) { const L = this._layout(label); return JSON.stringify({ nodes: L.nodes, frames: L.frames, notes: L.notes, tools: L.tools || [], keep: L.keep || [] }); }
+    _snap(label) { const L = this._layout(label); return JSON.stringify({ nodes: L.nodes, frames: L.frames, notes: L.notes, tools: L.tools || [], keep: L.keep || [], dir: L.dir || 'right' }); }
     _layoutStep(label, before, text) {
       const after = this._snap(label);
       if (after === before) return;
@@ -8506,6 +8641,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         L.nodes = v.nodes; L.frames = v.frames; L.notes = v.notes;
         if (v.tools && v.tools.length) L.tools = v.tools; else delete L.tools;
         if (v.keep && v.keep.length) L.keep = v.keep; else delete L.keep;
+        if (v.dir === 'down') L.dir = 'down'; else delete L.dir;
         this._save();
         // test buttons and monitors are boxes on the board: put them back or take them away too
         if (tools && this._model && this._model.label === label) { this._syncTools(); this._startMonitors(); }

@@ -2,7 +2,19 @@
 
 ## 0.7.0 (2026-11-17)
 
-New: a sandbox, to try a function out without anything changing in your home.
+New: a sandbox, to try a function out without anything changing in your home, and functions that flow top to
+bottom.
+
+- **Top to bottom.** The Auto-arrange button opens a menu: Auto-arrange, Flow left to right, Flow top to bottom.
+  Each function keeps its own direction (left to right by default). Top to bottom, what sets things off is at the
+  top, arrows leave a box by its bottom edge and enter the next by its top, and the dots for connecting sit on
+  those edges. The same layout and arrow rules apply (16 px apart, nothing through a box, a hop at every
+  crossing); the board is laid out and routed turned a quarter turn and drawn turned back. Rows that would get
+  too wide wrap: inputs move up a row and end points down a row.
+- Switching direction lays the function out again and lets go of the boxes kept in place, and says so. Undo
+  puts the direction, the places and the kept boxes back.
+- Opening the sandbox now shows a dialog first, every time: what it's for, that nothing reaches your home, and
+  nine things it can't show you. Cancel leaves it closed.
 
 - **Sandbox**, in a function's toolbar, runs the function on a copy of its states with its own clock. Set a
   state, fire an event or run an automation, and the drawer lists what the function does, step by step: what
