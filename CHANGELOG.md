@@ -2,50 +2,59 @@
 
 ## 0.7.0 (2026-11-17)
 
-New: a sandbox, to try a function out without anything changing in your home, and functions that flow top to
-bottom.
+New: a **sandbox**, to try a function out without anything changing in your home, and functions that can flow
+**top to bottom**.
 
-- **Top to bottom.** The Auto-arrange button opens a menu: Auto-arrange, Flow left to right, Flow top to bottom.
-  Each function keeps its own direction (left to right by default). Top to bottom, what sets things off is at the
-  top, arrows leave a box by its bottom edge and enter the next by its top, and the dots for connecting sit on
-  those edges. The same layout and arrow rules apply (16 px apart, nothing through a box, a hop at every
-  crossing); the board is laid out and routed turned a quarter turn and drawn turned back. Rows that would get
-  too wide wrap: inputs move up a row and end points down a row.
-- Switching direction lays the function out again and lets go of the boxes kept in place, and says so. Undo
-  puts the direction, the places and the kept boxes back.
-- Opening the sandbox now shows a dialog first, every time: what it's for, that nothing reaches your home, and
-  nine things it can't show you. Cancel leaves it closed.
+### Sandbox
 
 - **Sandbox**, in a function's toolbar, runs the function on a copy of its states with its own clock. Set a
-  state, fire an event or run an automation, and the drawer lists what the function does, step by step: what
-  triggers, which conditions pass or fail and why, what each action changes, and what that sets off next. The
-  chain is lit up on the board, boxes show the sandbox's states, and what the sandbox changed is marked in amber.
-  Closing it puts the board back to your home's states.
-- Delays, timers, `for:` durations, time triggers and time patterns run on the sandbox clock: +1 min, +10 min,
-  +1 h, or Next to jump to the next thing due.
-- Templates are rendered by Home Assistant itself, reading the sandbox's states and clock: `states()`,
-  `is_state()`, `state_attr()`, `is_state_attr()`, `has_value()`, `states.x.y` and `states['x.y']`, whole
-  domains, `expand()`, `now()`, `utcnow()` and `today_at()`, as functions, filters and tests. A template that
-  reads something the sandbox can't stand in for is marked partly real.
-- Home Assistant's per-entity triggers (`light.turned_on`, `door.opened`, `lock.unlocked`, `event.received`,
-  `counter.maximum_reached`, brightness and temperature thresholds and the rest, with `behavior` and `for`) follow
-  the rules of Home Assistant's own trigger classes, from a table generated from them
-  (`scripts/gen_sandbox_triggers.py`). Template triggers take `for:`. `wait_for_trigger` waits for any trigger the
-  sandbox follows, template triggers included.
-- MQTT: triggers on topics (with `+` and `#`), payloads and value templates; an MQTT row in the drawer sends a
-  message, and `mqtt.publish` in a script reaches the triggers too.
-- **Run** takes the trigger to stand in for, so `trigger.id` conditions and `trigger.` templates work, and the
-  triggers it can't follow (zone, sun, start, webhook, device) are named when the sandbox opens.
-- `states[...]` looked up by a variable and `states | ...` over every state read the sandbox too; only templates
-  that read locations are marked partly real.
-- It asks what it can't know (a sun, zone or device condition, a template Home Assistant couldn't render) and
-  uses your answer. Notifications, TTS and log messages are listed as messages; any other call it doesn't know
-  the effect of is listed as one it would make.
-- Run modes (single, restart, queued, parallel), scripts, `choose`, `if`, `repeat`, `parallel`, `variables`,
-  waits and `stop` behave as in Home Assistant. One change that leads to more than 2,000 steps is stopped as a
+  state, fire an event, send an MQTT message or run an automation, and the drawer lists what the function does,
+  step by step: what triggers, which conditions pass or fail and why, what each action changes, and what that
+  sets off next. The chain lights up on the board, boxes show the sandbox's states, and what the sandbox changed
+  is marked in amber. Closing it puts the board back to your home's states.
+- **Nothing reaches your home.** The sandbox reads your states once when it opens and asks Home Assistant to
+  render templates. It never calls a service, fires an event, publishes to MQTT or sets a state, and it works in
+  Organise only mode too. While it's open, test buttons and the Test dialog act on the sandbox, and Pause is off.
+- **A dialog when it opens** explains what it's for and nine things it can't show you (only the board's
+  automations run, devices don't answer, and so on). Tick **Don't show this again** to skip it; the **i** in the
+  sandbox's title bar shows it any time.
+- **Its own clock.** Delays, timers, `for:` durations, time triggers and time patterns run on the sandbox clock:
+  +1 min, +10 min, +1 h, or **Next** to jump to the next thing due.
+- **Real templates.** Home Assistant renders them, reading the sandbox's states and clock: `states()`,
+  `is_state()`, `state_attr()`, `is_state_attr()`, `has_value()`, `states.x.y`, `states[...]`, whole domains,
+  `states | ...`, `expand()`, `now()`, `utcnow()` and `today_at()`, as functions, filters and tests. Templates
+  that read locations (`closest()`, `distance()`) are marked partly real.
+- **Triggers:** state, numeric state, event, MQTT, time, time pattern and template triggers (with `for:`), and
+  Home Assistant's per-entity triggers (`light.turned_on`, `door.opened`, `lock.unlocked`, `event.received`,
+  thresholds and the rest, with `behavior` and `for`) by the same rules as Home Assistant's own. Triggers it
+  can't follow (zone, sun, start, webhook, device) are named when it opens; **Run** an automation as if any one
+  of its triggers fired, so `trigger.id` conditions and `trigger.` templates work.
+- **Conditions and actions:** state, numeric state, template, time, trigger and and/or/not conditions; service
+  calls on helpers, lights, switches, covers, locks, climate, timers, counters, selects and more; scripts,
+  `choose`, `if`, `repeat`, `parallel`, `variables`, `wait_template`, `wait_for_trigger`, `stop`, `mqtt.publish`;
+  run modes (single, restart, queued, parallel). One change that leads to more than 2,000 steps is stopped as a
   loop.
-- While the sandbox is open, test buttons and the Test dialog act on the sandbox, and Pause is off. The sandbox
-  never calls a service, fires an event or sets a state in Home Assistant, and works in Organise only mode too.
+- **What it can't know, it asks:** a sun, zone or device condition, or a template Home Assistant couldn't render.
+  Notifications, TTS and log messages are listed as messages; any other call it doesn't know the effect of is
+  listed as one it would make.
+
+### Top to bottom
+
+- The **Auto-arrange** button opens a menu: Auto-arrange, Flow left to right, Flow top to bottom. Each function
+  keeps its own direction; left to right stays the default.
+- Top to bottom, what sets things off is at the top, arrows leave a box by its bottom edge and enter the next by
+  its top, and the dots for connecting sit on those edges. The same rules hold both ways: arrows 16 px apart,
+  none through a box, a hop at every crossing. Rows that would get too wide wrap: inputs move up a row and end
+  points down a row.
+- Switching direction lays the function out again and lets go of boxes kept in place, and says so. Undo puts
+  the direction, the places and the kept boxes back.
+
+### For contributors
+
+- The test setup is in the repository: `sh tests/setup.sh all` builds a throwaway Home Assistant, the demo
+  setup and the test tools; `sh tests/run-all.sh --e2e` runs every suite. A new suite checks the layout of large
+  functions in both directions. GitHub runs all of it on every push. `CLAUDE.md` describes the code, the tests
+  and the conventions.
 
 ## 0.6.2 (2026-11-17)
 
