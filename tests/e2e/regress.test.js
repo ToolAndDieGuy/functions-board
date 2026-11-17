@@ -962,8 +962,8 @@ test('0.6.0 square-cornered arrows: never alongside each other, colours by meani
     const ext = (ks) => { const ns = ks.map((k) => nodes.get(k)); return { x0: Math.min(...ns.map((n) => n.x)), y0: Math.min(...ns.map((n) => n.y)), x1: Math.max(...ns.map((n) => n.x + n.w)), y1: Math.max(...ns.map((n) => n.y + n.h)) }; };
     return { a: ext(keys.slice(0, 4)), b: ext(keys.slice(4, 7)), c: ext(['automation.c1']) };
   });
-  // five arrows out of one box: they share its three points; each arrow's branch dot and the point at its own end
-  // have the same colour, and no two arrows of the function have the same one
+  // five arrows out of one box: they share its three points; each arrow has a letter where it branches off and
+  // beside its own end (0.7.2: letters, not colours), and no two arrows of the function have the same one
   const tg = await el(page, (b) => {
     const mk = (key, kind) => ({ key, kind, domain: key.split('.')[0], name: key, icon: 'mdi:circle', badges: new Set(), w: kind === 'outside' ? 204 : 240, h: kind === 'outside' ? 40 : 62, x: 0, y: 0 });
     const ls = [1, 2, 3, 4, 5].map((i) => 'light.l' + i), keys = ['automation.all_off', ...ls];
@@ -971,13 +971,11 @@ test('0.6.0 square-cornered arrows: never alongside each other, colours by meani
     b._model = { label: 'fbx-tags', nodes, edges: ls.map((t) => ({ id: 'automation.all_off>' + t, from: 'automation.all_off', to: t, role: 'action', svcs: new Set(), tfs: [], anyTrig: true })) };
     b._layout('fbx-tags').nodes = {};
     b._place(); b._render();
-    const fill = (e) => getComputedStyle(e).fill === 'none' ? null : getComputedStyle(e).fill;
-    const dots = [...b.shadowRoot.querySelectorAll('.edges circle.jd:not(.split)')].map((c) => c.style.fill);
-    const ports = [...b.shadowRoot.querySelectorAll('.node .port.tagd')].map((p) => p.style.background);
-    return { dots, ports, used: new Set(b.shadowRoot.querySelectorAll('.node[data-key="automation.all_off"] .port.pr')).size };
+    const chips = [...b.shadowRoot.querySelectorAll('.edges g.bch')].map((c) => ({ l: c.querySelector('text').textContent, e: c.dataset.e, end: c.classList.contains('end') }));
+    return { ends: chips.filter((c) => c.end), branches: chips.filter((c) => !c.end), colours: b.shadowRoot.querySelectorAll('.edges circle.jd:not(.split), .node .port.tagd').length };
   });
-  check('0.6.0 the arrows on a shared line each have a colour at their own end', tg.ports.length >= 4 && new Set(tg.ports).size === tg.ports.length, tg);
-  check('0.6.0 each branch dot has the colour of the arrow branching off there', tg.dots.length >= 2 && tg.dots.every((d) => tg.ports.includes(d)), tg);
+  check('0.7.2 the arrows on a shared line each have a letter beside their own end, all different', tg.ends.length >= 4 && new Set(tg.ends.map((c) => c.l)).size === tg.ends.length && tg.ends.every((c) => /^[A-Z]+$/.test(c.l)), tg);
+  check('0.7.2 each letter where an arrow branches off is the letter at that arrow\'s end; no colour dots', tg.branches.length >= 2 && tg.branches.every((c) => tg.ends.some((x) => x.e === c.e && x.l === c.l)) && tg.colours === 0, tg);
   const apart = (p, q) => p.x1 + 40 <= q.x0 || q.x1 + 40 <= p.x0 || p.y1 + 40 <= q.y0 || q.y1 + 40 <= p.y0;
   check('0.6.0 two separate chains sit apart as blocks', apart(pk.a, pk.b), pk);
   check('0.6.0 a chain packs beside or under the bigger one, without a column gap between its boxes', pk.b.x1 - pk.b.x0 < 900, pk);
@@ -1057,6 +1055,64 @@ test('0.7.1 sandbox flow view: closing the sandbox mid-flow leaves nothing behin
   await el(page, (b) => b._lightSteps([{ kind: 'state', key: 'cover.garage_door', state: 'open' }, { kind: 'run', key: 'automation.garage_start_open_timer' }], null));
   const plain = await el(page, (b) => ({ shown: !b._$.litbar.hidden, cls: b._$.litbar.classList.contains('flowbar'), steps: b._$.litbar.querySelectorAll('.lstep').length, replay: !!b._$.litbar.querySelector('[data-act="lit-replay"]') }));
   check('0.7.1 ... and a debugger chain afterwards lights with its own bar (Replay, no step controls)', plain.shown && !plain.cls && plain.steps === 2 && plain.replay, plain);
+});
+
+test('0.7.2 shared lines: point at a box to trace its arrow, tap a letter to keep it traced, upright top to bottom', async (browser) => {
+  const { page } = await imported(browser);
+  await openFn(page, /garage/i);
+  const ls = [1, 2, 3, 4, 5].map((i) => 'light.l' + i);
+  const build = (dir) => el(page, (b, [ls, dir]) => {
+    const mk = (key, kind) => ({ key, kind, domain: key.split('.')[0], name: key, icon: 'mdi:circle', badges: new Set(), w: kind === 'outside' ? 204 : 240, h: kind === 'outside' ? 40 : 62, x: 0, y: 0 });
+    const keys = ['automation.all_off', ...ls], nodes = new Map(keys.map((k) => [k, mk(k, k.startsWith('light') ? 'outside' : 'member')]));
+    b._model = { label: 'fbx-trace', nodes, edges: ls.map((t) => ({ id: 'automation.all_off>' + t, from: 'automation.all_off', to: t, role: 'action', svcs: new Set(), tfs: [], anyTrig: true })) };
+    const L = b._layout('fbx-trace'); L.nodes = {}; if (dir) L.dir = dir; else delete L.dir;
+    b._data.ui.legend = false; b._renderLegend && b._renderLegend();
+    b._place(); b._render(); b._fit();
+  }, [ls, dir]);
+  const state = () => el(page, (b) => ({ trc: b._$.edges.querySelectorAll('path.trc').length, dim: b._$.edges.querySelectorAll('path.e.trdim').length,
+    hi: [...b._$.edges.querySelectorAll('g.bch.trhi')].map((c) => c.dataset.e), keep: !!b._traceKeep, tracing: b._$.board.classList.contains('tracing') }));
+  const centre = (k) => el(page, (b, k) => { const r = b._els.get(k).getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; }, k);
+  await build(null);
+  await page.waitForTimeout(400);
+  // the lights whose arrows are on the shared line (one may have a point of its own)
+  const onBus = () => el(page, (b) => b._ortho.ids.filter((id, i) => (b._ortho.owners[i] || []).some(Boolean)).map((id) => id.split('>')[1]));
+  const bus = await onBus(), L1 = bus[1], L2 = bus[2], L3 = bus[0];
+  check('0.7.2 (the five arrows share a line)', bus.length >= 4, bus);
+  const [x, y] = await centre(L1);
+  await page.mouse.move(x, y);
+  await page.waitForTimeout(150);
+  const hov = await state();
+  check('0.7.2 pointing at a box draws its arrow through the shared line on top, and fades the others on it', hov.trc === 1 && hov.dim >= 1 && hov.tracing && hov.hi.length >= 1 && hov.hi.every((e) => e === 'automation.all_off>' + L1), hov);
+  await page.mouse.move(5, 5);
+  await page.waitForTimeout(150);
+  const off = await state();
+  check('0.7.2 ... and moving off it puts the line back', off.trc === 0 && off.dim === 0 && !off.tracing, off);
+  const src = await el(page, (b) => b._busEdgesOf('automation.all_off').size);
+  check('0.7.2 pointing at the box the line starts from traces all of its arrows on it', src === bus.length, [src, bus]);
+  await fbq(page, `.edges g.bch[data-e="automation.all_off>${L2}"]`).first().dispatchEvent('click');
+  await page.mouse.move(5, 5);
+  await page.waitForTimeout(150);
+  const kept = await state();
+  check('0.7.2 tapping a letter keeps its arrow traced (for touch screens)', kept.trc === 1 && kept.keep && kept.hi.every((e) => e === 'automation.all_off>' + L2), kept);
+  await fbq(page, `.edges g.bch[data-e="automation.all_off>${L2}"]`).first().dispatchEvent('click');
+  const again = await state();
+  check('0.7.2 ... tapping it again lets go', again.trc === 0 && !again.keep, again);
+  await fbq(page, `.edges g.bch[data-e="automation.all_off>${L3}"]`).first().dispatchEvent('click');
+  await el(page, (b) => b._select(null));
+  const cleared = await state();
+  check('0.7.2 ... and so does clicking elsewhere', cleared.trc === 0 && !cleared.keep, cleared);
+  // top to bottom: the letters stay outside the turned group (upright), the traced copy inside it (on its arrow)
+  await build('down');
+  await page.waitForTimeout(400);
+  const V3 = (await onBus())[0];
+  await el(page, (b, k) => b._setTrace(b._busEdgesOf(k)), V3);
+  const v = await el(page, (b) => {
+    const chips = [...b._$.edges.querySelectorAll('g.bch')], trc = b._$.edges.querySelector('path.trc');
+    return { chips: chips.length, upright: chips.every((c) => c.parentNode === b._$.edges), turned: !!trc && trc.parentNode.getAttribute('transform') === 'matrix(0 1 1 0 0 0)' };
+  });
+  check('0.7.2 top to bottom: the letters read upright and the trace follows the turned arrows', v.chips >= 6 && v.upright && v.turned, v);
+  await el(page, (b) => b._setTrace(null));
+  check('0.7.2 no errors', page.logs.length === 0, page.logs);
 });
 
 (async () => {

@@ -2,6 +2,9 @@
 // function added (tests/e2e/demo/: automations 5001-5006, scripts secure_house and welcome_home, packages/away.yaml).
 // sh tests/setup.sh demo && sh tests/start-ha.sh demo && FB_HA_CONFIG=$PWD/ha-demo/config venv314/bin/python tests/e2e/apitest.py
 // node tests/e2e/demo-video.js -> frames and an ffmpeg concat list in FB_VIDEO_OUT/frames (default /tmp/fb-video)
+// FB_TOUR=sandbox records the sandbox tour instead (Garage: the door opened in the sandbox, the clock moved on,
+// what it sets off played on the board). Make the video from the frames with:
+//   ffmpeg -f concat -i FB_VIDEO_OUT/frames/list.ffconcat -vf "fps=30,format=yuv420p" -c:v libx264 -crf 20 out.mp4
 // It resets the board, imports the functions (Away mode and Garage apart) and plays a scripted tour with a
 // visible cursor and captions. Everything shown is the demo setup: no real names, places or devices.
 const path = require('path');
@@ -217,6 +220,61 @@ const caption = (page, text) => page.evaluate((t) => {
     await clickSel('.modal [data-act="test-run"]', 500);
   };
 
+  let from;
+  if (process.env.FB_TOUR === 'sandbox') {
+    const labels = await ws(page, { type: 'config/label_registry/list' });
+    const garage = labels.find((l) => l.name === 'Garage').label_id;
+    const G = ['cover.garage_door', 'timer.garage_open', 'automation.garage_start_open_timer', 'automation.garage_left_open', 'automation.garage_closed_stop_timer', 'script.close_garage', 'input_boolean.garage_auto_close'];
+    await page.goto(BASE + '/functions/' + garage);
+    await ready(page);
+    await fbq(page, '.nodes .node').first().waitFor({ timeout: 20000 });
+    await el(page, (b) => { b._data.ui.list = false; b._renderList(); delete b._data.ui.sbxIntro; });
+    await frame(G, 1.1, 20, 0);
+    await move(W * 0.55, H * 0.5, 10);
+    await page.waitForTimeout(1200);
+    from = Date.now() / 1000 - 1.0;
+    mark('start');
+    await caption(page, 'New: a <b>Sandbox</b>. Try a function out on a copy of its states.<br>Nothing it does reaches your home.');
+    await page.waitForTimeout(3800);
+    await clickSel('.tools [data-act="sandbox"]', 900);
+    await fbq(page, '.modal .sbxdlg').waitFor({ timeout: 5000 });
+    await caption(page, null);
+    await page.waitForTimeout(3600);
+    await clickSel('.modal [data-act="sbx-start"]', 700);
+    await fbq(page, '.drawer .sbctl .sbent').waitFor({ timeout: 10000 });
+    await frame(G, 1.0, 140);
+    await caption(page, 'Turn auto-close on and open the garage door: <b>in the sandbox only</b>.');
+    await page.waitForTimeout(1600);
+    await fbq(page, '.drawer .sbent').selectOption('input_boolean.garage_auto_close');
+    await clickSel('.drawer .sbval', 600);
+    await fbq(page, '.drawer .sbval').type('on', { delay: 90 });
+    await clickSel('.drawer [data-act="sbx-set"]', 400);
+    await until(() => el(page, (b) => !b._sbx.busy || null), 8000);
+    await page.waitForTimeout(1400);
+    await fbq(page, '.drawer .sbent').selectOption('cover.garage_door');
+    await clickSel('.drawer .sbval', 500);
+    await fbq(page, '.drawer .sbval').type('open', { delay: 90 });
+    await clickSel('.drawer [data-act="sbx-set"]', 400);
+    await caption(page, 'What that sets off plays on the board, step by step:<br>the open timer starts, and its box shows the time left.');
+    await until(() => el(page, (b) => (b._flow && b._flow.at === b._flow.steps.length - 1) || null), 15000);
+    await page.waitForTimeout(3200);
+    await caption(page, 'It has its own clock. <b>Next</b> jumps to what\'s due: 15 minutes on.');
+    await page.waitForTimeout(2600);
+    await clickSel('.drawer .sbnext', 700);
+    await caption(page, 'Timer finished → <b>Left open</b> runs → its checks pass ✓ → a notification<br>(dashed: not on this board) → Close garage → the door closes.');
+    await page.waitForTimeout(900);
+    await until(() => el(page, (b) => (b._flow && b._flow.at === b._flow.steps.length - 1) || null), 30000);
+    await page.waitForTimeout(2200);
+    await caption(page, 'Step back and forth in the bar, or click a row in the log.');
+    for (let i = 0; i < 4; i++) { await clickSel('.litbar [data-act="flow-prev"]', i ? 250 : 800); await page.waitForTimeout(900); }
+    const trig = await el(page, (b) => b._flow.steps.findIndex((x) => x.e.kind === 'trigger' && x.e.key === 'automation.garage_left_open'));
+    await clickSel(`.litbar .fstep[data-i="${trig}"]`, 700);
+    await page.waitForTimeout(2600);
+    mark('sandbox');
+    await caption(page, '<b>Functions Board</b> &nbsp;·&nbsp; free and open source, installs through the Marketplace<br>github.com/ToolAndDieGuy/functions-board');
+    await page.waitForTimeout(4500);
+    mark('end');
+  } else {
   await page.goto(BASE + '/functions/' + away);
   await ready(page);
   await fbq(page, '.nodes .node').first().waitFor({ timeout: 20000 });
@@ -229,7 +287,7 @@ const caption = (page, text) => page.evaluate((t) => {
   await frame(null, 1.0, 20, 0);
   await move(W * 0.62, H * 0.45, 10);
   await page.waitForTimeout(1200);
-  const from = Date.now() / 1000 - 1.0;
+  from = Date.now() / 1000 - 1.0;
   mark('start');
 
   // 1: what it is
@@ -324,6 +382,7 @@ const caption = (page, text) => page.evaluate((t) => {
   await caption(page, '<b>Functions Board</b> &nbsp;·&nbsp; free and open source, installs through the Marketplace<br>github.com/ToolAndDieGuy/functions-board');
   await page.waitForTimeout(4500);
   mark('end');
+  }
 
   await cdp.send('Page.stopScreencast');
   await page.waitForTimeout(500);
