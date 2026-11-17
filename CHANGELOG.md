@@ -13,6 +13,10 @@ New arrows and a new automatic layout.
   side each have a point of their own and their own line. More than three share the three points (split by kind
   and by where they go): the arrows at a point run as one line that branches, with a dot at each branch. Where two
   lines cross without meeting, one hops over the other, so a dot always means a branch and a hop a crossing.
+- Each arrow on a shared line has a colour of its own (sixteen, used in turn across the function), on the dot
+  where it branches off and on the point at its own end, ringed in the colour of its kind; where the shared line
+  just splits, the dot is plain.
+- Arrows running back (right to left) carry small arrowheads along the way, so their direction reads at a glance.
 - In Full manager, drag from a box's right-hand point to another box to draw an arrow out of it, or from a
   left-hand point to draw one into it.
 - A short step up or down in the middle of a level run is straightened out where that's clear.

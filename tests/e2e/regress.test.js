@@ -957,6 +957,22 @@ test('0.6.0 square-cornered arrows: never alongside each other, colours by meani
     const ext = (ks) => { const ns = ks.map((k) => nodes.get(k)); return { x0: Math.min(...ns.map((n) => n.x)), y0: Math.min(...ns.map((n) => n.y)), x1: Math.max(...ns.map((n) => n.x + n.w)), y1: Math.max(...ns.map((n) => n.y + n.h)) }; };
     return { a: ext(keys.slice(0, 4)), b: ext(keys.slice(4, 7)), c: ext(['automation.c1']) };
   });
+  // five arrows out of one box: they share its three points; each arrow's branch dot and the point at its own end
+  // have the same colour, and no two arrows of the function have the same one
+  const tg = await el(page, (b) => {
+    const mk = (key, kind) => ({ key, kind, domain: key.split('.')[0], name: key, icon: 'mdi:circle', badges: new Set(), w: kind === 'outside' ? 204 : 240, h: kind === 'outside' ? 40 : 62, x: 0, y: 0 });
+    const ls = [1, 2, 3, 4, 5].map((i) => 'light.l' + i), keys = ['automation.all_off', ...ls];
+    const nodes = new Map(keys.map((k) => [k, mk(k, k.startsWith('light') ? 'outside' : 'member')]));
+    b._model = { label: 'fbx-tags', nodes, edges: ls.map((t) => ({ id: 'automation.all_off>' + t, from: 'automation.all_off', to: t, role: 'action', svcs: new Set(), tfs: [], anyTrig: true })) };
+    b._layout('fbx-tags').nodes = {};
+    b._place(); b._render();
+    const fill = (e) => getComputedStyle(e).fill === 'none' ? null : getComputedStyle(e).fill;
+    const dots = [...b.shadowRoot.querySelectorAll('.edges circle.jd:not(.split)')].map((c) => c.style.fill);
+    const ports = [...b.shadowRoot.querySelectorAll('.node .port.tagd')].map((p) => p.style.background);
+    return { dots, ports, used: new Set(b.shadowRoot.querySelectorAll('.node[data-key="automation.all_off"] .port.pr')).size };
+  });
+  check('0.6.0 the arrows on a shared line each have a colour at their own end', tg.ports.length >= 4 && new Set(tg.ports).size === tg.ports.length, tg);
+  check('0.6.0 each branch dot has the colour of the arrow branching off there', tg.dots.length >= 2 && tg.dots.every((d) => tg.ports.includes(d)), tg);
   const apart = (p, q) => p.x1 + 40 <= q.x0 || q.x1 + 40 <= p.x0 || p.y1 + 40 <= q.y0 || q.y1 + 40 <= p.y0;
   check('0.6.0 two separate chains sit apart as blocks', apart(pk.a, pk.b), pk);
   check('0.6.0 a chain packs beside or under the bigger one, without a column gap between its boxes', pk.b.x1 - pk.b.x0 < 900, pk);

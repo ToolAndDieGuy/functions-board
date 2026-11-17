@@ -646,9 +646,14 @@
       // (and no corner where a run just carries on)
       return q.filter((p, i) => i === 0 || i === q.length - 1 || !((Math.abs(q[i - 1][0] - p[0]) < 0.5 && Math.abs(q[i + 1][0] - p[0]) < 0.5) || (Math.abs(q[i - 1][1] - p[1]) < 0.5 && Math.abs(q[i + 1][1] - p[1]) < 0.5)));
     });
-    return { routes: R, owners, dots: busDots(R, owners, geo), hops: hopsOf(R, owners) };
+    const bd = busDots(R, owners, geo);
+    return { routes: R, owners, dots: bd.dots, tags: bd.tags, hops: hopsOf(R, owners) };
   }
   // a dot where a bus branches (or is joined), as on a wiring diagram: where lines cross without one, they don't meet
+  // arrows that share a line each get a colour of their own (tag: index into TAGS) for the dots at the two places
+  // they stand apart: where they branch off the shared line, and the point on the box at their own end
+  const TAGS = ['#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#911eb4', '#42d4f4', '#f032e6', '#bfef45', '#fabed4',
+    '#469990', '#dcbeff', '#9a6324', '#fffac8', '#800000', '#aaffc3'];
   function busDots(routes, owners, geo) {
     const by = new Map();
     routes.forEach((pts, ri) => {
@@ -656,21 +661,39 @@
         if (!own) return;
         let v = -1;
         for (let i = 1; i < pts.length; i++) if (Math.abs(pts[i - 1][0] - pts[i][0]) < 0.5 && Math.abs(pts[i - 1][1] - pts[i][1]) > 0.5) { v = i; if (end === 0) break; }
-        if (!by.has(own)) by.set(own, { own, role: geo[ri].e.role, x: null, ys: [] });
+        if (!by.has(own)) by.set(own, { own, role: geo[ri].e.role, x: null, ys: [], ms: [] });
         const b = by.get(own);
-        // a member with no turn joins the bus line where it runs straight through it
+        // where it leaves (or joins) the shared line; a member with no turn does so where it runs straight through
+        const turn = v < 0 ? pts[0][1] : end === 0 ? pts[v][1] : pts[v - 1][1];
+        // its own end: the far end of an arrow out of a shared point, the start of one into it
+        const far = end === 0 ? pts[pts.length - 1] : pts[0];
+        b.ms.push({ ri, turn, far });
         if (v < 0) { b.ys.push(pts[0][1]); return; }
         b.x = pts[v][0];
         b.ys.push(pts[v - 1][1], pts[v][1]);
       });
     });
-    const dots = [];
+    const dots = [], tags = new Map();
+    let next = 0;
     by.forEach((b) => {
+      // a colour each across the whole function, in the order the arrows of a shared line sit, so that a colour
+      // comes round again only after all of them have been used
+      b.ms.sort((p, q) => p.far[1] - q.far[1] || p.turn - q.turn).forEach((m) => { m.tag = next++ % TAGS.length; tags.set(m.ri, { tag: m.tag, own: b.own, far: m.far, role: b.role }); });
       if (b.x == null) return;
       const lo = Math.min(...b.ys), hi = Math.max(...b.ys), seen = [];
-      b.ys.forEach((y) => { if (y > lo + 1 && y < hi - 1 && !seen.some((z) => Math.abs(z - y) < 1)) { seen.push(y); dots.push({ x: b.x, y, role: b.role, own: b.own }); } });
+      b.ms.forEach((m) => {
+        if (m.turn <= lo + 1 || m.turn >= hi - 1 || seen.some((z) => Math.abs(z - m.turn) < 1)) return;
+        seen.push(m.turn);
+        dots.push({ x: b.x, y: m.turn, role: b.role, own: b.own, tag: m.tag, ri: m.ri });
+      });
+      // where the shared line itself splits, up and down, a plain dot in the colour of its kind
+      b.ys.forEach((y) => {
+        if (y <= lo + 1 || y >= hi - 1 || seen.some((z) => Math.abs(z - y) < 1)) return;
+        seen.push(y);
+        dots.push({ x: b.x, y, role: b.role, own: b.own, tag: null, ri: b.ms[0].ri });
+      });
     });
-    return dots;
+    return { dots, tags };
   }
   // where a level run crosses another arrow's upright run, it hops over it: per arrow, the runs and where
   function hopsOf(routes, owners) {
@@ -1681,10 +1704,25 @@ button{font:inherit;color:inherit}
 .board.pc .edges path.hi.role-action{stroke:var(--fb-act);stroke-width:2.6}
 .board.pc .edges path.hi.role-call{stroke:var(--fb-call);stroke-width:3.2}
 .board.pc .edges path.live{stroke:var(--primary-text-color);stroke-width:2.6}
-.edges circle.jd{fill:var(--fb-edge);stroke:none}
-.board.pc .edges circle.jd.role-trigger{fill:var(--fb-trig)}
-.board.pc .edges circle.jd.role-action{fill:var(--fb-act)}
-.board.pc .edges circle.jd.role-call{fill:var(--fb-call)}
+.edges circle.jd{stroke:var(--fb-edge);stroke-width:2}
+.edges circle.jd.split{fill:var(--fb-edge);stroke:none}
+.board.pc .edges circle.jd.split.role-trigger{fill:var(--fb-trig)}
+.board.pc .edges circle.jd.split.role-action{fill:var(--fb-act)}
+.board.pc .edges circle.jd.split.role-call{fill:var(--fb-call)}
+.board.pc .edges circle.jd.role-trigger{stroke:var(--fb-trig)}
+.board.pc .edges circle.jd.role-action{stroke:var(--fb-act)}
+.board.pc .edges circle.jd.role-call{stroke:var(--fb-call)}
+.edges path.chev{fill:var(--fb-edge);stroke:none}
+.board.pc .edges path.chev.role-trigger{fill:var(--fb-trig)}
+.board.pc .edges path.chev.role-action{fill:var(--fb-act)}
+.board.pc .edges path.chev.role-call{fill:var(--fb-call)}
+.edges path.chev.dim{opacity:.12}
+.node .port.tagd{width:10px;height:10px;border-width:2px;margin-top:-1px}
+.node .port.tagd.pl{left:-5px}
+.node .port.tagd.pr{right:-5px}
+.board.pc .node .port.tagd.role-trigger{border-color:var(--fb-trig)}
+.board.pc .node .port.tagd.role-action{border-color:var(--fb-act)}
+.board.pc .node .port.tagd.role-call{border-color:var(--fb-call)}
 .edges circle.jd.dim{opacity:.18}
 .board.pc .lg svg path.role-trigger{stroke:var(--fb-trig)}
 .board.pc .lg svg path.ah.role-trigger,.board.pc .lg svg .ah.trig{fill:var(--fb-trig)}
@@ -2252,7 +2290,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       highlight_around_a_selected_box: 'Highlight around a selected box',
       reach: 'Reach',
       live: 'Live',
-      one_line_that_branches_dot: 'one line that branches (a dot at each branch)',
+      one_line_that_branches_dot: 'a shared line: one colour per arrow, where it branches and at its end',
+      runs_back: 'an arrow running back, right to left',
       crosses_without_meeting: 'crosses another without meeting it',
       arrow_style: 'Style',
       curved_arrows: 'Curved arrows',
@@ -3888,7 +3927,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         + (n.kind === 'outside' ? '' : '<div class="sub"></div>') + '</div>'
         + (b ? `<div class="badges">${b}</div>` : '')
         // the points arrows leave from (right) and enter by (left); in Full manager, drag from one to draw an arrow
-        + (PROTO().ortho ? portYs(n.h).map((y) => `<span class="port pl" style="top:${y - 4}px"></span><span class="port pr" style="top:${y - 4}px"></span>`).join('') : '') + '</div>';
+        + (PROTO().ortho ? portYs(n.h).map((y) => `<span class="port pl" data-y="${y - 4}" style="top:${y - 4}px"></span><span class="port pr" data-y="${y - 4}" style="top:${y - 4}px"></span>`).join('') : '') + '</div>';
     }
 
     _renderFrames() {
@@ -4011,13 +4050,31 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const boxes = [...this._visibleKeys()].map((k) => m.nodes.get(k));
       const marks = [], condOn = this._data.ui.condres !== false;
       const geo = arrowGeo(E, (k) => m.nodes.get(k), PR.ortho ? orthoSides : sides);
-      let dots = [];
+      let dots = [], tagged = null;
+      const chev = [];
       if (PR.ortho) {
         const r = orthoAll(geo, (e, sd) => this._routeFor(e, sd), boxes);
         this._ortho = { ids: geo.map((g) => g.e.id), routes: r.routes, owners: r.owners, boxes: geo.map((g) => [g.e.from, g.e.to]) };
         geo.forEach((g, i) => { const rp = roundPath(r.routes[i], r.hops[i]); g.gm = { d: rp.d, mx: rp.mid[0], my: rp.mid[1] }; });
         // a bus's dots light with it
-        dots = r.dots.map((dt) => Object.assign({ lit: !F || geo.some((g, i) => (r.owners[i] || []).includes(dt.own) && this._focusEdges.has(g.e.id)) }, dt));
+        // a branch lights with its arrow
+        dots = r.dots.map((dt) => Object.assign({ lit: !F || (dt.tag == null ? geo.some((g, i) => (r.owners[i] || []).includes(dt.own) && this._focusEdges.has(g.e.id)) : this._focusEdges.has(geo[dt.ri].e.id)) }, dt));
+        tagged = r.tags;
+        // each arrow's direction, on runs that go back (right to left)
+        geo.forEach((g, i) => {
+          const pts = r.routes[i], hi = !!F && this._focusEdges.has(g.e.id), hp = r.hops[i] || new Map();
+          for (let j = 1; j < pts.length; j++) {
+            const u = pts[j - 1], v = pts[j], len = u[0] - v[0];
+            if (Math.abs(u[1] - v[1]) > 0.5 || len < 70) continue;
+            const n = Math.max(1, Math.floor(len / 320));
+            for (let q = 1; q <= n; q++) {
+              let x = u[0] - (len * q) / (n + 1);
+              // (not on a hop)
+              (hp.get(j) || []).forEach((h) => { if (Math.abs(h - x) < HOP + 6) x = h + HOP + 8; });
+              chev.push(`<path class="chev role-${esc(g.e.role)}${F && !hi ? ' dim' : ''}" d="M${x - 4},${u[1]} L${x + 4},${u[1] - 4.5} L${x + 4},${u[1] + 4.5} z"></path>`);
+            }
+          }
+        });
       }
       for (const g of geo) {
         const e = g.e, way = g.gm ? null : this._routeFor(e, g.s);
@@ -4044,8 +4101,28 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           marks.push(`<g class="cres ${kind}${F && !hi ? ' dim' : ''}" data-edge="${esc(e.id)}" transform="translate(${gm.mx},${gm.my})"><circle r="8"></circle>${glyph}<title>${esc(this._condTitle(e, c))}</title></g>`);
         }
       }
-      const jd = dots.map((dt) => `<circle class="jd role-${esc(dt.role)}${dt.lit ? '' : ' dim'}" cx="${dt.x}" cy="${dt.y}" r="3.6"></circle>`);
-      this._$.edges.innerHTML = out.join('') + jd.join('') + hits.join('') + labels.join('') + marks.join('');
+      const jd = dots.map((dt) => (dt.tag == null ? `<circle class="jd split role-${esc(dt.role)}${dt.lit ? '' : ' dim'}" cx="${dt.x}" cy="${dt.y}" r="3.6"></circle>`
+        : `<circle class="jd role-${esc(dt.role)}${dt.lit ? '' : ' dim'}" cx="${dt.x}" cy="${dt.y}" r="4.6" style="fill:${TAGS[dt.tag]}"></circle>`));
+      this._$.edges.innerHTML = out.join('') + chev.join('') + jd.join('') + hits.join('') + labels.join('') + marks.join('');
+      this._tagPorts(tagged, geo);
+    }
+
+    // the point on a box at the own end of an arrow that shares a line takes that arrow's colour, ringed in the
+    // colour of its kind, like the dot where it branches off
+    _tagPorts(tagged, geo) {
+      this.shadowRoot.querySelectorAll('.node .port.tagd').forEach((p) => { p.classList.remove('tagd'); p.removeAttribute('style'); p.style.top = p.dataset.y + 'px'; p.className = p.className.replace(/ role-\S+/g, ''); });
+      if (!tagged) return;
+      const F = this._focus;
+      tagged.forEach((t, ri) => {
+        const g = geo[ri], into = t.own.startsWith('out:'), key = into ? g.e.to : g.e.from, n = this._model.nodes.get(key), el = this._els && this._els.get(key);
+        if (!n || !el) return;
+        const ys = portYs(n.h), i = ys.findIndex((y) => Math.abs(n.y + y - t.far[1]) < 1.5);
+        const port = i >= 0 && el.querySelectorAll(into ? '.port.pl' : '.port.pr')[i];
+        if (!port) return;
+        port.classList.add('tagd', 'role-' + t.role);
+        port.style.background = TAGS[t.tag];
+        if (F && !this._focusEdges.has(g.e.id)) port.style.opacity = '.25';
+      });
     }
 
     /* ---------- the Arrows menu: highlight modes (7.1) and filters (7.2) ---------- */
@@ -4340,8 +4417,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const line = (cls) => `<svg width="38" height="10"><path class="${cls}" d="M4,5 L30,5"></path><path class="ah ${cls}" d="M30,1 L37,5 L30,9 z"></path>${cls === 'role-trigger' ? '<circle class="ah trig" cx="4" cy="5" r="3.5"></circle>' : ''}</svg>`;
       this._$.legend.innerHTML = `<button class="lgt" data-act="legend"><ha-icon icon="mdi:map-legend"></ha-icon>${open ? T('hide_key') : T('key')}</button>`
         + (open ? `<div class="lg">${line('role-trigger')}<span>${T('triggers')}</span>${line('role-condition')}<span>${T('is_checked_or_read_by')}</span>${line('role-action')}<span>${T('changes_2')}</span>${line('role-call')}<span>${T('runs_script_call')}</span>${line('role-source')}<span>${T('is_read_by_a_helper')}</span>${line('loop')}<span>${T('loop_can_retrigger_itself')}</span>${line('role-tool')}<span>${T('a_test_button_or_a')}</span>`
-          + `<svg width="38" height="14"><path d="M4,3 L16,3 L16,11 L30,11"></path><path d="M16,3 L30,3"></path><circle class="ah" cx="16" cy="3" r="2.6"></circle></svg><span>${T('one_line_that_branches_dot')}</span>`
-          + `<svg width="38" height="14"><path d="M19,1 L19,13"></path><path d="M4,8 L15,8 A4,4 0 0 1 23,8 L34,8"></path></svg><span>${T('crosses_without_meeting')}</span></div><div class="lgn"><span class="sw dashed"></span>${T('related_not_in_this_function')}<br><span class="sw pill"></span>${T('outside_item_it_touches')}<br><span class="sw st amber"></span>${T('unavailable')}<span class="sw st red"></span>${T('last_run_failed')}<span class="sw st blue"></span>${T('running')}<br><span class="cres-k ok">✓</span><span class="cres-k bad">✕</span> ${T('a_check_passes_or_fails')}<span class="sw dashed2"></span>${T('simulated_state')}</div><label class="tg"><input type="checkbox" data-tog="outside" ${u.outside ? 'checked' : ''}>${T('show_outside_items')}</label><label class="tg"><input type="checkbox" data-tog="suggest" ${u.suggest ? 'checked' : ''}>${T('show_related_suggestions')}</label><label class="tg" title="${T('reads_your_node_red_app')}"><input type="checkbox" data-nr ${u0.nodered === true ? 'checked' : ''}>${T('show_node_red_flows')}</label>${u0.nodered === true && this._nrCache && this._nrCache.err ? `<div class="lgerr">${esc(this._nrCache.err)}</div>` : ''}` : '');
+          + `<svg width="38" height="14"><path d="M4,3 L16,3 L16,11 L30,11"></path><path d="M16,3 L30,3"></path><circle cx="16" cy="3" r="3.2" style="fill:${TAGS[0]};stroke:var(--fb-edge);stroke-width:1.4"></circle><circle cx="32" cy="11" r="3.2" style="fill:${TAGS[0]};stroke:var(--fb-edge);stroke-width:1.4"></circle></svg><span>${T('one_line_that_branches_dot')}</span>`
+          + `<svg width="38" height="14"><path d="M19,1 L19,13"></path><path d="M4,8 L15,8 A4,4 0 0 1 23,8 L34,8"></path></svg><span>${T('crosses_without_meeting')}</span>`
+          + `<svg width="38" height="14"><path d="M4,7 L34,7"></path><path class="ah" d="M15,7 L23,2.5 L23,11.5 z"></path></svg><span>${T('runs_back')}</span></div><div class="lgn"><span class="sw dashed"></span>${T('related_not_in_this_function')}<br><span class="sw pill"></span>${T('outside_item_it_touches')}<br><span class="sw st amber"></span>${T('unavailable')}<span class="sw st red"></span>${T('last_run_failed')}<span class="sw st blue"></span>${T('running')}<br><span class="cres-k ok">✓</span><span class="cres-k bad">✕</span> ${T('a_check_passes_or_fails')}<span class="sw dashed2"></span>${T('simulated_state')}</div><label class="tg"><input type="checkbox" data-tog="outside" ${u.outside ? 'checked' : ''}>${T('show_outside_items')}</label><label class="tg"><input type="checkbox" data-tog="suggest" ${u.suggest ? 'checked' : ''}>${T('show_related_suggestions')}</label><label class="tg" title="${T('reads_your_node_red_app')}"><input type="checkbox" data-nr ${u0.nodered === true ? 'checked' : ''}>${T('show_node_red_flows')}</label>${u0.nodered === true && this._nrCache && this._nrCache.err ? `<div class="lgerr">${esc(this._nrCache.err)}</div>` : ''}` : '');
     }
 
     /* ---------- view ---------- */
