@@ -126,5 +126,9 @@ check('every English text is used', orphans.length === 0, orphans);
 const noN = Object.entries(EN).filter(([, v]) => typeof v !== 'string' && !(v.one !== undefined && v.other !== undefined && /\{n\}/.test(v.other)));
 check('counts have one and other, and other shows {n}', noN.length === 0, noN.map(([k]) => k));
 
+// the catalog's rule: the board never makes a Supervisor ingress session or writes its cookie
+const ingress = (src.match(/ingress\/session|ingress_session/g) || []);
+check('no ingress session is made, and no ingress cookie written', ingress.length === 0, ingress);
+
 console.log(`\n${total - failed}/${total} passed`);
 process.exit(failed ? 1 : 0);
