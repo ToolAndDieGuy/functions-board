@@ -1040,6 +1040,25 @@ test('0.7.0 top to bottom: every function laid out turned, arrows still apart an
   check('0.7.0 no errors', page.logs.length === 0, page.logs);
 });
 
+test('0.7.1 sandbox flow view: closing the sandbox mid-flow leaves nothing behind; a debugger run lights as before', async (browser) => {
+  const { page } = await imported(browser);
+  await openFn(page, /garage/i);
+  await el(page, (b) => { b._data.ui.sbxIntro = false; });
+  await fbq(page, '.tools [data-act="sandbox"]').click();
+  await fbq(page, '.drawer .sbctl .sbent').waitFor({ timeout: 10000 });
+  await el(page, (b) => b._sbxDo((e) => e.userSet('cover.garage_door', 'open')));
+  const mid = await until(() => el(page, (b) => (b._flow && b._$.litbar.classList.contains('flowbar') && b._$.flow.querySelector('.fnum') ? true : null)), 6000);
+  check('0.7.1 a change in the sandbox starts its flow on the board', !!mid);
+  await fbq(page, '.drawer [data-act="close"]').click();
+  await page.waitForTimeout(1200);
+  const after = await el(page, (b) => ({ flow: !!b._flow, lit: !!b._lit, layer: b._$.flow.children.length + b._$.flowx.children.length, bar: b._$.litbar.hidden, cls: b._$.litbar.classList.contains('flowbar'), dots: b._$.edges.querySelectorAll('circle.fdot, g.cres.sbxc').length }));
+  check('0.7.1 closing the sandbox mid-flow: no flow, no temporary boxes, numbers or dots left, the bar gone', !after.flow && !after.lit && after.layer === 0 && after.bar && !after.cls && after.dots === 0, after);
+  // the debugger's own chain still uses the plain bar
+  await el(page, (b) => b._lightSteps([{ kind: 'state', key: 'cover.garage_door', state: 'open' }, { kind: 'run', key: 'automation.garage_start_open_timer' }], null));
+  const plain = await el(page, (b) => ({ shown: !b._$.litbar.hidden, cls: b._$.litbar.classList.contains('flowbar'), steps: b._$.litbar.querySelectorAll('.lstep').length, replay: !!b._$.litbar.querySelector('[data-act="lit-replay"]') }));
+  check('0.7.1 ... and a debugger chain afterwards lights with its own bar (Replay, no step controls)', plain.shown && !plain.cls && plain.steps === 2 && plain.replay, plain);
+});
+
 (async () => {
   const browser = await chromium.launch();
   for (const [name, fn] of cases) {

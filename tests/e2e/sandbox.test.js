@@ -75,6 +75,8 @@ const DOOR = 'cover.garage_door', TIMER = 'timer.garage_open', AUTO = 'input_boo
   check('the timeline lists your change, the trigger and the timer starting', await el(page, (b) => { const L = b._sbx.eng.log; return L.some((e) => e.kind === 'state' && e.by === 'you') && L.some((e) => e.kind === 'trigger' && e.key === 'automation.garage_start_open_timer') && L.some((e) => e.kind === 'call' && e.svc === 'timer.start'); }));
   const next = await fbq(page, '.drawer .sbnext').textContent();
   check('what comes next: the timer, in 15 minutes', /15:00/.test(next), next);
+  const wait0 = await until(() => el(page, (b, k) => { const n = b._model.nodes.get(k), w = [...b._$.flow.querySelectorAll('.fwait')].find((x) => Math.abs(parseFloat(x.style.left) - (n.x + n.w - 6)) < 1 && Math.abs(parseFloat(x.style.top) - n.y) < 1); return w ? w.textContent : null; }, TIMER), 4000);
+  check('0.7.1 the box that waits shows how long, on the sandbox\'s clock', /15:00/.test(wait0 || ''), wait0);
 
   // run to it: the timer finishes, "left open" fires, the notification is a call it can't follow, the script closes the door
   await fbq(page, '.drawer [data-act="sbx-next"]').click();
@@ -86,6 +88,42 @@ const DOOR = 'cover.garage_door', TIMER = 'timer.garage_open', AUTO = 'input_boo
   check('closing it cancels the timer (Garage: closed, stop timer)', L.some((e) => e.kind === 'trigger' && e.key === 'automation.garage_closed_stop_timer'));
   check('the clock moved 15 minutes', await el(page, (b) => Math.round((b._sbx.eng.now - b._sbx.eng.log[0].t) / 60000) === 15));
   check('the chain is lit on the board', await until(() => el(page, (b) => !!(b._lit && b._lit.keys.size > 1) || null), 4000));
+
+  // the flow view (0.7.1): everything Next due set off, played on the board one step at a time
+  const dotSeen = await until(() => el(page, (b) => (b._$.edges.querySelector('circle.fdot animateMotion') || b._$.flowx.querySelector('circle.fdot animateMotion')) ? true : null), 6000);
+  check('0.7.1 a dot runs along each step\'s arrow as it plays', !!dotSeen);
+  const fl = await until(() => el(page, (b) => {
+    const f = b._flow;
+    if (!f || f.at !== f.steps.length - 1) return null;
+    const trig = b._model.edges.find((e) => e.from === 'event:timer.finished' && e.to === 'automation.garage_left_open');
+    return { n: f.steps.length, kinds: f.steps.map((s) => s.e.kind), trigLit: !!trig && b._lit.edges.has(trig.id), nums: b._$.flow.querySelectorAll('.fnum').length,
+      rows: b._$.drawer.querySelectorAll('.sbtl .dbrow .fsn').length, ok: b._$.edges.querySelectorAll('g.cres.sbxc.ok').length, ghosts: [...b._$.flow.querySelectorAll('.ghost')].map((g) => g.textContent),
+      bar: b._$.litbar.textContent + ' ' + [...b._$.litbar.querySelectorAll('.fstep')].map((x) => x.title).join(' | '), dim: b._els.get('automation.garage_start_open_timer').classList.contains('dim') };
+  }), 30000);
+  check('0.7.1 Next due plays what it set off, step by step to the end', !!fl && fl.n >= 10 && fl.kinds[0] === 'state' && fl.kinds.includes('trigger') && fl.kinds.includes('cond') && fl.kinds.includes('call'), fl);
+  check('0.7.1 the arrows it went along are lit, the timer\'s trigger arrow among them', fl && fl.trigLit);
+  check('0.7.1 each step has its number, on the board and in the timeline', fl && fl.nums >= 6 && fl.rows === fl.n, fl && [fl.nums, fl.rows, fl.n]);
+  check('0.7.1 the checks it made show as passed on their arrows', fl && fl.ok >= 2, fl && fl.ok);
+  check('0.7.1 what isn\'t on the board gets a temporary box (the timer.cancelled event)', fl && fl.ghosts.some((g) => /timer\.cancelled/.test(g) && /not on this board/.test(g)), fl && fl.ghosts);
+  check('0.7.1 the bar says what each step is by name, not by id', fl && /Step \d+ of \d+/.test(fl.bar) && /Garage: left open triggered/.test(fl.bar) && /Garage: left open runs Close garage/.test(fl.bar) && !/(automation|script)\.[a-z]/.test(fl.bar), fl && fl.bar);
+  check('0.7.1 what it didn\'t touch stays readable, a little dimmed', fl && fl.dim && await el(page, (b) => getComputedStyle(b._els.get('automation.garage_start_open_timer')).opacity > 0.3));
+  const ghostClear = await el(page, (b) => {
+    const m = b._model, ns = [...b._visibleKeys()].map((k) => m.nodes.get(k));
+    return [...b._flow.ghosts.values()].every((g) => ns.every((n) => g.x >= n.x + n.w || n.x >= g.x + g.w || g.y >= n.y + n.h || n.y >= g.y + g.h));
+  });
+  check('0.7.1 temporary boxes don\'t sit on the board\'s boxes', ghostClear);
+  // stepping: back one, a row in the timeline, and the box it's at
+  await fbq(page, '.litbar [data-act="flow-prev"]').click();
+  const back = await el(page, (b) => { const f = b._flow, on = b._$.drawer.querySelector('.sbtl .dbrow.on'); return { at: f.at, n: f.steps.length, row: on && +on.dataset.id === f.steps[f.at].e.id }; });
+  check('0.7.1 ◀ goes back a step, and the timeline follows', back.at === back.n - 2 && back.row, back);
+  const trigId = await el(page, (b) => b._flow.steps.find((s) => s.e.kind === 'trigger' && s.e.key === 'automation.garage_left_open').e.id);
+  await fbq(page, `.drawer .sbtl .dbrow[data-id="${trigId}"]`).click();
+  const jumped = await el(page, (b) => ({ cur: b._flow.steps[b._flow.at].e.id, bar: b._$.litbar.querySelector('.fcur').textContent, now: b._lit.now }));
+  check('0.7.1 clicking a row in the timeline goes to that step on the board', jumped.cur === trigId && /left open triggered/.test(jumped.bar) && jumped.now === 'automation.garage_left_open', jumped);
+  await fbq(page, '.flow .ghost').first().dispatchEvent('click');
+  check('0.7.1 clicking a temporary box goes to its step', await el(page, (b) => { const s = b._flow.steps[b._flow.at]; return s.links.some((l) => l.b[0] === '~') || (s.box || '')[0] === '~'; }));
+  await fbq(page, '.litbar [data-act="lit-clear"]').click();
+  check('0.7.1 Clear: the board is back to normal, temporary boxes gone', await el(page, (b) => !b._flow && !b._lit && !b._$.flow.querySelector('.ghost, .fnum') && !b._$.flowx.querySelector('path') && b._$.litbar.hidden));
   const rows = await fbq(page, '.drawer .sbtl .dbrow').count();
   check('the timeline shows every step', rows >= 12, rows);
 
@@ -126,6 +164,28 @@ const DOOR = 'cover.garage_door', TIMER = 'timer.garage_open', AUTO = 'input_boo
   check('a test goes to the sandbox', await el(page, (b, k) => b._sbx.eng.get(k).state === 'off', AUTO));
   await el(page, (b) => b._pause(b._$.pause));
   check('Pause would change your real automations: it says to close the sandbox', /Close the sandbox/.test(await fbq(page, '.toast').textContent()));
+
+  // a run shaped like a light flashing over MQTT: an event trigger, a check on something not on the board, a script
+  // that publishes to the light's /set topic and waits. The automation and script stand in for the garage ones
+  await el(page, (b) => {
+    const e = b._sbx.eng;
+    e.add('automation.garage_left_open', { triggers: [{ trigger: 'event', event_type: 'fb_probe' }], conditions: [{ condition: 'template', value_template: "{{ states('zone.home') not in ['unavailable'] }}" }], actions: [{ action: 'script.close_garage' }] });
+    e.add('script.close_garage', { sequence: [{ action: 'mqtt.publish', data: { topic: 'zigbee2mqtt/Garage Lamp/set', payload: '{"effect":"blink"}' } }, { delay: { seconds: 3 } }] });
+  });
+  await el(page, (b) => b._sbxDo((x) => x.userRun('automation.garage_left_open', true, 0)));
+  const fx = await until(() => el(page, (b) => { const f = b._flow; return f && f.at === f.steps.length - 1 ? { steps: f.steps.map((s) => [s.e.kind, s.box, s.links.map((l) => [l.a, l.b, !!l.edge])]), wait: [...b._$.flow.querySelectorAll('.fwait')].map((x) => x.textContent), arrows: b._$.flowx.querySelectorAll('path.fx').length, marks: b._$.flowx.querySelectorAll('g.cres.ok').length, bar: [...b._$.litbar.querySelectorAll('.fstep')].map((x) => x.title).join(' | ') } : null; }), 20000);
+  const S = JSON.stringify(fx && fx.steps);
+  check('0.7.1 MQTT flash: the event it stood in for, and the sensor it checked, show as temporary boxes with their arrows', !!fx && /"~event:fb_probe","automation.garage_left_open"/.test(S) && /"~zone.home","automation.garage_left_open"/.test(S) && fx.arrows >= 3 && fx.marks === 1, fx);
+  check('0.7.1 ... the script call goes along the board\'s arrow, the message to the light\'s /set topic to a temporary box', /"automation.garage_left_open","script.close_garage",true/.test(S) && /"script.close_garage","~mqtt:zigbee2mqtt\/Garage Lamp\/set",false/.test(S), S);
+  check('0.7.1 ... and the script waits 0:03, shown on its box', fx && fx.wait.includes('0:03') && /Close garage waits 0:03/.test(fx.bar), fx && [fx.wait, fx.bar]);
+  // a topic under one on the board (zigbee2mqtt/Garage Lamp for .../set) goes to that box
+  const under = await el(page, (b) => {
+    const m = b._model, n = Object.assign({}, m.nodes.get('script.close_garage'), { key: 'mqtt:zigbee2mqtt/Garage Lamp', kind: 'item', x: -5000, y: -5000 });
+    m.nodes.set(n.key, n);
+    try { const f = b._flowBuild(b._sbx.acts[b._sbx.acts.length - 1]); return f.steps.some((s) => s.links.some((l) => l.b === 'mqtt:zigbee2mqtt/Garage Lamp')) && ![...f.ghosts.keys()].some((k) => k.startsWith('~mqtt:')); }
+    finally { m.nodes.delete(n.key); }
+  });
+  check('0.7.1 ... a message to a topic under one on the board (…/set) goes to that board box', under);
 
   await page.screenshot({ path: path.join(STATE, 'shots', 'sandbox.png') });
   check('nothing was sent to Home Assistant that changes anything', changing().length === 0, changing());

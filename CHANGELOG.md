@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.7.1 (2026-11-17)
+
+New: the sandbox **plays what you set off on the board**, step by step, so you can follow it on the wiring and
+not only in the list.
+
+- **One flow per thing you do.** Set a state, fire an event, run an automation or move the clock, and everything
+  it sets off is played on the board one step at a time: the arrow each step goes along lights up and a dot runs
+  along it, each step gets a **number** (on the board and beside its row in the drawer), and the box it reaches
+  pulses. What the flow doesn't touch stays readable, a little dimmed.
+- **Checks on their arrows.** A condition the flow checked shows ✓ or ✕ on the arrow from what it read, with why
+  on hover.
+- **Temporary boxes** for what isn't on the board: the event or sensor a run stood in for, an MQTT topic a script
+  publishes to, a notification, an event an action fires. They're dashed amber, placed next to what they touch,
+  and gone when you clear the flow or close the sandbox. A message to `…/set` goes to the topic's box if the
+  board has it.
+- **Step through it.** The bar under the board names each step (who runs what, who checks what, who waits) with
+  ◀ ▶ to step, **Replay**, and **Clear**. Clicking a row in the drawer, a step number or a temporary box goes to
+  that step.
+- **What's waiting:** a box with a delay or timer running shows how long is left, on the sandbox's clock.
+
 ## 0.7.0 (2026-11-17)
 
 New: a **sandbox**, to try a function out without anything changing in your home, and functions that can flow

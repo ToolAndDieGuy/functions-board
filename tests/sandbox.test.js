@@ -6,8 +6,8 @@ const path = require('path');
 
 const src = fs.readFileSync(path.join(__dirname, '..', 'custom_components', 'functions_board', 'frontend', 'functions-board.js'), 'utf8');
 const start = src.indexOf("'use strict';"), end = src.indexOf('  class FunctionsBoard extends HTMLElement');
-const lib = new Function('customElements', 'window', src.slice(start, end) + '\nreturn { Sandbox, sbxRewrite, SBX_PRELUDE, durMs, asBool, localAt, tzParts, sbxEffect };')({ get: () => undefined }, {});
-const { Sandbox, sbxRewrite, durMs, localAt, sbxEffect } = lib;
+const lib = new Function('customElements', 'window', src.slice(start, end) + '\nreturn { Sandbox, sbxRewrite, SBX_PRELUDE, durMs, asBool, localAt, tzParts, sbxEffect, sbxReads, flowPath, flowCrossings };')({ get: () => undefined }, {});
+const { Sandbox, sbxRewrite, durMs, localAt, sbxEffect, sbxReads, flowPath, flowCrossings } = lib;
 
 let failed = 0, total = 0;
 const check = (name, ok, detail) => {
@@ -300,6 +300,21 @@ const st = (sb, id) => (sb.get(id) || {}).state;
     check('run as if trigger 1 (zone, id home) fired: its trigger condition passes', st(sb, 'light.l') === 'on' && st(sb, 'light.m') === 'off');
     await sb.userRun('automation.r', true, 1);
     check('run as if trigger 2 fired: trigger.id and trigger.entity_id are set', st(sb, 'light.m') === 'on');
+    const tr = sb.log.filter((e) => e.kind === 'trigger' && e.by === 'you');
+    check('0.7.1 a run as if a trigger fired says where it would have come from (for the flow view)', tr[0].src === 'person.me' && tr[1].src === 'binary_sensor.motion', tr.map((e) => e.src));
+    check('0.7.1 a condition says which entities it read', sb.log.some((e) => e.kind === 'cond' && Array.isArray(e.ents)));
+  }
+
+  // ---- the flow view's helpers (0.7.1)
+  check('0.7.1 a condition\'s reads: entity_id, nested conditions and templates, not its alias', JSON.stringify(sbxReads({ condition: 'and', alias: 'see light.x', conditions: [{ condition: 'state', entity_id: ['sensor.a', 'binary_sensor.b'], state: 'on' }, "{{ is_state('switch.c', 'on') }}", { condition: 'template', value_template: "{{ states('sensor.d') | float > 3 }}" }] }).sort())
+    === JSON.stringify(['binary_sensor.b', 'sensor.a', 'sensor.d', 'switch.c']), sbxReads({ condition: 'and', alias: 'see light.x', conditions: [{ condition: 'state', entity_id: ['sensor.a', 'binary_sensor.b'] }, "{{ is_state('switch.c', 'on') }}", { condition: 'template', value_template: "{{ states('sensor.d') | float > 3 }}" }] }));
+  {
+    const A = { x: 0, y: 0, w: 100, h: 40 }, B = { x: 300, y: 100, w: 100, h: 40 }, C = { x: 20, y: 200, w: 100, h: 40 };
+    const p = flowPath(A, B, false), q = flowPath(A, C, false), v = flowPath(A, C, true);
+    check('0.7.1 a temporary arrow leaves the right side and enters the left, side by side', p.d === 'M100,20 L200,20 L200,120 L300,120' && p.mid[0] === 200 && p.mid[1] === 70, p);
+    check('0.7.1 ... stacked, it goes round the side (left to right)', /^M100,20 L146,20 L146,220 L120,220$/.test(q.d), q.d);
+    check('0.7.1 ... top to bottom: out of the bottom, into the top', v.d === 'M50,40 L50,120 L70,120 L70,200', v.d);
+    check('0.7.1 counting the boxes an arrow runs through', flowCrossings(p.segs, [{ x: 180, y: 50, w: 50, h: 30 }, { x: 500, y: 0, w: 10, h: 10 }]) === 1 && flowCrossings(p.segs, [{ x: 210, y: 0, w: 50, h: 30 }]) === 0);
   }
 
   // ---- effects and durations

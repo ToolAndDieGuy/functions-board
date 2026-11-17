@@ -1,5 +1,5 @@
 /*!
- * Functions board v0.7.0 (prototype) for Home Assistant
+ * Functions board v0.7.1 (prototype) for Home Assistant
  *
  * One page per "function": every automation, script, helper and device that makes one job work,
  * grouped by a Home Assistant label and wired together from their own configs.
@@ -13,7 +13,7 @@
  */
 (() => {
   'use strict';
-  const VERSION = '0.7.0';
+  const VERSION = '0.7.1';
   const loaded = customElements.get('functions-board');
   if (loaded) {
     if (loaded.VERSION !== VERSION) {
@@ -1990,6 +1990,7 @@ button{font:inherit;color:inherit}
 .cres-k.ok{color:var(--success-color,#43a047)}.cres-k.bad{color:var(--fb-red)}
 .sw.dashed2{border:2px dashed var(--fb-blue)}
 .sw.sbk{border:2px dashed var(--fb-amber)}
+.sw.sbg{border:2px dashed var(--fb-amber);border-radius:5px;background:color-mix(in srgb,var(--card-background-color) 80%,var(--fb-amber))}
 .node.sim{outline:2px dashed var(--fb-blue);outline-offset:2px}
 .board.sbx .vp{background-image:repeating-linear-gradient(45deg,color-mix(in srgb,var(--fb-amber) 6%,transparent) 0 14px,transparent 14px 28px)}
 .sbxpill{position:absolute;top:12px;left:12px;display:flex;align-items:center;gap:6px;white-space:nowrap;background:color-mix(in srgb,var(--fb-amber) 20%,var(--card-background-color));border:1px solid var(--fb-amber);color:var(--primary-text-color);border-radius:14px;padding:4px 12px;font-size:12px;z-index:5;pointer-events:none}
@@ -2006,6 +2007,45 @@ button{font:inherit;color:inherit}
 .board.sbx .node[data-sbx]::after{content:attr(data-sbx);position:absolute;right:8px;bottom:-9px;font-size:10px;line-height:14px;padding:0 6px;border-radius:7px;background:var(--secondary-background-color);border:1px solid var(--divider-color);color:var(--primary-text-color)}
 .board.sbx .node.sbch[data-sbx]::after{background:var(--fb-amber);border-color:var(--fb-amber);color:#000}
 .board.sbx .node.sbch::before{content:'';position:absolute;left:-5px;top:-5px;width:9px;height:9px;border-radius:50%;background:var(--fb-amber)}
+.board.sbx .node.dim{opacity:.42}
+.board.sbx .edges path.dim,.board.sbx .edges path.chev.dim{opacity:.22}
+.flowx{position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;pointer-events:none}
+.flowx path.fx{fill:none;stroke:var(--fb-amber);stroke-width:2;stroke-dasharray:6 4}
+.flowx path.fx.cur{stroke-width:2.8}
+.flowx path.fx.cond{stroke-dasharray:3 4}
+.flowx g.cres circle,.edges g.cres.sbxc circle{fill:var(--card-background-color);stroke-width:2}
+.flowx g.cres path{fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.flowx g.cres.ok circle,.flowx g.cres.ok path{stroke:var(--success-color,#43a047)}.flowx g.cres.bad circle,.flowx g.cres.bad path{stroke:var(--fb-red)}
+.flowx g.cres{pointer-events:all}
+circle.fdot{fill:var(--fb-blue);stroke:var(--card-background-color);stroke-width:2}
+.flow{position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;pointer-events:none}
+.flow .ghost{position:absolute;box-sizing:border-box;display:flex;align-items:center;gap:8px;padding:4px 10px;border-radius:12px;border:2px dashed var(--fb-amber);background:color-mix(in srgb,var(--card-background-color) 88%,var(--fb-amber));color:var(--primary-text-color);pointer-events:auto;cursor:pointer;transition:opacity .2s}
+.flow .ghost.far{opacity:.35}
+.flow .ghost.now{box-shadow:0 0 0 3px var(--fb-blue)}
+.flow .ghost ha-icon{--mdc-icon-size:18px;color:var(--fb-amber);flex:none}
+.flow .ghost .gt{display:flex;flex-direction:column;min-width:0;line-height:1.2}
+.flow .ghost .gt b{font-weight:500;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.flow .ghost .gt small{font-size:10.5px;color:var(--secondary-text-color)}
+.flow .ghost.pulse{animation:pulse 1.8s ease-out}
+.flow .fnum{position:absolute;transform:translate(-50%,-50%);min-width:20px;height:20px;padding:0 5px;box-sizing:border-box;border-radius:10px;background:var(--secondary-background-color,#eee);border:1.5px solid var(--fb-blue);color:var(--primary-text-color);font-size:11px;font-weight:700;line-height:17px;text-align:center;white-space:nowrap;pointer-events:auto;cursor:pointer;z-index:2}
+.flow .fnum.cur{background:var(--fb-blue);color:#fff}
+.flow .fwait{position:absolute;transform:translate(-100%,-50%);display:flex;align-items:center;gap:3px;height:20px;padding:0 7px;border-radius:10px;background:var(--fb-amber);color:#000;font-size:11px;font-weight:600;white-space:nowrap;pointer-events:auto;z-index:2}
+.flow .fwait ha-icon{--mdc-icon-size:13px}
+.litbar.flowbar{flex-direction:column;flex-wrap:nowrap;align-items:stretch;gap:6px}
+.litbar.flowbar .fhead{display:flex;align-items:center;gap:6px;min-width:0}
+.litbar.flowbar .fhead .fcur{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
+.litbar.flowbar .fhead .fpos{color:var(--secondary-text-color);white-space:nowrap}
+.litbar.flowbar .fhead button{padding:4px 8px;display:inline-flex;align-items:center}
+.litbar.flowbar .fsteps{display:flex;flex-wrap:nowrap;align-items:center;gap:2px;overflow-x:auto;padding-bottom:3px}
+.litbar.flowbar .fsteps .larr{flex:none}
+.litbar button.fstep{flex:none;white-space:nowrap;border:0;padding:2px 6px;border-radius:7px;background:none;font-size:12px;color:var(--secondary-text-color);display:inline-flex;align-items:center;gap:5px}
+.litbar button.fstep.on{color:var(--primary-text-color)}
+.litbar button.fstep.cur{background:color-mix(in srgb,var(--fb-blue) 18%,transparent);font-weight:500}
+.litbar .lbtns button ha-icon{--mdc-icon-size:16px}
+.litbar .lbtns button:disabled{opacity:.4;cursor:default}
+i.fsn{font-style:normal;display:inline-block;min-width:16px;height:16px;padding:0 3px;box-sizing:border-box;border-radius:8px;background:var(--fb-blue);color:#fff;font-size:10px;font-weight:700;line-height:16px;text-align:center}
+.dbrow .rt i.fsn{margin-right:4px}
+.dbrow.fin{box-shadow:inset 3px 0 0 color-mix(in srgb,var(--fb-blue) 55%,transparent)}
 .sbclock{font-variant-numeric:tabular-nums;font-size:12.5px;margin-right:4px;padding:2px 8px;border-radius:8px;background:var(--secondary-background-color);white-space:nowrap}
 .sbnote{padding:8px 10px;font-size:12px;color:var(--secondary-text-color);border-bottom:1px solid var(--divider-color)}
 .sbctl{display:flex;flex-direction:column;gap:6px;padding:8px 10px;border-bottom:1px solid var(--divider-color)}
@@ -2565,6 +2605,21 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       sbx_test_here: 'Test in the sandbox',
       sbx_title: 'Sandbox · {fnName}',
       sbx_triggered: '{name} triggered',
+      sbx_cond_mark: 'In the sandbox: {text} was {res}',
+      sbx_f_calls: '{a}: {svc}{to}',
+      sbx_f_checks: '{a} checks {c}',
+      sbx_f_runs: '{a} runs {b}',
+      sbx_f_waits: '{a} {w}',
+      sbx_flow_n: 'Step {n} of {total}',
+      sbx_g_device: 'A device action',
+      sbx_g_event: 'Event, not on this board',
+      sbx_g_mqtt: 'MQTT topic, not on this board',
+      sbx_g_out: 'Not on this board',
+      sbx_g_svc: 'Action, not on this board',
+      sbx_g_title: 'Not on this board ({k}): shown for this sandbox run only',
+      sbx_ghost_key: 'not on this board, shown for a sandbox run',
+      sbx_step_next: 'Next step',
+      sbx_step_prev: 'Previous step',
       sbx_unknown: 'would call: the sandbox doesn\'t know what this changes',
       sbx_use: 'Use',
       sbx_value: 'Value',
@@ -3260,6 +3315,36 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     return p.length === t.length;
   };
 
+  // a right-angled arrow between two boxes that aren't joined on the board (the flow view's temporary boxes), out of
+  // and into the sides the board's own arrows use (left and right; top and bottom when it runs top to bottom).
+  // segs are its straight parts, mid is where its step number goes
+  const flowPath = (A, B, V) => {
+    // worked out left to right; top to bottom swaps x and y on the way in and out
+    const sw = (R) => (V ? { x: R.y, y: R.x, w: R.h, h: R.w } : R), pt = (x, y) => (V ? [y, x] : [x, y]);
+    const a = sw(A), b = sw(B), ay = a.y + a.h / 2, by = b.y + b.h / 2, G = 26;
+    let P;
+    if (b.x >= a.x + a.w + 12) { const xm = (a.x + a.w + b.x) / 2; P = [[a.x + a.w, ay], [xm, ay], [xm, by], [b.x, by]]; }
+    else if (b.x + b.w <= a.x - 12) { const xm = (a.x + b.x + b.w) / 2; P = [[a.x, ay], [xm, ay], [xm, by], [b.x + b.w, by]]; }
+    else { const xo = Math.max(a.x + a.w, b.x + b.w) + G; P = [[a.x + a.w, ay], [xo, ay], [xo, by], [b.x + b.w, by]]; }
+    P = P.map(([x, y]) => pt(x, y));
+    const r = (v) => Math.round(v * 10) / 10;
+    const segs = P.slice(1).map((q, i) => [P[i][0], P[i][1], q[0], q[1]]);
+    return { d: 'M' + P.map(([x, y]) => `${r(x)},${r(y)}`).join(' L'), mid: [(P[1][0] + P[2][0]) / 2, (P[1][1] + P[2][1]) / 2], segs };
+  };
+  // how many of the boxes a path runs through
+  const flowCrossings = (segs, rects) => rects.filter((o) => segs.some(([x0, y0, x1, y1]) => Math.max(x0, x1) > o.x + 2 && Math.min(x0, x1) < o.x + o.w - 2
+    && Math.max(y0, y1) > o.y + 2 && Math.min(y0, y1) < o.y + o.h - 2)).length;
+  // the entities a condition reads, for drawing it on the board
+  const sbxReads = (c) => {
+    const out = new Set();
+    const walk = (v, k) => {
+      if (typeof v === 'string') { if (k === 'entity_id' && EXACT_RE.test(v)) out.add(v); else (v.match(ENTITY_RE) || []).forEach((x) => out.add(x)); }
+      else if (Array.isArray(v)) v.forEach((x) => walk(x, k));
+      else if (v && typeof v === 'object') Object.entries(v).forEach(([kk, x]) => { if (kk !== 'alias') walk(x, kk); });
+    };
+    walk(c, '');
+    return [...out].slice(0, 8);
+  };
   class Sandbox {
     // o: { states (Home Assistant's, read, never written), items: [{ id, cfg }], now, tz, tpl(template, vars) → { ok, value,
     //      partly } | { ok: false, err }, ask({ text, key }) → Promise<boolean>, resolve(ref) → entity ids, fetch(id) → cfg, onLog(entry) }
@@ -3387,7 +3472,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         if (p === 'mqtt') Object.assign(trigger, { topic: t.topic, payload: t.payload != null ? String(t.payload) : '' });
         if (p === 'time' || p === 'time_pattern') trigger.now = this.iso();
       }
-      const cause = this._log({ kind: 'trigger', key: id, text: t ? T('sbx_run_as', { n: ti + 1, p: this._plat(t) }) : T('sbx_run_by_you'), by: 'you' });
+      const src = trigger.entity_id || (trigger.event ? 'event:' + trigger.event.event_type : trigger.topic ? 'mqtt:' + trigger.topic : null)
+        || (t && toList(t.entity_id).find((x) => typeof x === 'string' && EXACT_RE.test(x))) || null;
+      const cause = this._log({ kind: 'trigger', key: id, text: t ? T('sbx_run_as', { n: ti + 1, p: this._plat(t) }) : T('sbx_run_by_you'), by: 'you', src });
       this._start(it, { trigger }, cause, { conds: checkConds });
       await this.settle();
     }
@@ -3825,7 +3912,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     // one condition as a step of its own (logged), true or false
     async _condStep(c, run) {
       const r = await this._cond(c, run);
-      this._log({ kind: 'cond', key: run.item.id, ok: r.ok, text: this.o.condText ? this.o.condText(c) : '', why: r.why || '', partly: r.partly, cause: run.cause });
+      this._log({ kind: 'cond', key: run.item.id, ok: r.ok, text: this.o.condText ? this.o.condText(c) : '', why: r.why || '', partly: r.partly, cause: run.cause, ents: sbxReads(c) });
       return r;
     }
     async _conds(list, run) {
@@ -4548,7 +4635,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     </header>
     <div class="stage">
     <div class="vp">
-      <div class="world"><div class="frames"></div><svg class="edges" aria-hidden="true"></svg><div class="nodes" role="group" aria-label="${T('boxes_arrow_keys_follow_the')}"></div><div class="notes"></div><svg class="links" aria-hidden="true"></svg></div>
+      <div class="world"><div class="frames"></div><svg class="edges" aria-hidden="true"></svg><svg class="flowx" aria-hidden="true"></svg><div class="nodes" role="group" aria-label="${T('boxes_arrow_keys_follow_the')}"></div><div class="flow"></div><div class="notes"></div><svg class="links" aria-hidden="true"></svg></div>
       <div class="empty" hidden></div>
       <div class="cardhint" hidden><ha-icon icon="mdi:information-outline"></ha-icon><span>${T('this_card_works_best_in')}</span><button data-act="hint-x" title="${T('dismiss')}">&times;</button></div>
       <div class="nodebar" role="toolbar" hidden></div>
@@ -4573,7 +4660,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         world: q('.world'), frames: q('.frames'), edges: q('.edges'), nodes: q('.nodes'), notes: q('.notes'),
         empty: q('.empty'), nodebar: q('.nodebar'), legend: q('.legend'), loading: q('.loading'), toast: q('.toast'),
         drawer: q('.drawer'), modal: q('.modal'), cardhint: q('.cardhint'), litbar: q('.litbar'), ttip: q('.ttip'),
-        edgebar: q('.edgebar'), links: q('.links'), lh: q('.lh'), sbxpill: q('.sbxpill'),
+        edgebar: q('.edgebar'), links: q('.links'), lh: q('.lh'), sbxpill: q('.sbxpill'), flow: q('.flow'), flowx: q('.flowx'),
       };
       // the shadow root outlives a rebuild in another language (_relang): it keeps its listeners
       if (!this._rootOn) {
@@ -5473,7 +5560,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       };
       const tp = (x, y) => (V ? [y, x] : [x, y]);
       const boxes = [...this._visibleKeys()].map(boxOf);
-      const marks = [], condOn = this._data.ui.condres !== false;
+      const marks = [], condOn = this._data.ui.condres !== false, mids = new Map(), fl = this._flow && this._sbxOn() ? this._flow : null;
+      const dot = fl && fl.anim && fl.steps[fl.at] ? fl.steps[fl.at].links.find((l) => l.edge) : null;
       const geo = arrowGeo(E, boxOf, PR.ortho ? orthoSides : sides);
       let dots = [], tagged = null;
       const chev = [];
@@ -5518,13 +5606,16 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         // a wider, invisible copy that is easier to hover; arrows from templates show their live value instead of a title
         hits.push(`<path class="hit${e.tpls && e.tpls.size ? ' tpl' : ''}" data-act="edge" data-e="${esc(e.id)}" d="${gm.d}">${title}</path>`);
         const [lx, ly] = tp(gm.mx, gm.my);
+        mids.set(e.id, [lx, ly]);
+        // the sandbox's flow: a dot runs along the step's arrow (in the same frame as the arrow)
+        if (dot && dot.edge === e.id) out.push(`<circle class="fdot" r="5.5"><animateMotion begin="indefinite" dur="0.65s" fill="freeze" path="${gm.d}"${dot.rev ? ' keyPoints="1;0" keyTimes="0;1" calcMode="linear"' : ''}></animateMotion></circle>`);
         if (hi && e.svcs.size) labels.push(`<text x="${lx}" y="${ly - 6}" text-anchor="middle">${esc([...e.svcs].join(', '))}</text>`);
-        // whether its check passes right now (9.3)
-        const c = condOn && this._cond.get(e.id);
-        if (c) {
-          const kind = c.ok === true ? 'ok' : c.ok === false ? 'bad' : 'unk';
+        // whether its check passes right now (9.3), or, in the sandbox's flow, whether it passed there
+        const fc = fl && fl.cond.get(e.id), c = !fc && condOn && this._cond.get(e.id);
+        if (fc || c) {
+          const ok = fc ? fc.ok : c.ok, kind = ok === true ? 'ok' : ok === false ? 'bad' : 'unk';
           const glyph = kind === 'ok' ? '<path d="M-3.6,0.2 L-1.1,2.8 L3.8,-2.6"></path>' : kind === 'bad' ? '<path d="M-3,-3 L3,3 M3,-3 L-3,3"></path>' : '<text y="3.6" text-anchor="middle">?</text>';
-          marks.push(`<g class="cres ${kind}${F && !hi ? ' dim' : ''}" data-edge="${esc(e.id)}" transform="translate(${lx},${ly})"><circle r="8"></circle>${glyph}<title>${esc(this._condTitle(e, c))}</title></g>`);
+          marks.push(`<g class="cres ${kind}${fc ? ' sbxc' : ''}${F && !hi ? ' dim' : ''}" data-edge="${esc(e.id)}" transform="translate(${lx},${ly})"><circle r="8"></circle>${glyph}<title>${esc(fc ? fc.title : this._condTitle(e, c))}</title></g>`);
         }
       }
       const jd = dots.map((dt) => (dt.tag == null ? `<circle class="jd split role-${esc(dt.role)}${dt.lit ? '' : ' dim'}" cx="${dt.x}" cy="${dt.y}" r="3.6"></circle>`
@@ -5532,6 +5623,10 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const drawn = out.slice(1).join('') + chev.join('') + jd.join('') + hits.join('');
       this._$.edges.innerHTML = DEFS + (V ? `<g transform="matrix(0 1 1 0 0 0)">${drawn}</g>` : drawn) + labels.join('') + marks.join('');
       this._tagPorts(tagged, geo);
+      this._edgeMid = mids;
+      if (dot) this._$.edges.querySelectorAll('animateMotion').forEach((x) => { try { x.beginElement(); } catch (er) { /* no SMIL */ } });
+      this._paintFlow();
+      if (fl) fl.anim = false;
     }
 
     // the point on a box at the own end of an arrow that shares a line takes that arrow's colour, ringed in the
@@ -5862,7 +5957,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         + (open ? `<div class="lg">${line('role-trigger')}<span>${T('triggers')}</span>${line('role-condition')}<span>${T('is_checked_or_read_by')}</span>${line('role-action')}<span>${T('changes_2')}</span>${line('role-call')}<span>${T('runs_script_call')}</span>${line('role-source')}<span>${T('is_read_by_a_helper')}</span>${line('loop')}<span>${T('loop_can_retrigger_itself')}</span>${line('role-tool')}<span>${T('a_test_button_or_a')}</span>`
           + `<svg width="38" height="14"><path d="M4,3 L16,3 L16,11 L30,11"></path><path d="M16,3 L30,3"></path><circle cx="16" cy="3" r="3.2" style="fill:${TAGS[0]};stroke:var(--fb-edge);stroke-width:1.4"></circle><circle cx="32" cy="11" r="3.2" style="fill:${TAGS[0]};stroke:var(--fb-edge);stroke-width:1.4"></circle></svg><span>${T('one_line_that_branches_dot')}</span>`
           + `<svg width="38" height="14"><path d="M19,1 L19,13"></path><path d="M4,8 L15,8 A4,4 0 0 1 23,8 L34,8"></path></svg><span>${T('crosses_without_meeting')}</span>`
-          + `<svg width="38" height="14"><path d="M4,7 L34,7"></path><path class="ah" d="M15,7 L23,2.5 L23,11.5 z"></path></svg><span>${T('runs_back')}</span></div><div class="lgn"><span class="sw dashed"></span>${T('related_not_in_this_function')}<br><span class="sw pill"></span>${T('outside_item_it_touches')}<br><span class="sw st amber"></span>${T('unavailable')}<span class="sw st red"></span>${T('last_run_failed')}<span class="sw st blue"></span>${T('running')}<br><span class="cres-k ok">✓</span><span class="cres-k bad">✕</span> ${T('a_check_passes_or_fails')}<span class="sw dashed2"></span>${T('simulated_state')}${this._sbxOn() ? `<br><span class="sw sbk"></span>${T('sbx_changed_key')}` : ''}</div><label class="tg"><input type="checkbox" data-tog="outside" ${u.outside ? 'checked' : ''}>${T('show_outside_items')}</label><label class="tg"><input type="checkbox" data-tog="suggest" ${u.suggest ? 'checked' : ''}>${T('show_related_suggestions')}</label><label class="tg" title="${T('reads_your_node_red_app')}"><input type="checkbox" data-nr ${u0.nodered === true ? 'checked' : ''}>${T('show_node_red_flows')}</label>${u0.nodered === true && this._nrCache && this._nrCache.err ? `<div class="lgerr">${esc(this._nrCache.err)}${this._nrCache.need ? ` <button class="lgbtn" data-act="nr-open">${T('open_node_red')}</button>` : ''}</div>` : ''}` : '');
+          + `<svg width="38" height="14"><path d="M4,7 L34,7"></path><path class="ah" d="M15,7 L23,2.5 L23,11.5 z"></path></svg><span>${T('runs_back')}</span></div><div class="lgn"><span class="sw dashed"></span>${T('related_not_in_this_function')}<br><span class="sw pill"></span>${T('outside_item_it_touches')}<br><span class="sw st amber"></span>${T('unavailable')}<span class="sw st red"></span>${T('last_run_failed')}<span class="sw st blue"></span>${T('running')}<br><span class="cres-k ok">✓</span><span class="cres-k bad">✕</span> ${T('a_check_passes_or_fails')}<span class="sw dashed2"></span>${T('simulated_state')}${this._sbxOn() ? `<br><span class="sw sbk"></span>${T('sbx_changed_key')}<br><span class="sw sbg"></span>${T('sbx_ghost_key')}` : ''}</div><label class="tg"><input type="checkbox" data-tog="outside" ${u.outside ? 'checked' : ''}>${T('show_outside_items')}</label><label class="tg"><input type="checkbox" data-tog="suggest" ${u.suggest ? 'checked' : ''}>${T('show_related_suggestions')}</label><label class="tg" title="${T('reads_your_node_red_app')}"><input type="checkbox" data-nr ${u0.nodered === true ? 'checked' : ''}>${T('show_node_red_flows')}</label>${u0.nodered === true && this._nrCache && this._nrCache.err ? `<div class="lgerr">${esc(this._nrCache.err)}${this._nrCache.need ? ` <button class="lgbtn" data-act="nr-open">${T('open_node_red')}</button>` : ''}</div>` : ''}` : '');
     }
 
     /* ---------- view ---------- */
@@ -6021,7 +6116,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         if (node && node.dataset.key !== L.from) this._linkDialog(L.rev ? node.dataset.key : L.from, L.rev ? L.from : node.dataset.key);
         return;
       }
-      if (e.target.closest('button, select, input, textarea, .nodebar, .edgebar, .zoom, .legend, .toast, .litbar')) return;
+      if (e.target.closest('button, select, input, textarea, .nodebar, .edgebar, .zoom, .legend, .toast, .litbar, .flow .ghost, .flow .fnum')) return;
       this._pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       this._listen(true);
       if (this._pointers.size === 2) {
@@ -6306,6 +6401,11 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         case 'why-run': this._showRun({ kind: 'run', key: el.dataset.key, t: Date.now(), run: { domain: 'automation', item_id: el.dataset.item, run_id: el.dataset.rid } }, null); break;
         case 'lit-clear': this._clearLit(); this._dbgSel = null; this._renderDbg(); break;
         case 'lit-replay': if (this._litSteps) this._lightSteps(this._litSteps, this._litRun); break;
+        case 'flow-go': this._flowGo(+el.dataset.i, true); break;
+        case 'flow-prev': if (this._flow) this._flowGo(this._flow.at - 1, true); break;
+        case 'flow-next': if (this._flow) this._flowGo(this._flow.at + 1, true); break;
+        case 'flow-play': this._flowPlay(); break;
+        case 'flow-ghost': { const f = this._flow, i = f ? f.steps.findIndex((x) => x.box === el.dataset.g || x.links.some((l) => l.a === el.dataset.g || l.b === el.dataset.g)) : -1; if (i >= 0) this._flowGo(i, true); break; }
         case 'lit-trace': this._openLitTrace(); break;
         // the routes change with the style, and so does the automatic layout's spacing for them
         case 'hl-curved': this._data.ui.curved = this._data.ui.curved !== true; this._save(); this._place(); this._render(); this._refreshHl(); break;
@@ -7854,11 +7954,12 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const from = g.eng.seq;
       try { await fn(g.eng); } finally { g.busy = false; }
       if (this._sbx !== g) return;
+      // everything one thing you did set off is one flow, played on the board step by step
+      const act = { a: from + 1, b: g.eng.seq };
+      if (act.b >= act.a) (g.acts = g.acts || []).push(act);
       this._renderSbx();
       this._refreshStates();
-      // light up what the change set off: the last thing it led to, and how it got there
-      const last = g.eng.log.filter((e) => e.id > from && e.kind !== 'note').pop();
-      if (last) this._sbxLight(last.id, true);
+      if (act.b >= act.a) this._sbxLight(act.a, true);
     }
     // the box bar's sandbox buttons fill in the drawer's controls; the rest are the drawer's own
     _sbxBox(act, el) {
@@ -7905,22 +8006,228 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         default: break;
       }
     }
-    // the chain that led to an entry, lit up on the board like a run
+    // ---- the flow view: what one thing you did set off, step by step on the board. Each step lights its arrow (or
+    // its box), gets a number, and a dot runs along it; what isn't on the board gets a temporary dashed box
     _sbxLight(id, auto) {
       const g = this._sbx;
       if (!g) return;
-      const by = new Map(g.eng.log.map((e) => [e.id, e])), chain = [];
-      for (let e = by.get(id); e && chain.length < 60; e = by.get(e.cause)) chain.unshift(e);
       g.sel = id;
-      const steps = chain.map((e) => {
-        if (e.kind === 'state') return { kind: 'state', key: e.key, state: e.to };
-        if (e.kind === 'trigger') return { kind: 'run', key: e.key };
-        if (e.kind === 'call') return { kind: 'call', key: (e.ents && e.ents[0]) || e.key, svc: e.svc };
-        if (e.kind === 'event' || e.kind === 'mqtt') return { kind: 'note', key: e.key, text: e.text };
-        return { kind: 'note', key: e.key, text: this._sbxText(e).main };
+      const act = (g.acts || []).find((x) => id >= x.a && id <= x.b);
+      const f = act && (this._flow && this._flow.act === act ? this._flow : this._flowBuild(act));
+      if (!f || !f.steps.length) { if (!auto) this._renderSbx(); return; }
+      const fresh = f !== this._flow;
+      clearTimeout(this._timers.lit);
+      this._flow = f;
+      this._sel = null;
+      if (fresh) this._frameKeys(f.keys, [...f.ghosts.values()]);
+      this._renderSbx();
+      if (auto) { this._flowPlay(); return; }
+      let i = f.steps.findIndex((x) => x.e.id === id);
+      if (i < 0) i = Math.max(0, f.steps.filter((x) => x.e.id < id).length - 1);
+      this._flowGo(i, true);
+    }
+    _flowBuild(act) {
+      const g = this._sbx, m = this._model, eng = g.eng, vis = this._visibleKeys(), E = this._visEdges();
+      const by = new Map(eng.log.map((e) => [e.id, e])), es = eng.log.filter((e) => e.id >= act.a && e.id <= act.b && e.kind !== 'note');
+      // a board box for a key: itself, the MQTT box a topic is under (zigbee2mqtt/lamp for zigbee2mqtt/lamp/set), or a
+      // temporary one
+      const res = (k) => {
+        if (!k) return null;
+        if (vis.has(k)) return k;
+        if (k.startsWith('mqtt:')) {
+          const t = k.slice(5);
+          for (const n of vis) if (n.startsWith('mqtt:')) { const b = n.slice(5); if (b === t || t.startsWith(b + '/') || sbxTopic(b, t)) return n; }
+        }
+        return '~' + k;
+      };
+      const edgeFor = (a, b, role) => {
+        const c = E.filter((x) => (x.from === a && x.to === b) || (x.from === b && x.to === a));
+        return c.find((x) => x.role === role && x.from === a) || c.find((x) => x.from === a) || c[0] || null;
+      };
+      // a call's MQTT messages and events are drawn as its arrows
+      const kids = new Map();
+      es.forEach((e) => { const c = by.get(e.cause); if ((e.kind === 'mqtt' || e.kind === 'event') && c && c.kind === 'call') { if (!kids.has(c.id)) kids.set(c.id, []); kids.get(c.id).push(e.key); } });
+      const ghosts = new Map(), keys = new Set(), steps = [];
+      const ghost = (gk, anchor, before) => {
+        if (gk[0] !== '~' || ghosts.has(gk)) return;
+        const k = gk.slice(1), p = k.indexOf(':'), pre = p > 0 && !k.slice(0, p).includes('.') ? k.slice(0, p) : '';
+        const name = pre === 'mqtt' || pre === 'event' || pre === 'svc' ? k.slice(p + 1) : pre === 'device' ? T('sbx_g_device') : this._boxName(k);
+        const kind = pre === 'mqtt' ? T('sbx_g_mqtt') : pre === 'event' ? T('sbx_g_event') : pre === 'svc' ? T('sbx_g_svc') : T('sbx_g_out');
+        const icon = pre === 'mqtt' ? 'mdi:access-point' : pre === 'event' ? 'mdi:lightning-bolt-outline' : pre === 'svc' ? (k.startsWith('svc:notify.') ? 'mdi:bell-outline' : 'mdi:cog-outline') : pre === 'device' ? 'mdi:devices' : 'mdi:shape-outline';
+        ghosts.set(gk, { key: gk, k, name, kind, icon, title: T('sbx_g_title', { k }), anchor: anchor && anchor[0] !== '~' ? anchor : null, before, w: Math.round(Math.max(140, Math.min(260, 58 + Math.max(name.length * 7.4, kind.length * 6)))), h: 46 });
+      };
+      es.forEach((e) => {
+        const c = by.get(e.cause), links = [];
+        let box = null, from = [], to = [];
+        if (e.kind === 'trigger') { const src = e.src || (c && ['state', 'event', 'mqtt'].includes(c.kind) ? c.key : e.ent); if (src) from = [src]; else box = e.key; to = [e.key]; }
+        else if (e.kind === 'cond') { from = e.ents || []; to = [e.key]; if (!from.length) box = e.key; }
+        else if (e.kind === 'call') {
+          to = [...new Set((e.ents || []).concat(kids.get(e.id) || []))];
+          if (!to.length && SVC_RE.test(e.svc || '')) to = ['svc:' + e.svc];
+          if (e.key) from = [e.key]; else { box = to[0] || null; to = []; }
+          if (!to.length) box = e.key;
+        } else box = e.key;
+        const role = { trigger: 'trigger', cond: 'condition', call: 'call' }[e.kind];
+        from.forEach((x) => to.forEach((y) => {
+          const a = res(x), b = res(y);
+          if (!a || !b || a === b) return;
+          const ed = a[0] !== '~' && b[0] !== '~' ? edgeFor(a, b, role) : null;
+          links.push({ a, b, edge: ed ? ed.id : null, rev: !!ed && ed.from !== a });
+          ghost(a, b, true); ghost(b, a, false);
+          [a, b].forEach((k) => { if (k[0] !== '~') keys.add(k); });
+        }));
+        if (box) { box = res(box); ghost(box, links.length ? links[0].a : null, false); if (box[0] !== '~') keys.add(box); }
+        if (!links.length && !box) return;
+        steps.push({ e, links, box: links.length ? null : box });
       });
-      if (!auto) this._renderSbx();
-      if (steps.some((s) => s.key && this._model.nodes.has(s.key))) this._lightSteps(steps, null);
+      const f = { act, steps, ghosts, keys: [...keys], at: -1, cond: new Map(), reached: new Set() };
+      this._flowPlace(f);
+      return f;
+    }
+    // temporary boxes go next to what they touch: sources before it, the rest after, clear of the board's boxes, at the
+    // nearest spot whose arrow runs through the fewest of them
+    _flowPlace(f) {
+      const m = this._model, V = this._vert(), M = 14;
+      const rects = [...this._visibleKeys()].map((k) => m.nodes.get(k)).filter(Boolean).map((n) => ({ k: n.key, x: n.x, y: n.y, w: n.w, h: n.h }));
+      const hit = (r) => rects.some((o) => r.x < o.x + o.w + M && o.x < r.x + r.w + M && r.y < o.y + o.h + M && o.y < r.y + r.h + M);
+      const first = f.keys.length ? m.nodes.get(f.keys[0]) : null;
+      f.ghosts.forEach((g) => {
+        const n = (g.anchor && m.nodes.get(g.anchor)) || first || { key: null, x: 0, y: 0, w: 0, h: 0 };
+        const others = rects.filter((o) => o.k !== n.key);
+        let best = null;
+        // across the flow (beside it, then a step further out) and along it, above and below
+        for (const gap of [64, 200]) for (const before of [true, false]) for (let i = 0; i < 13; i++) {
+          const off = (i % 2 ? 1 : -1) * Math.ceil(i / 2) * (V ? g.w + 16 : g.h + 14);
+          const r = V ? { x: n.x + (n.w - g.w) / 2 + off, y: before ? n.y - gap - g.h : n.y + n.h + gap, w: g.w, h: g.h }
+            : { x: before ? n.x - gap - g.w : n.x + n.w + gap, y: n.y + (n.h - g.h) / 2 + off, w: g.w, h: g.h };
+          if (hit(r)) continue;
+          const p = g.before ? flowPath(r, n, V) : flowPath(n, r, V);
+          const score = Math.hypot(r.x + r.w / 2 - n.x - n.w / 2, r.y + r.h / 2 - n.y - n.h / 2) + 600 * flowCrossings(p.segs, others) + (before !== g.before ? 160 : 0);
+          if (!best || score < best.score) best = { r, score };
+        }
+        const r = best ? best.r : V ? { x: n.x, y: n.y + n.h + 64, w: g.w, h: g.h } : { x: n.x + n.w + 64, y: n.y, w: g.w, h: g.h };
+        Object.assign(g, { x: Math.round(r.x), y: Math.round(r.y) });
+        rects.push({ k: g.key, x: g.x, y: g.y, w: g.w, h: g.h });
+      });
+    }
+    _flowPlay() {
+      const f = this._flow;
+      if (!f) return;
+      clearTimeout(this._timers.lit);
+      let i = 0;
+      const tick = () => {
+        if (this._flow !== f) return;
+        this._flowGo(i, true);
+        // a long flow plays a little faster: ten seconds or so in all
+        if (++i < f.steps.length) this._timers.lit = setTimeout(tick, Math.max(450, Math.min(850, 10000 / f.steps.length)));
+      };
+      tick();
+    }
+    _flowGo(i, anim) {
+      const f = this._flow;
+      if (!f || !f.steps.length) return;
+      f.at = Math.max(0, Math.min(f.steps.length - 1, i));
+      f.anim = !!anim;
+      const keys = new Set(), edges = new Set();
+      f.cond = new Map(); f.reached = new Set();
+      f.steps.slice(0, f.at + 1).forEach((s) => {
+        const touch = (k) => { if (!k) return; if (k[0] === '~') f.reached.add(k); else keys.add(k); };
+        touch(s.box);
+        s.links.forEach((l) => {
+          touch(l.a); touch(l.b);
+          if (l.edge) edges.add(l.edge);
+          if (s.e.kind === 'cond') f.cond.set(l.edge || l.a + '>' + l.b, { ok: s.e.ok, title: T('sbx_cond_mark', { text: s.e.text, res: s.e.ok ? T('sbx_true') : T('sbx_false') }) + (s.e.why ? '\n' + s.e.why : '') });
+        });
+      });
+      const cur = f.steps[f.at];
+      f.now = cur.box || cur.links[cur.links.length - 1].b;
+      this._lit = { keys, edges, now: f.now[0] === '~' ? null : f.now };
+      if (this._sbx) this._sbx.sel = cur.e.id;
+      this._applyFocus();
+      this._flowBar();
+      this._flowRows();
+      if (anim) {
+        const el = f.now[0] === '~' ? this._$.flow.querySelector(`.ghost[data-g="${CSS.escape(f.now)}"]`) : this._els.get(f.now);
+        if (el) { el.classList.remove('pulse'); void el.offsetWidth; el.classList.add('pulse'); }
+      }
+    }
+    // a step in words, by name: who called what, who waits
+    _flowText(e) {
+      const nm = (k) => this._boxName(k), t = this._sbxText(e).main;
+      if (e.kind === 'call' && e.key) {
+        const to = (e.ents || []).map(nm).join(', ');
+        if (/^script\./.test(e.svc || '') || ((e.svc || '').startsWith('script.turn_on') && to)) return T('sbx_f_runs', { a: nm(e.key), b: to || nm(e.svc) });
+        return T('sbx_f_calls', { a: nm(e.key), svc: e.svc, to: to ? ' → ' + to : '' });
+      }
+      if (e.kind === 'wait' && e.key) return T('sbx_f_waits', { a: nm(e.key), w: String(e.text || '').replace(/^./, (c) => c.toLowerCase()) });
+      if (e.kind === 'cond' && e.key) return T('sbx_f_checks', { a: nm(e.key), c: t });
+      return t;
+    }
+    _flowBar() {
+      const f = this._flow, b = this._$.litbar;
+      if (!f) return;
+      const cur = f.steps[f.at], ct = { main: this._flowText(cur.e), sub: this._sbxText(cur.e).sub };
+      const chips = f.steps.map((s, i) => { const t = this._flowText(s.e); return `<button class="lstep fstep ${i <= f.at ? 'on' : ''} ${i === f.at ? 'cur' : ''}" data-act="flow-go" data-i="${i}" title="${esc(t)}"><i class="fsn">${i + 1}</i>${esc(shorten(t, 34))}</button>`; }).join('<span class="larr">→</span>');
+      b.classList.add('flowbar');
+      b.innerHTML = `<div class="fhead"><button data-act="flow-prev" title="${T('sbx_step_prev')}" ${f.at <= 0 ? 'disabled' : ''}><ha-icon icon="mdi:chevron-left"></ha-icon></button><button data-act="flow-next" title="${T('sbx_step_next')}" ${f.at >= f.steps.length - 1 ? 'disabled' : ''}><ha-icon icon="mdi:chevron-right"></ha-icon></button><span class="fpos">${esc(T('sbx_flow_n', { n: f.at + 1, total: f.steps.length }))}</span><span class="fcur" title="${esc(ct.main + (ct.sub ? '\n' + ct.sub : ''))}">${esc(ct.main)}</span><button data-act="flow-play">${T('replay')}</button><button data-act="lit-clear">${T('clear')}</button></div><div class="fsteps">${chips}</div>`;
+      b.hidden = false;
+      this._litSteps = null; this._litRun = null;
+      this._fitLitbar();
+      const c = b.querySelector('.fstep.cur'), row = b.querySelector('.fsteps');
+      if (c && row) { const l = c.offsetLeft - row.offsetLeft; if (l < row.scrollLeft || l + c.offsetWidth > row.scrollLeft + row.clientWidth) row.scrollLeft = Math.max(0, l - row.clientWidth / 3); }
+    }
+    // the timeline in the drawer follows: the current step's row, and the flow's rows numbered
+    _flowRows() {
+      const f = this._flow, box = this._$.drawer.querySelector('.sbtl');
+      if (!f || !box) return;
+      const cur = f.steps[f.at] && f.steps[f.at].e.id;
+      box.querySelectorAll('.dbrow').forEach((r) => {
+        const on = +r.dataset.id === cur;
+        r.classList.toggle('on', on);
+        if (on) { const top = r.offsetTop - box.offsetTop; if (top < box.scrollTop || top + r.offsetHeight > box.scrollTop + box.clientHeight) box.scrollTop = Math.max(0, top - box.clientHeight / 3); }
+      });
+    }
+    // the parts of the flow drawn over the board: temporary boxes and their arrows, step numbers, and what's waiting
+    _paintFlow() {
+      const box = this._$.flow, svg = this._$.flowx, g = this._sbx, f = this._flow, m = this._model;
+      if (!box || !svg) return;
+      if (!g || !m || !this._sbxOn()) { box.innerHTML = ''; svg.innerHTML = ''; return; }
+      const rect = (k) => (k && k[0] === '~' ? f && f.ghosts.get(k) : m.nodes.get(k));
+      const html = [], arr = [], spots = new Map();
+      const spot = (x, y, i, cur) => {
+        const id = Math.round(x / 4) + ',' + Math.round(y / 4), s = spots.get(id) || { x, y, ns: [], cur: false };
+        s.ns.push(i); s.cur = s.cur || cur; spots.set(id, s);
+      };
+      const mark = (ok, x, y, title) => `<g class="cres ${ok === true ? 'ok' : ok === false ? 'bad' : 'unk'}" transform="translate(${x},${y})"><circle r="8"></circle>${ok === true ? '<path d="M-3.6,0.2 L-1.1,2.8 L3.8,-2.6"></path>' : ok === false ? '<path d="M-3,-3 L3,3 M3,-3 L-3,3"></path>' : '<text y="3.6" text-anchor="middle">?</text>'}<title>${esc(title)}</title></g>`;
+      if (f && f.at >= 0) {
+        f.ghosts.forEach((gh) => html.push(`<div class="ghost${f.reached.has(gh.key) ? '' : ' far'}${f.now === gh.key ? ' now' : ''}" data-act="flow-ghost" data-g="${esc(gh.key)}" style="left:${gh.x}px;top:${gh.y}px;width:${gh.w}px;height:${gh.h}px" title="${esc(gh.title)}"><ha-icon icon="${gh.icon}"></ha-icon><span class="gt"><b>${esc(gh.name)}</b><small>${esc(gh.kind)}</small></span></div>`));
+        f.steps.slice(0, f.at + 1).forEach((s, i) => {
+          const cur = i === f.at;
+          s.links.forEach((l, j) => {
+            let mid = l.edge && this._edgeMid ? this._edgeMid.get(l.edge) : null;
+            if (!l.edge) {
+              const A = rect(l.a), B = rect(l.b);
+              if (!A || !B) return;
+              const p = flowPath(A, B, this._vert());
+              arr.push(`<path class="fx${cur ? ' cur' : ''}${s.e.kind === 'cond' ? ' cond' : ''}" d="${p.d}" marker-end="url(#fb-amber)"></path>`);
+              if (cur && f.anim && j === 0) arr.push(`<circle class="fdot" r="5.5"><animateMotion begin="indefinite" dur="0.65s" fill="freeze" path="${p.d}"></animateMotion></circle>`);
+              const c = s.e.kind === 'cond' && f.cond.get(l.a + '>' + l.b);
+              if (c) arr.push(mark(c.ok, p.mid[0], p.mid[1], c.title));
+              mid = p.mid;
+            }
+            if (mid && j === 0) spot(mid[0] + 15, mid[1] + 15, i + 1, cur);
+          });
+          if (!s.links.length && s.box) { const R = rect(s.box); if (R) spot(R.x, R.y, i + 1, cur); }
+        });
+      }
+      // what's waiting in the sandbox, and for how long on its clock
+      const due = new Map();
+      g.eng.pending().forEach((p) => { if (p.key && !due.has(p.key) && m.nodes.has(p.key)) due.set(p.key, p); });
+      due.forEach((p, k) => { const R = m.nodes.get(k); html.push(`<div class="fwait" style="left:${R.x + R.w - 6}px;top:${R.y}px" title="${esc(p.label)}"><ha-icon icon="mdi:timer-sand"></ha-icon>${esc(fmtDur(Math.max(0, p.at - g.eng.now)))}</div>`); });
+      spots.forEach((s) => html.push(`<div class="fnum${s.cur ? ' cur' : ''}" data-act="flow-go" data-i="${s.ns[0] - 1}" style="left:${s.x}px;top:${s.y}px">${s.ns.length > 3 ? `${s.ns[0]} ${s.ns[1]} … ${s.ns[s.ns.length - 1]}` : s.ns.join(' ')}</div>`));
+      box.innerHTML = html.join('');
+      svg.innerHTML = arr.join('');
+      if (f && f.anim) svg.querySelectorAll('animateMotion').forEach((x) => { try { x.beginElement(); } catch (er) { /* no SMIL */ } });
     }
     _sbxText(e) {
       const nm = (k) => (k ? this._boxName(k) : ''), g = this._sbx, by = (x) => g && g.eng.log.find((y) => y.id === x);
@@ -7963,13 +8270,16 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (!box) return;
       const icon = { mqtt: 'mdi:access-point', state: 'mdi:swap-horizontal', event: 'mdi:lightning-bolt-outline', trigger: 'mdi:play-circle-outline', cond: 'mdi:help-rhombus-outline', call: 'mdi:arrow-right-bold-outline', run: 'mdi:flag-checkered', wait: 'mdi:timer-sand', note: 'mdi:information-outline', ask: 'mdi:account-question-outline' };
       const atEnd = box.scrollTop + box.clientHeight >= box.scrollHeight - 40;
+      const fl = this._flow, fnum = new Map(fl ? fl.steps.map((s, i) => [s.e.id, i + 1]) : []);
       box.innerHTML = eng.log.length ? eng.log.map((e) => {
         const t = this._sbxText(e), p = tzParts(e.t, eng.tz), tm = `${String(p.h).padStart(2, '0')}:${String(p.mi).padStart(2, '0')}:${String(p.s).padStart(2, '0')}`;
         const ic = e.kind === 'cond' ? (e.ok ? 'mdi:check-circle-outline' : 'mdi:close-circle-outline') : e.msg ? 'mdi:message-text-outline' : icon[e.kind] || 'mdi:circle-small';
         const partly = e.partly && e.partly.length ? `<span class="sbpart">${T('sbx_partly', { what: e.partly.map((x) => ({ states: T('sbx_reads_states'), closest: T('sbx_reads_places'), distance: T('sbx_reads_places'), state_translated: T('sbx_reads_translated') })[x] || T('sbx_reads_other')).join(', ') })}</span>` : '';
-        return `<button class="dbrow k-${e.kind} ${t.cls || ''} ${g.sel === e.id ? 'on' : ''}" data-act="sbx-pick" data-id="${e.id}"><span class="rt">${tm}</span><ha-icon icon="${ic}"></ha-icon><span class="dm"><b>${esc(t.main)}</b>${t.sub ? `<span>${esc(t.sub)}</span>` : ''}${partly}</span></button>`;
+        const fn = fnum.get(e.id), inf = fl && e.id >= fl.act.a && e.id <= fl.act.b;
+        return `<button class="dbrow k-${e.kind} ${t.cls || ''} ${g.sel === e.id ? 'on' : ''}${inf ? ' fin' : ''}" data-act="sbx-pick" data-id="${e.id}"><span class="rt">${fn ? `<i class="fsn">${fn}</i>` : ''}${tm}</span><ha-icon icon="${ic}"></ha-icon><span class="dm"><b>${esc(t.main)}</b>${t.sub ? `<span>${esc(t.sub)}</span>` : ''}${partly}</span></button>`;
       }).join('') : `<div class="muted pad">${T('sbx_empty')}</div>`;
       if (atEnd || !g.scrolled) { box.scrollTop = box.scrollHeight; g.scrolled = true; }
+      this._paintFlow();
     }
     // a test in the sandbox: done on its states instead of your home's
     async _sbxTest(t) {
@@ -8088,6 +8398,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     _litBar(steps, at, run) {
       const b = this._$.litbar;
       const runPart = run && run.tr ? `<span class="lrun"><b>${esc(this._boxName(run.e.key))}</b> · ${esc(clock(run.tr.timestamp && run.tr.timestamp.start))} · ${esc((run.tr.not_triggered ? { text: T('didn_t_fire') } : OUTCOME(run.tr)).text)}</span>` : '';
+      b.classList.remove('flowbar');
       b.innerHTML = `<div class="lsteps">${steps.map((s, i) => `<span class="lstep ${i < at ? 'on' : ''}">${esc(this._stepText(s))}</span>`).join('<span class="larr">→</span>')}</div><div class="lbtns">${runPart}${steps.length > 1 ? `<button data-act="lit-replay">${T('replay')}</button>` : ''}${run && run.e && run.e.run ? `<button data-act="lit-trace">${T('open_trace')}</button>` : ''}<button data-act="lit-clear">${T('clear')}</button></div>`;
       b.hidden = false;
       this._litSteps = steps; this._litRun = run || null;
@@ -8100,8 +8411,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     }
     _fitLitbar() { const b = this._$.litbar; if (b && !b.hidden) b.style.right = (12 + this._$.vp.clientWidth - this._openWidth()) + 'px'; }
     // bring boxes into the visible part of the board, zooming out only when they don't fit
-    _frameKeys(keys) {
-      const m = this._model, ns = [...new Set(keys)].map((k) => m && m.nodes.get(k)).filter(Boolean);
+    _frameKeys(keys, extra) {
+      const m = this._model, ns = [...new Set(keys)].map((k) => m && m.nodes.get(k)).filter(Boolean).concat(extra || []);
       if (!ns.length) return;
       const W = this._openWidth(), H = this._$.vp.clientHeight, v = this._view, pad = 50;
       const x0 = Math.min(...ns.map((n) => n.x)), y0 = Math.min(...ns.map((n) => n.y)), x1 = Math.max(...ns.map((n) => n.x + n.w)), y1 = Math.max(...ns.map((n) => n.y + n.h));
@@ -8120,10 +8431,12 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     }
     _clearLit(quiet) {
       clearTimeout(this._timers.lit);
-      const was = !!this._lit;
-      this._lit = null; this._litSteps = null; this._litRun = null;
+      const was = !!this._lit, fl = !!this._flow;
+      this._lit = null; this._litSteps = null; this._litRun = null; this._flow = null;
       this._$.litbar.hidden = true;
+      this._$.litbar.classList.remove('flowbar');
       if (was && !quiet) this._applyFocus();
+      else if (fl) { this._paintFlow(); this._drawEdges(); }
     }
     _openLitTrace() {
       const run = this._litRun, r = run && run.e && run.e.run;

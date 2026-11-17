@@ -89,6 +89,7 @@ The **Auto-arrange** button's menu sets which way a function flows: **left to ri
 - **What it follows:** state, numeric state, event, MQTT, time, time pattern and template triggers (with `for:`), and Home Assistant's per-entity triggers (`light.turned_on`, `door.opened`, `lock.unlocked`, `event.received`, thresholds and the rest), by the same rules as Home Assistant's own; state, numeric state, template, time, trigger, and/or/not conditions; service calls on helpers, lights, switches, covers, locks, climate, timers, counters, selects and more, and `mqtt.publish`; scripts, `choose`, `if`, `repeat`, `parallel`, `variables`, `wait_template`, `wait_for_trigger` (any of those triggers), `stop`, and the run modes (single, restart, queued, parallel). Notifications, TTS and log messages are listed as messages; any other call it doesn't know the effect of is listed as one it would make. A change that sets off more than 2,000 steps is stopped as a loop.
 - **Triggers it can't follow** (zone, sun, Home Assistant starting, webhooks, device triggers) are named when it opens. **Run** an automation as if any one of its triggers fired, so `trigger.id` conditions and `trigger.` templates work. An **MQTT** row sends a message on a topic the function listens to.
 - Only the automations and scripts on the board run in the sandbox. Test buttons and the Test dialog act on the sandbox while it's open.
+- **Follow it on the board.** Whatever you do is played on the board step by step: each step's arrow lights with a dot running along it and a number beside it, conditions show ✓ or ✕ on their arrows, and what isn't on the board (the event a run stood in for, a sensor it checked, the MQTT topic a script publishes to) gets a temporary dashed box beside what it touches. A box with a delay running shows how long is left. Step with ◀ ▶ in the bar under the board, or click a row in the drawer.
 
 ### Import, and on a phone
 
@@ -193,7 +194,7 @@ To try a table without editing the file, add it from the browser console on the 
 
 ## Feedback
 
-This is a prototype (v0.7.0). Please open an [issue](https://github.com/ToolAndDieGuy/functions-board/issues) for bugs, wrong or missing arrows, or ideas. A screenshot of the board and the automation's YAML help a lot.
+This is a prototype (v0.7.1). Please open an [issue](https://github.com/ToolAndDieGuy/functions-board/issues) for bugs, wrong or missing arrows, or ideas. A screenshot of the board and the automation's YAML help a lot.
 
 ## Credits
 
