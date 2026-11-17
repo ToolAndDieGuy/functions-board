@@ -2,7 +2,7 @@
 
 A sidebar page for Home Assistant that shows each **function** in your home (the garage, the morning routine, the furnace filter) as one board: every automation, script, helper and device that makes it work, wired together from their own configs.
 
-![The Garage function: the door starts a timer, the timer finishing runs "Garage: left open", which calls the "Close garage" script. Ticks and crosses on the arrows show which checks pass right now.](https://raw.githubusercontent.com/ToolAndDieGuy/functions-board/main/docs/images/board.png)
+![The Garage function: the door starts a timer, the timer finishing runs "Garage: left open", which calls the "Close garage" script. Arrows are coloured by what they do and run square-cornered from left to right; ticks and crosses on them show which checks pass right now.](https://raw.githubusercontent.com/ToolAndDieGuy/functions-board/main/docs/images/board.png)
 
 > **Prototype.** It runs on a real, busy setup, but expect rough edges. Issues and ideas are welcome.
 
@@ -14,7 +14,7 @@ Home Assistant files things by type: automations in one list, scripts in another
 
 - **One board per function.** A function is a Home Assistant label. Everything carrying it is on the board, and still lives in its usual place under Settings.
 - **Arrows read from your configs:** what triggers each automation, what it checks, what it changes and which scripts it runs, including area, floor and label targets, purpose-specific triggers (a light turning on, a door opening), what template and other derived helpers read, scenes and groups, and the buttons on a notification with the automations that answer them. Blueprint automations are read as Home Assistant fills them in. Real loops (an automation whose own effects can set it off again) are marked.
-- **Laid out for you:** arrows are coloured by what they do (orange sets something off, blue changes it, aqua runs a script) and run square-cornered from left to right in their own lanes, never alongside each other, from three points on each side of a box. Lines that share a point branch at a dot, coloured per arrow to match the point at its other end; lines that cross without meeting hop over each other; arrows running back carry arrowheads along the way. Boxes line up with what they connect to, separate chains are packed together, and **Auto-arrange** lays out a function again at any time, and runs on every import; **Keep in place** in a box's bar leaves that box where you put it, and Undo puts your own arrangement back. **Arrows → Curved arrows** brings back curved arrows.
+- **Laid out for you:** arrows are coloured by what they do (orange sets something off, blue changes it, aqua runs a script) and run square-cornered from left to right in their own lanes, never alongside each other, from three points on each side of a box. Lines that share a point branch at a dot, coloured per arrow to match the point at its other end; lines that cross without meeting hop over each other; arrows running back carry arrowheads along the way. Boxes line up with what they connect to, separate chains are packed together, and **Auto-arrange** lays out a function again at any time, and runs on every import; **Keep in place** in a box's bar leaves that box where you put it, and Undo puts your own arrangement back. **Arrows → Style → Curved arrows** brings back curved arrows.
 - **Click a box** to light up its chain; the **Arrows** menu chooses how far (upstream, downstream, both) and which kinds of arrow show. **Edit** in a box's bar, or a double-click, opens it in Home Assistant's own editor without leaving the board: an automation's or script's editor, a helper's settings, a scene's editor.
 - **Live:** states on every box, runs pulse as they happen, last-run failures and unavailable entities are flagged, and **Runs** lists every run in the function; picking one lights the arrows it actually used.
 - **Import** finds the functions already in your setup. It traces every automation and script and groups the ones that trigger, change or call each other, merged with the categories you already use, and shows what is left over. Import them all or one at a time, start from labels you already have, or pick items by hand.
@@ -26,7 +26,7 @@ Home Assistant files things by type: automations in one list, scripts in another
   - **Watch triggers** pulses an automation's trigger arrows whenever one would fire, without running it. With Pause, that's a dry run.
   - **Monitor boxes** list the last events of one type, or MQTT messages on a topic, while the function is open.
   - **Tests** (Full manager only) change a helper, simulate a state, fire an event, send a notification, or run an automation or script. A test can be kept on the board as a button.
-- **Arrow editor** (Full manager only): drag from a box's points (or from one box) onto another to add a trigger, a check, an action or a script call, chosen from Home Assistant's own lists. The YAML is shown and checked before it's saved. Click an arrow to remove what it stands for.
+- **Arrow editor** (Full manager only): drag from a box's dots (or from one box) onto another to add a trigger, a check, an action or a script call, chosen from Home Assistant's own lists. The YAML is shown and checked before it's saved. Click an arrow to remove what it stands for.
 - **Node-RED flows** (off until you switch them on in the board's Key): each wired group in a flow is a box, with arrows to what it triggers on, reads, changes and runs.
 - Works with the keyboard and screen readers, on a phone, and as a dashboard card. The board's text is kept in one table per language, so it can be translated (see [Translating](#translating)).
 
@@ -34,17 +34,17 @@ Home Assistant files things by type: automations in one list, scripts in another
 
 The screenshots come from the demo setup the tests run on: a garage door that starts a timer, an automation that closes the door when the timer runs out while it's still open, and a furnace filter countdown.
 
-**Click a box to follow its chain.** Everything it depends on and everything it sets off lights up, and its bar holds what you can do with it: edit it, see its traces, turn it off, test it, watch its triggers, or draw an arrow from it.
+**Click a box to follow its chain.** Everything it depends on and everything it sets off lights up, and its bar holds what you can do with it: edit it, see its traces, turn it off, test it, watch its triggers, keep it in place through Auto-arrange, or draw an arrow from it.
 
-![Clicking "Garage: left open" lights up its chain, with a bar of actions above it: Edit, Traces, Turn off, Remove, Delete, Test, Watch triggers and Connect](https://raw.githubusercontent.com/ToolAndDieGuy/functions-board/main/docs/images/focus.png)
+![Clicking "Garage: left open" lights up its chain, with a bar of actions above it: Edit, Traces, Turn off, Remove, Delete, Keep in place, Test, Watch triggers and Connect](https://raw.githubusercontent.com/ToolAndDieGuy/functions-board/main/docs/images/focus.png)
 
-**The Arrows menu** chooses how far a selection lights up (its chain, upstream, downstream or both, up to a number of steps), which kinds of arrow show, and the live check marks.
+**The Arrows menu** chooses how far a selection lights up (its chain, upstream, downstream or both, up to a number of steps), which kinds of arrow show, square-cornered or curved arrows, and the live check marks.
 
 ![The Arrows menu open over the Garage board](https://raw.githubusercontent.com/ToolAndDieGuy/functions-board/main/docs/images/arrows.png)
 
 <table>
 <tr>
-<td width="44%" valign="top"><b>The Key</b> says what each line, outline and mark means, and switches outside items, suggestions and Node-RED flows on and off.<br><br><img src="https://raw.githubusercontent.com/ToolAndDieGuy/functions-board/main/docs/images/key.png" alt="The Key: arrow colours and styles for triggers, checks, changes, script calls, helper inputs, loops and test buttons, then outlines and state marks"></td>
+<td width="44%" valign="top"><b>The Key</b> says what each colour, line, dot, outline and mark means, and switches outside items, suggestions and Node-RED flows on and off.<br><br><img src="https://raw.githubusercontent.com/ToolAndDieGuy/functions-board/main/docs/images/key.png" alt="The Key: arrow colours and styles for triggers, checks, changes, script calls, helper inputs, loops and test buttons, then outlines and state marks"></td>
 <td width="56%" valign="top"><b>A function's menu</b> renames it, hides it from the board, or deletes it, with or without its automations, scripts and helpers (Full manager).<br><br><img src="https://raw.githubusercontent.com/ToolAndDieGuy/functions-board/main/docs/images/menu.png" alt="The menu of the Garage function: Edit name, icon, colour; Hide from board; Delete function; Delete function and its items"></td>
 </tr>
 </table>
@@ -64,7 +64,7 @@ The screenshots come from the demo setup the tests run on: a garage door that st
 <table>
 <tr>
 <td width="45%" valign="top"><b>Test</b> any box from its bar (Full manager): change a helper, simulate a state, fire an event, run an automation. The dialog says what will happen before it does.<br><br><img src="https://raw.githubusercontent.com/ToolAndDieGuy/functions-board/main/docs/images/test.png" alt="The Test dialog for Garage Door: simulate the state open, with a warning that tests change Home Assistant for real and a box to keep the test on the board"></td>
-<td width="55%" valign="top"><b>Draw an arrow</b> from one box onto another (Full manager): pick what it means from Home Assistant's own lists, see the YAML it adds, and save. Undo takes it back.<br><br><img src="https://raw.githubusercontent.com/ToolAndDieGuy/functions-board/main/docs/images/connect.png" alt="Connecting Garage auto-close to Garage: left open: it triggers it, when the switch turns on, with the YAML that will be added"></td>
+<td width="55%" valign="top"><b>Draw an arrow</b> from one of a box's dots onto another box (Full manager): a right-hand dot draws an arrow out of the box, a left-hand one an arrow into it. Pick what it means from Home Assistant's own lists, see the YAML it adds, and save. Undo takes it back.<br><br><img src="https://raw.githubusercontent.com/ToolAndDieGuy/functions-board/main/docs/images/connect.png" alt="Connecting Garage auto-close to Garage: left open: it triggers it, when the switch turns on, with the YAML that will be added"></td>
 </tr>
 </table>
 
