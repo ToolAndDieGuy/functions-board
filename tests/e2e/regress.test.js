@@ -2,8 +2,11 @@
 // Run apitest.py first (tokens). node regress.test.js [filter]   (filter: run only cases whose name matches)
 const path = require('path');
 const { chromium, BASE, SHOTS, session, ws, svc, states, ready, fbq, board, until, suite, reset, importAll, openFn, sleep } = require('./lib');
+const { test: pwTest } = require('./fixtures');
+const test = (name, fn) => (only && !only.test(name) ? pwTest.skip(name, () => {}) : pwTest(name, fn));
 const { check, done } = suite('regress');
-const only = process.argv[2] ? new RegExp(process.argv[2], 'i') : null;
+// FB_ONLY=<pattern> runs only the parts whose names match (Playwright's --grep picks whole tests)
+const only = process.env.FB_ONLY ? new RegExp(process.env.FB_ONLY, 'i') : null;
 const { routeCheck } = require('./routecheck');
 const { hopCheck } = require('./hopcheck');
 const GARAGE = ['automation.garage_start_open_timer', 'automation.garage_left_open', 'automation.garage_closed_stop_timer'];
@@ -24,10 +27,8 @@ const regEntry = (page, id) => ws(page, { type: 'config/entity_registry/get', en
 const regWhenThere = async (page, id) => ((await page.evaluate((k) => !!document.querySelector('home-assistant').hass.states[k], id)) ? regEntry(page, id).catch(() => null) : null);
 const hasLabel = async (page, id, label) => { const r = await regWhenThere(page, id); return !!r && (r.labels || []).includes(label); };
 const api = (page, method, p, body) => page.evaluate(([m, p, b]) => document.querySelector('home-assistant').hass.callApi(m, p, b).catch((e) => { throw new Error(m + ' ' + p + ': ' + JSON.stringify(e)); }), [method, p, body]);
-const cases = [];
-const test = (name, fn) => cases.push([name, fn]);
 
-test('1.1 Resume leaves off what was off before Pause', async (browser) => {
+test('1.1 Resume leaves off what was off before Pause', async ({ browser }) => {
   const { ctx, page } = await imported(browser);
   const lid = await openFn(page, /garage/i);
   await svc(page, 'automation', 'turn_on', {}, { entity_id: GARAGE });
@@ -57,10 +58,10 @@ test('1.1 Resume leaves off what was off before Pause', async (browser) => {
   await ctx.close();
 });
 
-test('1.2 leaving the page on a phone stops the board', async (browser) => {
-  const { ctx, page } = await session(browser, 'owner', { mobile: true });
-  await page.goto(BASE + '/functions');
-  await fbq(page, '.nodes .node').first().waitFor({ timeout: 30000 });
+test('1.2 leaving the page on a phone stops the board', async ({ browser }) => {
+  // its own function to look at (it used to rely on the case before it leaving one open)
+  const { ctx, page } = await imported(browser, { mobile: true });
+  await openFn(page, /garage/i);
   await page.waitForTimeout(1500);
   const before = await el(page, (b) => {
     window.__fb = b; window.__fitsDetached = 0;
@@ -76,7 +77,7 @@ test('1.2 leaving the page on a phone stops the board', async (browser) => {
   await ctx.close();
 });
 
-test('3.1 import skips a piece without a unique ID and still finishes', async (browser) => {
+test('3.1 import skips a piece without a unique ID and still finishes', async ({ browser }) => {
   const { ctx, page } = await session(browser, 'owner');
   await page.goto(BASE + '/');
   await ready(page);
@@ -107,7 +108,7 @@ test('3.1 import skips a piece without a unique ID and still finishes', async (b
   await ctx.close();
 });
 
-test('1.7 a running script keeps its box layout', async (browser) => {
+test('1.7 a running script keeps its box layout', async ({ browser }) => {
   const { ctx, page } = await imported(browser);
   await svc(page, 'script', 'reload');
   await until(async () => (await ws(page, { type: 'config/entity_registry/get', entity_id: 'script.slow_demo' }).catch(() => null)), 8000);
@@ -126,7 +127,7 @@ test('1.7 a running script keeps its box layout', async (browser) => {
   await ctx.close();
 });
 
-test('1.8 Existing adds to the function on screen', async (browser) => {
+test('1.8 Existing adds to the function on screen', async ({ browser }) => {
   const { ctx, page } = await imported(browser);
   const a = await openFn(page, /filter/i);
   await fbq(page, '.list [data-act="import"]').first().click();     // the manager opened on function A...
@@ -151,7 +152,7 @@ test('1.8 Existing adds to the function on screen', async (browser) => {
   await ctx.close();
 });
 
-test('1.9 an item made in the drawer keeps its label after the editor saves', async (browser) => {
+test('1.9 an item made in the drawer keeps its label after the editor saves', async ({ browser }) => {
   const { ctx, page } = await imported(browser);
   const lid = await openFn(page, /garage/i);
   await el(page, (b) => b._create('automation'));
@@ -175,7 +176,7 @@ test('1.9 an item made in the drawer keeps its label after the editor saves', as
   await ctx.close();
 });
 
-test('1.10 saving an automation redraws its arrows', async (browser) => {
+test('1.10 saving an automation redraws its arrows', async ({ browser }) => {
   const { ctx, page } = await imported(browser);
   await openFn(page, /garage/i);
   const id = '2003', ent = 'automation.garage_closed_stop_timer';
@@ -195,7 +196,7 @@ test('1.10 saving an automation redraws its arrows', async (browser) => {
   await ctx.close();
 });
 
-test('1.11 hiding is not deleting, and the name check brings it back', async (browser) => {
+test('1.11 hiding is not deleting, and the name check brings it back', async ({ browser }) => {
   const { ctx, page } = await imported(browser);
   const lid = await openFn(page, /garage/i);
   const L0 = (await store(page)).layouts[lid];
@@ -224,7 +225,7 @@ test('1.11 hiding is not deleting, and the name check brings it back', async (br
   await ctx.close();
 });
 
-test('4.1 Fit shows everything on a second press; the action bar stays on screen', async (browser) => {
+test('4.1 Fit shows everything on a second press; the action bar stays on screen', async ({ browser }) => {
   const { ctx, page } = await imported(browser, { viewport: { width: 760, height: 560 } });
   await openFn(page, /morning/i);
   await el(page, (b) => { b._view.k = 1; b._fit(); });
@@ -246,7 +247,7 @@ test('4.1 Fit shows everything on a second press; the action bar stays on screen
   await ctx.close();
 });
 
-test('8.1 Helper offers the types and opens the create dialog directly', async (browser) => {
+test('8.1 Helper offers the types and opens the create dialog directly', async ({ browser }) => {
   const { ctx, page } = await imported(browser);
   await openFn(page, /garage/i);
   await fbq(page, '[data-act="new-helper"]').click();
@@ -269,7 +270,7 @@ test('8.1 Helper offers the types and opens the create dialog directly', async (
   await ctx.close();
 });
 
-test('8.3 undo and redo for moves and frames', async (browser) => {
+test('8.3 undo and redo for moves and frames', async ({ browser }) => {
   const { ctx, page } = await imported(browser);
   const lid = await openFn(page, /garage/i);
   const key = 'automation.garage_left_open';
@@ -306,7 +307,7 @@ async function setMode(page, mode) {
   await until(() => el(page, (b, m) => b._fbMode === m, mode), 8000);
 }
 
-test('8.4 Organise only hides delete; Full manager shows it', async (browser) => {
+test('8.4 Organise only hides delete; Full manager shows it', async ({ browser }) => {
   const { ctx, page } = await imported(browser);
   await setMode(page, 'organise');
   await openFn(page, /garage/i);
@@ -323,7 +324,7 @@ test('8.4 Organise only hides delete; Full manager shows it', async (browser) =>
   await ctx.close();
 });
 
-test('8.2 delete an item, a function, and a function with its items; undo each', async (browser) => {
+test('8.2 delete an item, a function, and a function with its items; undo each', async ({ browser }) => {
   const { ctx, page } = await imported(browser);
   await setMode(page, 'full');
   const garage = await openFn(page, /garage/i);
@@ -420,7 +421,7 @@ test('8.2 delete an item, a function, and a function with its items; undo each',
   await ctx.close();
 });
 
-test('Phase 2: area targets, purpose-specific triggers, helper inputs, scenes', async (browser) => {
+test('Phase 2: area targets, purpose-specific triggers, helper inputs, scenes', async ({ browser }) => {
   const { ctx, page } = await imported(browser);
   for (const a of await ws(page, { type: 'config/area_registry/list' })) if (a.name === 'FB nursery') await ws(page, { type: 'config/area_registry/delete', area_id: a.area_id });
   const area = await ws(page, { type: 'config/area_registry/create', name: 'FB nursery' });
@@ -470,7 +471,7 @@ test('Phase 2: area targets, purpose-specific triggers, helper inputs, scenes', 
   await ctx.close();
 });
 
-test('3.2 leftovers and coverage; 3.3 device chains (off by default)', async (browser) => {
+test('3.2 leftovers and coverage; 3.3 device chains (off by default)', async ({ browser }) => {
   const { ctx, page } = await session(browser, 'owner');
   await page.goto(BASE + '/'); await ready(page); await reset(page);
   await page.goto(BASE + '/functions');
@@ -505,7 +506,7 @@ test('3.2 leftovers and coverage; 3.3 device chains (off by default)', async (br
   await ctx.close();
 });
 
-test('4.2 each function has an address; Back and reload work', async (browser) => {
+test('4.2 each function has an address; Back and reload work', async ({ browser }) => {
   const { ctx, page } = await imported(browser);
   const g = await openFn(page, /garage/i);
   await page.waitForTimeout(400);
@@ -528,7 +529,7 @@ test('4.2 each function has an address; Back and reload work', async (browser) =
   await ctx.close();
 });
 
-test('4.9 the board follows the user\'s language, English where a text is missing', async (browser) => {
+test('4.9 the board follows the user\'s language, English where a text is missing', async ({ browser }) => {
   const { ctx, page } = await imported(browser);
   const g = await openFn(page, /garage/i);
   const boxes = await fbq(page, '.node').count();
@@ -558,7 +559,7 @@ test('4.9 the board follows the user\'s language, English where a text is missin
   await ctx.close();
 });
 
-test('Edit on a helper opens its settings; without an ID, it says why not', async (browser) => {
+test('Edit on a helper opens its settings; without an ID, it says why not', async ({ browser }) => {
   const { ctx, page } = await imported(browser);
   const g = await openFn(page, /garage/i);
   const mine = async () => (await ws(page, { type: 'input_boolean/list' })).filter((x) => x.name === 'FB edit toggle');
@@ -606,7 +607,7 @@ test('Edit on a helper opens its settings; without an ID, it says why not', asyn
   }
 });
 
-test('4.4 find anything; 4.6 unwired pieces explained', async (browser) => {
+test('4.4 find anything; 4.6 unwired pieces explained', async ({ browser }) => {
   const { ctx, page } = await imported(browser);
   const g = await openFn(page, /garage/i);
   await fbq(page, '.lfind .find').fill('closed stop');
@@ -636,7 +637,7 @@ test('4.4 find anything; 4.6 unwired pieces explained', async (browser) => {
   await ctx.close();
 });
 
-test('Phase 7: highlight modes, filters, nearest sides, new boxes by their neighbour', async (browser) => {
+test('Phase 7: highlight modes, filters, nearest sides, new boxes by their neighbour', async ({ browser }) => {
   const { ctx, page } = await imported(browser);
   const g = await openFn(page, /garage/i);
   const lit = () => el(page, (b) => [...b._els.keys()].filter((k) => !b._els.get(k).classList.contains('dim')).sort());
@@ -722,7 +723,7 @@ test('Phase 7: highlight modes, filters, nearest sides, new boxes by their neigh
   await ctx.close();
 });
 
-test('9.5 a notification\'s buttons are wired to the automations that answer them', async (browser) => {
+test('9.5 a notification\'s buttons are wired to the automations that answer them', async ({ browser }) => {
   const { ctx, page } = await imported(browser);
   const g = await openFn(page, /garage/i);
   const s1 = 'fbnote' + Date.now(), s2 = s1 + 'b';
@@ -745,7 +746,7 @@ test('9.5 a notification\'s buttons are wired to the automations that answer the
   await ctx.close();
 });
 
-test('0.5.4 phone app: editors open full screen, and what is created there joins the function', async (browser) => {
+test('0.5.4 phone app: editors open full screen, and what is created there joins the function', async ({ browser }) => {
   const { ctx, page } = await imported(browser);
   const g = await openFn(page, /garage/i);
   // the phone app is told apart by its own sign-in (hass.auth.external); that can't be faked here without
@@ -791,7 +792,7 @@ test('0.5.4 phone app: editors open full screen, and what is created there joins
   await ctx.close();
 });
 
-test('0.5.4 back from an editor: the board draws from what it had, then catches up', async (browser) => {
+test('0.5.4 back from an editor: the board draws from what it had, then catches up', async ({ browser }) => {
   const { ctx, page } = await imported(browser);
   const g = await openFn(page, /garage/i);
   await page.waitForTimeout(1000);
@@ -813,7 +814,7 @@ test('0.5.4 back from an editor: the board draws from what it had, then catches 
   await ctx.close();
 });
 
-test('0.5.4 touch: a box moves only after a one-second hold; a quick swipe pans', async (browser) => {
+test('0.5.4 touch: a box moves only after a one-second hold; a quick swipe pans', async ({ browser }) => {
   const { ctx, page } = await imported(browser, { mobile: true });
   await openFn(page, /garage/i);
   const cdp = await ctx.newCDPSession(page);
@@ -855,7 +856,7 @@ test('0.5.4 touch: a box moves only after a one-second hold; a quick swipe pans'
   await ctx.close();
 });
 
-test('0.6.0 square-cornered arrows: never alongside each other, colours by meaning, Auto-arrange, separate chains packed', async (browser) => {
+test('0.6.0 square-cornered arrows: never alongside each other, colours by meaning, Auto-arrange, separate chains packed', async ({ browser }) => {
   const { page } = await imported(browser);
   // every imported function, laid out automatically: no two arrows run closer than 16 px, and none crosses a box
   const fns = await el(page, (b) => (b._data.functions || []).slice());
@@ -981,7 +982,7 @@ test('0.6.0 square-cornered arrows: never alongside each other, colours by meani
   check('0.6.0 no errors', page.logs.length === 0, page.logs);
 });
 
-test('0.7.0 top to bottom: every function laid out turned, arrows still apart and hopping, ports on top and bottom, Undo', async (browser) => {
+test('0.7.0 top to bottom: every function laid out turned, arrows still apart and hopping, ports on top and bottom, Undo', async ({ browser }) => {
   const { page } = await imported(browser);
   const fns = await el(page, (b) => (b._data.functions || []).slice());
   const bad = [];
@@ -1036,7 +1037,7 @@ test('0.7.0 top to bottom: every function laid out turned, arrows still apart an
   check('0.7.0 no errors', page.logs.length === 0, page.logs);
 });
 
-test('0.7.1 sandbox flow view: closing the sandbox mid-flow leaves nothing behind; a debugger run lights as before', async (browser) => {
+test('0.7.1 sandbox flow view: closing the sandbox mid-flow leaves nothing behind; a debugger run lights as before', async ({ browser }) => {
   const { page } = await imported(browser);
   await openFn(page, /garage/i);
   await el(page, (b) => { b._data.ui.sbxIntro = false; });
@@ -1055,7 +1056,7 @@ test('0.7.1 sandbox flow view: closing the sandbox mid-flow leaves nothing behin
   check('0.7.1 ... and a debugger chain afterwards lights with its own bar (Replay, no step controls)', plain.shown && !plain.cls && plain.steps === 2 && plain.replay, plain);
 });
 
-test('0.7.2 shared lines: point at a box to trace its arrow, select it to keep it traced, top to bottom', async (browser) => {
+test('0.7.2 shared lines: point at a box to trace its arrow, select it to keep it traced, top to bottom', async ({ browser }) => {
   const { page } = await imported(browser);
   await openFn(page, /garage/i);
   const ls = [1, 2, 3, 4, 5].map((i) => 'light.l' + i);
@@ -1109,7 +1110,7 @@ test('0.7.2 shared lines: point at a box to trace its arrow, select it to keep i
   check('0.7.2 no errors', page.logs.length === 0, page.logs);
 });
 
-test('0.8.1 the Key: "simulated state" is on the same line as its mark', async (browser) => {
+test('0.8.1 the Key: "simulated state" is on the same line as its mark', async ({ browser }) => {
   const { page } = await imported(browser);
   await openFn(page, /garage/i);
   await el(page, (b) => { b._data.ui.legend = true; b._renderLegend(); });
@@ -1125,7 +1126,7 @@ test('0.8.1 the Key: "simulated state" is on the same line as its mark', async (
   check('0.8.1 no errors', page.logs.length === 0, page.logs);
 });
 
-test('0.9.0 problems: what an automation points at that isn\'t there, on the list, the header, the boxes, the arrows and the drawer', async (browser) => {
+test('0.9.0 problems: what an automation points at that isn\'t there, on the list, the header, the boxes, the arrows and the drawer', async ({ browser }) => {
   const { page } = await imported(browser);
   const lid = await openFn(page, /garage/i);
   const ID = 'fbprob1', KEY = 'automation.garage_points_at_gone_things';
@@ -1168,7 +1169,7 @@ test('0.9.0 problems: what an automation points at that isn\'t there, on the lis
   check('0.9.0 problems: no errors', page.logs.length === 0, page.logs);
 });
 
-test('0.9.0 dismissing problems: out of the count, the list and the board, under Dismissed, back on request, forgotten a day after it\'s fixed', async (browser) => {
+test('0.9.0 dismissing problems: out of the count, the list and the board, under Dismissed, back on request, forgotten a day after it\'s fixed', async ({ browser }) => {
   const { page } = await imported(browser);
   const lid = await openFn(page, /garage/i);
   const ID = 'fbdis1', KEY = 'automation.garage_dismiss_these';
@@ -1240,7 +1241,7 @@ test('0.9.0 dismissing problems: out of the count, the list and the board, under
   check('0.9.0 dismissing: no errors', page.logs.length === 0, page.logs);
 });
 
-test('0.9.0 saved checks: a sandbox run kept with what should come of it, replayed after every change', async (browser) => {
+test('0.9.0 saved checks: a sandbox run kept with what should come of it, replayed after every change', async ({ browser }) => {
   const { page } = await imported(browser);
   const lid = await openFn(page, /garage/i);
   const DOOR = 'cover.garage_door', AUTO = 'input_boolean.garage_auto_close';
@@ -1291,13 +1292,27 @@ test('0.9.0 saved checks: a sandbox run kept with what should come of it, replay
   check('0.9.0 saved checks: no errors', page.logs.length === 0, page.logs);
 });
 
-(async () => {
-  const browser = await chromium.launch();
-  for (const [name, fn] of cases) {
-    if (only && !only.test(name)) continue;
-    console.log('-- ' + name);
-    try { await fn(browser); } catch (e) { check(name + ' (ran to the end)', false, e.message.split('\n')[0]); }
-  }
-  await browser.close();
-  done();
-})().catch((e) => { console.error(e); process.exit(1); });
+
+test('0.9.1 focus goes back to what opened a dialog or the drawer, even when the board redrew it meanwhile', async ({ browser }) => {
+  const { page } = await imported(browser);
+  await openFn(page, /garage/i);
+  const focused = () => el(page, (b) => { const a = b.shadowRoot.activeElement; return a ? (a.dataset.act || a.className || a.tagName) : null; });
+  await fbq(page, '.lfoot [data-act="about"]').focus();
+  await page.keyboard.press('Enter');
+  await fbq(page, '.modal .dlg').waitFor({ timeout: 5000 });
+  // the list is drawn anew while the dialog is open (a count changed): the About button is a new element
+  await el(page, (b) => b._renderList());
+  await page.keyboard.press('Escape');
+  const back = await until(async () => { const f = await focused(); return f === 'about' ? f : null; }, 3000);
+  check('0.9.1 a dialog gives focus back to its button, though the list was redrawn while it was open', back === 'about', await focused());
+  await fbq(page, '.tools [data-act="runs"]').focus();
+  await page.keyboard.press('Enter');
+  await fbq(page, '.drawer .dhead').waitFor({ timeout: 5000 }); await page.waitForTimeout(200);
+  await el(page, (b) => b._renderHeader());
+  await page.keyboard.press('Escape');
+  const back2 = await until(async () => { const f = await focused(); return f === 'runs' ? f : null; }, 3000);
+  check('0.9.1 ... and so does the drawer, though the toolbar was redrawn', back2 === 'runs', await focused());
+  check('0.9.1 focus back: no errors', page.logs.length === 0, page.logs);
+});
+
+pwTest.afterAll(() => done());

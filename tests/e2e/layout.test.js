@@ -8,8 +8,10 @@ const path = require('path');
 const { chromium, BASE, STATE, session, ready, fbq, board, suite } = require('./lib');
 const { routeCheck } = require('./routecheck');
 const { hopCheck } = require('./hopcheck');
+const { test } = require('./fixtures');
 const { check, done } = suite('layout');
-const only = process.argv[2] ? new RegExp(process.argv[2], 'i') : null;
+// FB_ONLY=<pattern> runs only the parts whose names match (Playwright's --grep picks whole tests)
+const only = process.env.FB_ONLY ? new RegExp(process.env.FB_ONLY, 'i') : null;
 
 // the same "random" every run
 function rng(seed) { let s = seed >>> 0; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; }
@@ -65,8 +67,7 @@ function shapes() {
   return out;
 }
 
-(async () => {
-  const browser = await chromium.launch();
+test('layout', async ({ browser }) => {
   const { ctx, page } = await session(browser, 'owner', { viewport: { width: 1600, height: 900 }, scale: 1 });
   await page.goto(BASE + '/functions');
   await ready(page);
@@ -115,6 +116,5 @@ function shapes() {
   }
   check('no errors', page.logs.length === 0, page.logs);
   await ctx.close();
-  await browser.close();
-  done();
-})().catch((e) => { console.error(e); process.exit(1); });
+});
+test.afterAll(() => done());

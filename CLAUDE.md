@@ -30,10 +30,19 @@ Set up once: `sh tests/setup.sh all` (Home Assistant 2026.11.1 in `venv314`, con
 
 ```sh
 sh tests/run.sh                  # self-test, rules, library, Python units: seconds, no Home Assistant
-sh tests/start-ha.sh             # the throwaway Home Assistant on :8123 (its log: ha/hass.log)
-sh tests/run.sh --ha             # plus the API test and every browser suite against it
-sh tests/run.sh --ha --only e2e-layout   # only the suites matching a pattern
+sh tests/run.sh --ha             # plus the API test and every browser suite, on a fresh test Home Assistant
+sh tests/run.sh --ha --keep --only e2e-layout   # the one running as it is; only the suites matching a pattern
+FB_ONLY=0.9.1 sh tests/run.sh --ha --keep --only e2e-regress   # only the regress cases whose names match
 ```
+
+`--ha` rebuilds `ha/config` from `tests/e2e/config` and starts Home Assistant new (`tests/start-ha.sh`, its log
+`ha/hass.log`), as CI does; `tests/e2e/hasetup.js` then onboards it and logs in the test users (setup, not a test).
+
+The browser suites run on Playwright Test (`tests/playwright.config.js`, one suite at a time, one worker), with
+`tests/e2e/fixtures.js`: each test starts from a snapshot of what tests may change in Home Assistant and is put back
+to it afterwards, even when it fails (`snapshot()` and `restore()` in `tests/e2e/ha-api.js`; proven by
+`isolation.test.js`), so no test may count on what an earlier one left. A failed test keeps the traces of its
+browser contexts: `npx playwright show-report tests/.results/html-<suite>`.
 
 Every runner writes JUnit into `tests/.results/` (and its screen output to `<suite>.log` there), and the run's
 result comes from those reports (`tests/lib/report.js`): a failure, a missing or empty report, or a non-zero exit
@@ -48,7 +57,8 @@ returns everything the library section defines.
 | `tests/problems.test.js` | `findProblems()`: missing, not-loaded, disabled and unavailable entities, devices, areas, actions that don't exist, the function's own pieces |
 | `tests/sandbox.test.js` | the sandbox engine with a stand-in template renderer: triggers, conditions, actions, modes, waits, MQTT, per-entity triggers, `sbxRewrite` |
 | `tests/backend/` (pytest) | the Python side: setup, store, websocket commands, diagnostics; `test_privacy.py`: canary data through the anonymiser and the log, no network modules, the manifest (sockets are blocked in all of it) |
-| `tests/e2e/apitest.py` | backend over the real API; onboards the test users and writes the tokens the browser suites use |
+| `tests/e2e/apitest.py` | backend over the real API (setup, websocket commands, store, non-admin, config flow) |
+| `tests/e2e/isolation.test.js` | a test that changes Home Assistant and fails half way leaves nothing behind for the next |
 | `tests/e2e/ui.test.js` | first run, import, migration, live sync, dashboard modes, non-admin |
 | `tests/e2e/regress.test.js [filter]` | one case per fixed bug or new behaviour, named by version (`0.7.0 …`) |
 | `tests/e2e/tools.test.js` | debugger, live checks, tests, arrow editor, Node-RED |
@@ -67,8 +77,9 @@ returns everything the library section defines.
 - Add a regress case for each bug fixed and each behaviour added, named with the version it ships in. Make sure
   a new check can fail (break the code on purpose once).
 - `tools.test.js` 9.2 is timing-sensitive and fails now and then; rerun before chasing it.
-- One browser suite at a time: they share the Home Assistant and reset its board data. Tokens last 30 minutes,
-  so `run.sh` runs `apitest.py` before each suite.
+- One browser suite at a time: they share the Home Assistant. The backend unit tests use their own venv
+  (`venvtest`): `pytest-homeassistant-custom-component` doesn't have a release for Home Assistant 2026.11 yet (its
+  newest pins 2026.10.4); move them into `venv314` once it does.
 
 ## Conventions
 

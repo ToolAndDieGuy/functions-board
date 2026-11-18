@@ -2,10 +2,10 @@
 // dashboard card modes, non-admin. Run apitest.py first (it writes the tokens). node ui.test.js
 const path = require('path');
 const { chromium, BASE, SHOTS, session, ws, ready, fbq, board, until, suite, reset } = require('./lib');
+const { test } = require('./fixtures');
 const { check, done } = suite('ui');
 
-(async () => {
-  const browser = await chromium.launch();
+test('ui', async ({ browser }) => {
 
   // ---------- reset the test instance ----------
   {
@@ -145,6 +145,5 @@ const { check, done } = suite('ui');
     await ctx.close();
   }
 
-  await browser.close();
-  done();
-})().catch((e) => { console.error(e); process.exit(1); });
+});
+test.afterAll(() => done());

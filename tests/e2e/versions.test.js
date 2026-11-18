@@ -2,6 +2,7 @@
 // version's tab, try it in the sandbox, restore it (Full manager) with what was added since turned off or deleted,
 // and a replaced device offered a replacement.  node tests/e2e/versions.test.js
 const { chromium, BASE, session, ws, svc, fbq, board, ready, until, suite, openFn, reset, importAll } = require('./lib');
+const { test } = require('./fixtures');
 const { check, done } = suite('versions');
 const el = (page, fn, arg) => board(page).evaluate(fn, arg);
 const api = (page, method, p, body) => page.evaluate(([m, p, b]) => document.querySelector('home-assistant').hass.callApi(m, p, b), [method, p, body]);
@@ -16,8 +17,7 @@ async function setMode(page, mode) {
 const vlist = (page) => el(page, (b) => [...b._$.drawer.querySelectorAll('.vlist .vrow:not(.cur)')].map((r) => ({ id: r.dataset.id, name: r.querySelector('.vh b').textContent, on: r.classList.contains('on'), restore: !r.querySelector('[data-act="ver-restore"]').disabled })));
 const settled = (page) => until(() => el(page, (b) => (b._model && !b._$.loading.hidden === false) || null), 15000);
 
-(async () => {
-  const browser = await chromium.launch();
+test('versions', async ({ browser }) => {
   const { ctx, page } = await session(browser, 'owner', { viewport: { width: 1500, height: 900 } });
   // a deleted test item's config is asked for once on purpose (the restore plan), and the YAML helpers' editor routes
   page.allowFail = [/^(automation|script)\/config$/];
@@ -192,6 +192,5 @@ const settled = (page) => until(() => el(page, (b) => (b._model && !b._$.loading
   await setMode(page, 'organise');
   check('no errors', page.logs.length === 0, page.logs);
   await ctx.close();
-  await browser.close();
-  done();
-})().catch((e) => { console.error(e); process.exit(1); });
+});
+test.afterAll(() => done());

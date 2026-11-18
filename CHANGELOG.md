@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+Fixed: closing a dialog or the side drawer could leave the keyboard focus on a box instead of the button that
+opened it, when the board had redrawn that button in the meantime (the function list redraws whenever a count
+changes). Focus now goes back to that button.
+
+For contributors: the test system was rebuilt as a whole (`tests/README.md`).
+
 ## 0.9.0 (2026-11-18)
 
 Improved: **accessibility.** The board was checked with the axe-core accessibility rules (WCAG 2.2 AA) in every

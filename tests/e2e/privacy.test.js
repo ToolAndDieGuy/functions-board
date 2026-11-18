@@ -12,6 +12,7 @@ const fs = require('fs');
 const path = require('path');
 const { chromium, BASE, session, ws, fbq, board, until, suite, freshBoard, importAll, openFn } = require('./lib');
 
+const { test } = require('./fixtures');
 const { check, done } = suite('privacy');
 const CONFIG = path.resolve(__dirname, '../../ha/config');
 const GUARD = path.resolve(__dirname, '../../ha/netguard.log');
@@ -30,10 +31,9 @@ function files(dir, out = {}, base = dir) {
   return out;
 }
 
-(async () => {
+test('privacy', async ({ browser }) => {
   const guardFrom = fs.existsSync(GUARD) ? fs.statSync(GUARD).size : 0;
   const before = files(CONFIG);
-  const browser = await chromium.launch();
   const { page, ctx } = await freshBoard(browser, { viewport: { width: 1500, height: 900 } });
   page.allowFail = [/^trace\/get$/, /^supervisor\/api$/];
 
@@ -186,6 +186,5 @@ function files(dir, out = {}, base = dir) {
   await ws(page, { type: 'input_boolean/delete', input_boolean_id: sw.id }).catch(() => {});
   await ws(page, { type: 'functions_board/version_delete', label }).catch(() => {});
   check('no errors', page.logs.length === 0, page.logs);
-  await browser.close();
-  done();
-})().catch((e) => { console.error(e); process.exit(1); });
+});
+test.afterAll(() => done());

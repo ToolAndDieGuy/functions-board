@@ -9915,7 +9915,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         if (open && !this._drawerOpen) {
           this._drawerOpen = true;
           const a = this.shadowRoot.activeElement;
-          this._drawerBack = a && !d.contains(a) ? a : null;
+          this._drawerBack = a && !d.contains(a) ? this._remember(a) : null;
           setTimeout(() => {
             if (d.hidden || !this._$.modal.hidden || d.contains(this.shadowRoot.activeElement)) return;
             const h = d.querySelector('.dtitle');
@@ -9923,14 +9923,29 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           }, 0);
         } else if (!open && this._drawerOpen) {
           this._drawerOpen = false;
-          const back = this._drawerBack, box = this._roveKey && this._els && this._els.get(this._roveKey);
+          const back = this._recall(this._drawerBack), box = this._roveKey && this._els && this._els.get(this._roveKey);
           this._drawerBack = null;
           const a = this.shadowRoot.activeElement;
-          if (!a || a === d || d.contains(a) || a === this.shadowRoot.host) { if (back && back.isConnected) back.focus({ preventScroll: true }); else if (box) box.focus({ preventScroll: true }); }
+          if (!a || a === d || d.contains(a) || a === this.shadowRoot.host) { if (back) back.focus({ preventScroll: true }); else if (box) box.focus({ preventScroll: true }); }
         }
       }).observe(d, { attributes: true, attributeFilter: ['hidden'], childList: true });
     }
     // dialogs: named, focus moves in and stays in, and goes back where it was when they close
+    // where focus should go back to, found again if the board drew it anew meanwhile (the list redraws when a
+    // count changes): the same button by what it does and what it's for, at the same place among its like
+    _remember(el) {
+      if (!el || !el.dataset) return null;
+      const keys = ['act', 'label', 'key', 'fn', 'id', 'k'].filter((k) => el.dataset[k] != null);
+      const sel = keys.length ? keys.map((k) => `[data-${k}="${CSS.escape(el.dataset[k])}"]`).join('') : null;
+      return { el, sel, i: sel ? [...this.shadowRoot.querySelectorAll(sel)].indexOf(el) : -1 };
+    }
+    _recall(r) {
+      if (!r) return null;
+      if (r.el.isConnected) return r.el;
+      if (!r.sel) return null;
+      const all = [...this.shadowRoot.querySelectorAll(r.sel)];
+      return all[r.i] || all[0] || null;
+    }
     _watchModal() {
       const md = this._$.modal;
       new MutationObserver(() => {
@@ -9943,13 +9958,13 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         }
         if (open && !this._modalOpen) {
           this._modalOpen = true;
-          this._modalBack = this.shadowRoot.activeElement || null;
+          this._modalBack = this._remember(this.shadowRoot.activeElement);
           setTimeout(() => { if (md.hidden) return; const f = md.querySelector('input:not([type=hidden]):not([disabled]), textarea, select, button.primary:not([disabled])') || md.querySelector('button'); if (f && !md.contains(this.shadowRoot.activeElement)) f.focus(); }, 60);
         } else if (!open && this._modalOpen) {
           this._modalOpen = false;
-          const back = this._modalBack, box = this._roveKey && this._els.get(this._roveKey);
+          const back = this._recall(this._modalBack), box = this._roveKey && this._els.get(this._roveKey);
           this._modalBack = null;
-          if (back && back.isConnected) back.focus(); else if (box) box.focus();
+          if (back) back.focus(); else if (box) box.focus();
         }
       }).observe(md, { attributes: true, attributeFilter: ['hidden'], childList: true });
       md.addEventListener('keydown', (e) => {

@@ -11,6 +11,7 @@
 const fs = require('fs');
 const { chromium, fbq, board, until, suite, freshBoard, importAll, openFn, ws, svc } = require('./lib');
 
+const { test } = require('./fixtures');
 const { check, done } = suite('a11y');
 const PID = 'fba11y1', PKEY = 'automation.garage_a11y_points_at_gone';
 const AXE = fs.readFileSync(require.resolve('axe-core/axe.min.js', { paths: [process.cwd(), __dirname] }), 'utf8');
@@ -33,8 +34,7 @@ async function audit(page, name, found) {
   await page.emulateMedia({ reducedMotion: 'no-preference' });
 }
 
-(async () => {
-  const browser = await chromium.launch();
+test('a11y', async ({ browser }) => {
 
   // X1: axe across every view, both colour schemes
   for (const light of [false, true]) {
@@ -205,6 +205,5 @@ async function audit(page, name, found) {
 
   check('no errors', page.logs.length === 0, page.logs);
   await ctx.close();
-  await browser.close();
-  done();
-})().catch((e) => { console.error(e); process.exit(1); });
+});
+test.afterAll(() => done());

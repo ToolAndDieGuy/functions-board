@@ -20,9 +20,27 @@ function auth(who = 'owner') {
 // Websocket errors that come from Home Assistant's own frontend, not the board.
 const NOISE = /^(recorder\/info|lovelace\/config)$/;
 
+// Set by fixtures.js when the suites run under Playwright Test: a check is also a soft expectation, and every
+// context records a trace (kept by the fixture when the test fails).
+const hooks = { soft: null, trace: false, open: [], traces: [], suite: null };
+let traceN = 0;
+async function stopTrace(ctx) {
+  if (!ctx.__fbTrace) return;
+  const file = ctx.__fbTrace; ctx.__fbTrace = null;
+  await ctx.tracing.stop({ path: file });
+  hooks.traces.push(file);
+}
+
 async function session(browser, who = 'owner', opts = {}) {
   const base = opts.mobile ? { ...devices['iPhone 13'] } : { viewport: opts.viewport || { width: 1400, height: 860 }, deviceScaleFactor: opts.scale || 1 };
   const ctx = await browser.newContext(Object.assign(base, { colorScheme: opts.light ? 'light' : 'dark' }));
+  if (hooks.trace) {
+    await ctx.tracing.start({ screenshots: true, snapshots: true });
+    ctx.__fbTrace = path.join(STATE, `trace-${process.pid}-${++traceN}.zip`);
+    hooks.open.push(ctx);
+    const close = ctx.close.bind(ctx);
+    ctx.close = async (...a) => { hooks.open = hooks.open.filter((c) => c !== ctx); await stopTrace(ctx).catch(() => {}); return close(...a); };
+  }
   await ctx.addInitScript((a) => { try { if (!localStorage.getItem('hassTokens')) localStorage.setItem('hassTokens', JSON.stringify(a)); } catch (e) {} }, auth(who));
   const page = await ctx.newPage();
   page.logs = [];
@@ -71,18 +89,27 @@ function suite(name) {
   let last = Date.now();
   const check = (n, ok, detail) => {
     const d = !ok && detail !== undefined ? (typeof detail === 'string' ? detail : JSON.stringify(detail)).slice(0, 500) : '';
-    results.push({ name: n, ok: !!ok, detail: d, ms: Date.now() - last });
+    const r = { name: n, ok: !!ok, detail: d, ms: Date.now() - last };
+    results.push(r);
+    // kept as it happens: Playwright starts a new worker after a failed test, and that worker's done() must still
+    // report the checks made before it
+    try { fs.mkdirSync(RESULTS, { recursive: true }); fs.appendFileSync(path.join(RESULTS, 'e2e-' + name + '.jsonl'), JSON.stringify(r) + '\n'); } catch (e) { /* the report is best effort here */ }
     last = Date.now();
     console.log((ok ? 'PASS ' : 'FAIL ') + n + (d ? '  -- ' + d : ''));
+    if (hooks.soft) { try { hooks.soft(!!ok, n + (d ? '  -- ' + d : '')); } catch (e) { /* outside a test */ } }
     return !!ok;
   };
   const done = () => {
-    const bad = results.filter((r) => !r.ok).map((r) => r.name);
-    console.log(`\n${name}: ${results.length - bad.length}/${results.length} passed` + (bad.length ? ': failed ' + bad.join(', ') : ''));
-    require('../lib/junit').write(path.join(RESULTS, 'e2e-' + name + '.xml'), name, results);
+    let all = results;
+    try { all = fs.readFileSync(path.join(RESULTS, 'e2e-' + name + '.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)); } catch (e) { /* only this process's */ }
+    const bad = all.filter((r) => !r.ok).map((r) => r.name);
+    console.log(`\n${name}: ${all.length - bad.length}/${all.length} passed` + (bad.length ? ': failed ' + bad.join(', ') : ''));
+    require('../lib/junit').write(path.join(RESULTS, 'e2e-' + name + '.xml'), name, all);
     process.exitCode = bad.length ? 1 : 0;
   };
-  return { check, done, results };
+  const me = { check, done, results };
+  hooks.suite = me;
+  return me;
 }
 
 // Remove everything the board and earlier runs created: labels, categories, board data, test dashboards.
@@ -131,4 +158,4 @@ async function openFn(page, re) {
   return l.label_id;
 }
 
-module.exports = { chromium, BASE, STATE, SHOTS, auth, session, ws, svc, states, ready, fbq, board, sleep, until, suite, reset, freshBoard, importAll, openFn };
+module.exports = { hooks, stopTrace, chromium, BASE, STATE, SHOTS, auth, session, ws, svc, states, ready, fbq, board, sleep, until, suite, reset, freshBoard, importAll, openFn };
