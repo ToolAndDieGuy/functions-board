@@ -53,6 +53,10 @@ const t0 = src.indexOf('  const STR = {'), t1 = src.indexOf("\n  };\n  setLang('
 const STR = new Function('return ' + src.slice(t0 + '  const STR = '.length, t1 + 4))();
 const EN = STR.en || {};
 check('found the English table', Object.keys(EN).length > 500, Object.keys(EN).length);
+// a key written twice keeps only its last text, silently: each key once
+const keyLines = src.slice(t0, t1).match(/^      [A-Za-z0-9_]+(?=: )/gm) || [], seenKeys = new Set(), twice = [];
+keyLines.forEach((k) => { k = k.trim(); if (seenKeys.has(k)) twice.push(k); seenKeys.add(k); });
+check('each text key is written once', keyLines.length > 500 && twice.length === 0, twice.length ? twice : keyLines.length);
 // the source of the balanced {...} or (...) at i, with strings, templates and comments skipped
 function skipQuote(s, j, q) { for (j++; j < s.length; j++) { if (s[j] === '\\') { j++; continue; } if (s[j] === q) return j; } return j; }
 function skipTemplate(s, j) {

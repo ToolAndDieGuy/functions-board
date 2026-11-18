@@ -1,6 +1,11 @@
 # Changelog
 
-## 0.8.1 (2026-11-17)
+## 0.8.1 (2026-11-18)
+
+Changed: **restoring a version no longer saves a backup copy every time.** The restore dialog has a box, unticked
+unless you tick it, to save what's there now as a version first, and it says whether what's there now is already
+one of your saved versions. Switching back and forth between versions no longer leaves a "Before restoring …"
+copy behind each time. When there's no backup, Undo goes back to the saved version the function matched, if any.
 
 Fixed: in the **Key**, "simulated state" could wrap onto a line of its own, away from its mark. It now has its
 own line, with its mark.

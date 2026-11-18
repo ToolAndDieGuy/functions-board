@@ -2721,7 +2721,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       ver_restore_h: 'Restore "{name}"?',
       ver_restore_h0: 'Restore',
       ver_restore_lead: '{fnName} goes back to how it was saved ({when}), through Home Assistant\'s own config APIs, the way its editors save.',
-      ver_restore_safety: 'What\'s there now is saved first as a version of its own ("Before restoring …"), so you can go back.',
+      ver_now_saved_as: 'What\'s there now is already saved as "{name}", so you can go back to it either way.',
+      ver_restore_unsaved: 'What\'s there now isn\'t saved as a version: without a backup, you can\'t come back to it.',
+      ver_restore_backup: 'Save what\'s there now as a version first ("Before restoring …")',
       ver_restore_t: 'Put this function back as it was in this version',
       ver_restored: 'Restored "{name}"',
       ver_restored_errs: 'Restored "{name}", with {n} problem(s): {list}',
@@ -7980,7 +7982,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
        its UI helpers' settings, which items are in it, its layout, and the devices its steps use. Saving one changes
        nothing. A version opens in a tab of its own (read-only, marked against what's there now), can be tried in
        the sandbox, and in Full manager can be restored through the same config APIs Home Assistant's editors use,
-       after a dialog that lists every change; what's there before is saved first. ---------- */
+       after a dialog that lists every change; what's there before is saved first if the person ticks that box. ---------- */
     _verOK() { return this._storeMode === 'shared'; }
     async _verList(label) { const r = await this._ws({ type: 'functions_board/versions', label }); return (r && r.versions) || []; }
     _verGet(label, id) { return this._ws({ type: 'functions_board/version_get', label, version_id: id }); }
@@ -8190,9 +8192,14 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       m.hidden = false;
       m.innerHTML = `<div class="dlg"><h3>${T('ver_restore_h0')}</h3><div class="muted">${T('ver_checking')}</div></div>`;
       let v, plan;
-      try { v = await this._verGet(label, id); plan = await this._verPlan(label, v.snapshot); }
-      catch (e) { m.innerHTML = `<div class="dlg"><h3>${T('ver_restore_h0')}</h3><p class="dtext">${esc((e && (e.message || e.code)) || e)}</p><div class="btns"><button data-act="modal-cancel">${T('close')}</button></div></div>`; return; }
-      this._verPending = { label, v, plan, devmap: {} };
+      let savedAs = null;
+      try {
+        v = await this._verGet(label, id); plan = await this._verPlan(label, v.snapshot);
+        // is what's there now already one of the saved versions? (then a backup would only be another copy)
+        const [vs, now] = await Promise.all([this._verList(label), this._verSnapshot(label)]), pr = verPrint(now);
+        savedAs = vs.slice().reverse().find((x) => x.print && x.print === pr && x.id !== id) || null;
+      } catch (e) { m.innerHTML = `<div class="dlg"><h3>${T('ver_restore_h0')}</h3><p class="dtext">${esc((e && (e.message || e.code)) || e)}</p><div class="btns"><button data-act="modal-cancel">${T('close')}</button></div></div>`; return; }
+      this._verPending = { label, v, plan, devmap: {}, savedAs };
       this._verRestoreDlg();
     }
     async _verPlan(label, snap) {
@@ -8220,7 +8227,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         + `<ul class="vplan">${line(plan.write, P('ver_p_write', plan.write.length))}${line(plan.recreate, P('ver_p_recreate', plan.recreate.length))}${line(plan.rejoin, P('ver_p_rejoin', plan.rejoin.length))}${line(plan.same, P('ver_p_same', plan.same.length))}${line(plan.yaml, P('ver_p_yaml', plan.yaml.length))}${snap.layout ? `<li>${T('ver_p_layout')}</li>` : ''}</ul>`
         + (plan.missing.length ? `<h4>${T('ver_dev_h')}</h4><div class="hint">${T('ver_dev_hint')}</div>${devs}` : '')
         + (addLogic.length || addOther.length ? `<h4>${T('ver_added_h')}</h4>${addLogic.length ? `<div class="hint">${addLogic.map(nm).join(', ')}</div><label class="chk"><input type="radio" name="vextra" value="off" checked>${T('ver_added_off')}</label><label class="chk"><input type="radio" name="vextra" value="delete">${T('ver_added_delete')}</label>` : ''}${addOther.length ? `<div class="hint">${T('ver_added_other', { list: addOther.map(nm).join(', ') })}</div>` : ''}` : '')
-        + `<div class="okbox"><ha-icon icon="mdi:backup-restore"></ha-icon><span>${T('ver_restore_safety')}</span></div>`
+        // a backup of what's there now only when asked for: switching between saved versions shouldn't pile up copies
+        + `<label class="chk vbackup"><input type="checkbox" name="vbackup">${T('ver_restore_backup')}</label><div class="hint">${p.savedAs ? T('ver_now_saved_as', { name: esc(p.savedAs.name) }) : T('ver_restore_unsaved')}</div>`
         + [...doms].filter((d) => d === 'automation' || d === 'script').map((d) => this._yamlWarn(d)).join('')
         + `<div class="aval hint"></div><div class="btns"><button data-act="modal-cancel">${T('cancel')}</button><button class="primary" data-act="ver-restore-go">${T('ver_restore')}</button></div></div>`;
       // a replaced device: Home Assistant's own device picker, or a plain list if it isn't loaded
@@ -8241,16 +8249,18 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     async _verRestoreGo() {
       const p = this._verPending, m = this._$.modal, val = m.querySelector('.aval'), btn = m.querySelector('[data-act="ver-restore-go"]');
       if (!p) return;
-      const extra = (m.querySelector('input[name="vextra"]:checked') || { value: 'off' }).value;
+      const extra = (m.querySelector('input[name="vextra"]:checked') || { value: 'off' }).value, backup = !!(m.querySelector('input[name="vbackup"]') || {}).checked;
       const { label, v, plan } = p, snap = v.snapshot, map = Object.fromEntries(Object.entries(p.devmap).filter(([, x]) => x)), errs = [], name = (k) => (snap.items[k] && snap.items[k].name) || this._boxName(k);
       btn.disabled = true;
       val.textContent = T('ver_restoring');
-      // what's there now is saved first, so the restore can be undone
-      let back = null;
-      try {
-        const now = await this._verSnapshot(label);
-        back = await this._ws({ type: 'functions_board/version_save', label, name: T('ver_before_name', { name: v.name }), desc: '', snapshot: now, print: verPrint(now), auto: true, client: this._client() });
-      } catch (e) { val.textContent = T('ver_not_saved', { e: (e && (e.message || e.code)) || e }); btn.disabled = false; return; }
+      // what's there now is saved first if asked for; otherwise undo goes back to the version it already matches, if any
+      let back = p.savedAs;
+      if (backup) {
+        try {
+          const now = await this._verSnapshot(label);
+          back = await this._ws({ type: 'functions_board/version_save', label, name: T('ver_before_name', { name: v.name }), desc: '', snapshot: now, print: verPrint(now), auto: true, client: this._client() });
+        } catch (e) { val.textContent = T('ver_not_saved', { e: (e && (e.message || e.code)) || e }); btn.disabled = false; return; }
+      }
       const exists = (k) => !!(this._hass.states[k] || this._entMap.has(k));
       for (const k of plan.write.concat(plan.recreate)) {
         const it = snap.items[k], cfg = swapDevs(it.cfg, map);
