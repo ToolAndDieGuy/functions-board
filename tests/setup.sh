@@ -29,6 +29,10 @@ if [ ! -x venv314/bin/hass ]; then
   echo "== Home Assistant $HA (Python $PY) in venv314"
   uv venv --python "$PY" venv314
   uv pip install --python venv314/bin/python "homeassistant==$HA"
+  # numpy: the demo integration imports it without listing it, so on a fresh install it depends on another
+  # integration's requirements landing first (a race that left CI without the test garage door). Install it up
+  # front, at the version Home Assistant pins.
+  uv pip install --python venv314/bin/python numpy -c "$(venv314/bin/python -c 'import homeassistant, os; print(os.path.join(os.path.dirname(homeassistant.__file__), "package_constraints.txt"))')"
 fi
 
 # a config folder: the test config, the integration linked in (so edits show on reload), Home Assistant's own
