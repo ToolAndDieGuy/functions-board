@@ -7,9 +7,16 @@ CID = BASE + "/"
 HERE = os.path.dirname(os.path.abspath(__file__))
 # Tokens and credentials go to the state folder; the store is checked in the test instance's config folder.
 STATE = os.environ.get("FB_E2E_STATE") or os.path.join(HERE, ".state")
-HA_CONFIG = os.environ.get("FB_HA_CONFIG") or os.path.join(HERE, "config")
 os.makedirs(STATE, exist_ok=True)
-CREDS = os.path.join(STATE, "creds.json")
+# each Home Assistant (the test one and the demo one, see tests/start-ha.sh) keeps its own login: onboarding one
+# mustn't lose the other's password
+try:
+    INSTANCE = open(os.path.join(STATE, "instance")).read().strip()
+except OSError:
+    INSTANCE = "test"
+CREDS = os.path.join(STATE, "creds.json" if INSTANCE == "test" else f"creds-{INSTANCE}.json")
+# the running instance's config folder (run-all.sh sets FB_HA_CONFIG; by hand, it follows tests/start-ha.sh)
+HA_CONFIG = os.environ.get("FB_HA_CONFIG") or os.path.join(HERE, "..", "..", "ha-demo" if INSTANCE == "demo" else "ha", "config")
 results = []
 
 

@@ -11,6 +11,8 @@ pkill -f "venv314/bin/hass -c" 2>/dev/null && sleep 3
 dir=ha/config
 [ "$1" = "demo" ] && dir=ha-demo/config
 [ -d "$dir" ] || { echo "$dir is missing: run sh tests/setup.sh${1:+ $1} first"; exit 1; }
+# which one is running, for apitest.py (each keeps its own login)
+mkdir -p tests/e2e/.state && { [ "$1" = "demo" ] && echo demo || echo test; } > tests/e2e/.state/instance
 nohup venv314/bin/hass -c "$dir" > "$(dirname "$dir")/hass.log" 2>&1 &
 for i in $(seq 1 90); do
   sleep 2

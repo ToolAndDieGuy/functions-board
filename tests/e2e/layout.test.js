@@ -101,7 +101,7 @@ function shapes() {
         // top to bottom, the widest row of boxes sharing a top edge
         const rows = new Map();
         ns.forEach((n) => { const r = Math.round(n.y / 10); rows.set(r, (rows.get(r) || 0) + n.w + 30); });
-        return { boxes: ns.length, overlap, w: Math.round(x1 - x0), h: Math.round(y1 - y0), widestRow: Math.max(...rows.values()), vert: el._vert(), flipped: !!el.shadowRoot.querySelector('.edges g[transform]') };
+        return { boxes: ns.length, overlap, w: Math.round(x1 - x0), h: Math.round(y1 - y0), widestRow: Math.max(...rows.values()), vert: el._vert(), flipped: !!el.shadowRoot.querySelector('.edges g[transform^="matrix"]') };
       }, [fn, dir]);
       const r = await board(page).evaluate(routeCheck, { min: 16 });
       const h = await board(page).evaluate(hopCheck);

@@ -1,5 +1,5 @@
 /*!
- * Functions board v0.7.1 (prototype) for Home Assistant
+ * Functions board v0.7.2 (prototype) for Home Assistant
  *
  * One page per "function": every automation, script, helper and device that makes one job work,
  * grouped by a Home Assistant label and wired together from their own configs.
@@ -13,7 +13,7 @@
  */
 (() => {
   'use strict';
-  const VERSION = '0.7.1';
+  const VERSION = '0.7.2';
   const loaded = customElements.get('functions-board');
   if (loaded) {
     if (loaded.VERSION !== VERSION) {
@@ -652,10 +652,8 @@
     return { routes: R, owners, dots: bd.dots, tags: bd.tags, hops: hopsOf(R, owners) };
   }
   // a dot where a bus branches (or is joined), as on a wiring diagram: where lines cross without one, they don't meet
-  // arrows that share a line each get a colour of their own (tag: index into TAGS) for the dots at the two places
-  // they stand apart: where they branch off the shared line, and the point on the box at their own end
-  const TAGS = ['#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#911eb4', '#42d4f4', '#f032e6', '#bfef45', '#fabed4',
-    '#469990', '#dcbeff', '#9a6324', '#fffac8', '#800000', '#aaffc3'];
+  // arrows that share a line each get a letter of their own in the function (tag: 0 for A, 1 for B, …), shown at the two
+  // places they stand apart: where they branch off the shared line, and beside the point on the box at their own end
   function busDots(routes, owners, geo) {
     const by = new Map();
     routes.forEach((pts, ri) => {
@@ -676,11 +674,12 @@
       });
     });
     const dots = [], tags = new Map();
+    // A, B, C… across the whole function, so no two arrows near each other share one: line by line from the top,
+    // and down each line in the order their own ends sit, so the letters read in order at both ends
     let next = 0;
-    by.forEach((b) => {
-      // a colour each across the whole function, in the order the arrows of a shared line sit, so that a colour
-      // comes round again only after all of them have been used
-      b.ms.sort((p, q) => p.far[1] - q.far[1] || p.turn - q.turn).forEach((m) => { m.tag = next++ % TAGS.length; tags.set(m.ri, { tag: m.tag, own: b.own, far: m.far, role: b.role }); });
+    const top = (b) => Math.min(...b.ms.map((m) => m.far[1]));
+    [...by.values()].sort((p, q) => top(p) - top(q) || (p.x == null ? 0 : p.x) - (q.x == null ? 0 : q.x)).forEach((b) => {
+      b.ms.sort((p, q) => p.far[1] - q.far[1] || p.turn - q.turn).forEach((m) => { m.tag = next++; tags.set(m.ri, { tag: m.tag, own: b.own, far: m.far, role: b.role }); });
       if (b.x == null) return;
       const lo = Math.min(...b.ys), hi = Math.max(...b.ys), seen = [];
       b.ms.forEach((m) => {
@@ -1760,19 +1759,13 @@ button{font:inherit;color:inherit}
 .board.pc .edges circle.jd.role-action{stroke:var(--fb-act)}
 .board.pc .edges circle.jd.role-call{stroke:var(--fb-call)}
 .edges path.chev{fill:var(--fb-edge);stroke:none}
+.edges path.e.trdim{opacity:.13}
+.edges path.trc{fill:none;pointer-events:none;stroke-width:3.4!important;opacity:1}
+.board:not(.pc) .edges path.trc{stroke:var(--primary-text-color)}
 .board.pc .edges path.chev.role-trigger{fill:var(--fb-trig)}
 .board.pc .edges path.chev.role-action{fill:var(--fb-act)}
 .board.pc .edges path.chev.role-call{fill:var(--fb-call)}
 .edges path.chev.dim{opacity:.12}
-.node .port.tagd{width:10px;height:10px;border-width:2px;margin-top:-1px}
-.node .port.tagd.pl{left:-5px}
-.node .port.tagd.pr{right:-5px}
-.board.vert .node .port.tagd{margin-top:0;margin-left:-1px}
-.board.vert .node .port.tagd.pl{top:-5px}
-.board.vert .node .port.tagd.pr{bottom:-5px}
-.board.pc .node .port.tagd.role-trigger{border-color:var(--fb-trig)}
-.board.pc .node .port.tagd.role-action{border-color:var(--fb-act)}
-.board.pc .node .port.tagd.role-call{border-color:var(--fb-call)}
 .edges circle.jd.dim{opacity:.18}
 .board.pc .lg svg path.role-trigger{stroke:var(--fb-trig)}
 .board.pc .lg svg path.ah.role-trigger,.board.pc .lg svg .ah.trig{fill:var(--fb-trig)}
@@ -2415,7 +2408,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       highlight_around_a_selected_box: 'Highlight around a selected box',
       reach: 'Reach',
       live: 'Live',
-      one_line_that_branches_dot: 'a shared line: one colour per arrow, where it branches and at its end',
+      one_line_that_branches_dot: 'a shared line: a dot where an arrow branches off; point at a box, or select it, to trace its arrows',
       runs_back: 'an arrow running back, right to left',
       crosses_without_meeting: 'crosses another without meeting it',
       arrow_style: 'Style',
@@ -4683,6 +4676,10 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       // hovering an arrow that comes from a template shows the template's value right now (9.3)
       const ed = this._$.edges;
       ed.addEventListener('pointerover', (e) => { const p = e.target.closest('path.hit'); if (p) this._edgeHover(p.dataset.e, e); });
+      // pointing at a box traces its arrows through the shared lines it's on
+      const ns = this._$.nodes;
+      ns.addEventListener('pointerover', (e) => { if (e.pointerType === 'touch' || this._drag) return; const n = e.target.closest('.node'); this._setTrace(n ? this._busEdgesOf(n.dataset.key) : null); });
+      ns.addEventListener('pointerleave', () => this._setTrace(null));
       ed.addEventListener('pointermove', (e) => { if (this._tt) this._ttMove(e); });
       ed.addEventListener('pointerout', (e) => { const p = e.target.closest('path.hit'); if (p && this._tt && this._tt.id === p.dataset.e) this._edgeHoverEnd(); });
       this._$.drawer.addEventListener('mouseleave', () => this._hover(null));
@@ -5618,34 +5615,53 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           marks.push(`<g class="cres ${kind}${fc ? ' sbxc' : ''}${F && !hi ? ' dim' : ''}" data-edge="${esc(e.id)}" transform="translate(${lx},${ly})"><circle r="8"></circle>${glyph}<title>${esc(fc ? fc.title : this._condTitle(e, c))}</title></g>`);
         }
       }
-      const jd = dots.map((dt) => (dt.tag == null ? `<circle class="jd split role-${esc(dt.role)}${dt.lit ? '' : ' dim'}" cx="${dt.x}" cy="${dt.y}" r="3.6"></circle>`
-        : `<circle class="jd role-${esc(dt.role)}${dt.lit ? '' : ' dim'}" cx="${dt.x}" cy="${dt.y}" r="4.6" style="fill:${TAGS[dt.tag]}"></circle>`));
+      // where a shared line splits, and where an arrow leaves it: a plain dot (joined here, not crossing)
+      const jd = dots.map((dt) => `<circle class="jd split role-${esc(dt.role)}${dt.lit ? '' : ' dim'}" cx="${dt.x}" cy="${dt.y}" r="${dt.tag == null ? 3.6 : 3.2}"></circle>`);
       const drawn = out.slice(1).join('') + chev.join('') + jd.join('') + hits.join('');
       this._$.edges.innerHTML = DEFS + (V ? `<g transform="matrix(0 1 1 0 0 0)">${drawn}</g>` : drawn) + labels.join('') + marks.join('');
-      this._tagPorts(tagged, geo);
+      this._applyTrace();
       this._edgeMid = mids;
       if (dot) this._$.edges.querySelectorAll('animateMotion').forEach((x) => { try { x.beginElement(); } catch (er) { /* no SMIL */ } });
       this._paintFlow();
       if (fl) fl.anim = false;
     }
 
-    // the point on a box at the own end of an arrow that shares a line takes that arrow's colour, ringed in the
-    // colour of its kind, like the dot where it branches off
-    _tagPorts(tagged, geo) {
-      const V = this._vert();
-      this.shadowRoot.querySelectorAll('.node .port.tagd').forEach((p) => { p.classList.remove('tagd'); p.removeAttribute('style'); p.style[V ? 'left' : 'top'] = p.dataset.y + 'px'; p.className = p.className.replace(/ role-\S+/g, ''); });
-      if (!tagged) return;
-      const F = this._focus;
-      tagged.forEach((t, ri) => {
-        const g = geo[ri], into = t.own.startsWith('out:'), key = into ? g.e.to : g.e.from, n = this._model.nodes.get(key), el = this._els && this._els.get(key);
-        if (!n || !el) return;
-        // far is in the frame the arrows were routed in: turned for top to bottom, where its y is the real x
-        const ys = portYs(V ? n.w : n.h), i = ys.findIndex((y) => Math.abs((V ? n.x : n.y) + y - t.far[1]) < 1.5);
-        const port = i >= 0 && el.querySelectorAll(into ? '.port.pl' : '.port.pr')[i];
-        if (!port) return;
-        port.classList.add('tagd', 'role-' + t.role);
-        port.style.background = TAGS[t.tag];
-        if (F && !this._focusEdges.has(g.e.id)) port.style.opacity = '.25';
+    // tracing arrows through a shared line: pointing at a box, or selecting it, draws that box's arrows on shared
+    // lines end to end on top, and fades the others on the same lines
+    _busEdgesOf(key) {
+      const o = this._ortho;
+      if (!o || !key) return null;
+      const ids = o.ids.filter((id, i) => (o.owners[i] || []).some(Boolean) && (o.boxes[i][0] === key || o.boxes[i][1] === key));
+      return ids.length ? new Set(ids) : null;
+    }
+    _setTrace(ids, sticky) {
+      if (sticky !== undefined) this._traceKeep = sticky ? ids : null;
+      const next = ids || this._traceKeep || null;
+      const same = (a, b) => (!a && !b) || (a && b && a.size === b.size && [...a].every((x) => b.has(x)));
+      if (same(next, this._trace)) return;
+      this._trace = next;
+      this._applyTrace();
+    }
+    _applyTrace() {
+      const svg = this._$.edges, o = this._ortho, tr = this._trace;
+      if (!svg) return;
+      svg.querySelectorAll('.trc').forEach((x) => x.remove());
+      svg.querySelectorAll('.trdim, .trhi').forEach((x) => x.classList.remove('trdim', 'trhi'));
+      const on = !!(tr && tr.size && o);
+      this._$.board.classList.toggle('tracing', on);
+      if (!on) return;
+      const owns = new Set();
+      o.ids.forEach((id, i) => { if (tr.has(id)) (o.owners[i] || []).forEach((w) => { if (w) owns.add(w); }); });
+      const mates = new Set(o.ids.filter((id, i) => (o.owners[i] || []).some((w) => w && owns.has(w))));
+      svg.querySelectorAll('path.e').forEach((p) => { if (mates.has(p.dataset.edge) && !tr.has(p.dataset.edge)) p.classList.add('trdim'); });
+      tr.forEach((id) => {
+        const p = svg.querySelector(`path.e[data-edge="${CSS.escape(id)}"]`);
+        if (!p) return;
+        const c = p.cloneNode(false);
+        c.removeAttribute('data-edge');
+        c.setAttribute('class', 'trc ' + [...p.classList].filter((x) => x.startsWith('role-')).join(' '));
+        // on top of everything in its frame, letters included
+        p.parentNode.appendChild(c);
       });
     }
 
@@ -5686,6 +5702,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     }
     _select(key) {
       this._sel = key && this._model && this._model.nodes.has(key) ? key : null;
+      // a selected box's arrows stay traced through the shared lines they're on (how a touch screen traces them)
+      this._setTrace(this._sel ? this._busEdgesOf(this._sel) : null, !!this._sel);
       if (this._lit) this._clearLit(true);
       if (this._selEdge || !this._$.edgebar.hidden) { this._selEdge = null; this._$.edgebar.hidden = true; }
       this._applyFocus();
@@ -5955,7 +5973,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const line = (cls) => `<svg width="38" height="10"><path class="${cls}" d="M4,5 L30,5"></path><path class="ah ${cls}" d="M30,1 L37,5 L30,9 z"></path>${cls === 'role-trigger' ? '<circle class="ah trig" cx="4" cy="5" r="3.5"></circle>' : ''}</svg>`;
       this._$.legend.innerHTML = `<button class="lgt" data-act="legend"><ha-icon icon="mdi:map-legend"></ha-icon>${open ? T('hide_key') : T('key')}</button>`
         + (open ? `<div class="lg">${line('role-trigger')}<span>${T('triggers')}</span>${line('role-condition')}<span>${T('is_checked_or_read_by')}</span>${line('role-action')}<span>${T('changes_2')}</span>${line('role-call')}<span>${T('runs_script_call')}</span>${line('role-source')}<span>${T('is_read_by_a_helper')}</span>${line('loop')}<span>${T('loop_can_retrigger_itself')}</span>${line('role-tool')}<span>${T('a_test_button_or_a')}</span>`
-          + `<svg width="38" height="14"><path d="M4,3 L16,3 L16,11 L30,11"></path><path d="M16,3 L30,3"></path><circle cx="16" cy="3" r="3.2" style="fill:${TAGS[0]};stroke:var(--fb-edge);stroke-width:1.4"></circle><circle cx="32" cy="11" r="3.2" style="fill:${TAGS[0]};stroke:var(--fb-edge);stroke-width:1.4"></circle></svg><span>${T('one_line_that_branches_dot')}</span>`
+          + `<svg width="38" height="14"><path d="M4,3 L16,3 L16,11 L30,11"></path><path d="M16,3 L30,3"></path><circle cx="16" cy="3" r="2.6" style="fill:var(--fb-edge)"></circle></svg><span>${T('one_line_that_branches_dot')}</span>`
           + `<svg width="38" height="14"><path d="M19,1 L19,13"></path><path d="M4,8 L15,8 A4,4 0 0 1 23,8 L34,8"></path></svg><span>${T('crosses_without_meeting')}</span>`
           + `<svg width="38" height="14"><path d="M4,7 L34,7"></path><path class="ah" d="M15,7 L23,2.5 L23,11.5 z"></path></svg><span>${T('runs_back')}</span></div><div class="lgn"><span class="sw dashed"></span>${T('related_not_in_this_function')}<br><span class="sw pill"></span>${T('outside_item_it_touches')}<br><span class="sw st amber"></span>${T('unavailable')}<span class="sw st red"></span>${T('last_run_failed')}<span class="sw st blue"></span>${T('running')}<br><span class="cres-k ok">✓</span><span class="cres-k bad">✕</span> ${T('a_check_passes_or_fails')}<span class="sw dashed2"></span>${T('simulated_state')}${this._sbxOn() ? `<br><span class="sw sbk"></span>${T('sbx_changed_key')}<br><span class="sw sbg"></span>${T('sbx_ghost_key')}` : ''}</div><label class="tg"><input type="checkbox" data-tog="outside" ${u.outside ? 'checked' : ''}>${T('show_outside_items')}</label><label class="tg"><input type="checkbox" data-tog="suggest" ${u.suggest ? 'checked' : ''}>${T('show_related_suggestions')}</label><label class="tg" title="${T('reads_your_node_red_app')}"><input type="checkbox" data-nr ${u0.nodered === true ? 'checked' : ''}>${T('show_node_red_flows')}</label>${u0.nodered === true && this._nrCache && this._nrCache.err ? `<div class="lgerr">${esc(this._nrCache.err)}${this._nrCache.need ? ` <button class="lgbtn" data-act="nr-open">${T('open_node_red')}</button>` : ''}</div>` : ''}` : '');
     }
@@ -8019,7 +8037,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       clearTimeout(this._timers.lit);
       this._flow = f;
       this._sel = null;
-      if (fresh) this._frameKeys(f.keys, [...f.ghosts.values()]);
+      // the whole run in view if it reads at that size; otherwise the view follows the steps as they play
+      if (fresh) { const all = this._flowRects(f, f.steps.map((x, i) => i)); if (all && this._fitK(all) >= 0.6) this._frameKeys(f.keys, [...f.ghosts.values()]); }
       this._renderSbx();
       if (auto) { this._flowPlay(); return; }
       let i = f.steps.findIndex((x) => x.e.id === id);
@@ -8145,6 +8164,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (this._sbx) this._sbx.sel = cur.e.id;
       this._applyFocus();
       this._flowBar();
+      this._flowFollow(f, f.at);
       this._flowRows();
       if (anim) {
         const el = f.now[0] === '~' ? this._$.flow.querySelector(`.ghost[data-g="${CSS.escape(f.now)}"]`) : this._els.get(f.now);
@@ -8162,6 +8182,36 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (e.kind === 'wait' && e.key) return T('sbx_f_waits', { a: nm(e.key), w: String(e.text || '').replace(/^./, (c) => c.toLowerCase()) });
       if (e.kind === 'cond' && e.key) return T('sbx_f_checks', { a: nm(e.key), c: t });
       return t;
+    }
+    // the boxes of some steps, as one rectangle on the board
+    _flowRects(f, idx) {
+      const m = this._model, rs = [];
+      idx.forEach((i) => { const s = f.steps[i]; [s.box, ...s.links.flatMap((l) => [l.a, l.b])].forEach((k) => { const r = k && (k[0] === '~' ? f.ghosts.get(k) : m.nodes.get(k)); if (r) rs.push(r); }); });
+      if (!rs.length) return null;
+      const x0 = Math.min(...rs.map((r) => r.x)), y0 = Math.min(...rs.map((r) => r.y));
+      return { x0, y0, x1: Math.max(...rs.map((r) => r.x + r.w)), y1: Math.max(...rs.map((r) => r.y + r.h)) };
+    }
+    // the part of the board left free by the drawer and the bar along its foot, and the zoom a rectangle fits at
+    _flowArea() { return { W: this._openWidth(), H: this._$.vp.clientHeight - (this._$.litbar.hidden ? 20 : this._$.litbar.offsetHeight + 30), pad: 50 }; }
+    _fitK(R) { const a = this._flowArea(); return Math.min((a.W - 2 * a.pad) / Math.max(1, R.x1 - R.x0), (a.H - 2 * a.pad) / Math.max(1, R.y1 - R.y0)); }
+    // a step out of view: glide to it, at the same zoom unless it doesn't fit
+    _flowFollow(f, i) {
+      let R = this._flowRects(f, [i]);
+      if (!R) return;
+      // a step too long to fit even zoomed out: the box it reaches
+      if (this._fitK(R) < 0.35 && f.now) { const n = f.now[0] === '~' ? f.ghosts.get(f.now) : this._model.nodes.get(f.now); if (n) R = { x0: n.x, y0: n.y, x1: n.x + n.w, y1: n.y + n.h }; }
+      const a = this._flowArea(), v = this._view;
+      if (R.x0 * v.k + v.x >= a.pad / 2 && R.y0 * v.k + v.y >= a.pad / 2 && R.x1 * v.k + v.x <= a.W - a.pad / 2 && R.y1 * v.k + v.y <= a.H - a.pad / 2) return;
+      const k = Math.max(0.35, Math.min(v.k, this._fitK(R)));
+      const to = { k, x: a.W / 2 - ((R.x0 + R.x1) / 2) * k, y: a.H / 2 - ((R.y0 + R.y1) / 2) * k }, from = { ...v }, t0 = performance.now(), ms = 380;
+      cancelAnimationFrame(this._followRaf);
+      const step = (now) => {
+        const t = Math.min(1, (now - t0) / ms), e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+        this._view = { k: from.k + (to.k - from.k) * e, x: from.x + (to.x - from.x) * e, y: from.y + (to.y - from.y) * e };
+        this._applyView();
+        if (t < 1) this._followRaf = requestAnimationFrame(step); else this._saveView();
+      };
+      this._followRaf = requestAnimationFrame(step);
     }
     _flowBar() {
       const f = this._flow, b = this._$.litbar;
