@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.8.2 (2026-11-18)
+
+New: **Diagnostics… in the About dialog.** It makes a file for an issue or a forum post, and you choose every time,
+with nothing ticked to start with: **anonymised** (names, IDs, addresses, keys and free text replaced with
+stand-ins, the same one wherever a thing appears, so the problem's shape is still there) or **with real names**.
+You can add a snapshot of the open function as it is now and any of its saved versions; each version in the
+Versions drawer has its own download button. The file is made in your browser and saved on your device; nothing
+is sent anywhere. Home Assistant's own Download diagnostics is now anonymised too, with the board's layouts and
+settings in it instead of only sizes.
+
+New: **privacy checks** on every push, each shown to fail when its rule is broken: the board's code can reach
+nothing but your Home Assistant; the integration's Python has no network code; anonymised diagnostics hold none
+of the test data put in every field, and the log never holds the board's notes, layouts or snapshots; on a real
+Home Assistant, every request the board makes goes to that Home Assistant, no connection comes from the
+integration, and its data is stored only in its own files and can't be read without logging in as an
+administrator. The README's new **Privacy** section has the details.
+
+Changed: the board now refuses to open, or fetch from, anything but a path on your Home Assistant (the drawer's
+pages and Node-RED's flows), so a bad address from elsewhere can't send it somewhere else.
+
+
 ## 0.8.1 (2026-11-18)
 
 Changed: **restoring a version no longer saves a backup copy every time.** The restore dialog has a box, unticked

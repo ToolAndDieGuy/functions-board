@@ -9,7 +9,8 @@ function out in a sandbox. Published through HACS. Read this before changing any
 - `custom_components/functions_board/`: the integration. Python is small: `__init__.py` (panel, static path,
   optional dashboard card), `websocket.py` (admin-only commands; the board's shared store), `store.py`,
   `nodered.py` (the Node-RED flow summary kept for every board), `versions.py` (saved versions of functions: kept
-  only; the board makes and restores them), `sources.py`, `diagnostics.py`, `config_flow.py`.
+  only; the board makes and restores them), `sources.py`, `diagnostics.py` (the diagnostics file and its
+  anonymiser; also the `functions_board/diagnostics` command's), `config_flow.py`.
 - `custom_components/functions_board/frontend/functions-board.js`: the whole board, one plain-JS web component
   (~10,000 lines, no build step, no dependencies). Top to bottom:
   - the **library section** (pure functions, testable in Node without a browser): config analysis (`analyze`,
@@ -39,7 +40,7 @@ sh tests/run-all.sh --e2e layout # only the suites matching a pattern
 | `tests/static.test.js` | rules on the board's source: every `T('key')` has English text and every text is used (keys must be literal, not built at runtime); runtime CSS classes only in scoped rules; no ingress sessions or cookies |
 | `tests/wiring.test.js` | `analyze()` on many automation and script shapes: which arrows, roles, loops |
 | `tests/sandbox.test.js` | the sandbox engine with a stand-in template renderer: triggers, conditions, actions, modes, waits, MQTT, per-entity triggers, `sbxRewrite` |
-| `tests/backend/` (pytest) | the Python side: setup, store, websocket commands, diagnostics |
+| `tests/backend/` (pytest) | the Python side: setup, store, websocket commands, diagnostics; `test_privacy.py`: canary data through the anonymiser and the log, no network modules, the manifest (sockets are blocked in all of it) |
 | `tests/e2e/apitest.py` | backend over the real API; onboards the test users and writes the tokens the browser suites use |
 | `tests/e2e/ui.test.js` | first run, import, migration, live sync, dashboard modes, non-admin |
 | `tests/e2e/regress.test.js [filter]` | one case per fixed bug or new behaviour, named by version (`0.7.0 …`) |
@@ -47,6 +48,7 @@ sh tests/run-all.sh --e2e layout # only the suites matching a pattern
 | `tests/e2e/sync.test.js` | two boards editing at once |
 | `tests/e2e/sandbox.test.js` | the sandbox on the garage function, templates rendered by the real Home Assistant, nothing sent that changes anything |
 | `tests/e2e/versions.test.js` | versions on the garage: save, compare in a tab, sandbox a version, restore (off/delete what was added since), replaced devices |
+| `tests/e2e/privacy.test.js` | a tour of everything: every request the board starts goes to this Home Assistant; no connection from the integration (`ha/netguard.log`); its data only in its own `.storage` files; nothing without an admin login; the Diagnostics dialog's forced choice and its files |
 | `tests/e2e/layout.test.js` | large synthetic functions in both directions: no overlap, arrows 16 px apart, none through a box, every crossing hops, rows wrap |
 | `tests/e2e/size.test.js` | 1,000 automations: import and open times (slow; `--size`) |
 
@@ -70,6 +72,15 @@ sh tests/run-all.sh --e2e layout # only the suites matching a pattern
   dialog. Writes happen only in Full manager mode, through Home Assistant's own APIs, after the person confirms.
   Never create Supervisor ingress sessions or write their cookies (the HACS review rejected that; a static test
   guards it). The sandbox only reads.
+- **Privacy rules** the tests hold (README "Privacy"): the board reaches nothing but this Home Assistant (one
+  `fetch`, Node-RED's, guarded by `SAME_ORIGIN`; no other network APIs or outside assets; the project page only as
+  a plain link); every websocket message type is on the list in `tests/static.test.js` (add a new one there on
+  purpose); the Python imports no network module. Diagnostics are anonymised or not as the person chooses, every
+  time; Home Assistant's own download is always anonymised. A new field that holds someone's words should be under
+  a key in `FREE_TEXT_KEYS` or `NAME_KEYS` in `diagnostics.py`, and get a marker in `test_privacy.py`.
+- **netguard** (`tests/netguard/sitecustomize.py`, test-only): `start-ha.sh` starts Home Assistant with it on
+  `PYTHONPATH`; it logs every outgoing connection and lookup, with the stack and whoever submitted the worker job,
+  to `ha/netguard.log`. It changes nothing and never ships.
 - **Versions**: `node scripts/bump.js X.Y.Z` updates the manifest, the board's `VERSION` and the CHANGELOG
   heading (it writes today's UTC date; fix it to the local date if they differ). Each release gets a CHANGELOG
   entry written for users.

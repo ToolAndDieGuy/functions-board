@@ -138,9 +138,27 @@ In either mode:
 - **Versions:** saving one reads the function through Home Assistant's own APIs (configs, helper settings, members, the devices its steps use, its layout) and keeps the copy in `.storage/functions_board.versions` (at most 50 per function, 1 MB each). Saving, renaming, deleting, opening a version in a tab and trying it in the sandbox change nothing in Home Assistant.
 - **Show Node-RED flows** reads your Node-RED app's flows in your browser, through the app's page in Home Assistant, only while it's switched on. That page opens to the board once you've opened Node-RED from the sidebar (or with the board's **Open Node-RED** button); until then the board shows the flows last read on any device, marked with when. The integration keeps that summary (group and tab names and the entity IDs they use, no flow code) so every board shares it. The board never signs itself in to the app.
 - The board's own data (which labels are functions, box positions, frames, notes and test buttons) is kept in `.storage/functions_board` and shared between administrators. The Node-RED flow summary, when you use Node-RED flows, is kept in `.storage/functions_board.nodered`, and saved versions in `.storage/functions_board.versions`. Your view (zoom, whether the list is open) is kept per user.
-- Nothing leaves your Home Assistant: no network calls, no external libraries, no telemetry.
+- Nothing leaves your Home Assistant: no network calls, no external libraries, no telemetry. See [Privacy](#privacy) for how that's tested.
 
 Removing the integration takes the page out of the sidebar. Labels and categories stay; they are ordinary Home Assistant labels you can delete under **Settings → Areas, labels & zones → Labels**.
+
+## Privacy
+
+The board talks to your Home Assistant and nothing else, and what it keeps stays in Home Assistant's own storage (`.storage/functions_board*`). It has no network code of its own, installs no Python packages and sends no telemetry. What other integrations do with data is up to them: if a test step or a restore calls a cloud service, that's the service you chose.
+
+**Diagnostics** are a file you download and decide what to do with. In the board's **About** dialog, **Diagnostics…** makes you choose every time, with nothing ticked to start with:
+
+- **Anonymised:** names, IDs, addresses, keys and free text are replaced with stand-ins, the same one wherever a thing appears (`light.kitchen` is `light.e3` in the layout, the triggers and the templates alike), so the shape of the problem is still there.
+- **With real names and IDs**, as they are in Home Assistant, with a reminder to look through the file before posting it anywhere public.
+
+You can add a snapshot of the open function as it is now and any of its saved versions (each version in the Versions drawer has its own download button). Home Assistant's own **Download diagnostics** (Settings → Devices & services) can't ask, so it's always anonymised.
+
+**How it's held to this.** Every push runs these checks, and each one has been shown to fail when its rule is broken:
+
+- *The board's code:* no way to reach another computer (no WebSocket, XHR, beacons, workers or outside images, fonts or scripts); its one `fetch` (Node-RED's flows) must be a path on your Home Assistant; the only outside address is the project page, as a plain link; every message it sends Home Assistant is on a list, and the ones that act (pausing automations, a logbook note, your own test steps, the Supervisor only asked) are tied to their places.
+- *The integration's Python:* no HTTP client, socket, mail, DNS or cloud module, and none of Home Assistant's web sessions; no packages to install.
+- *With marker data* in every field: anonymised diagnostics hold none of it; the log never holds the board's notes, layouts or snapshots; the backend tests run with the network blocked.
+- *On a real Home Assistant:* every request the board's page makes during a tour of everything it does goes to that Home Assistant; no connection or name lookup comes from the integration (each one is logged with the code behind it); the marker data is stored only in the integration's own files, never in `www/` (served without a login), the database or the log; nothing of it can be read without logging in, or by someone who isn't an administrator.
 
 ## Requirements
 
@@ -209,7 +227,7 @@ To try a table without editing the file, add it from the browser console on the 
 
 ## Feedback
 
-This is a prototype (v0.8.1). Please open an [issue](https://github.com/ToolAndDieGuy/functions-board/issues) for bugs, wrong or missing arrows, or ideas. A screenshot of the board and the automation's YAML help a lot.
+This is a prototype (v0.8.2). Please open an [issue](https://github.com/ToolAndDieGuy/functions-board/issues) for bugs, wrong or missing arrows, or ideas. A screenshot of the board and the automation's YAML help a lot, and so does a diagnostics file (anonymised is fine; see [Privacy](#privacy)).
 
 ## Credits
 

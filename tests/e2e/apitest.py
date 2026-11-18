@@ -160,7 +160,8 @@ async def main():
             async with s.get(BASE + f"/api/diagnostics/config_entry/{entry_id}", headers=H) as r:
                 diag = await r.json() if r.status == 200 else {}
             dd = diag.get("data") or {}
-            check("diagnostics: version, mode, sizes; no names", dd.get("mode") == "full" and "layouts" in dd and "functions" in dd and "fn_test" not in json.dumps(dd), diag)
+            about = dd.get("about") or {}
+            check("diagnostics (Home Assistant's own download): anonymised, with the board's shape and no label names", about.get("mode") == "full" and about.get("anonymised") is True and "layouts" in (dd.get("board") or {}) and "fn_test" not in json.dumps(dd), diag)
             async with s.post(BASE + "/api/config/config_entries/options/flow", json={"handler": entry_id}, headers=H) as r:
                 of = await r.json()
             async with s.post(BASE + f"/api/config/config_entries/options/flow/{of.get('flow_id')}", json={"mode": "organise", "card": False}, headers=H) as r:

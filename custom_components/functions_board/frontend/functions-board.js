@@ -1,5 +1,5 @@
 /*!
- * Functions board v0.8.1 (prototype) for Home Assistant
+ * Functions board v0.8.2 (prototype) for Home Assistant
  *
  * One page per "function": every automation, script, helper and device that makes one job work,
  * grouped by a Home Assistant label and wired together from their own configs.
@@ -13,7 +13,7 @@
  */
 (() => {
   'use strict';
-  const VERSION = '0.8.1';
+  const VERSION = '0.8.2';
   const loaded = customElements.get('functions-board');
   if (loaded) {
     if (loaded.VERSION !== VERSION) {
@@ -1561,11 +1561,13 @@
   const getPath = (o, path) => path.reduce((x, k) => (x == null ? x : x[k]), o);
   // JSON with its keys sorted: two configs compare equal whatever order Home Assistant stored their keys in
   // the UI helpers whose settings a version keeps (their <domain>/list, update, create and delete commands)
+  // a path on this Home Assistant ("/config/…"), not an address elsewhere ("//host", "https://…")
+  const SAME_ORIGIN = /^\/(?![\/\\])/;
   // the "Other…" entry of the sandbox's dropdowns
   const SBX_OTHER = '\u0001other';
   const VER_HELPERS = new Set(['input_boolean', 'input_number', 'input_text', 'input_select', 'input_datetime', 'input_button', 'counter', 'timer', 'schedule']);
   // what may be clicked on a saved version's board: looking, the sandbox, and the versions themselves
-  const VER_OK_ACTS = /^(zoomin|zoomout|fit|togglelist|legend|hl|hl-.+|sandbox|sbx-.+|flow-.+|lit-.+|edge|close|back|newtab|modal-.+|ver-.+|vtab.*|versions|about|hint-x|find-x|nr-open)$/;
+  const VER_OK_ACTS = /^(zoomin|zoomout|fit|togglelist|legend|hl|hl-.+|sandbox|sbx-.+|flow-.+|lit-.+|edge|close|back|newtab|modal-.+|ver-.+|vtab.*|versions|about|diag|diag-.+|hint-x|find-x|nr-open)$/;
   // a short fingerprint of a snapshot's items and members: equal when the function is the same as that version
   const verPrint = (snap) => {
     const body = JSON.stringify([[...(snap.members || [])].sort(), Object.keys(snap.items || {}).sort().map((k) => [k, (snap.items[k] || {}).cfg || null])]);
@@ -1886,6 +1888,9 @@ button{font:inherit;color:inherit}
 .dlg input:not([type=checkbox]),.dlg select{padding:8px 10px;border-radius:8px;border:1px solid var(--divider-color);background:var(--primary-background-color);color:var(--primary-text-color);font:inherit;font-size:14px}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .dlg label.chk{flex-direction:row;align-items:center;gap:8px;font-size:13px;color:var(--primary-text-color)}
+.dlg.diag .dwarn{color:var(--warning-color,#b26a00)}
+.dlg.diag h4+p{margin-top:0}
+.dlg.diag .dvers{display:flex;flex-direction:column;gap:4px;margin-top:6px;max-height:180px;overflow:auto}
 .hint{font-size:12px;color:var(--secondary-text-color);line-height:1.5}
 .btns{display:flex;justify-content:flex-end;gap:8px;align-items:center}
 .btns .cnt{margin-right:auto}
@@ -2723,6 +2728,27 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       ver_restore_lead: '{fnName} goes back to how it was saved ({when}), through Home Assistant\'s own config APIs, the way its editors save.',
       ver_now_saved_as: 'What\'s there now is already saved as "{name}", so you can go back to it either way.',
       ver_restore_unsaved: 'What\'s there now isn\'t saved as a version: without a backup, you can\'t come back to it.',
+      diag_about_h: 'Diagnostics',
+      diag_about_p: 'For an issue or a forum post: a file made here, anonymised or with real names, as you choose. Nothing is sent anywhere.',
+      diag_always: 'Always: the board\'s settings, layouts, notes and tests, the list of saved versions, and the Node-RED flow summary.',
+      diag_anon: 'Anonymised: names, IDs, addresses, keys and free text replaced with stand-ins (the same one wherever a thing appears)',
+      diag_btn: 'Diagnostics…',
+      diag_choose: 'Choose anonymised or real names first.',
+      diag_copied: 'Diagnostics copied',
+      diag_copy: 'Copy',
+      diag_download: 'Download',
+      diag_failed: 'Couldn\'t make the file: {e}',
+      diag_h: 'Download diagnostics',
+      diag_incl_h: 'What\'s in it',
+      diag_lead: 'A file to attach to an issue or a forum post. Nothing is sent anywhere: it\'s made here and saved on this device, and you decide where it goes.',
+      diag_making: 'Making the file…',
+      diag_names_h: 'Names (choose one)',
+      diag_real: 'With real names and IDs, as they are in Home Assistant',
+      diag_real_warn: 'Configs can hold addresses, phone names or keys typed into them. Look through the file before you post it anywhere public.',
+      diag_saved: 'Diagnostics saved to this device',
+      diag_snap: 'A snapshot of {fnName} as it is now: its automations\' and scripts\' configs, helpers and devices',
+      diag_ver_t: 'Download this version for debugging (anonymised or with real names)',
+      diag_vers: 'Saved versions of {fnName}, with their snapshots:',
       ver_restore_backup: 'Save what\'s there now as a version first ("Before restoring …")',
       ver_restore_t: 'Put this function back as it was in this version',
       ver_restored: 'Restored "{name}"',
@@ -3096,6 +3122,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this_install_is_set_to: 'This install is set to Organise only: the board doesn\'t edit or delete automations, scripts, helpers or devices, and doesn\'t run tests. Full manager, which adds deleting and tests, is in the Functions Board integration\'s options.',
       the_debugger_watch_triggers_monitor: 'The debugger, Watch triggers, monitor boxes and the live checks on arrows only read: watching a trigger never runs the automation.',
       show_node_red_flows_in: 'Show Node-RED flows (in the Key, off until you switch it on) reads your Node-RED app\'s flows in your browser to draw what they use. The flows last read (names and entity IDs, no flow code) are kept by the integration for every board.',
+      privacy_promise: 'Nothing leaves your Home Assistant: the board talks only to it, keeps its data in Home Assistant\'s own storage, and sends no telemetry. Diagnostics are a file you download, anonymised or not as you choose.',
       every_change_is_shown_before: 'Every change is shown before it happens, and Undo (Ctrl+Z) takes it back, except tests and deleting a helper that an integration set up.',
       shared_between_administrators_functions_board: 'shared between administrators (Functions Board integration)',
       stored_for_your_user_only: 'stored for your user only (install the Functions Board integration to share them)',
@@ -6478,6 +6505,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         case 'add-existing': this._openManager('pick', label || '__new'); break;
         case 'import': this._openManager('detect'); break;
         case 'about': this._aboutModal(); break;
+        case 'diag': this._diagModal(el.dataset.ver || null); break;
+        case 'diag-go': this._diagGo(false); break;
+        case 'diag-copy': this._diagGo(true); break;
         case 'hamenu': this.dispatchEvent(new Event('hass-toggle-menu', { bubbles: true, composed: true })); break;
         case 'hint-x': this._data.ui.hintOff = true; this._save(); this._applyMode(); break;
         case 'mgr-tab': {
@@ -6626,6 +6656,16 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     }
     _onChange(e) {
       const t = e.target, g = this._mgr;
+      // diagnostics: anonymised or real names, one of the two, never both and never neither
+      if (t.name === 'danon' || t.name === 'dreal') {
+        const m = this._$.modal, other = m.querySelector(`input[name="${t.name === 'danon' ? 'dreal' : 'danon'}"]`);
+        if (t.checked && other) other.checked = false;
+        const pick = m.querySelector('input[name="danon"]:checked, input[name="dreal"]:checked');
+        m.querySelectorAll('[data-act="diag-go"], [data-act="diag-copy"]').forEach((b) => { b.disabled = !pick; });
+        const w = m.querySelector('.dwarn');
+        if (w) w.hidden = !(pick && pick.name === 'dreal');
+        return;
+      }
       if (t.classList && t.classList.contains('sbent')) { this._sbxPick(t.value); return; }
       if (t.classList && t.classList.contains('sbrun')) { this._sbxTrigs(); return; }
       if (t.classList && t.classList.contains('sbsel')) {
@@ -6967,6 +7007,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     // screen instead; the app's Back returns to the board.
     _inApp() { return !!(this._hass && this._hass.auth && this._hass.auth.external); }
     _openDrawer(url, title, opt = {}) {
+      // only Home Assistant's own pages open in the drawer (or in a new tab from it), never another address
+      if (!SAME_ORIGIN.test(String(url))) return;
       if (this._inApp() && /^\/config\//.test(url)) { this._goTo(url, opt.capture); return; }
       this._leaveDrawerMode();
       if (!opt.capture) this._capture = null;
@@ -8056,7 +8098,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const row = (v) => `<div class="vrow${active && active.id === v.id ? ' on' : ''}${viewing === v.id ? ' view' : ''}" data-id="${esc(v.id)}"><div class="vh"><b>${esc(v.name)}</b>${active && active.id === v.id ? `<span class="vbadge">${T('ver_active')}</span>` : ''}${v.auto ? `<span class="vauto">${T('ver_auto')}</span>` : ''}</div>${v.desc ? `<div class="vdesc">${esc(v.desc)}</div>` : ''}<div class="vm">${esc(this._verWhen(v.at))}${v.by ? ' · ' + esc(v.by) : ''}</div>`
         + `<div class="vb"><button data-act="ver-open" data-id="${esc(v.id)}"><ha-icon icon="mdi:tab"></ha-icon>${T('ver_open')}</button><button data-act="ver-sbx" data-id="${esc(v.id)}"><ha-icon icon="mdi:flask-outline"></ha-icon>${T('ver_try')}</button>`
         + `<button data-act="ver-restore" data-id="${esc(v.id)}"${full && !(active && active.id === v.id) ? '' : ' disabled'} title="${full ? (active && active.id === v.id ? T('ver_is_active') : T('ver_restore_t')) : T('ver_restore_full')}"><ha-icon icon="mdi:backup-restore"></ha-icon>${T('ver_restore')}</button>`
-        + `<button class="ib" data-act="ver-edit" data-id="${esc(v.id)}" title="${T('ver_edit_t')}"><ha-icon icon="mdi:pencil-outline"></ha-icon></button><button class="ib" data-act="ver-del" data-id="${esc(v.id)}" title="${T('ver_del_t')}"><ha-icon icon="mdi:delete-outline"></ha-icon></button></div></div>`;
+        + `<button class="ib" data-act="diag" data-ver="${esc(v.id)}" title="${T('diag_ver_t')}"><ha-icon icon="mdi:file-download-outline"></ha-icon></button><button class="ib" data-act="ver-edit" data-id="${esc(v.id)}" title="${T('ver_edit_t')}"><ha-icon icon="mdi:pencil-outline"></ha-icon></button><button class="ib" data-act="ver-del" data-id="${esc(v.id)}" title="${T('ver_del_t')}"><ha-icon icon="mdi:delete-outline"></ha-icon></button></div></div>`;
       const now = `<div class="vrow cur${active ? '' : ' on'}"><div class="vh"><b>${T('ver_now')}</b>${active ? `<span class="muted">${T('ver_now_is', { name: esc(active.name) })}</span>` : `<span class="vbadge">${T('ver_active')}</span><span class="muted">${T('ver_now_unsaved')}</span>`}</div></div>`;
       box.innerHTML = now + (vs.length ? vs.slice().reverse().map(row).join('') : `<div class="muted pad">${T('ver_none')}</div>`);
     }
@@ -9403,7 +9445,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           if (app.state !== 'started') return done({ err: T('the_node_red_app_isn') });
           const info = await this._ws({ type: 'supervisor/api', endpoint: `/addons/${app.slug}/info`, method: 'get' });
           const base = info && info.ingress_url;
-          if (!base) return done({ err: T('the_node_red_app_has') });
+          // a path on this Home Assistant (/api/hassio_ingress/…/), never another address: the only fetch the board makes
+          if (!base || !SAME_ORIGIN.test(base)) return done({ err: T('the_node_red_app_has') });
           // through the app's page in Home Assistant, as opening Node-RED from the sidebar does
           const res = await fetch(base + 'flows', { credentials: 'same-origin', headers: { 'Node-RED-API-Version': 'v2' } }).catch(() => null);
           if (!res || res.status === 401 || res.status === 403) {
@@ -9827,13 +9870,66 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       li.push(T('show_node_red_flows_in'));
       li.push(T('ver_promise'));
       li.push(T('every_change_is_shown_before'));
+      li.push(T('privacy_promise'));
       return li;
+    }
+    /* ---------- diagnostics: a file for an issue or a forum post, made here and handed to the person ----------
+       Nothing is sent anywhere. The person chooses anonymised or real names every time (neither is ticked to
+       start with, and nothing can be made until one is), and may add a snapshot of the open function as it is
+       now and any of its saved versions. */
+    async _diagModal(verId) {
+      const m = this._$.modal, label = this._data && this._data.ui && this._data.ui.current;
+      m.hidden = false;
+      let vs = [];
+      if (label) { try { vs = await this._verList(label); } catch (e) { vs = []; } }
+      const fnName = label ? esc(this._fnName(label)) : '';
+      const vrow = (v) => `<label class="chk"><input type="checkbox" name="dver" value="${esc(v.id)}"${v.id === verId ? ' checked' : ''}>${esc(v.name)} <span class="muted">· ${esc(this._verWhen(v.at))}</span></label>`;
+      m.innerHTML = `<div class="dlg diag"><h3>${T('diag_h')}</h3><p class="dtext">${T('diag_lead')}</p>`
+        + `<h4>${T('diag_names_h')}</h4><label class="chk"><input type="checkbox" name="danon">${T('diag_anon')}</label><label class="chk"><input type="checkbox" name="dreal">${T('diag_real')}</label>`
+        + `<div class="hint dwarn" hidden>${T('diag_real_warn')}</div>`
+        + `<h4>${T('diag_incl_h')}</h4><p class="muted">${T('diag_always')}</p>`
+        + (label ? `<label class="chk"><input type="checkbox" name="dsnap">${T('diag_snap', { fnName })}</label>` : '')
+        + (vs.length ? `<div class="dvers"><div class="muted">${T('diag_vers', { fnName })}</div>${vs.slice().reverse().map(vrow).join('')}</div>` : '')
+        + `<div class="dval"></div><div class="btns"><button data-act="modal-cancel">${T('cancel')}</button><button data-act="diag-copy" disabled>${T('diag_copy')}</button><button class="primary" data-act="diag-go" disabled>${T('diag_download')}</button></div></div>`;
+    }
+    async _diagGo(copy) {
+      const m = this._$.modal, val = m.querySelector('.dval'), label = this._data && this._data.ui && this._data.ui.current;
+      const pick = m.querySelector('input[name="danon"]:checked, input[name="dreal"]:checked');
+      if (!pick) { val.textContent = T('diag_choose'); return; }
+      const anonymise = pick.name === 'danon', snap = !!(m.querySelector('input[name="dsnap"]') || {}).checked;
+      const vids = [...m.querySelectorAll('input[name="dver"]:checked')].map((x) => x.value);
+      const btns = m.querySelectorAll('[data-act="diag-go"], [data-act="diag-copy"]');
+      btns.forEach((b) => { b.disabled = true; });
+      val.textContent = T('diag_making');
+      try {
+        const msg = { type: 'functions_board/diagnostics', anonymise };
+        if (label && (snap || vids.length)) msg.label = label;
+        if (label && snap) msg.snapshot = await this._verSnapshot(label);
+        if (vids.length) msg.version_ids = vids;
+        const text = JSON.stringify(await this._ws(msg), null, 2);
+        if (copy) {
+          await navigator.clipboard.writeText(text);
+          this._toast(T('diag_copied'));
+        } else {
+          // saved on this device by the browser: a link to the file made here, clicked, then let go
+          const day = new Date().toISOString().slice(0, 10), a = document.createElement('a');
+          a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+          a.download = `functions_board_diagnostics_${day}${anonymise ? '_anonymised' : ''}.json`;
+          document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+          this._toast(T('diag_saved'));
+        }
+        this._closeModal();
+      } catch (e) {
+        val.textContent = T('diag_failed', { e: (e && (e.message || e.code)) || e });
+        btns.forEach((b) => { b.disabled = false; });
+      }
     }
     _aboutModal() {
       const m = this._$.modal;
       m.hidden = false;
       const store = this._storeMode === 'shared' ? T('shared_between_administrators_functions_board') : T('stored_for_your_user_only');
-      m.innerHTML = `<div class="dlg about"><h3>${T('functions_board')} <span class="muted">${T('v_prototype', { version: VERSION })}</span></h3><h4>${T('what_it_changes', { extra: this._storeMode === 'shared' ? (this._full() ? T('full_manager') : T('organise_only')) : '' })}</h4><ul>${this._promise().map((x) => `<li>${esc(x)}</li>`).join('')}</ul><h4>${T('where_things_are_kept')}</h4><p>${T('frames_notes_and_positions_are', { store })}</p><h4>${T('how_the_arrows_are_drawn')}</h4><p>${T('from_each_automation_and_script')}</p><div class="btns">${REPO_URL ? `<a class="lnk" href="${REPO_URL}" target="_blank" rel="noopener">${T('project_page_and_issues')}</a>` : ''}<button data-act="modal-cancel">${T('close')}</button></div></div>`;
+      m.innerHTML = `<div class="dlg about"><h3>${T('functions_board')} <span class="muted">${T('v_prototype', { version: VERSION })}</span></h3><h4>${T('what_it_changes', { extra: this._storeMode === 'shared' ? (this._full() ? T('full_manager') : T('organise_only')) : '' })}</h4><ul>${this._promise().map((x) => `<li>${esc(x)}</li>`).join('')}</ul><h4>${T('where_things_are_kept')}</h4><p>${T('frames_notes_and_positions_are', { store })}</p><h4>${T('how_the_arrows_are_drawn')}</h4><p>${T('from_each_automation_and_script')}</p><h4>${T('diag_about_h')}</h4><p>${T('diag_about_p')}</p><div class="btns">${REPO_URL ? `<a class="lnk" href="${REPO_URL}" target="_blank" rel="noopener">${T('project_page_and_issues')}</a>` : ''}<button data-act="diag"><ha-icon icon="mdi:file-download-outline"></ha-icon>${T('diag_btn')}</button><button data-act="modal-cancel">${T('close')}</button></div></div>`;
     }
 
     /* ---------- hide and delete (8.2): kept visibly apart, each with its own words ---------- */
