@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: A translation
+    url: https://github.com/ToolAndDieGuy/functions-board#translating
+    about: Translations are added on request. The README's Translating section says how, and you're welcome to open an issue asking for your language.
