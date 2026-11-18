@@ -19,10 +19,12 @@ from .const import (
     MAX_LABEL_LEN,
     MAX_LAYOUT_BYTES,
     MAX_SOURCES,
+    MAX_VERSION_TEXT,
     SIGNAL_UPDATED,
 )
 from .nodered import clean_groups
 from .sources import async_sources
+from .versions import meta as version_meta
 
 if TYPE_CHECKING:
     from . import BoardData
@@ -43,6 +45,11 @@ def async_register(hass: HomeAssistant) -> None:
         ws_sources,
         ws_nodered,
         ws_nodered_keep,
+        ws_versions,
+        ws_version_get,
+        ws_version_save,
+        ws_version_edit,
+        ws_version_delete,
     ):
         websocket_api.async_register_command(hass, handler)
 
@@ -283,4 +290,116 @@ def ws_nodered_keep(
         connection.send_error(msg["id"], problem, "Flow groups larger than 1 MB")
         return
     board.notify(hass, {"what": "nodered", "client": msg.get("client", "")})
+    connection.send_result(msg["id"])
+
+
+# ---- saved versions of a function (versions.py). The board makes the snapshot from Home Assistant's own APIs and
+# restores through them; these commands only keep, list and hand back what it saved.
+VTEXT = vol.All(str, vol.Length(max=MAX_VERSION_TEXT))
+VID = vol.All(str, vol.Match(r"^[0-9a-f]{32}$"))
+
+
+def _versions_or_error(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg_id: int):
+    board = _board(hass)
+    if board.versions is None:
+        connection.send_error(msg_id, "not_ready", "Versions aren't loaded")
+    return board.versions
+
+
+def _user_name(connection: websocket_api.ActiveConnection) -> str:
+    user = connection.user
+    return user.name if user and user.name else ""
+
+
+@websocket_api.websocket_command({vol.Required("type"): "functions_board/versions", vol.Required("label"): LABEL})
+@websocket_api.require_admin
+@callback
+def ws_versions(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """A function's saved versions, oldest first, without their snapshots."""
+    if (vs := _versions_or_error(hass, connection, msg["id"])) is None:
+        return
+    connection.send_result(msg["id"], {"versions": vs.list(msg["label"])})
+
+
+@websocket_api.websocket_command({vol.Required("type"): "functions_board/version_get", vol.Required("label"): LABEL, vol.Required("version_id"): VID})
+@websocket_api.require_admin
+@callback
+def ws_version_get(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """One saved version, with its snapshot."""
+    if (vs := _versions_or_error(hass, connection, msg["id"])) is None:
+        return
+    if (v := vs.get(msg["label"], msg["version_id"])) is None:
+        connection.send_error(msg["id"], "not_found", "No such version")
+        return
+    connection.send_result(msg["id"], v)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "functions_board/version_save",
+        vol.Required("label"): LABEL,
+        vol.Required("name"): vol.All(str, vol.Length(min=1, max=100)),
+        vol.Optional("desc", default=""): VTEXT,
+        vol.Required("snapshot"): dict,
+        vol.Optional("auto", default=False): bool,
+        vol.Optional("print", default=""): vol.All(str, vol.Length(max=64)),
+        vol.Optional("client"): CLIENT,
+    }
+)
+@websocket_api.require_admin
+@callback
+def ws_version_save(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Keep a snapshot the board made as a new version."""
+    if (vs := _versions_or_error(hass, connection, msg["id"])) is None:
+        return
+    version, problem = vs.add(msg["label"], msg["name"], msg["desc"], _user_name(connection), msg["snapshot"], msg["auto"], msg["print"])
+    if problem or version is None:
+        text = {"too_large": "A snapshot can be at most 1 MB", "too_many": "A function can keep at most 50 versions", "full": "Versions can take at most 20 MB in all"}
+        connection.send_error(msg["id"], problem or "failed", text.get(problem or "", "Not saved"))
+        return
+    _board(hass).notify(hass, {"what": "versions", "label": msg["label"], "client": msg.get("client", "")})
+    connection.send_result(msg["id"], version_meta(version))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "functions_board/version_edit",
+        vol.Required("label"): LABEL,
+        vol.Required("version_id"): VID,
+        vol.Optional("name"): vol.All(str, vol.Length(min=1, max=100)),
+        vol.Optional("desc"): VTEXT,
+        vol.Optional("client"): CLIENT,
+    }
+)
+@websocket_api.require_admin
+@callback
+def ws_version_edit(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Rename a version or change its description."""
+    if (vs := _versions_or_error(hass, connection, msg["id"])) is None:
+        return
+    if (v := vs.edit(msg["label"], msg["version_id"], msg.get("name"), msg.get("desc"))) is None:
+        connection.send_error(msg["id"], "not_found", "No such version")
+        return
+    _board(hass).notify(hass, {"what": "versions", "label": msg["label"], "client": msg.get("client", "")})
+    connection.send_result(msg["id"], version_meta(v))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "functions_board/version_delete",
+        vol.Required("label"): LABEL,
+        vol.Optional("version_id"): VID,
+        vol.Optional("client"): CLIENT,
+    }
+)
+@websocket_api.require_admin
+@callback
+def ws_version_delete(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Delete one saved version, or (no version_id) every version of a function."""
+    if (vs := _versions_or_error(hass, connection, msg["id"])) is None:
+        return
+    if not vs.remove(msg["label"], msg.get("version_id")) and msg.get("version_id"):
+        connection.send_error(msg["id"], "not_found", "No such version")
+        return
+    _board(hass).notify(hass, {"what": "versions", "label": msg["label"], "client": msg.get("client", "")})
     connection.send_result(msg["id"])

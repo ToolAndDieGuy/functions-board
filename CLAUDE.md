@@ -8,7 +8,8 @@ function out in a sandbox. Published through HACS. Read this before changing any
 
 - `custom_components/functions_board/`: the integration. Python is small: `__init__.py` (panel, static path,
   optional dashboard card), `websocket.py` (admin-only commands; the board's shared store), `store.py`,
-  `nodered.py` (the Node-RED flow summary kept for every board), `sources.py`, `diagnostics.py`, `config_flow.py`.
+  `nodered.py` (the Node-RED flow summary kept for every board), `versions.py` (saved versions of functions: kept
+  only; the board makes and restores them), `sources.py`, `diagnostics.py`, `config_flow.py`.
 - `custom_components/functions_board/frontend/functions-board.js`: the whole board, one plain-JS web component
   (~10,000 lines, no build step, no dependencies). Top to bottom:
   - the **library section** (pure functions, testable in Node without a browser): config analysis (`analyze`,
@@ -44,6 +45,7 @@ sh tests/run-all.sh --e2e layout # only the suites matching a pattern
 | `tests/e2e/tools.test.js` | debugger, live checks, tests, arrow editor, Node-RED |
 | `tests/e2e/sync.test.js` | two boards editing at once |
 | `tests/e2e/sandbox.test.js` | the sandbox on the garage function, templates rendered by the real Home Assistant, nothing sent that changes anything |
+| `tests/e2e/versions.test.js` | versions on the garage: save, compare in a tab, sandbox a version, restore (off/delete what was added since), replaced devices |
 | `tests/e2e/layout.test.js` | large synthetic functions in both directions: no overlap, arrows 16 px apart, none through a box, every crossing hops, rows wrap |
 | `tests/e2e/size.test.js` | 1,000 automations: import and open times (slow; `--size`) |
 

@@ -32,6 +32,7 @@ from homeassistant.util.hass_dict import HassKey
 
 from . import websocket
 from .nodered import NodeRedKept
+from .versions import Versions
 from .const import (
     BOARD_FILE,
     CONF_CARD,
@@ -88,6 +89,7 @@ class BoardData:
     module_url: str | None = None
     extra_js: str | None = None
     nodered: NodeRedKept | None = None
+    versions: Versions | None = None
 
     def stored(self) -> dict[str, Any]:
         """The store's contents."""
@@ -125,6 +127,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     )
     hass.data[DATA_KEY].nodered = kept = NodeRedKept(hass)
     await kept.async_load()
+    hass.data[DATA_KEY].versions = versions = Versions(hass)
+    await versions.async_load()
     websocket.async_register(hass)
     return True
 

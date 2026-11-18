@@ -91,6 +91,14 @@ The **Auto-arrange** button's menu sets which way a function flows: **left to ri
 - Only the automations and scripts on the board run in the sandbox. Test buttons and the Test dialog act on the sandbox while it's open.
 - **Follow it on the board.** Whatever you do is played on the board step by step: each step's arrow lights with a dot running along it and a number beside it, conditions show ✓ or ✕ on their arrows, and what isn't on the board (the event a run stood in for, a sensor it checked, the MQTT topic a script publishes to) gets a temporary dashed box beside what it touches. A box with a delay running shows how long is left. Step with ◀ ▶ in the bar under the board, or click a row in the drawer.
 
+### Versions
+
+**Versions** (in the function's toolbar) keeps named snapshots of a function: the configs of its automations and scripts, its helpers' settings, what's in it, the devices its steps use, and its layout. Save one before you change things ("Winter timings", "Before the new sensor"), and the drawer marks whichever version the function matches right now.
+
+- **Open** a version in a tab beside **Now** (the active one, always marked). Its board is drawn from the saved configs, boxes that have changed since or are only in that version are marked, and nothing on it can change your home. The tab's ↗ opens it in a new window, to see it beside what's there now.
+- **Try in sandbox** runs the saved version in the sandbox, without restoring it.
+- **Restore** (Full manager) puts the function back as it was saved. A dialog lists every change first; what's there now is saved as a version of its own, so you can switch back; you choose whether automations added since are turned off or deleted; and if a device its steps used has been replaced, you pick the new one with Home Assistant's device picker.
+
 ### Import, and on a phone
 
 <table>
@@ -114,6 +122,7 @@ Read this before installing. The integration starts in **Organise only** mode:
 - **Delete** a function (its label and layout), a function together with its automations, scripts and helpers, or a single item, after a second step that lists what goes and what still uses it. Devices are never deleted.
 - **Edit the wiring:** adding or removing an arrow rewrites that automation's or script's config the way Home Assistant's own editor does, so `automations.yaml` and `scripts.yaml` are rewritten and YAML comments in them are lost.
 - **Run tests,** which change your home for real: whatever reacts to the change runs. The first test of a session asks first, and every test is written to the logbook.
+- **Restore a saved version** of a function: its automations' and scripts' configs and its UI helpers' settings are written back through Home Assistant's own config APIs (so `automations.yaml` and `scripts.yaml` are rewritten), items it had get the function's label again, and automations added since are turned off or deleted, as you choose (scripts and helpers added since are deleted only if you choose deleting; other items added since just lose the label). A dialog lists every change first, and what's there is saved as a version of its own before anything is written. A device its steps used that's been replaced can be swapped for the new one in the same dialog. Items defined in YAML can't be restored this way and are listed as such.
 
 Every change is shown before it happens, and **Undo** takes it back, except tests and deleting a helper that an integration set up.
 
@@ -121,8 +130,9 @@ In either mode:
 
 - The debugger, Watch triggers, monitor boxes and the live checks on arrows only read. Watching a trigger never runs the automation.
 - The sandbox only reads: your states once when it opens, and templates it asks Home Assistant to render. It never calls a service, fires an event or sets a state.
+- **Versions:** saving one reads the function through Home Assistant's own APIs (configs, helper settings, members, the devices its steps use, its layout) and keeps the copy in `.storage/functions_board.versions` (at most 50 per function, 1 MB each). Saving, renaming, deleting, opening a version in a tab and trying it in the sandbox change nothing in Home Assistant.
 - **Show Node-RED flows** reads your Node-RED app's flows in your browser, through the app's page in Home Assistant, only while it's switched on. That page opens to the board once you've opened Node-RED from the sidebar (or with the board's **Open Node-RED** button); until then the board shows the flows last read on any device, marked with when. The integration keeps that summary (group and tab names and the entity IDs they use, no flow code) so every board shares it. The board never signs itself in to the app.
-- The board's own data (which labels are functions, box positions, frames, notes and test buttons) is kept in `.storage/functions_board` and shared between administrators. The Node-RED flow summary, when you use Node-RED flows, is kept in `.storage/functions_board.nodered`. Your view (zoom, whether the list is open) is kept per user.
+- The board's own data (which labels are functions, box positions, frames, notes and test buttons) is kept in `.storage/functions_board` and shared between administrators. The Node-RED flow summary, when you use Node-RED flows, is kept in `.storage/functions_board.nodered`, and saved versions in `.storage/functions_board.versions`. Your view (zoom, whether the list is open) is kept per user.
 - Nothing leaves your Home Assistant: no network calls, no external libraries, no telemetry.
 
 Removing the integration takes the page out of the sidebar. Labels and categories stay; they are ordinary Home Assistant labels you can delete under **Settings → Areas, labels & zones → Labels**.
@@ -194,7 +204,7 @@ To try a table without editing the file, add it from the browser console on the 
 
 ## Feedback
 
-This is a prototype (v0.7.2). Please open an [issue](https://github.com/ToolAndDieGuy/functions-board/issues) for bugs, wrong or missing arrows, or ideas. A screenshot of the board and the automation's YAML help a lot.
+This is a prototype (v0.8.0). Please open an [issue](https://github.com/ToolAndDieGuy/functions-board/issues) for bugs, wrong or missing arrows, or ideas. A screenshot of the board and the automation's YAML help a lot.
 
 ## Credits
 

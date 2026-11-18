@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.8.0 (2026-11-17)
+
+New: **versions** of a function, to save it as it is, compare, try one in the sandbox, and switch back.
+
+- **Versions** in a function's toolbar saves a named snapshot, with a description: the configs of its automations
+  and scripts, its helpers' settings, what's in it, the devices its steps use, and its layout. The drawer marks the
+  version the function matches right now. Saving changes nothing in Home Assistant; versions are kept by the
+  integration (`.storage/functions_board.versions`, at most 50 per function).
+- **Open a version in a tab** beside **Now**, which stays marked as the active one. The version's board is drawn
+  from its saved configs, with what's changed since or only in that version marked, and it can't change anything.
+  Open it in a new window to see both side by side.
+- **Try a version in the sandbox** without restoring it.
+- **Restore** (Full manager) puts the function back, through Home Assistant's own config APIs. A dialog lists every
+  change first; what's there now is saved as a version of its own; you choose whether automations added since are
+  turned off or deleted; and a device its steps used that's been replaced can be swapped for the new one with
+  Home Assistant's device picker. Items defined in YAML are listed as not restorable.
+
 ## 0.7.2 (2026-11-17)
 
 Shared lines are easier to follow.
