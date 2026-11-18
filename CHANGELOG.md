@@ -1,6 +1,18 @@
 # Changelog
 
-## Unreleased
+## 0.9.0 (2026-11-18)
+
+Improved: **accessibility.** The board was checked with the axe-core accessibility rules (WCAG 2.2 AA) in every
+view, in dark and light mode, and with the keyboard alone, and what turned up is fixed:
+- Text is readable in light mode: red, amber and blue labels, links, white text on coloured buttons and badges,
+  and the boxes the sandbox fades are darker or reworked where they were too faint (4.5:1 or better).
+- A box's spoken name now says everything it shows, including its problems; the list's count is read as
+  "2 problems", not just "2".
+- The side drawer (debugger, runs, sandbox, an editor) is a named region: focus moves into it when it opens and
+  goes back to the box or button you came from when it closes.
+- The find box and notes show where the focus is.
+- If your system asks for less motion, flows on the board show their last step at once instead of playing, the
+  dots along the arrows and the pulses stop, and the view jumps rather than glides.
 
 New: **saved checks.** Do something in the sandbox (open the garage door, let the clock run), then **Save as a
 check**: the board keeps the steps, the states and the time they started from, and what came of it, which you

@@ -1141,7 +1141,7 @@ test('0.9.0 problems: what an automation points at that isn\'t there, on the lis
     const r = b.shadowRoot, chip = r.querySelector('.pchip'), badge = r.querySelector(`.fn[data-fn="${l}"] .pbadge`);
     const box = r.querySelector(`.node[data-key="cover.garage_door_old"] ha-icon.prob`), auto = r.querySelector(`.node[data-key="${k}"] ha-icon.prob`);
     const arrow = [...r.querySelectorAll('path.e.prob')].map((p) => p.dataset.edge);
-    return chip && badge ? { chip: chip.textContent.trim(), chipErr: chip.classList.contains('p-error'), badge: badge.textContent, badgeErr: badge.classList.contains('p-error'), box: box && box.classList.contains('p-error') ? box.title : null, auto: !!auto, arrow } : null;
+    return chip && badge ? { chip: chip.textContent.trim(), chipErr: chip.classList.contains('p-error'), badge: badge.querySelector('[aria-hidden="true"]').textContent, badgeErr: badge.classList.contains('p-error'), box: box && box.classList.contains('p-error') ? box.title : null, auto: !!auto, arrow } : null;
   }, [KEY, lid]), 10000);
   check('0.9.0 the header says how many, in red', !!ui && ui.chip === '2 problems' && ui.chipErr, ui);
   check('0.9.0 ... and so does the function in the list', !!ui && ui.badge === '2' && ui.badgeErr, ui);

@@ -61,7 +61,7 @@ config ha/config test
 want "$MODE" demo && config ha-demo/config demo
 
 # Playwright for the browser tests (the version in package.json), and a Chromium for it unless one is there
-if [ ! -d node_modules/playwright ]; then echo "== Playwright"; npm install --no-audit --no-fund; fi
+if [ ! -d node_modules/playwright ] || [ ! -d node_modules/axe-core ]; then echo "== Playwright"; npm install --no-audit --no-fund; fi
 node -e "require('fs').accessSync(require('playwright').chromium.executablePath())" 2>/dev/null || npx playwright install chromium
 
 # the backend unit tests pin their own Home Assistant, so they get their own venv

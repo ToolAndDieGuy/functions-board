@@ -50,6 +50,7 @@ sh tests/run-all.sh --e2e layout # only the suites matching a pattern
 | `tests/e2e/sandbox.test.js` | the sandbox on the garage function, templates rendered by the real Home Assistant, nothing sent that changes anything |
 | `tests/e2e/versions.test.js` | versions on the garage: save, compare in a tab, sandbox a version, restore (off/delete what was added since), replaced devices |
 | `tests/e2e/privacy.test.js` | a tour of everything: every request the board starts goes to this Home Assistant; no connection from the integration (`ha/netguard.log`); its data only in its own `.storage` files; nothing without an admin login; the Diagnostics dialog's forced choice and its files |
+| `tests/e2e/a11y.test.js` | axe-core (WCAG 2.2 AA) on every view in dark and light mode, with a problem on the board; the keyboard (roving box focus, arrows, Space, Enter, Escape, dialog and drawer focus in and back); spoken names; less motion |
 | `tests/e2e/layout.test.js` | large synthetic functions in both directions: no overlap, arrows 16 px apart, none through a box, every crossing hops, rows wrap |
 | `tests/e2e/size.test.js` | 1,000 automations: import and open times (slow; `--size`) |
 
@@ -73,6 +74,11 @@ sh tests/run-all.sh --e2e layout # only the suites matching a pattern
   dialog. Writes happen only in Full manager mode, through Home Assistant's own APIs, after the person confirms.
   Never create Supervisor ingress sessions or write their cookies (the HACS review rejected that; a static test
   guards it). The sandbox only reads.
+- **Accessibility** (`a11y.test.js`, axe-core is a pinned devDependency): text in a status colour uses its `-ink`
+  variable (`--fb-red-ink`, `--fb-amber-ink`, `--fb-blue-ink`, `--fb-primary-ink`: darker in light mode); white
+  text sits on a fill darkened with `color-mix(… 70%, #000)`; don't fade text with `opacity` (fade borders, icons
+  and backgrounds instead). Words only for screen readers go in a `.srt` span. Motion goes through `lessMotion()`
+  or the `prefers-reduced-motion` rule.
 - **Privacy rules** the tests hold (README "Privacy"): the board reaches nothing but this Home Assistant (one
   `fetch`, Node-RED's, guarded by `SAME_ORIGIN`; no other network APIs or outside assets; the project page only as
   a plain link); every websocket message type is on the list in `tests/static.test.js` (add a new one there on

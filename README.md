@@ -173,6 +173,15 @@ You can add a snapshot of the open function as it is now and any of its saved ve
 - *With marker data* in every field: anonymised diagnostics hold none of it; the log never holds the board's notes, layouts or snapshots; the backend tests run with the network blocked.
 - *On a real Home Assistant:* every request the board's page makes during a tour of everything it does goes to that Home Assistant; no connection or name lookup comes from the integration (each one is logged with the code behind it); the marker data is stored only in the integration's own files, never in `www/` (served without a login), the database or the log; nothing of it can be read without logging in, or by someone who isn't an administrator.
 
+## Accessibility
+
+The board works with the keyboard alone: **Tab** reaches the board, the arrow keys move from box to box, **Space**
+selects, **Enter** opens, **Escape** goes back a step. Each box has a spoken name with what it shows, what it's
+connected to and any problems. Dialogs and the side drawer take focus when they open and give it back when they
+close. Colours pass WCAG AA contrast in dark and light mode, and if your system asks for less motion the board's
+animations stop. A test suite (axe-core plus keyboard checks) holds it to that on every change; if something
+doesn't work with your screen reader or setup, please open an issue.
+
 ## Requirements
 
 - Home Assistant **2026.11** or newer.
@@ -240,7 +249,7 @@ To try a table without editing the file, add it from the browser console on the 
 
 ## Feedback
 
-This is a prototype (v0.8.2). Please open an [issue](https://github.com/ToolAndDieGuy/functions-board/issues) for bugs, wrong or missing arrows, or ideas. A screenshot of the board and the automation's YAML help a lot, and so does a diagnostics file (anonymised is fine; see [Privacy](#privacy)).
+This is a prototype (v0.9.0). Please open an [issue](https://github.com/ToolAndDieGuy/functions-board/issues) for bugs, wrong or missing arrows, or ideas. A screenshot of the board and the automation's YAML help a lot, and so does a diagnostics file (anonymised is fine; see [Privacy](#privacy)).
 
 ## Credits
 
