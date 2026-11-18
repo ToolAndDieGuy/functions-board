@@ -22,7 +22,9 @@ const cl = path.join(root, 'CHANGELOG.md');
 const head = `## ${ver} (${new Date().toISOString().slice(0, 10)})\n\n`;
 let log = fs.existsSync(cl) ? fs.readFileSync(cl, 'utf8') : '# Changelog\n\n';
 if (!log.includes(`## ${ver} `)) {
-  log = log.replace(/^# Changelog\n\n/, '# Changelog\n\n' + head);
+  // what earlier PRs of a stack wrote under "## Unreleased" becomes this version's entry
+  if (/^## Unreleased\n/m.test(log)) log = log.replace(/^## Unreleased\n\n?/m, head);
+  else log = log.replace(/^# Changelog\n\n/, '# Changelog\n\n' + head);
   fs.writeFileSync(cl, log);
   console.log('added CHANGELOG.md heading ' + ver);
 }

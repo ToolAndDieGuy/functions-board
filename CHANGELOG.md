@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+New: **problems.** Home Assistant doesn't warn when something an automation uses is renamed or removed; the
+automation just stops doing its job. The board now finds what each function's automations and scripts point at
+that isn't there or can't work: an entity that doesn't exist (renamed or removed), one no integration provides,
+a device, area, floor or label that's gone, an action whose integration isn't set up, an automation that couldn't
+be set up. Those are red. Unavailable or disabled things and automations that are off are amber, since they may
+be on purpose (not while the function is paused). Each function in the list shows how many; the header has a
+**problems** chip that opens the list, with what each one is in, **Show** and **Edit**; and the boxes and arrows
+involved are marked on the board. It replaces the list's old "something is unavailable" dot.
+
 ## 0.8.2 (2026-11-18)
 
 New: **Diagnostics… in the About dialog.** It makes a file for an issue or a forum post, and you choose every time,

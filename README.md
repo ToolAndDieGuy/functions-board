@@ -27,6 +27,7 @@ Home Assistant files things by type: automations in one list, scripts in another
   - **Monitor boxes** list the last events of one type, or MQTT messages on a topic, while the function is open.
   - The **sandbox** runs the function on a copy of its states, with its own clock: set a state, fire an event or run an automation, and watch what the function would do played on the board step by step, without anything changing in your home. Works in either mode.
   - **Tests** (Full manager only) change a helper, simulate a state, fire an event, send a notification, or run an automation or script. A test can be kept on the board as a button.
+- **Problems:** the board finds what each function's automations and scripts point at that isn't there or can't work (an entity renamed or removed, a device or area that's gone, an action whose integration isn't set up), counts them on the list and marks them on the board. Home Assistant itself doesn't warn about these.
 - **Versions:** save a function as it is, with a name and a description, open a saved version in a tab beside what's there now, try it in the sandbox, and restore it (Full manager).
 - **Arrow editor** (Full manager only): drag from a box's dots (or from one box) onto another to add a trigger, a check, an action or a script call, chosen from Home Assistant's own lists. The YAML is shown and checked before it's saved. Click an arrow to remove what it stands for.
 - **Node-RED flows** (off until you switch them on in the board's Key): each wired group in a flow is a box, with arrows to what it triggers on, reads, changes and runs.
@@ -60,6 +61,15 @@ The screenshots come from the demo setup the tests run on: a garage door that st
 **Why didn't it run?** With the debugger open, selecting an automation lists its last runs and, for each one that stopped, the condition that failed and the value it saw.
 
 ![The Debug panel answering "Garage: left open: why did or didn't it run?": conditions not met, Garage Door is open (it was closed, needs open)](https://raw.githubusercontent.com/ToolAndDieGuy/functions-board/main/docs/images/why.png)
+
+### Problems
+
+Rename or remove an entity, and Home Assistant leaves every automation that used it pointing at nothing. Nothing warns you; the automation just stops doing its job. The board checks what each function's automations and scripts point at:
+
+- **Red** stops something working: an entity that doesn't exist (renamed or removed?), one no integration provides any more, a device, area, floor or label that's gone, an action whose integration isn't set up, an automation that couldn't be set up.
+- **Amber** may be on purpose: something unavailable or disabled, an automation that's turned off (not while the function is paused).
+
+Each function in the list shows how many it has, the header's **problems** chip opens the list (what each one is in, **Show** it on the board, **Edit** the automation), and the boxes and arrows involved are marked. It only reads, and it keeps up as states and configs change.
 
 ### Testing
 
@@ -133,7 +143,7 @@ Every change is shown before it happens, and **Undo** takes it back, except test
 
 In either mode:
 
-- The debugger, Watch triggers, monitor boxes and the live checks on arrows only read. Watching a trigger never runs the automation.
+- The debugger, Watch triggers, monitor boxes, the live checks on arrows and the problems check only read. Watching a trigger never runs the automation.
 - The sandbox only reads: your states once when it opens, and templates it asks Home Assistant to render. It never calls a service, fires an event or sets a state.
 - **Versions:** saving one reads the function through Home Assistant's own APIs (configs, helper settings, members, the devices its steps use, its layout) and keeps the copy in `.storage/functions_board.versions` (at most 50 per function, 1 MB each). Saving, renaming, deleting, opening a version in a tab and trying it in the sandbox change nothing in Home Assistant.
 - **Show Node-RED flows** reads your Node-RED app's flows in your browser, through the app's page in Home Assistant, only while it's switched on. That page opens to the board once you've opened Node-RED from the sidebar (or with the board's **Open Node-RED** button); until then the board shows the flows last read on any device, marked with when. The integration keeps that summary (group and tab names and the entity IDs they use, no flow code) so every board shares it. The board never signs itself in to the app.
