@@ -1898,7 +1898,7 @@ button{font:inherit;color:inherit}
 .node.sel{box-shadow:0 0 0 2px var(--primary-text-color)}
 .node.hov{box-shadow:0 0 0 3px var(--fb-blue)}
 .node.dim{border-color:color-mix(in srgb,var(--divider-color) 60%,transparent);box-shadow:none;background:var(--primary-background-color)}
-.node.dim>.ic,.node.dim .badges,.node.dim .port{opacity:.25}
+.node.dim>.ic,.node.dim .badges ha-icon,.node.dim .port{opacity:.25}
 .node.dim .name{color:var(--secondary-text-color);font-weight:400}
 .node.dim>.tag{color:var(--secondary-text-color)}
 .node.pulse{animation:pulse 1.8s ease-out}
@@ -2131,7 +2131,7 @@ svg path.e.prob{stroke:var(--error-color,#db4437);stroke-dasharray:5 4}
 .board.sbx .node[data-sbx]::after{content:attr(data-sbx);position:absolute;right:8px;bottom:-9px;font-size:10px;line-height:14px;padding:0 6px;border-radius:7px;background:var(--secondary-background-color);border:1px solid var(--divider-color);color:var(--primary-text-color)}
 .board.sbx .node.sbch[data-sbx]::after{background:var(--fb-amber);border-color:var(--fb-amber);color:#000}
 .board.sbx .node.sbch::before{content:'';position:absolute;left:-5px;top:-5px;width:9px;height:9px;border-radius:50%;background:var(--fb-amber)}
-.board.sbx .node.dim{border-style:dashed}.board.sbx .node.dim>.ic,.board.sbx .node.dim .badges,.board.sbx .node.dim .port{opacity:.18}
+.board.sbx .node.dim{border-style:dashed}.board.sbx .node.dim>.ic,.board.sbx .node.dim .badges ha-icon,.board.sbx .node.dim .port{opacity:.18}
 .sbctl .sbf{display:inline-flex;gap:4px;flex:1 1 140px;min-width:0}
 .sbctl .sbf select,.sbctl .sbf input{flex:1 1 auto;min-width:0;max-width:100%}
 .vtabs{position:absolute;left:12px;right:12px;top:10px;z-index:8;display:flex;flex-direction:column;gap:6px;pointer-events:none}

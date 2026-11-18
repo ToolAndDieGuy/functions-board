@@ -161,7 +161,7 @@ async def main():
                 diag = await r.json() if r.status == 200 else {}
             dd = diag.get("data") or {}
             about = dd.get("about") or {}
-            check("diagnostics (Home Assistant's own download): anonymised, with the board's shape and no label names", about.get("mode") == "full" and about.get("anonymised") is True and "layouts" in (dd.get("board") or {}) and "fn_test" not in json.dumps(dd), diag)
+            check("diagnostics (Home Assistant's own download): anonymised, with the board's shape and no label names", about.get("mode") == "full" and about.get("anonymised") is True and "layouts" in (dd.get("board") or {}) and "fn_test" not in json.dumps(dd), {"status": r.status, "about": about, "board": json.dumps(dd.get("board"))[:300], "fn_test": "fn_test" in json.dumps(dd)})
             async with s.post(BASE + "/api/config/config_entries/options/flow", json={"handler": entry_id}, headers=H) as r:
                 of = await r.json()
             async with s.post(BASE + f"/api/config/config_entries/options/flow/{of.get('flow_id')}", json={"mode": "organise", "card": False}, headers=H) as r:
@@ -216,8 +216,13 @@ async def main():
         data = g2["result"]["data"]
 
         # ---- what derived helpers read (5.2) ----
-        src = await ws.call(type="functions_board/sources", entity_ids=["sensor.furnace_filter_status", "input_boolean.filter_due"])
-        tpl = (src.get("result") or {}).get("sources", {}).get("sensor.furnace_filter_status", {})
+        # a template sensor's inputs are known once the template integration has set it up (just after a first start)
+        for _ in range(30):
+            src = await ws.call(type="functions_board/sources", entity_ids=["sensor.furnace_filter_status", "input_boolean.filter_due"])
+            tpl = (src.get("result") or {}).get("sources", {}).get("sensor.furnace_filter_status", {})
+            if tpl.get("entities"):
+                break
+            await asyncio.sleep(0.5)
         check("sources: a template sensor's inputs", src.get("success") and tpl.get("entities") == ["counter.filter_countdown", "input_boolean.filter_due"] and tpl.get("how") == "template", src)
         check("sources: a plain helper reads nothing", "input_boolean.filter_due" not in (src.get("result") or {}).get("sources", {}), src)
         async with s.post(BASE + "/api/config/config_entries/flow", json={"handler": "min_max"}, headers=H) as r:
@@ -295,6 +300,7 @@ async def main():
 
     bad = [n for n, ok in results if not ok]
     print(f"\n{len(results) - len(bad)}/{len(results)} passed" + (": failed " + ", ".join(bad) if bad else ""))
+    return 1 if bad else 0
 
 
-asyncio.run(main())
+raise SystemExit(asyncio.run(main()))

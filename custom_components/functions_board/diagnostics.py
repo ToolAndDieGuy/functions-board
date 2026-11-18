@@ -243,7 +243,8 @@ async def async_build(
             "anonymised": anonymise,
         },
         # the boards' own store: functions, layouts, notes, frames, tests (as the boards save them)
-        "board": board.stored(),
+        # (the same shape before anything is saved: an empty list and no layouts)
+        "board": {"functions": [], "layouts": {}, **(board.stored() or {})},
         # the list of saved versions of every function, without their snapshots
         "versions": {lab: versions.list(lab) for lab in versions.by_label} if versions else {},
         "nodered": board.nodered.kept if board.nodered else None,

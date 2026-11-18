@@ -3,6 +3,7 @@
 //   X1  axe-core (WCAG 2.2 A and AA rules) finds nothing on the board, the Key, a selected box, the debugger,
 //       runs, versions, the sandbox, the save-a-check dialog, About, Diagnostics and the import manager,
 //       in dark mode and in light mode
+//   X2  no words on a box are faded with opacity (axe judges only what's on screen at the moment it looks)
 //   K   the keyboard: one box in the tab order, arrow keys move between boxes, Space selects, Enter opens,
 //       dialogs take focus, keep it and give it back, the drawer takes focus and gives it back, Escape closes
 //   N   what's read out: a box says what it shows and its problems; the list's count says what it counts
@@ -72,6 +73,18 @@ async function audit(page, name, found) {
     await fbq(page, '.drawer [data-act="sbx-set"]').click();
     await until(() => el(page, (b) => (b._sbx && !b._sbx.busy) || null), 15000); await page.waitForTimeout(800);
     await audit(page, 'sandbox', found);
+    // axe sees only what's on screen at that moment; this looks at every box: no words faded with opacity
+    const faded = await el(page, (b) => {
+      const out = [], root = b.shadowRoot.querySelector('.nodes'), w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      for (let t = w.nextNode(); t; t = w.nextNode()) {
+        if (!t.textContent.trim()) continue;
+        let o = 1;
+        for (let e = t.parentElement; e && e !== root; e = e.parentElement) o *= +getComputedStyle(e).opacity;
+        if (o < 0.99) out.push(`${t.parentElement.className} "${t.textContent.trim().slice(0, 20)}" ${o.toFixed(2)}`);
+      }
+      return { out, dim: root.querySelectorAll('.node.dim').length };
+    });
+    check(`X2 no words on a box are faded with opacity, the sandbox's faded boxes included (${light ? 'light' : 'dark'})`, faded.dim > 0 && faded.out.length === 0, faded);
     await fbq(page, '.drawer [data-act="chk-save"]').click(); await fbq(page, '.modal .ckdlg').waitFor();
     await audit(page, 'save a check', found);
     await fbq(page, '.modal [data-act="modal-cancel"]').click(); await el(page, (b) => b._closeDrawer());
