@@ -4,21 +4,20 @@
 
 Shared lines are easier to follow.
 
-- **Point at a box to trace its arrow.** When arrows share a line, pointing at a box draws its arrow on top, end to
-  end through the shared part, and fades the other arrows on that line. Pointing at the box the line starts from
-  traces all of its arrows. On a touch screen, tap a letter: the arrow stays traced until you tap it again or tap
-  somewhere else.
+- **Point at a box to trace its arrows.** When arrows share a line, pointing at a box draws its arrows on top, end
+  to end through the shared part, and fades the other arrows on that line. On a touch screen, select the box: its
+  arrows stay traced until you select something else.
+- **No more coloured dots** at branch points and on the boxes' points: matching sixteen colours across the board
+  didn't work. Where an arrow leaves a shared line there's a small plain dot, so a branch reads as a join, not a
+  crossing (crossings hop).
 - **The sandbox's flow follows the steps.** If a whole run reads at a comfortable size it's framed at once;
   otherwise the board glides to each step as it plays (or as you step through), zooming out only when one step
   doesn't fit, instead of zooming out to fit everything.
-- **Letters instead of coloured dots.** Each arrow on a shared line has a letter, the same where it branches off
-  and beside its other end, unique across the function (A to Z, then AA…). Letters don't depend on telling
-  colours apart, read the same in the light theme, and stay upright top to bottom. Hover a letter to see where its
-  arrow goes.
 
 For contributors: the test kit keeps a separate login for the test and demo Home Assistants (starting the demo
-one no longer loses the test one's password), and `apitest.py` finds the running instance's config folder on its
-own.
+one no longer loses the test one's password), `apitest.py` finds the running instance's config folder on its
+own, and `setup.sh` installs numpy with Home Assistant (the demo integration needs it, and CI sometimes started
+without it).
 
 ## 0.7.1 (2026-11-17)
 

@@ -654,8 +654,6 @@
   // a dot where a bus branches (or is joined), as on a wiring diagram: where lines cross without one, they don't meet
   // arrows that share a line each get a letter of their own in the function (tag: 0 for A, 1 for B, …), shown at the two
   // places they stand apart: where they branch off the shared line, and beside the point on the box at their own end
-  // a shared line's letters: A to Z, then AA, AB…
-  const busLetter = (i) => (i < 26 ? String.fromCharCode(65 + i) : String.fromCharCode(64 + Math.floor(i / 26)) + String.fromCharCode(65 + (i % 26)));
   function busDots(routes, owners, geo) {
     const by = new Map();
     routes.forEach((pts, ri) => {
@@ -1761,14 +1759,7 @@ button{font:inherit;color:inherit}
 .board.pc .edges circle.jd.role-action{stroke:var(--fb-act)}
 .board.pc .edges circle.jd.role-call{stroke:var(--fb-call)}
 .edges path.chev{fill:var(--fb-edge);stroke:none}
-.edges g.bch{pointer-events:all;cursor:pointer}
-.lg svg .lgch rect{fill:var(--card-background-color);stroke:var(--fb-edge);stroke-width:1.2}.lg svg .lgch text{font-size:8px;font-weight:700;fill:var(--primary-text-color);stroke:none}
-.edges g.bch rect{fill:var(--card-background-color);stroke:var(--fb-edge);stroke-width:1.3}
-.edges g.bch text{font-size:10.5px;font-weight:700;fill:var(--primary-text-color);stroke:none;paint-order:normal}
-.board.pc .edges g.bch.role-trigger rect{stroke:var(--fb-trig)}.board.pc .edges g.bch.role-action rect{stroke:var(--fb-act)}.board.pc .edges g.bch.role-call rect{stroke:var(--fb-call)}
-.edges g.bch.dim{opacity:.2}
-.edges g.bch.trhi rect{fill:var(--primary-text-color);stroke:var(--primary-text-color)}.edges g.bch.trhi text{fill:var(--card-background-color)}
-.edges g.bch.trdim,.edges path.e.trdim{opacity:.13}
+.edges path.e.trdim{opacity:.13}
 .edges path.trc{fill:none;pointer-events:none;stroke-width:3.4!important;opacity:1}
 .board:not(.pc) .edges path.trc{stroke:var(--primary-text-color)}
 .board.pc .edges path.chev.role-trigger{fill:var(--fb-trig)}
@@ -2417,8 +2408,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       highlight_around_a_selected_box: 'Highlight around a selected box',
       reach: 'Reach',
       live: 'Live',
-      bus_tag_t: '{l}: the arrow to and from {name} on a shared line. Point at a box, or tap a letter, to trace its arrow',
-      one_line_that_branches_dot: 'a shared line: each arrow has a letter, where it branches and at its end; point at a box to trace its arrow',
+      one_line_that_branches_dot: 'a shared line: a dot where an arrow branches off; point at a box, or select it, to trace its arrows',
       runs_back: 'an arrow running back, right to left',
       crosses_without_meeting: 'crosses another without meeting it',
       arrow_style: 'Style',
@@ -4685,8 +4675,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._$.drawer.addEventListener('mouseover', (e) => { const x = e.target.closest('.run, .dbrow, .wrow'); this._hover(x ? x.dataset.key || null : null); });
       // hovering an arrow that comes from a template shows the template's value right now (9.3)
       const ed = this._$.edges;
-      ed.addEventListener('pointerover', (e) => { const c = e.target.closest('g.bch'); if (c) { this._setTrace(new Set([c.dataset.e])); return; } const p = e.target.closest('path.hit'); if (p) this._edgeHover(p.dataset.e, e); });
-      ed.addEventListener('pointerout', (e) => { if (e.target.closest('g.bch') && !(e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest('g.bch'))) this._setTrace(null); });
+      ed.addEventListener('pointerover', (e) => { const p = e.target.closest('path.hit'); if (p) this._edgeHover(p.dataset.e, e); });
       // pointing at a box traces its arrows through the shared lines it's on
       const ns = this._$.nodes;
       ns.addEventListener('pointerover', (e) => { if (e.pointerType === 'touch' || this._drag) return; const n = e.target.closest('.node'); this._setTrace(n ? this._busEdgesOf(n.dataset.key) : null); });
@@ -5626,25 +5615,10 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           marks.push(`<g class="cres ${kind}${fc ? ' sbxc' : ''}${F && !hi ? ' dim' : ''}" data-edge="${esc(e.id)}" transform="translate(${lx},${ly})"><circle r="8"></circle>${glyph}<title>${esc(fc ? fc.title : this._condTitle(e, c))}</title></g>`);
         }
       }
-      // where a shared line splits: a plain dot. Where an arrow leaves it, and beside its own end: its letter, the
-      // same at both places (drawn outside the turned group, so it reads upright top to bottom too)
-      const jd = dots.filter((dt) => dt.tag == null).map((dt) => `<circle class="jd split role-${esc(dt.role)}${dt.lit ? '' : ' dim'}" cx="${dt.x}" cy="${dt.y}" r="3.6"></circle>`);
-      const chips = [];
-      const chip = (x, y, ri, t, end) => {
-        const e = geo[ri].e, lit = !F || this._focusEdges.has(e.id), far = t.own.startsWith('out:') ? e.to : e.from;
-        const [cx, cy] = tp(x, y);
-        chips.push(`<g class="bch role-${esc(t.role)}${end ? ' end' : ''}${lit ? '' : ' dim'}" data-act="bus-tag" data-e="${esc(e.id)}" data-own="${esc(t.own)}" transform="translate(${cx},${cy})"><rect x="-7.5" y="-7.5" width="15" height="15" rx="4"></rect><text y="3.9" text-anchor="middle">${busLetter(t.tag)}</text><title>${esc(T('bus_tag_t', { l: busLetter(t.tag), name: this._boxName(far) }))}</title></g>`);
-      };
-      if (tagged) {
-        // beside its own end, just off the arrow: before the box it goes into, after the box it comes from
-        const endAt = new Map();
-        tagged.forEach((t, ri) => { const into = t.own.startsWith('out:'); endAt.set(ri, [t.far[0] + (into ? -16 : 16), t.far[1] - 11]); });
-        // where it branches off, unless that's right beside its end, where the end's letter already says it
-        dots.forEach((dt) => { const t = dt.tag != null && tagged.get(dt.ri), e = endAt.get(dt.ri); if (t && !(e && Math.abs(e[0] - dt.x) < 34 && Math.abs(e[1] - dt.y) < 26)) chip(dt.x, dt.y, dt.ri, t, false); });
-        endAt.forEach(([x, y], ri) => chip(x, y, ri, tagged.get(ri), true));
-      }
+      // where a shared line splits, and where an arrow leaves it: a plain dot (joined here, not crossing)
+      const jd = dots.map((dt) => `<circle class="jd split role-${esc(dt.role)}${dt.lit ? '' : ' dim'}" cx="${dt.x}" cy="${dt.y}" r="${dt.tag == null ? 3.6 : 3.2}"></circle>`);
       const drawn = out.slice(1).join('') + chev.join('') + jd.join('') + hits.join('');
-      this._$.edges.innerHTML = DEFS + (V ? `<g transform="matrix(0 1 1 0 0 0)">${drawn}</g>` : drawn) + labels.join('') + marks.join('') + chips.join('');
+      this._$.edges.innerHTML = DEFS + (V ? `<g transform="matrix(0 1 1 0 0 0)">${drawn}</g>` : drawn) + labels.join('') + marks.join('');
       this._applyTrace();
       this._edgeMid = mids;
       if (dot) this._$.edges.querySelectorAll('animateMotion').forEach((x) => { try { x.beginElement(); } catch (er) { /* no SMIL */ } });
@@ -5652,8 +5626,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (fl) fl.anim = false;
     }
 
-    // tracing one arrow through a shared line: pointing at a box (or a letter, or tapping one) draws that box's
-    // arrows on shared lines end to end on top, and fades the others on the same lines
+    // tracing arrows through a shared line: pointing at a box, or selecting it, draws that box's arrows on shared
+    // lines end to end on top, and fades the others on the same lines
     _busEdgesOf(key) {
       const o = this._ortho;
       if (!o || !key) return null;
@@ -5680,7 +5654,6 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       o.ids.forEach((id, i) => { if (tr.has(id)) (o.owners[i] || []).forEach((w) => { if (w) owns.add(w); }); });
       const mates = new Set(o.ids.filter((id, i) => (o.owners[i] || []).some((w) => w && owns.has(w))));
       svg.querySelectorAll('path.e').forEach((p) => { if (mates.has(p.dataset.edge) && !tr.has(p.dataset.edge)) p.classList.add('trdim'); });
-      svg.querySelectorAll('g.bch').forEach((c) => { if (tr.has(c.dataset.e)) c.classList.add('trhi'); else if (owns.has(c.dataset.own)) c.classList.add('trdim'); });
       tr.forEach((id) => {
         const p = svg.querySelector(`path.e[data-edge="${CSS.escape(id)}"]`);
         if (!p) return;
@@ -5690,7 +5663,6 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         // on top of everything in its frame, letters included
         p.parentNode.appendChild(c);
       });
-      svg.querySelectorAll('g.bch.trhi').forEach((c) => svg.appendChild(c));
     }
 
     /* ---------- the Arrows menu: highlight modes (7.1) and filters (7.2) ---------- */
@@ -5730,7 +5702,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     }
     _select(key) {
       this._sel = key && this._model && this._model.nodes.has(key) ? key : null;
-      if (this._traceKeep) this._setTrace(null, false);
+      // a selected box's arrows stay traced through the shared lines they're on (how a touch screen traces them)
+      this._setTrace(this._sel ? this._busEdgesOf(this._sel) : null, !!this._sel);
       if (this._lit) this._clearLit(true);
       if (this._selEdge || !this._$.edgebar.hidden) { this._selEdge = null; this._$.edgebar.hidden = true; }
       this._applyFocus();
@@ -6000,7 +5973,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const line = (cls) => `<svg width="38" height="10"><path class="${cls}" d="M4,5 L30,5"></path><path class="ah ${cls}" d="M30,1 L37,5 L30,9 z"></path>${cls === 'role-trigger' ? '<circle class="ah trig" cx="4" cy="5" r="3.5"></circle>' : ''}</svg>`;
       this._$.legend.innerHTML = `<button class="lgt" data-act="legend"><ha-icon icon="mdi:map-legend"></ha-icon>${open ? T('hide_key') : T('key')}</button>`
         + (open ? `<div class="lg">${line('role-trigger')}<span>${T('triggers')}</span>${line('role-condition')}<span>${T('is_checked_or_read_by')}</span>${line('role-action')}<span>${T('changes_2')}</span>${line('role-call')}<span>${T('runs_script_call')}</span>${line('role-source')}<span>${T('is_read_by_a_helper')}</span>${line('loop')}<span>${T('loop_can_retrigger_itself')}</span>${line('role-tool')}<span>${T('a_test_button_or_a')}</span>`
-          + `<svg width="38" height="14"><path d="M4,3 L16,3 L16,11 L30,11"></path><path d="M16,3 L30,3"></path><g class="lgch" transform="translate(23,11)"><rect x="-5" y="-5" width="10" height="10" rx="3"></rect><text y="3" text-anchor="middle">A</text></g></svg><span>${T('one_line_that_branches_dot')}</span>`
+          + `<svg width="38" height="14"><path d="M4,3 L16,3 L16,11 L30,11"></path><path d="M16,3 L30,3"></path><circle cx="16" cy="3" r="2.6" style="fill:var(--fb-edge)"></circle></svg><span>${T('one_line_that_branches_dot')}</span>`
           + `<svg width="38" height="14"><path d="M19,1 L19,13"></path><path d="M4,8 L15,8 A4,4 0 0 1 23,8 L34,8"></path></svg><span>${T('crosses_without_meeting')}</span>`
           + `<svg width="38" height="14"><path d="M4,7 L34,7"></path><path class="ah" d="M15,7 L23,2.5 L23,11.5 z"></path></svg><span>${T('runs_back')}</span></div><div class="lgn"><span class="sw dashed"></span>${T('related_not_in_this_function')}<br><span class="sw pill"></span>${T('outside_item_it_touches')}<br><span class="sw st amber"></span>${T('unavailable')}<span class="sw st red"></span>${T('last_run_failed')}<span class="sw st blue"></span>${T('running')}<br><span class="cres-k ok">✓</span><span class="cres-k bad">✕</span> ${T('a_check_passes_or_fails')}<span class="sw dashed2"></span>${T('simulated_state')}${this._sbxOn() ? `<br><span class="sw sbk"></span>${T('sbx_changed_key')}<br><span class="sw sbg"></span>${T('sbx_ghost_key')}` : ''}</div><label class="tg"><input type="checkbox" data-tog="outside" ${u.outside ? 'checked' : ''}>${T('show_outside_items')}</label><label class="tg"><input type="checkbox" data-tog="suggest" ${u.suggest ? 'checked' : ''}>${T('show_related_suggestions')}</label><label class="tg" title="${T('reads_your_node_red_app')}"><input type="checkbox" data-nr ${u0.nodered === true ? 'checked' : ''}>${T('show_node_red_flows')}</label>${u0.nodered === true && this._nrCache && this._nrCache.err ? `<div class="lgerr">${esc(this._nrCache.err)}${this._nrCache.need ? ` <button class="lgbtn" data-act="nr-open">${T('open_node_red')}</button>` : ''}</div>` : ''}` : '');
     }
@@ -6446,8 +6419,6 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         case 'why-run': this._showRun({ kind: 'run', key: el.dataset.key, t: Date.now(), run: { domain: 'automation', item_id: el.dataset.item, run_id: el.dataset.rid } }, null); break;
         case 'lit-clear': this._clearLit(); this._dbgSel = null; this._renderDbg(); break;
         case 'lit-replay': if (this._litSteps) this._lightSteps(this._litSteps, this._litRun); break;
-        // a letter on a shared line, tapped: its arrow stays traced until you tap it again or click elsewhere
-        case 'bus-tag': { const id = el.dataset.e, k = this._traceKeep; this._setTrace(k && k.size === 1 && k.has(id) ? null : new Set([id]), !(k && k.size === 1 && k.has(id))); break; }
         case 'flow-go': this._flowGo(+el.dataset.i, true); break;
         case 'flow-prev': if (this._flow) this._flowGo(this._flow.at - 1, true); break;
         case 'flow-next': if (this._flow) this._flowGo(this._flow.at + 1, true); break;
