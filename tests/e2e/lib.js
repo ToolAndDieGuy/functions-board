@@ -63,16 +63,23 @@ async function until(fn, ms = 5000, step = 100) {
   return v;
 }
 
+// A suite's checks, counted and written as JUnit (tests/.results/e2e-<name>.xml, or $FB_RESULTS) for run.sh.
+// A suite that crashes before done() leaves no report, and run.sh counts that as a failure.
+const RESULTS = process.env.FB_RESULTS || path.join(__dirname, '..', '.results');
 function suite(name) {
   const results = [];
+  let last = Date.now();
   const check = (n, ok, detail) => {
-    results.push([n, !!ok]);
-    console.log((ok ? 'PASS ' : 'FAIL ') + n + (!ok && detail !== undefined ? '  -- ' + (typeof detail === 'string' ? detail : JSON.stringify(detail)).slice(0, 500) : ''));
+    const d = !ok && detail !== undefined ? (typeof detail === 'string' ? detail : JSON.stringify(detail)).slice(0, 500) : '';
+    results.push({ name: n, ok: !!ok, detail: d, ms: Date.now() - last });
+    last = Date.now();
+    console.log((ok ? 'PASS ' : 'FAIL ') + n + (d ? '  -- ' + d : ''));
     return !!ok;
   };
   const done = () => {
-    const bad = results.filter((r) => !r[1]).map((r) => r[0]);
+    const bad = results.filter((r) => !r.ok).map((r) => r.name);
     console.log(`\n${name}: ${results.length - bad.length}/${results.length} passed` + (bad.length ? ': failed ' + bad.join(', ') : ''));
+    require('../lib/junit').write(path.join(RESULTS, 'e2e-' + name + '.xml'), name, results);
     process.exitCode = bad.length ? 1 : 0;
   };
   return { check, done, results };

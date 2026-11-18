@@ -29,11 +29,17 @@ Set up once: `sh tests/setup.sh all` (Home Assistant 2026.11.1 in `venv314`, con
 `ha-demo/config`, Playwright, the backend venv). Then:
 
 ```sh
-sh tests/run-all.sh              # static checks, wiring, sandbox engine, backend: seconds, no Home Assistant
+sh tests/run.sh                  # self-test, rules, library, Python units: seconds, no Home Assistant
 sh tests/start-ha.sh             # the throwaway Home Assistant on :8123 (its log: ha/hass.log)
-sh tests/run-all.sh --e2e        # plus every browser suite against it
-sh tests/run-all.sh --e2e layout # only the suites matching a pattern
+sh tests/run.sh --ha             # plus the API test and every browser suite against it
+sh tests/run.sh --ha --only e2e-layout   # only the suites matching a pattern
 ```
+
+Every runner writes JUnit into `tests/.results/` (and its screen output to `<suite>.log` there), and the run's
+result comes from those reports (`tests/lib/report.js`): a failure, a missing or empty report, or a non-zero exit
+fails it. `tests/selftest/` plants a failure in each runner and checks the report catches it. Node tests use
+`node:test` through `check()` in `tests/lib/check.js`; the library comes from `tests/lib/board-lib.js`, which
+returns everything the library section defines.
 
 | Suite | What it covers |
 |---|---|
@@ -62,7 +68,7 @@ sh tests/run-all.sh --e2e layout # only the suites matching a pattern
   a new check can fail (break the code on purpose once).
 - `tools.test.js` 9.2 is timing-sensitive and fails now and then; rerun before chasing it.
 - One browser suite at a time: they share the Home Assistant and reset its board data. Tokens last 30 minutes,
-  so `run-all.sh` runs `apitest.py` before each suite.
+  so `run.sh` runs `apitest.py` before each suite.
 
 ## Conventions
 

@@ -1,17 +1,10 @@
-// The problems check (0.9.0): findProblems() on analyze()'s refs. Run: node tests/problems.test.js
+// The problems check (0.9.0): findProblems() on analyze()'s refs. Run: node --test tests/problems.test.js
 const fs = require('fs');
 const path = require('path');
 
-const src = fs.readFileSync(path.join(__dirname, '..', 'custom_components', 'functions_board', 'frontend', 'functions-board.js'), 'utf8');
-const start = src.indexOf("'use strict';"), end = src.indexOf('  class FunctionsBoard extends HTMLElement');
-const { analyze, findProblems, splitDismissed, probKey, markProblems, cleanLayout } = new Function('customElements', 'window', src.slice(start, end) + '\nreturn { analyze, findProblems, splitDismissed, probKey, markProblems, cleanLayout };')({ get: () => undefined }, {});
+const { analyze, findProblems, splitDismissed, probKey, markProblems, cleanLayout } = require('./lib/board-lib');
 
-let failed = 0, total = 0;
-const check = (name, ok, detail) => {
-  total++;
-  if (!ok) failed++;
-  console.log((ok ? 'PASS ' : 'FAIL ') + name + (ok || detail === undefined ? '' : '  -- ' + JSON.stringify(detail)));
-};
+const { check } = require('./lib/check');
 
 // a small home: what exists, as Home Assistant would say
 const states = {
@@ -107,5 +100,3 @@ check('events, MQTT topics and unknown names inside templates aren\'t judged', f
   check('the layout keeps dismissals as what, when and since when gone, nothing else', JSON.stringify(L.dismissed) === JSON.stringify([{ k: probKey(A), at: t0, gone: t0 + 1 }]), L.dismissed);
 }
 
-console.log(`\n${total - failed}/${total} passed`);
-process.exit(failed ? 1 : 0);

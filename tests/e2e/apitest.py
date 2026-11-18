@@ -300,6 +300,15 @@ async def main():
 
     bad = [n for n, ok in results if not ok]
     print(f"\n{len(results) - len(bad)}/{len(results)} passed" + (": failed " + ", ".join(bad) if bad else ""))
+    # JUnit for run.sh, like every other runner here
+    out = os.environ.get("FB_RESULTS") or os.path.join(HERE, "..", ".results")
+    os.makedirs(out, exist_ok=True)
+    from xml.sax.saxutils import quoteattr  # noqa: PLC0415
+    with open(os.path.join(out, "apitest.xml"), "w", encoding="utf-8") as f:
+        f.write('<?xml version="1.0" encoding="UTF-8"?>\n<testsuites><testsuite name="apitest" tests="%d" failures="%d">\n' % (len(results), len(bad)))
+        for n, ok in results:
+            f.write("<testcase classname=\"apitest\" name=%s>%s</testcase>\n" % (quoteattr(n), "" if ok else "<failure/>"))
+        f.write("</testsuite></testsuites>\n")
     return 1 if bad else 0
 
 

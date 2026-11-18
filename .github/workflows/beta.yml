@@ -33,7 +33,7 @@ jobs:
           npx playwright install --with-deps chromium
           echo "HA_VERSION=$(venv314/bin/python -c 'from homeassistant.const import __version__ as v; print(v)')" >> "$GITHUB_ENV"
       - name: Quick tests
-        run: sh tests/run-all.sh
+        run: sh tests/run.sh
       - name: Per-entity triggers still as the sandbox has them
         run: venv314/bin/python scripts/gen_sandbox_triggers.py --check
       - name: Start Home Assistant
@@ -41,7 +41,7 @@ jobs:
         run: sh tests/start-ha.sh
       - name: Every browser suite
         if: success() || failure()
-        run: sh tests/run-all.sh --e2e
+        run: sh tests/run.sh --ha
       - name: Home Assistant's errors
         if: failure()
         run: grep -nE "ERROR|Error setting up|Setup failed|Traceback|ModuleNotFoundError|ImportError" ha/hass.log | grep -v "websocket_api.http.connection" | cut -c1-400 | head -80 || true

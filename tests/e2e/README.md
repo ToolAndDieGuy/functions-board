@@ -33,7 +33,7 @@ files rather than linking them.
 
 ## Run
 
-`sh tests/run-all.sh --e2e` runs all of these in turn, `apitest.py` before each. One at a time:
+`sh tests/run.sh --ha` runs all of these in turn, `apitest.py` before each. One at a time:
 
 ```sh
 export FB_HA_CONFIG="$PWD/ha/config"      # where apitest.py checks the stored board data

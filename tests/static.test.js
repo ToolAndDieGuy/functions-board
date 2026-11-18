@@ -1,16 +1,11 @@
-// Static checks on the board file. Run: node tests/static.test.js
+// Static checks on the board file. Run: node --test tests/static.test.js
 // 1. A class the code switches on at runtime must not also be the start of a top-level style rule:
 //    v0.3.0 put "run" on running boxes, which also styled rows of the Runs list (grid, full width, no background).
 const fs = require('fs');
 const path = require('path');
 
 const src = fs.readFileSync(path.join(__dirname, '..', 'custom_components', 'functions_board', 'frontend', 'functions-board.js'), 'utf8');
-let failed = 0, total = 0;
-const check = (name, ok, detail) => {
-  total++;
-  if (!ok) failed++;
-  console.log((ok ? 'PASS ' : 'FAIL ') + name + (ok || detail === undefined ? '' : '  -- ' + JSON.stringify(detail)));
-};
+const { check } = require('./lib/check');
 
 const s0 = src.indexOf('const STYLE = `');
 const css = src.slice(s0 + 'const STYLE = `'.length, src.indexOf('`;', s0)).replace(/\/\*[\s\S]*?\*\//g, '');
@@ -187,5 +182,3 @@ check('A4 the Supervisor is only asked (method get), never told', sup.length > 0
 const pubs = code.match(/[^\n]{0,40}'mqtt\.publish'[^\n]{0,20}/g) || [];
 check('A4 MQTT: the board listens; a message is published only by the person\'s own MQTT test step (the sandbox only simulates one)', !/mqtt\/publish|callService\(\s*'mqtt'/.test(code) && pubs.length === 2 && pubs.some((p) => /if \(svc === 'mqtt\.publish'\) \{ await this\.mqtt\(/.test(p)) && pubs.some((p) => /case 'mqtt': return call\('mqtt\.publish'/.test(p)), pubs);
 
-console.log(`\n${total - failed}/${total} passed`);
-process.exit(failed ? 1 : 0);

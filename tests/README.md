@@ -2,9 +2,9 @@
 
 ```sh
 sh tests/setup.sh all        # once: Home Assistant 2026.11.1 (venv314), test and demo configs, Playwright, backend venv
-sh tests/run-all.sh          # quick: static checks, wiring, sandbox engine, backend (no Home Assistant needed)
+sh tests/run.sh              # quick: self-test, static checks, wiring, problems, sandbox engine, backend (no Home Assistant)
 sh tests/start-ha.sh         # the throwaway test Home Assistant on :8123
-sh tests/run-all.sh --e2e    # everything, with every browser suite
+sh tests/run.sh --ha         # everything, with every browser suite (results: tests/.results/)
 ```
 
 `npm test` and `npm run test:e2e` do the same. What each suite covers is listed in `CLAUDE.md` at the top of the
