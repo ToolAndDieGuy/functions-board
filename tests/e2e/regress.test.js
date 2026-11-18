@@ -1125,6 +1125,49 @@ test('0.8.1 the Key: "simulated state" is on the same line as its mark', async (
   check('0.8.1 no errors', page.logs.length === 0, page.logs);
 });
 
+test('0.9.0 problems: what an automation points at that isn\'t there, on the list, the header, the boxes, the arrows and the drawer', async (browser) => {
+  const { page } = await imported(browser);
+  const lid = await openFn(page, /garage/i);
+  const ID = 'fbprob1', KEY = 'automation.garage_points_at_gone_things';
+  await api(page, 'POST', `config/automation/config/${ID}`, { alias: 'Garage: points at gone things', triggers: [{ trigger: 'state', entity_id: 'cover.garage_door_old', to: 'open' }], actions: [{ action: 'notify.mobile_app_gone_phone', data: { message: 'x' } }, { action: 'cover.close_cover', target: { entity_id: 'cover.garage_door' } }] });
+  await until(() => page.evaluate((k) => !!document.querySelector('home-assistant').hass.states[k], KEY), 10000);
+  // on (Home Assistant restores the last state of an automation with this ID, from an earlier run)
+  await svc(page, 'automation', 'turn_on', {}, { entity_id: KEY });
+  await ws(page, { type: 'config/entity_registry/update', entity_id: KEY, labels: [lid] });
+  const probs = () => el(page, (b) => ((b._model && b._model.problems) || []).map((p) => `${p.sev} ${p.kind} ${p.ref}`).sort());
+  const got = await until(async () => { const p = await probs(); return p.length >= 2 ? p : null; }, 15000);
+  check('0.9.0 a renamed or removed entity it triggers on, and an action that doesn\'t exist, are found', JSON.stringify(got) === JSON.stringify(['error e_missing cover.garage_door_old', 'error s_missing notify.mobile_app_gone_phone']), got);
+  const ui = await until(() => el(page, (b, [k, l]) => {
+    const r = b.shadowRoot, chip = r.querySelector('.pchip'), badge = r.querySelector(`.fn[data-fn="${l}"] .pbadge`);
+    const box = r.querySelector(`.node[data-key="cover.garage_door_old"] ha-icon.prob`), auto = r.querySelector(`.node[data-key="${k}"] ha-icon.prob`);
+    const arrow = [...r.querySelectorAll('path.e.prob')].map((p) => p.dataset.edge);
+    return chip && badge ? { chip: chip.textContent.trim(), chipErr: chip.classList.contains('p-error'), badge: badge.textContent, badgeErr: badge.classList.contains('p-error'), box: box && box.classList.contains('p-error') ? box.title : null, auto: !!auto, arrow } : null;
+  }, [KEY, lid]), 10000);
+  check('0.9.0 the header says how many, in red', !!ui && ui.chip === '2 problems' && ui.chipErr, ui);
+  check('0.9.0 ... and so does the function in the list', !!ui && ui.badge === '2' && ui.badgeErr, ui);
+  check('0.9.0 the missing thing\'s box is marked, saying what\'s wrong', !!ui && /doesn.t exist: renamed or removed\?/.test(ui.box || ''), ui && ui.box);
+  check('0.9.0 ... the automation pointing at it too, and the arrow between them is marked', !!ui && ui.auto && ui.arrow.some((e) => e === `cover.garage_door_old>${KEY}`), ui);
+  await fbq(page, '.pchip').click();
+  await fbq(page, '.drawer .probs .prow').first().waitFor({ timeout: 5000 });
+  const dr = await el(page, (b) => [...b._$.drawer.querySelectorAll('.prow')].map((r) => ({ cls: r.className, text: r.querySelector('.ptxt').textContent, by: (r.querySelector('.pby') || {}).textContent || '', edit: !!r.querySelector('[data-act="prob-open"]') })));
+  check('0.9.0 the Problems drawer lists each, what it\'s in, with a way to edit it', dr.length === 2 && dr.every((r) => /p-error/.test(r.cls) && /Garage: points at gone things/.test(r.by) && r.edit) && /notify\.mobile_app_gone_phone doesn.t exist/.test(dr.map((r) => r.text).join(' ')), dr);
+  await fbq(page, '.drawer .prow [data-act="prob-go"][data-key="cover.garage_door_old"]').click();
+  check('0.9.0 Show selects the thing on the board', (await el(page, (b) => b._sel)) === 'cover.garage_door_old');
+  // turned off: a warning too (amber, may be on purpose)
+  await svc(page, 'automation', 'turn_off', {}, { entity_id: KEY });
+  await el(page, (b) => b._open(b._data.ui.current, true));
+  const w = await until(async () => { const p = await probs(); return p.includes(`warn m_off ${KEY}`) ? p : null; }, 10000);
+  check('0.9.0 an automation that\'s off is a warning', !!w && w.length === 3, w);
+  // fixed: gone again (the board may still ask once for the deleted automation's config)
+  page.allowFail = [/^automation\/config$/];
+  await api(page, 'DELETE', `config/automation/config/${ID}`);
+  await until(() => page.evaluate((k) => !document.querySelector('home-assistant').hass.states[k], KEY), 10000);
+  await el(page, (b) => { b._configChanged(); return b._open(b._data.ui.current, true); });
+  const clean = await until(() => el(page, (b, l) => (!(b._model.problems || []).length && !b.shadowRoot.querySelector('.pchip') && !b.shadowRoot.querySelector(`.fn[data-fn="${l}"] .pbadge`)) || null, lid), 10000);
+  check('0.9.0 once it\'s fixed, the marks, the count and the badge go', !!clean);
+  check('0.9.0 problems: no errors', page.logs.length === 0, page.logs);
+});
+
 (async () => {
   const browser = await chromium.launch();
   for (const [name, fn] of cases) {

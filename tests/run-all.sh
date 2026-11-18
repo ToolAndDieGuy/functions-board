@@ -22,6 +22,7 @@ run() {
 
 run static node tests/static.test.js
 run wiring node tests/wiring.test.js
+run problems node tests/problems.test.js
 run sandbox node tests/sandbox.test.js
 [ -x venvtest/bin/python ] && run backend venvtest/bin/python -m pytest tests/backend -q
 

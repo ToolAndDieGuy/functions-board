@@ -947,6 +947,65 @@
     return { refs, badges };
   }
 
+  /* ---------- problems (0.9.0): what a function's automations and scripts point at that isn't there or can't work.
+     Home Assistant doesn't say when an entity is renamed or removed under an automation, a device is gone, or a
+     service no longer exists; the automation just stops doing its job. This reads what analyze() found.
+       items: [{ key, refs }] the function's automations and scripts, with analyze()'s refs
+       members: the keys of everything in the function
+       ctx: { state(id), ent(id), dev(id), area(id), floor(id), label(id), service(domain, service), paused }
+     Returns [{ sev: 'error'|'warn', kind, ref, by: [item keys] }], errors first, one per thing. ---------- */
+  function findProblems(items, members, ctx) {
+    const out = new Map();
+    const add = (sev, kind, ref, by) => {
+      const k = kind + '|' + ref, p = out.get(k) || { sev, kind, ref, by: [] };
+      if (by && !p.by.includes(by)) p.by.push(by);
+      out.set(k, p);
+    };
+    const entity = (id, by) => {
+      const st = ctx.state(id), reg = ctx.ent(id);
+      if (reg && reg.disabled_by) add('warn', 'e_disabled', id, by);
+      else if (!st && !reg) add('error', 'e_missing', id, by);
+      else if (!st) add('error', 'e_notloaded', id, by);
+      else if (st.state === 'unavailable') add('warn', 'e_unavail', id, by);
+    };
+    for (const it of items) {
+      for (const r of it.refs || []) {
+        const ref = r.ref;
+        if (ref === it.key) continue;
+        if (ref.startsWith('device:')) {
+          const d = ctx.dev(ref.slice(7));
+          if (!d) add('error', 'd_missing', ref, it.key);
+          else if (d.disabled_by) add('warn', 'd_disabled', ref, it.key);
+        } else if (TGT_RE.test(ref)) {
+          const i = ref.indexOf(':'), kind = ref.slice(0, i), id = ref.slice(i + 1);
+          if (!ctx[kind](id)) add('error', 't_missing', ref, it.key);
+        } else if (ref.startsWith('svc:')) {
+          const svc = ref.slice(4), i = svc.indexOf('.');
+          if (i > 0 && !ctx.service(svc.slice(0, i), svc.slice(i + 1))) add('error', 's_missing', svc, it.key);
+        } else if (EXACT_RE.test(ref)) {
+          entity(ref, it.key);
+        }
+        // the service an action calls (targets checked above): it must exist for the step to run
+        const a = r.act, svc = a && typeof (a.action || a.service) === 'string' ? a.action || a.service : null;
+        if (svc && !TPL_RE.test(svc) && svc.includes('.') && (r.role === 'action' || r.role === 'call')) {
+          const i = svc.indexOf('.');
+          if (!ctx.service(svc.slice(0, i), svc.slice(i + 1))) add('error', 's_missing', svc, it.key);
+        }
+      }
+    }
+    // the function's own pieces
+    for (const k of members) {
+      if (k.startsWith('device:')) { const d = ctx.dev(k.slice(7)); if (d && d.disabled_by) add('warn', 'd_disabled', k, null); continue; }
+      const st = ctx.state(k), reg = ctx.ent(k);
+      if (reg && reg.disabled_by) { add('warn', 'e_disabled', k, null); continue; }
+      if (!st) continue;
+      if ((k.startsWith('automation.') || k.startsWith('script.')) && st.state === 'unavailable') add('error', 'm_broken', k, null);
+      else if (k.startsWith('automation.') && st.state === 'off' && !ctx.paused) add('warn', 'm_off', k, null);
+      else if (st.state === 'unavailable') add('warn', 'e_unavail', k, null);
+    }
+    return [...out.values()].sort((x, y) => (x.sev === y.sev ? 0 : x.sev === 'error' ? -1 : 1));
+  }
+
   /* ---------- layered layout (left to right): inputs -> logic -> outputs ---------- */
   // wrap (top to bottom only): the most a row may span, in px. Boxes stand side by side there, so a script that
   // drives thirty things would make one row thirty boxes wide; its end points (nothing comes after them) move down
@@ -1567,7 +1626,7 @@
   const SBX_OTHER = '\u0001other';
   const VER_HELPERS = new Set(['input_boolean', 'input_number', 'input_text', 'input_select', 'input_datetime', 'input_button', 'counter', 'timer', 'schedule']);
   // what may be clicked on a saved version's board: looking, the sandbox, and the versions themselves
-  const VER_OK_ACTS = /^(zoomin|zoomout|fit|togglelist|legend|hl|hl-.+|sandbox|sbx-.+|flow-.+|lit-.+|edge|close|back|newtab|modal-.+|ver-.+|vtab.*|versions|about|diag|diag-.+|hint-x|find-x|nr-open)$/;
+  const VER_OK_ACTS = /^(zoomin|zoomout|fit|togglelist|legend|hl|hl-.+|sandbox|sbx-.+|flow-.+|lit-.+|edge|close|back|newtab|modal-.+|ver-.+|vtab.*|versions|about|diag|diag-.+|problems|prob-.+|hint-x|find-x|nr-open)$/;
   // a short fingerprint of a snapshot's items and members: equal when the function is the same as that version
   const verPrint = (snap) => {
     const body = JSON.stringify([[...(snap.members || [])].sort(), Object.keys(snap.items || {}).sort().map((k) => [k, (snap.items[k] || {}).cfg || null])]);
@@ -1889,6 +1948,26 @@ button{font:inherit;color:inherit}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .dlg label.chk{flex-direction:row;align-items:center;gap:8px;font-size:13px;color:var(--primary-text-color)}
 .dlg.diag .dwarn{color:var(--warning-color,#b26a00)}
+.node .badges ha-icon.prob{--mdc-icon-size:15px}
+.node .badges ha-icon.prob.p-error,.prow.p-error>ha-icon{color:var(--error-color,#db4437)}
+.node .badges ha-icon.prob.p-warn,.prow.p-warn>ha-icon{color:var(--warning-color,#b26a00)}
+svg path.e.prob{stroke:var(--error-color,#db4437);stroke-dasharray:5 4}
+.pbadge{min-width:18px;height:18px;padding:0 5px;border-radius:9px;font-size:11px;font-weight:600;line-height:18px;text-align:center;color:#fff;flex:none}
+.pbadge.p-error{background:var(--error-color,#db4437)}
+.pbadge.p-warn{background:var(--warning-color,#b26a00)}
+.pchip{display:inline-flex;align-items:center;gap:4px;height:26px;padding:0 10px;border-radius:13px;border:1px solid currentColor;background:none;font:inherit;font-size:12px;cursor:pointer;margin-left:6px;white-space:nowrap}
+.pchip ha-icon{--mdc-icon-size:16px}
+.pchip.p-error{color:var(--error-color,#db4437)}
+.pchip.p-warn{color:var(--warning-color,#b26a00)}
+.probs{padding:10px 14px;overflow:auto;display:flex;flex-direction:column;gap:8px}
+.prow{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border-radius:8px;background:var(--secondary-background-color)}
+.prow>ha-icon{--mdc-icon-size:20px;flex:none;margin-top:1px}
+.prow .pbody{display:flex;flex-direction:column;gap:4px;min-width:0}
+.prow .pby{font-size:12px;color:var(--secondary-text-color)}
+.prow .pby button.lnk{background:none;border:0;padding:0;margin:0;font:inherit;color:var(--primary-color);text-decoration:underline;cursor:pointer}
+.prow .pact{display:flex;gap:6px;flex-wrap:wrap}
+.prow .pact button{display:inline-flex;align-items:center;gap:4px;font:inherit;font-size:12px;padding:3px 8px;border-radius:6px;border:1px solid var(--divider-color);background:none;color:var(--primary-text-color);cursor:pointer}
+.prow .pact ha-icon{--mdc-icon-size:14px}
 .dlg.diag h4+p{margin-top:0}
 .dlg.diag .dvers{display:flex;flex-direction:column;gap:4px;margin-top:6px;max-height:180px;overflow:auto}
 .hint{font-size:12px;color:var(--secondary-text-color);line-height:1.5}
@@ -3122,6 +3201,26 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this_install_is_set_to: 'This install is set to Organise only: the board doesn\'t edit or delete automations, scripts, helpers or devices, and doesn\'t run tests. Full manager, which adds deleting and tests, is in the Functions Board integration\'s options.',
       the_debugger_watch_triggers_monitor: 'The debugger, Watch triggers, monitor boxes and the live checks on arrows only read: watching a trigger never runs the automation.',
       show_node_red_flows_in: 'Show Node-RED flows (in the Key, off until you switch it on) reads your Node-RED app\'s flows in your browser to draw what they use. The flows last read (names and entity IDs, no flow code) are kept by the integration for every board.',
+      prob_chip_t: 'What this function\'s automations and scripts point at that isn\'t there or can\'t work',
+      prob_d_disabled: 'The device {what} is disabled',
+      prob_d_missing: 'A device it uses is gone: {what}',
+      prob_e_disabled: '{what} is disabled',
+      prob_e_missing: '{what} doesn\'t exist: renamed or removed?',
+      prob_e_notloaded: '{what} isn\'t provided by any integration right now',
+      prob_e_unavail: '{what} is unavailable',
+      prob_edit: 'Edit {name}',
+      prob_in: 'In',
+      prob_m_broken: '{what} couldn\'t be set up: check its configuration',
+      prob_m_off: '{what} is turned off',
+      prob_n: { one: '{n} problem', other: '{n} problems' },
+      prob_n_errors: { one: '{n} problem that stops something working', other: '{n} problems that stop things working' },
+      prob_n_warnings: { one: '{n} warning', other: '{n} warnings' },
+      prob_none: 'Nothing wrong found.',
+      prob_note: 'Home Assistant doesn\'t warn when something an automation uses is renamed or removed; the automation just stops doing its job. This lists what this function\'s automations and scripts point at that isn\'t there or can\'t work right now. Red stops something working; amber may be on purpose.',
+      prob_s_missing: 'The action {what} doesn\'t exist: is its integration set up?',
+      prob_show: 'Show',
+      prob_t_missing: 'The area, floor or label {what} is gone',
+      prob_title: 'Problems: {fnName}',
       privacy_promise: 'Nothing leaves your Home Assistant: the board talks only to it, keeps its data in Home Assistant\'s own storage, and sends no telemetry. Diagnostics are a file you download, anonymised or not as you choose.',
       every_change_is_shown_before: 'Every change is shown before it happens, and Undo (Ctrl+Z) takes it back, except tests and deleting a helper that an integration set up.',
       shared_between_administrators_functions_board: 'shared between administrators (Functions Board integration)',
@@ -4472,6 +4571,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     _init() {
       this._data = null; this._model = null;
       this._labels = []; this._ents = []; this._devs = [];
+      this._probs = new Map();
       this._entMap = new Map(); this._devMap = new Map(); this._labelMap = new Map(); this._regIdMap = new Map();
       this._view = { x: 40, y: 40, k: 1 };
       this._sel = null; this._focus = null; this._focusEdges = new Set(); this._els = new Map();
@@ -4514,6 +4614,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (hass.user && !hass.user.is_admin) { this._renderNoAdmin(); return; }
       if (!this._data) { if (!this._booting) this._boot(); return; }
       this._throttle('states', 1000, () => this._refreshStates());
+      this._throttle('probscan', 60000, () => this._scanProblems());
     }
     get hass() { return this._hass; }
     // set by Home Assistant when this runs as the integration's sidebar page
@@ -4885,6 +4986,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         };
         this._markSaved();
         await Promise.all([this._loadRegistries(true), this._loadDescriptions()]);
+        // the problem counts on the list, soon after the page is up (then as states and configs change)
+        this._throttle('probscan0', 2000, () => this._scanProblems());
         this._subscribe();
         this._renderLegend();
         this._applyMode();
@@ -4965,6 +5068,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     // configs changed: forget the cached ones and redraw the open function, at most once a second
     _configChanged() {
       this._cfgCache.clear(); this._src = new Map(); this._grefs = null;
+      this._throttle('probscan2', 3000, () => this._scanProblems());
       this._throttle('cfg', 1000, () => {
         if (this._drag) { this._configChanged(); return; }
         const cur = this._data && this._data.ui.current;
@@ -5051,6 +5155,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._$.loading.hidden = true;
       if (!model || this._data.ui.current !== label) return;
       this._model = model;
+      this._renderHeader();
+      if (this._drawer && this._drawer.mode === 'problems') this._openProblems();
       this._place();
       this._render();
       if (!keep && !this._viewFor(label)) this._fit();
@@ -5231,7 +5337,16 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       await this._nrNodes(nodes, list);
       // test buttons and monitor boxes kept in the layout (Phase 9), after the loop check: they are no part of it
       this._toolNodes(label, nodes, list);
-      return { label, nodes, edges: list };
+      // what its automations and scripts point at that isn't there or can't work (0.9.0); a saved version is
+      // judged against today's home too, since that's where it would be restored
+      const problems = findProblems(logic.map((e, i) => ({ key: e, refs: an[i] ? an[i].refs : [] })), members.concat(devs), this._probCtx(label));
+      const worst = new Map(), mark = (k, sev) => { if (worst.get(k) !== 'error') worst.set(k, sev); };
+      problems.forEach((pr) => { mark(pr.ref, pr.sev); pr.by.forEach((b) => mark(b, pr.sev)); });
+      nodes.forEach((n, k) => { n.prob = worst.get(k) || null; });
+      const gone = new Set(problems.filter((pr) => pr.sev === 'error' && !/^(m_|s_)/.test(pr.kind)).map((pr) => pr.ref));
+      list.forEach((e) => { e.prob = gone.has(e.from) || gone.has(e.to); });
+      if (!V) this._noteProblems(label, problems);
+      return { label, nodes, edges: list, problems };
     }
 
     // every entity, device and script that any automation or script refers to (cached with the configs)
@@ -5581,6 +5696,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (n.kind === 'tool') return this._toolHTML(n);
       const b = [...n.badges].filter((x) => BADGES[x]).map((x) => `<ha-icon icon="${BADGES[x][0]}" title="${BADGES[x][1]}"></ha-icon>`).join('')
         + (n.writers > 1 ? `<span class="wr" title="${T('changed_by_automations_or_scripts', { writers: n.writers })}">&#9998;${n.writers}</span>` : '')
+        + (n.prob ? `<ha-icon class="prob p-${n.prob}" icon="${n.prob === 'error' ? 'mdi:alert-circle' : 'mdi:alert'}" title="${esc(this._probTitle(n.key))}"></ha-icon>` : '')
         + (n.unref ? `<ha-icon class="unref" icon="mdi:link-variant-off" title="${T('it_may_be_used_by', { extra: n.domain === 'script' ? T('no_automation_or_script_runs') : T('no_automation_or_script_refers') })}"></ha-icon>` : '')
         + (n.hidden ? `<span class="wr hid" title="${T('its_arrows_are_hidden_by')}">${P('n_hidden', n.hidden)}</span>` : '')
         + ((this._layout(this._model.label).keep || []).includes(n.key) ? `<ha-icon class="kept" icon="mdi:pin" title="${T('kept_in_place_auto_arrange')}"></ha-icon>` : '');
@@ -5779,6 +5895,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         const hi = !!F && this._focusEdges.has(e.id), live = (this._live.get(e.from) || 0) > now || (this._liveE.get(e.id) || 0) > now;
         const cls = ['e', 'role-' + e.role];
         if (e.loop) cls.push('loop');
+        if (e.prob) cls.push('prob');
         if (F) cls.push(hi ? 'hi' : 'dim');
         if (live) cls.push('live');
         if (this._selEdge === e.id) cls.push('esel');
@@ -6034,7 +6151,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         const devs = this._devs.filter((d) => (d.labels || []).includes(lid)).length;
         const unav = mem.some((e) => this._hass.states[e.entity_id] && this._hass.states[e.entity_id].state === 'unavailable');
         const txt = [this._countText(mem.map((e) => e.entity_id)), devs ? P('n_devices', devs) : ''].filter(Boolean).join(' · ');
-        return `<div class="fnrow"><button class="fn ${lid === this._data.ui.current ? 'cur' : ''}" data-fn="${esc(lid)}"><ha-icon icon="${esc(l.icon || 'mdi:puzzle-outline')}" style="color:${cssColor(l.color)}"></ha-icon><span class="fnt"><span class="fnn">${esc(l.name)}</span><span class="fnc">${esc(txt) || 'empty'}</span></span>${unav ? `<span class="dot warn" title="${T('something_in_this_function_is')}"></span>` : ''}</button><button class="ib fnmore" data-act="fn-menu" data-label="${esc(lid)}" title="${T('edit_hide_or_delete', { name: esc(l.name) })}"><ha-icon icon="mdi:dots-vertical"></ha-icon></button></div>`;
+        return `<div class="fnrow"><button class="fn ${lid === this._data.ui.current ? 'cur' : ''}" data-fn="${esc(lid)}"><ha-icon icon="${esc(l.icon || 'mdi:puzzle-outline')}" style="color:${cssColor(l.color)}"></ha-icon><span class="fnt"><span class="fnn">${esc(l.name)}</span><span class="fnc">${esc(txt) || 'empty'}</span></span>${this._probs.has(lid) ? this._probBadge(this._probs.get(lid)) : unav ? `<span class="dot warn" title="${T('something_in_this_function_is')}"></span>` : ''}</button><button class="ib fnmore" data-act="fn-menu" data-label="${esc(lid)}" title="${T('edit_hide_or_delete', { name: esc(l.name) })}"><ha-icon icon="mdi:dots-vertical"></ha-icon></button></div>`;
       }).join('');
       const act = this.shadowRoot.activeElement, typing = act && act.classList && act.classList.contains('find'), caret = typing ? act.selectionStart : 0;
       this._$.list.innerHTML = `<div class="lhead"><span>${T('functions')}</span><span><button data-act="import" title="${T('import_find_the_functions_already')}"><ha-icon icon="mdi:import"></ha-icon></button><button data-act="newfn" title="${T('new_empty_function')}"><ha-icon icon="mdi:plus"></ha-icon></button></span></div><div class="lfind"><ha-icon icon="mdi:magnify"></ha-icon><input class="find" placeholder="${T('find_an_automation_helper_device')}" value="${esc(this._findQ || '')}" aria-label="${T('find_anything')}">${this._findQ ? `<button class="ib" data-act="find-x" title="${T('clear')}"><ha-icon icon="mdi:close"></ha-icon></button>` : ''}</div><div class="fns">${this._findQ ? this._findHTML() : items || `<div class="muted pad">${T('no_functions_yet_press_import')}</div>`}</div><div class="lfoot"><button class="lbtn" data-act="import"><ha-icon icon="mdi:import"></ha-icon>${T('import_manager')}</button><div class="ver"><span>${T('functions_board_v_prototype', { version: VERSION })}</span><button class="ib" data-act="about" title="${T('about_and_what_the_board')}"><ha-icon icon="mdi:help-circle-outline"></ha-icon></button></div></div>`;
@@ -6090,7 +6207,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const t = this._$.title;
       if (!l) { t.innerHTML = `<span class="muted">${T('functions')}</span>`; this._$.tools.hidden = true; return; }
       this._$.tools.hidden = false;
-      t.innerHTML = `<ha-icon icon="${esc(l.icon || 'mdi:puzzle-outline')}" style="color:${cssColor(l.color)}"></ha-icon><div class="tt"><div class="ttl">${esc(l.name)}</div>${l.description ? `<div class="desc">${esc(l.description)}</div>` : ''}</div><button class="ib" data-act="fn-edit" title="${T('edit_name_icon_colour_and')}"><ha-icon icon="mdi:pencil-outline"></ha-icon></button><button class="ib" data-act="fn-menu" data-label="${esc(l.label_id)}" title="${T('hide_or_delete_this_function')}"><ha-icon icon="mdi:dots-vertical"></ha-icon></button>`;
+      t.innerHTML = `<ha-icon icon="${esc(l.icon || 'mdi:puzzle-outline')}" style="color:${cssColor(l.color)}"></ha-icon><div class="tt"><div class="ttl">${esc(l.name)}</div>${l.description ? `<div class="desc">${esc(l.description)}</div>` : ''}</div><button class="ib" data-act="fn-edit" title="${T('edit_name_icon_colour_and')}"><ha-icon icon="mdi:pencil-outline"></ha-icon></button><button class="ib" data-act="fn-menu" data-label="${esc(l.label_id)}" title="${T('hide_or_delete_this_function')}"><ha-icon icon="mdi:dots-vertical"></ha-icon></button>${this._probChip()}`;
       this._renderPause();
     }
 
@@ -6505,6 +6622,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         case 'add-existing': this._openManager('pick', label || '__new'); break;
         case 'import': this._openManager('detect'); break;
         case 'about': this._aboutModal(); break;
+        case 'problems': if (this._drawer && this._drawer.mode === 'problems') this._closeDrawer(); else this._openProblems(); break;
+        case 'prob-go': { const k = el.dataset.key; if (this._model && this._model.nodes.has(k)) { this._select(k); this._centerOn(k); } break; }
+        case 'prob-open': { const n = this._model && this._model.nodes.get(el.dataset.key); if (n) this._openItem(n); break; }
         case 'diag': this._diagModal(el.dataset.ver || null); break;
         case 'diag-go': this._diagGo(false); break;
         case 'diag-copy': this._diagGo(true); break;
@@ -9924,6 +10044,94 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         val.textContent = T('diag_failed', { e: (e && (e.message || e.code)) || e });
         btns.forEach((b) => { b.disabled = false; });
       }
+    }
+    /* ---------- problems (0.9.0) ---------- */
+    _probCtx(label) {
+      const L = this._layout(label), svcs = this._hass.services || {};
+      return {
+        state: (id) => this._hass.states[id], ent: (id) => this._entMap.get(id), dev: (id) => this._devMap.get(id),
+        area: (id) => this._areaMap && this._areaMap.get(id), floor: (id) => this._floorMap && this._floorMap.get(id), label: (id) => this._labelMap.get(id),
+        service: (d, s) => !!(svcs[d] && svcs[d][s]), paused: Array.isArray(L.paused) && L.paused.length > 0,
+      };
+    }
+    _noteProblems(label, problems) {
+      const e = problems.filter((p) => p.sev === 'error').length, w = problems.length - e, was = this._probs.get(label);
+      this._probs.set(label, { e, w });
+      if (!was || was.e !== e || was.w !== w) this._renderList();
+    }
+    // every function on the board, in the background: the counts on the list (configs come from the cache)
+    async _scanProblems() {
+      if (!this._data || !this._hass || this._probScanning || !this._ents) return;
+      this._probScanning = true;
+      try {
+        const known = (x) => this._known(x);
+        for (const label of this._data.functions.slice()) {
+          if (this._model && this._model.label === label && !this._ver) { this._noteProblems(label, this._model.problems || []); continue; }
+          const members = this._ents.filter((e) => (e.labels || []).includes(label)).map((e) => e.entity_id);
+          const devs = this._devs.filter((d) => (d.labels || []).includes(label)).map((d) => 'device:' + d.id);
+          const logic = members.filter((e) => /^(automation|script)\./.test(e));
+          const cfgs = await Promise.all(logic.map((e) => this._fetchConfig(e)));
+          // the open function's own result is newer than anything read before it was built
+          if (this._model && this._model.label === label && !this._ver) { this._noteProblems(label, this._model.problems || []); continue; }
+          const items = logic.map((e, i) => ({ key: e, refs: cfgs[i] ? analyze(cfgs[i], e.startsWith('script.'), known).refs : [] }));
+          this._noteProblems(label, findProblems(items, members.concat(devs), this._probCtx(label)));
+          await new Promise((r) => setTimeout(r, 0));
+        }
+      } catch (e) { /* the counts stay as they were */ } finally { this._probScanning = false; }
+    }
+    _probBadge(c) {
+      if (!c.e && !c.w) return '';
+      return `<span class="pbadge p-${c.e ? 'error' : 'warn'}" title="${esc(c.e ? P('prob_n_errors', c.e) + (c.w ? ' · ' + P('prob_n_warnings', c.w) : '') : P('prob_n_warnings', c.w))}">${c.e || c.w}</span>`;
+    }
+    _probChip() {
+      const ps = this._model && this._model.label === (this._data && this._data.ui.current) ? this._model.problems || [] : [];
+      if (!ps.length) return '';
+      const e = ps.filter((p) => p.sev === 'error').length;
+      return `<button class="pchip p-${e ? 'error' : 'warn'}" data-act="problems" title="${T('prob_chip_t')}"><ha-icon icon="${e ? 'mdi:alert-circle' : 'mdi:alert'}"></ha-icon>${P('prob_n', ps.length)}</button>`;
+    }
+    _probWhat(ref) {
+      if (ref.startsWith('device:')) { const d = this._devMap.get(ref.slice(7)); return d ? d.name_by_user || d.name || ref.slice(7) : ref.slice(7); }
+      if (TGT_RE.test(ref)) return ref.slice(ref.indexOf(':') + 1);
+      return EXACT_RE.test(ref) ? this._nameOf(ref) + (this._nameOf(ref) !== ref ? ` (${ref})` : '') : ref;
+    }
+    _probText(p) {
+      const what = esc(this._probWhat(p.ref));
+      switch (p.kind) {
+        case 'e_missing': return T('prob_e_missing', { what });
+        case 'e_notloaded': return T('prob_e_notloaded', { what });
+        case 'e_disabled': return T('prob_e_disabled', { what });
+        case 'e_unavail': return T('prob_e_unavail', { what });
+        case 'd_missing': return T('prob_d_missing', { what });
+        case 'd_disabled': return T('prob_d_disabled', { what });
+        case 't_missing': return T('prob_t_missing', { what });
+        case 's_missing': return T('prob_s_missing', { what });
+        case 'm_broken': return T('prob_m_broken', { what });
+        case 'm_off': return T('prob_m_off', { what });
+        default: return what;
+      }
+    }
+    _probTitle(key) {
+      const ps = ((this._model && this._model.problems) || []).filter((p) => p.ref === key || p.by.includes(key));
+      return ps.map((p) => this._probText(p).replace(/<[^>]+>/g, '')).join('\n');
+    }
+    _openProblems() {
+      const label = this._data.ui.current;
+      if (!label || !this._model) return;
+      this._leaveDrawerMode();
+      this._capture = null;
+      this._drawer = { mode: 'problems' };
+      const d = this._$.drawer, ps = this._model.problems || [];
+      d.hidden = false;
+      const nm = (k) => esc(this._model.nodes.has(k) ? this._model.nodes.get(k).name : this._nameOf(k));
+      const row = (p) => `<div class="prow p-${p.sev}"><ha-icon icon="${p.sev === 'error' ? 'mdi:alert-circle' : 'mdi:alert'}"></ha-icon><div class="pbody"><div class="ptxt">${this._probText(p)}</div>`
+        + (p.by.length ? `<div class="pby">${T('prob_in')} ${p.by.map((b) => `<button class="lnk" data-act="prob-go" data-key="${esc(b)}">${nm(b)}</button>`).join(', ')}</div>` : '')
+        + `<div class="pact">${this._model.nodes.has(p.ref) ? `<button data-act="prob-go" data-key="${esc(p.ref)}"><ha-icon icon="mdi:crosshairs-gps"></ha-icon>${T('prob_show')}</button>` : ''}`
+        + p.by.filter((b) => /^(automation|script)\./.test(b)).map((b) => `<button data-act="prob-open" data-key="${esc(b)}"><ha-icon icon="mdi:pencil-outline"></ha-icon>${T('prob_edit', { name: nm(b) })}</button>`).join('')
+        + (!p.by.length && /^(automation|script)\./.test(p.ref) ? `<button data-act="prob-open" data-key="${esc(p.ref)}"><ha-icon icon="mdi:pencil-outline"></ha-icon>${T('prob_edit', { name: nm(p.ref) })}</button>` : '')
+        + `</div></div></div>`;
+      d.innerHTML = `<div class="dhead"><span class="dtitle">${T('prob_title', { fnName: esc(this._fnName(label)) })}</span><button data-act="close" title="${T('close')}"><ha-icon icon="mdi:close"></ha-icon></button></div>`
+        + `<div class="probs"><div class="vnote">${T('prob_note')}</div>${ps.length ? ps.map(row).join('') : `<div class="muted pad">${T('prob_none')}</div>`}</div>`;
+      this._fitLitbar && this._fitLitbar();
     }
     _aboutModal() {
       const m = this._$.modal;

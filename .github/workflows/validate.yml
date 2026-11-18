@@ -42,6 +42,8 @@ jobs:
         run: node tests/static.test.js
       - name: Wiring and loop tests
         run: node tests/wiring.test.js
+      - name: Problems check
+        run: node tests/problems.test.js
       - name: Sandbox engine
         run: node tests/sandbox.test.js
 
