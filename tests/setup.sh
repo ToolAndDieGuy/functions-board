@@ -29,10 +29,13 @@ if [ ! -x venv314/bin/hass ]; then
   echo "== Home Assistant $HA (Python $PY) in venv314"
   uv venv --python "$PY" venv314
   uv pip install --python venv314/bin/python "homeassistant==$HA"
-  # numpy: the demo integration imports it without listing it, so on a fresh install it depends on another
-  # integration's requirements landing first (a race that left CI without the test garage door). Install it up
-  # front, at the version Home Assistant pins.
-  uv pip install --python venv314/bin/python numpy -c "$(venv314/bin/python -c 'import homeassistant, os; print(os.path.join(os.path.dirname(homeassistant.__file__), "package_constraints.txt"))')"
+fi
+# The demo integration (the test garage door and the rest) sets up platforms whose requirements its manifest
+# doesn't list, and imports numpy unlisted. Installed while Home Assistant starts, they race it (CI lost the test
+# entities to numpy, then to turbojpeg). Install them all first, at the versions Home Assistant pins.
+if ! venv314/bin/python -c 'import numpy, turbojpeg' 2>/dev/null; then
+  venv314/bin/python scripts/demo_requirements.py > venv314/demo-requirements.txt
+  uv pip install --python venv314/bin/python -r venv314/demo-requirements.txt -c "$(venv314/bin/python -c 'import homeassistant, os; print(os.path.join(os.path.dirname(homeassistant.__file__), "package_constraints.txt"))')"
 fi
 
 # a config folder: the test config, the integration linked in (so edits show on reload), Home Assistant's own
