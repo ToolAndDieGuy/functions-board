@@ -39,6 +39,7 @@ sh tests/run-all.sh --e2e layout # only the suites matching a pattern
 |---|---|
 | `tests/static.test.js` | rules on the board's source: every `T('key')` has English text and every text is used (keys must be literal, not built at runtime); runtime CSS classes only in scoped rules; no ingress sessions or cookies |
 | `tests/wiring.test.js` | `analyze()` on many automation and script shapes: which arrows, roles, loops |
+| `tests/problems.test.js` | `findProblems()`: missing, not-loaded, disabled and unavailable entities, devices, areas, actions that don't exist, the function's own pieces |
 | `tests/sandbox.test.js` | the sandbox engine with a stand-in template renderer: triggers, conditions, actions, modes, waits, MQTT, per-entity triggers, `sbxRewrite` |
 | `tests/backend/` (pytest) | the Python side: setup, store, websocket commands, diagnostics; `test_privacy.py`: canary data through the anonymiser and the log, no network modules, the manifest (sockets are blocked in all of it) |
 | `tests/e2e/apitest.py` | backend over the real API; onboards the test users and writes the tokens the browser suites use |
@@ -83,7 +84,8 @@ sh tests/run-all.sh --e2e layout # only the suites matching a pattern
   to `ha/netguard.log`. It changes nothing and never ships.
 - **Versions**: `node scripts/bump.js X.Y.Z` updates the manifest, the board's `VERSION` and the CHANGELOG
   heading (it writes today's UTC date; fix it to the local date if they differ). Each release gets a CHANGELOG
-  entry written for users.
+  entry written for users. Changes not yet given a version go under `## Unreleased` at the top of the CHANGELOG;
+  `bump.js` turns that into the version's entry.
 - **Releases** are tagged `vX.Y.Z` on `main` and published as GitHub releases; HACS installs from them.
   Work on branches with PRs; stacked PRs merge in order.
 - CI (`.github/workflows/validate.yml`) runs the HACS action, hassfest, the quick tests, the backend tests and
@@ -105,5 +107,8 @@ sh tests/run-all.sh --e2e layout # only the suites matching a pattern
   `as_function` stand-ins (`SBX_PRELUDE`) that read the sandbox's states (`fb_s`) and clock (`fb_t`).
   `SBX_ETRIG` is generated from Home Assistant's own per-entity trigger classes: rerun
   `venv314/bin/python scripts/gen_sandbox_triggers.py` after moving to a newer Home Assistant.
+- **Problems** (`findProblems()` in the library section, 0.9.0): from `analyze()`'s refs and the registries;
+  `_buildModel` marks boxes (`n.prob`) and arrows (`e.prob`) and keeps `model.problems`; `_scanProblems()` counts
+  every function for the list in the background (configs come from the cache), the open one from its model.
 - Debug hooks for tests: `board._ortho` (routes, owners, hops, `vert`), `board._sbx.eng` (the sandbox engine and
   its log), `window.__fbStyle` (overrides `PROTO()` layout switches).
