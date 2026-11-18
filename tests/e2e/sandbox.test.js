@@ -70,6 +70,8 @@ const DOOR = 'cover.garage_door', TIMER = 'timer.garage_open', AUTO = 'input_boo
   await fbq(page, '.drawer [data-act="sbx-set"]').click();
   const started = await until(() => el(page, (b, k) => b._sbx.eng.get(k).state === 'active' || null, TIMER), 8000);
   check('opening the door starts the open timer (Garage: start open timer)', !!started);
+  // (the engine is ahead of the board: wait for the board to redraw)
+  await until(() => el(page, (b, k) => b._els.get(k).classList.contains('sbch') || null, DOOR), 5000);
   const box = await el(page, (b, k) => { const n = b._els.get(k), sub = n.querySelector('.sub'); return { text: sub ? sub.textContent : n.dataset.sbx, mark: n.classList.contains('sbch') }; }, DOOR);
   check('the door\'s box shows the sandbox\'s state, marked as changed from your home', /open/i.test(box.text) && box.mark, box);
   check('the timeline lists your change, the trigger and the timer starting', await el(page, (b) => { const L = b._sbx.eng.log; return L.some((e) => e.kind === 'state' && e.by === 'you') && L.some((e) => e.kind === 'trigger' && e.key === 'automation.garage_start_open_timer') && L.some((e) => e.kind === 'call' && e.svc === 'timer.start'); }));
