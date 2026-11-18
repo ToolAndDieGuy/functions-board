@@ -2,7 +2,7 @@
 
 A sidebar page for Home Assistant that shows each **function** in your home (the garage, the morning routine, the furnace filter) as one board: every automation, script, helper and device that makes it work, wired together from their own configs.
 
-![The Garage function: the door starts a timer, the timer finishing runs "Garage: left open", which calls the "Close garage" script. Arrows are coloured by what they do and run square-cornered from left to right; ticks and crosses on them show which checks pass right now.](https://raw.githubusercontent.com/ToolAndDieGuy/functions-board/main/docs/images/board.png)
+![The Garage function: the garage door starts a timer, the timer finishing runs "Garage: left open", which checks auto-close and calls the "Close garage" script, which closes the door. Arrows are coloured by what they do and run square-cornered from left to right; crosses on them show checks that fail right now.](https://raw.githubusercontent.com/ToolAndDieGuy/functions-board/main/docs/images/board.png)
 
 > **Prototype.** It runs on a real, busy setup, but expect rough edges. Issues and ideas are welcome.
 
@@ -14,7 +14,7 @@ Home Assistant files things by type: automations in one list, scripts in another
 
 - **One board per function.** A function is a Home Assistant label. Everything carrying it is on the board, and still lives in its usual place under Settings.
 - **Arrows read from your configs:** what triggers each automation, what it checks, what it changes and which scripts it runs, including area, floor and label targets, purpose-specific triggers (a light turning on, a door opening), what template and other derived helpers read, scenes and groups, and the buttons on a notification with the automations that answer them. Blueprint automations are read as Home Assistant fills them in. Real loops (an automation whose own effects can set it off again) are marked.
-- **Laid out for you:** arrows are coloured by what they do (orange sets something off, blue changes it, aqua runs a script) and run square-cornered from left to right in their own lanes, never alongside each other, from three points on each side of a box. Lines that share a point branch off it at a dot; point at a box (or select it) and its arrows are traced end to end through the shared line while the others fade; lines that cross without meeting hop over each other; arrows running back carry arrowheads along the way. Boxes line up with what they connect to, separate chains are packed together, and **Auto-arrange** lays out a function again at any time, and runs on every import; **Keep in place** in a box's bar leaves that box where you put it, and Undo puts your own arrangement back. **Arrows → Style → Curved arrows** brings back curved arrows.
+- **Laid out for you:** arrows are coloured by what they do (orange sets something off, blue changes it, aqua runs a script) and run square-cornered from left to right in their own lanes, never alongside each other, from three points on each side of a box. Lines that share a point branch off it at a dot; point at a box (or select it) and its arrows are traced end to end through the shared line while the others fade; lines that cross without meeting hop over each other; arrows running back carry arrowheads along the way. A function flows left to right, or top to bottom if you choose. Boxes line up with what they connect to, separate chains are packed together, and **Auto-arrange** lays out a function again at any time, and runs on every import; **Keep in place** in a box's bar leaves that box where you put it, and Undo puts your own arrangement back. **Arrows → Style → Curved arrows** brings back curved arrows.
 - **Click a box** to light up its chain; the **Arrows** menu chooses how far (upstream, downstream, both) and which kinds of arrow show. **Edit** in a box's bar, or a double-click, opens it in Home Assistant's own editor without leaving the board: an automation's or script's editor, a helper's settings, a scene's editor.
 - **Live:** states on every box, runs pulse as they happen, last-run failures and unavailable entities are flagged, and **Runs** lists every run in the function; picking one lights the arrows it actually used.
 - **Import** finds the functions already in your setup. It traces every automation and script and groups the ones that trigger, change or call each other, merged with the categories you already use, and shows what is left over. Import them all or one at a time, start from labels you already have, or pick items by hand.
@@ -25,8 +25,9 @@ Home Assistant files things by type: automations in one list, scripts in another
   - **Live checks** put a tick or a cross on each check arrow, and hovering an arrow that comes from a template shows its value now.
   - **Watch triggers** pulses an automation's trigger arrows whenever one would fire, without running it. With Pause, that's a dry run.
   - **Monitor boxes** list the last events of one type, or MQTT messages on a topic, while the function is open.
-  - The **sandbox** runs the function on a copy of its states, with its own clock: set a state, fire an event or run an automation, and watch what the function would do, step by step, without anything changing in your home. Works in either mode.
+  - The **sandbox** runs the function on a copy of its states, with its own clock: set a state, fire an event or run an automation, and watch what the function would do played on the board step by step, without anything changing in your home. Works in either mode.
   - **Tests** (Full manager only) change a helper, simulate a state, fire an event, send a notification, or run an automation or script. A test can be kept on the board as a button.
+- **Versions:** save a function as it is, with a name and a description, open a saved version in a tab beside what's there now, try it in the sandbox, and restore it (Full manager).
 - **Arrow editor** (Full manager only): drag from a box's dots (or from one box) onto another to add a trigger, a check, an action or a script call, chosen from Home Assistant's own lists. The YAML is shown and checked before it's saved. Click an arrow to remove what it stands for.
 - **Node-RED flows** (off until you switch them on in the board's Key): each wired group in a flow is a box, with arrows to what it triggers on, reads, changes and runs.
 - Works with the keyboard and screen readers, on a phone, and as a dashboard card. The board's text is kept in one table per language, so it can be translated (see [Translating](#translating)).
@@ -77,11 +78,13 @@ The screenshots come from the demo setup the tests run on: a garage door that st
 
 The **Auto-arrange** button's menu sets which way a function flows: **left to right** (the default) or **top to bottom**, like a sequential function chart: what sets things off at the top, arrows leaving each box by its bottom edge and entering the next by its top. Each function keeps its own direction. Switching lays the whole function out again and lets go of boxes kept in place (Undo puts it all back). A row that would get too wide wraps: inputs move up a row and end points down a row, so a script that drives thirty things doesn't make one row thirty boxes wide. The arrows follow the same rules both ways: never closer than 16 px, never through a box, a hop at every crossing.
 
+![The Garage function flowing top to bottom: the garage door at the top, the automations it sets off below it, then the timer, "Garage: left open" and the "Close garage" script, with arrows leaving each box by its bottom edge](https://raw.githubusercontent.com/ToolAndDieGuy/functions-board/main/docs/images/down.png)
+
 ### Sandbox
 
 **Sandbox** (in the function's toolbar) tries the function out on a copy of its states. Each time it opens, a dialog explains what it's for and everything it can't show you, to click through. Set a state, fire an event or run an automation (each picked from a list of what fits the function, with Other… for anything else), and the board shows what the function would do: what triggers, which conditions pass and why, what each action changes, and what that sets off next, lit up on the board and listed in the drawer. Nothing is sent to your devices, and the board goes back to your home's states when you close it.
 
-![The sandbox beside the Garage board: the door set to open started the open timer; 15 minutes on, the timer finished, "Garage: left open" ran, its condition passed, and auto-close being off stopped it from closing the door](https://raw.githubusercontent.com/ToolAndDieGuy/functions-board/main/docs/images/sandbox.png)
+![The sandbox beside the Garage board, with auto-close turned on and the door opened in the sandbox only. Next moved its clock to the timer finishing: "Garage: left open" ran, auto-close was on, "Close garage" closed the door and the timer was cancelled, sixteen numbered steps on the board and in the drawer, with ◀ ▶ Replay and Clear under the board](https://raw.githubusercontent.com/ToolAndDieGuy/functions-board/main/docs/images/sandbox.png)
 
 - **Its own clock.** Delays, timers, `for:` durations, time triggers and time patterns run on the sandbox clock: **+1 min**, **+10 min**, **+1 h**, or **Next** to jump to the next thing due. "Left open for 15 minutes, then close it" takes a click.
 - **Templates are real.** Home Assistant renders each template the way it would in a real run, but `states()`, `is_state()`, `state_attr()`, `states.x.y`, `states[...]`, `states | ...`, `expand()`, `now()` and the like read the sandbox's states and clock. A template that reads locations (`closest()`, `distance()`) is marked *partly real*.
@@ -94,6 +97,8 @@ The **Auto-arrange** button's menu sets which way a function flows: **left to ri
 ### Versions
 
 **Versions** (in the function's toolbar) keeps named snapshots of a function: the configs of its automations and scripts, its helpers' settings, what's in it, the devices its steps use, and its layout. Save one before you change things ("Winter timings", "Before the new sensor"), and the drawer marks whichever version the function matches right now.
+
+![A saved version, "Reminder only", open in a tab beside Now (active): a banner says it's not active and counts what changed since, "Garage: left open" is marked changed since, and the Versions drawer lists "Close at night" (active, the same as what's there now) and "Reminder only", each with Open, Try in sandbox, Restore, edit and delete](https://raw.githubusercontent.com/ToolAndDieGuy/functions-board/main/docs/images/versions.png)
 
 - **Open** a version in a tab beside **Now** (the active one, always marked). Its board is drawn from the saved configs, boxes that have changed since or are only in that version are marked, and nothing on it can change your home. The tab's ↗ opens it in a new window, to see it beside what's there now.
 - **Try in sandbox** runs the saved version in the sandbox, without restoring it.
@@ -204,7 +209,7 @@ To try a table without editing the file, add it from the browser console on the 
 
 ## Feedback
 
-This is a prototype (v0.8.0). Please open an [issue](https://github.com/ToolAndDieGuy/functions-board/issues) for bugs, wrong or missing arrows, or ideas. A screenshot of the board and the automation's YAML help a lot.
+This is a prototype (v0.8.1). Please open an [issue](https://github.com/ToolAndDieGuy/functions-board/issues) for bugs, wrong or missing arrows, or ideas. A screenshot of the board and the automation's YAML help a lot.
 
 ## Credits
 

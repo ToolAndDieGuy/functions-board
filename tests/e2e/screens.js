@@ -64,12 +64,18 @@ const frame = (page, keys, kmax, room = 0) => el(page, (b, [keys, kmax, room]) =
 const list = (page, open) => el(page, (b, o) => { b._data.ui.list = o; b._renderList(); }, open);
 const key = (page, open) => el(page, (b, o) => { b._data.ui.legend = o; b._renderLegend(); }, open);
 const members = (page) => el(page, (b) => [...b._model.nodes.values()].filter((n) => n.kind === 'member').map((n) => n.key));
+// every box on the board, outside items too
+// the heart of the garage: the timer running out, "left open" checking auto-close, and the script closing the door
+const chain = (page) => el(page, (b, ks) => ks.concat([...b._model.nodes.keys()].filter((k) => k.startsWith('event:timer.finished'))), [TIMER, LEFT, AUTO, CLOSE]);
+const allBoxes = (page) => el(page, (b) => [...b._model.nodes.values()].filter((n) => n.kind !== 'tool').map((n) => n.key));
+// a narrower drawer, so the board beside it stays big enough to read (null: back to its own width)
+const drawerWidth = (page, w) => el(page, (b, w) => { b._$.drawer.style.width = w ? w + 'px' : ''; b._fitLitbar(); }, w);
 
 (async () => {
   fs.mkdirSync(OUT, { recursive: true });
   const browser = await chromium.launch();
   const { ctx, page } = await session(browser, 'owner', { viewport: { width: W, height: H }, scale: 2 });
-  page.allowFail = [/^trace\/get$/];
+  page.allowFail = [/^trace\/get$/, /^automation\/config$/];
   await page.goto(BASE + '/');
   await ready(page);
   await reset(page);
@@ -97,9 +103,22 @@ const members = (page) => el(page, (b) => [...b._model.nodes.values()].filter((n
   await key(page, false);
   await until(() => el(page, (b) => b._cond && b._cond.size > 0), 8000);
   await page.waitForTimeout(600);
-  await frame(page, await members(page), 1.2);
+  // the whole function as wide as it goes (the list closed), cropped to the toolbar and the boxes' height
+  await list(page, false);
+  await page.waitForTimeout(400);
+  const hero = await el(page, (b, keys) => {
+    const ns = keys.map((x) => b._model.nodes.get(x)).filter(Boolean);
+    const x0 = Math.min(...ns.map((n) => n.x)), x1 = Math.max(...ns.map((n) => n.x + n.w)), y0 = Math.min(...ns.map((n) => n.y)), y1 = Math.max(...ns.map((n) => n.y + n.h));
+    const vw = b._$.vp.clientWidth, k = Math.min(1.2, (vw - 80) / (x1 - x0)), top = 70;
+    b._view = { k, x: vw / 2 - ((x0 + x1) / 2) * k, y: top - y0 * k };
+    b._applyView();
+    const vp = b._$.vp.getBoundingClientRect(), host = b.getBoundingClientRect();
+    return { x: host.x, y: host.y, width: host.width, height: vp.top - host.top + top + (y1 - y0) * k + 80 };
+  }, await allBoxes(page));
+  await page.mouse.move(W - 2, H - 2);
   await page.waitForTimeout(800);
-  await shot(page, 'board', await rect(page, null));
+  await shot(page, 'board', hero);
+  await list(page, true);
 
   // the Key: what boxes, arrows and marks mean
   await key(page, true);
@@ -204,8 +223,95 @@ const members = (page) => el(page, (b) => [...b._model.nodes.values()].filter((n
     await phone.ctx.close();
   }
 
-  // put the garage back at rest, the board without its tools, and the integration in its default mode
-  await el(page, (b) => (b._layout(b._data.ui.current).tools || []).map((t) => t.id).forEach((id) => b._delTool(id)));
+  // the board without its tools from here on
+  await el(page, (b) => { b._closeDrawer(); b._select(null); (b._layout(b._data.ui.current).tools || []).map((t) => t.id).forEach((id) => b._delTool(id)); });
+  await rest(page);
+  await page.waitForTimeout(800);
+
+  // the sandbox: auto-close on and the door opened, in the sandbox only; Next runs the clock to the timer
+  // finishing, and what that sets off plays on the board (here at its last step, the door closing)
+  if (!only || only.test('sandbox')) {
+    await fbq(page, '.tools [data-act="sandbox"]').click();
+    await fbq(page, '.modal [data-act="sbx-start"]').click({ timeout: 3000 }).catch(() => {});
+    await fbq(page, '.drawer .sbctl .sbent').waitFor({ timeout: 10000 });
+    await drawerWidth(page, 600);
+    const sbxIdle = () => until(() => el(page, (b) => (!b._sbx.busy && (!b._flow || b._flow.at === b._flow.steps.length - 1)) || null), 20000);
+    await fbq(page, '.drawer .sbent').selectOption(AUTO);
+    await fbq(page, '.drawer .sbval-sel').selectOption('on');
+    await fbq(page, '.drawer [data-act="sbx-set"]').click();
+    await sbxIdle();
+    await fbq(page, '.drawer .sbent').selectOption(DOOR);
+    await fbq(page, '.drawer .sbval-sel').selectOption('open');
+    await fbq(page, '.drawer [data-act="sbx-set"]').click();
+    await sbxIdle();
+    await fbq(page, '.drawer [data-act="sbx-next"]').click();
+    await sbxIdle();
+    await page.waitForTimeout(1200);
+    await frame(page, await chain(page), 1.1, 110);
+    await page.waitForTimeout(900);
+    await shot(page, 'sandbox', await rect(page, null));
+    await drawerWidth(page, null);
+    await fbq(page, '.litbar [data-act="lit-clear"]').click().catch(() => {});
+    await el(page, (b) => b._closeDrawer());
+    await until(() => el(page, (b) => !b._sbx || null), 8000);
+  }
+
+  // top to bottom, then back
+  if (!only || only.test('down')) {
+    await el(page, (b) => b._setDir('down'));
+    await page.waitForTimeout(800);
+    await frame(page, await allBoxes(page), 1.2);
+    await page.waitForTimeout(600);
+    await shot(page, 'down', await rect(page, '.main'));
+    await el(page, (b) => b._setDir('right'));
+    await page.waitForTimeout(600);
+  }
+
+  // versions: one saved as the test config has it, then the function grows (an automation closing the door at
+  // night, the left-open message changed) and that's saved too; the first opened in a tab shows what differs
+  if (!only || only.test('versions')) {
+    const label = await el(page, (b) => b._data.ui.current);
+    const left0 = await api(page, 'GET', 'config/automation/config/2002');
+    const save = async (name, desc) => {
+      const n = await el(page, (b) => b._$.drawer.querySelectorAll('.vlist .vrow:not(.cur)').length);
+      await fbq(page, '.drawer [data-act="ver-new"]').click();
+      await fbq(page, '.modal input[name="vname"]').fill(name);
+      await fbq(page, '.modal textarea[name="vdesc"]').fill(desc);
+      await fbq(page, '.modal [data-act="ver-save"]').click();
+      await until(() => el(page, (b, n) => b._$.drawer.querySelectorAll('.vlist .vrow:not(.cur)').length > n || null, n), 10000);
+    };
+    await fbq(page, '.tools [data-act="versions"]').click();
+    await fbq(page, '.drawer .vlist .vrow.cur').waitFor({ timeout: 10000 });
+    await drawerWidth(page, 560);
+    await save('Reminder only', 'A note after 15 minutes open; closes only with auto-close on.');
+    await api(page, 'POST', 'config/automation/config/2002', Object.assign({}, left0, { actions: left0.actions.map((a) => (a.action === 'persistent_notification.create' ? Object.assign({}, a, { data: Object.assign({}, a.data, { message: 'The garage door was left open. Auto-close will close it if it is on.' }) }) : a)) }));
+    await api(page, 'POST', 'config/automation/config/fbshot1', { alias: 'Garage: close at night', triggers: [{ trigger: 'time', at: '22:00:00' }], conditions: [{ condition: 'state', entity_id: DOOR, state: 'open' }], actions: [{ action: 'script.close_garage' }] });
+    await until(() => page.evaluate(() => !!document.querySelector('home-assistant').hass.states['automation.garage_close_at_night']) || null, 10000);
+    await ws(page, { type: 'config/entity_registry/update', entity_id: 'automation.garage_close_at_night', labels: [label] });
+    await until(() => el(page, (b) => (b._model && b._model.nodes.has('automation.garage_close_at_night')) || null), 10000);
+    await page.waitForTimeout(1000);
+    await save('Close at night', 'Closes the door at 10 pm if it is still open; new left-open message.');
+    const first = await el(page, (b) => [...b._$.drawer.querySelectorAll('.vlist .vrow:not(.cur)')].find((r) => /Reminder only/.test(r.textContent)).dataset.id);
+    await fbq(page, `.drawer [data-act="ver-open"][data-id="${first}"]`).click();
+    await until(() => el(page, (b) => (b._ver && b._model && b._$.board.classList.contains('vview')) || null), 15000);
+    await page.waitForTimeout(1200);
+    // below the version's banner
+    await frame(page, await chain(page), 1.0);
+    await el(page, (b) => { b._view.y += 40; b._applyView(); });
+    await page.waitForTimeout(800);
+    await shot(page, 'versions', await rect(page, null));
+    await drawerWidth(page, null);
+    // back to Now, the test config as it was, and no versions left
+    await fbq(page, '.vtabs .vtab').first().click();
+    await until(() => el(page, (b) => !b._ver || null), 10000);
+    await api(page, 'POST', 'config/automation/config/2002', left0);
+    await api(page, 'DELETE', 'config/automation/config/fbshot1');
+    const vs = await ws(page, { type: 'functions_board/versions', label });
+    for (const v of (vs.versions || vs || [])) await ws(page, { type: 'functions_board/version_delete', label, version_id: v.id });
+    await el(page, (b) => b._closeDrawer());
+  }
+
+  // put the garage back at rest, and the integration in its default mode
   await list(page, true);
   await rest(page);
   await setMode(page, 'organise');

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.1 (2026-11-17)
+
+Fixed: in the **Key**, "simulated state" could wrap onto a line of its own, away from its mark. It now has its
+own line, with its mark.
+
+The README's pictures are new: the sandbox playing a run on the board, a version open in a tab, a function
+flowing top to bottom, and everything else as the board looks now.
+
 ## 0.8.0 (2026-11-17)
 
 New: **versions** of a function, to save it as it is, compare, try one in the sandbox, and switch back.
