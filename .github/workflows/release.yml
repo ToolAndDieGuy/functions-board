@@ -1,0 +1,60 @@
+name: Release
+
+# When a new version reaches main and every check on it has passed, tag it and publish the GitHub release that
+# HACS installs from, with that version's CHANGELOG section as its notes. A version only goes out once: if its tag
+# exists already, nothing happens. To leave a change unreleased, don't change the version (scripts/bump.js).
+
+on:
+  workflow_run:
+    workflows: [Validate]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Tag and publish
+    runs-on: ubuntu-latest
+    # after a successful Validate run of a push to main (not a pull request's, not a failed one)
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main')
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
+      - name: The version, and whether it's out already
+        id: v
+        run: |
+          # only the tip of main: if more was merged while these checks ran, that push's own run releases it
+          if [ "${{ github.event_name }}" = "workflow_run" ] && [ "$(git rev-parse origin/main)" != "$(git rev-parse HEAD)" ]; then
+            echo "main has moved on since this commit; its newest run will release"; echo "out=yes" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          v=$(python3 -c 'import json; print(json.load(open("custom_components/functions_board/manifest.json"))["version"])')
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          if git rev-parse -q --verify "refs/tags/v$v" >/dev/null; then echo "out=yes" >> "$GITHUB_OUTPUT"; echo "v$v is out already"; else echo "out=no" >> "$GITHUB_OUTPUT"; fi
+      - name: Its notes, from the CHANGELOG
+        if: steps.v.outputs.out == 'no'
+        run: |
+          python3 - "${{ steps.v.outputs.version }}" > notes.md <<'PY'
+          import re, sys
+          v = sys.argv[1]
+          text = open("CHANGELOG.md", encoding="utf-8").read()
+          m = re.search(rf"^## {re.escape(v)} \(.*?\)\n(.*?)(?=^## |\Z)", text, re.M | re.S)
+          if not m or not m.group(1).strip():
+              sys.exit(f"CHANGELOG.md has no entry for {v}: add one (scripts/bump.js writes the heading)")
+          print(m.group(1).strip())
+          print("\nFull history: [CHANGELOG](https://github.com/" + "ToolAndDieGuy/functions-board/blob/main/CHANGELOG.md)")
+          PY
+          cat notes.md
+      - name: Tag and publish
+        if: steps.v.outputs.out == 'no'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="${{ steps.v.outputs.version }}"
+          gh release create "v$v" --target "$(git rev-parse HEAD)" --title "$v" --notes-file notes.md --latest
