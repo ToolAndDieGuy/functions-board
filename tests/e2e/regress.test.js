@@ -1168,6 +1168,78 @@ test('0.9.0 problems: what an automation points at that isn\'t there, on the lis
   check('0.9.0 problems: no errors', page.logs.length === 0, page.logs);
 });
 
+test('0.9.0 dismissing problems: out of the count, the list and the board, under Dismissed, back on request, forgotten a day after it\'s fixed', async (browser) => {
+  const { page } = await imported(browser);
+  const lid = await openFn(page, /garage/i);
+  const ID = 'fbdis1', KEY = 'automation.garage_dismiss_these';
+  const MISS = 'e_missing|cover.garage_door_old', SVC = 's_missing|notify.mobile_app_gone_phone';
+  await api(page, 'POST', `config/automation/config/${ID}`, { alias: 'Garage: dismiss these', triggers: [{ trigger: 'state', entity_id: 'cover.garage_door_old', to: 'open' }], actions: [{ action: 'notify.mobile_app_gone_phone', data: { message: 'x' } }, { action: 'cover.close_cover', target: { entity_id: 'cover.garage_door' } }] });
+  await until(() => page.evaluate((k) => !!document.querySelector('home-assistant').hass.states[k], KEY), 10000);
+  await svc(page, 'automation', 'turn_on', {}, { entity_id: KEY });
+  await ws(page, { type: 'config/entity_registry/update', entity_id: KEY, labels: [lid] });
+  // what the person sees: the header's chip and Dismissed button, the list's badge, the marks on the board
+  const seen = () => el(page, (b, [l, k]) => {
+    const r = b.shadowRoot, chip = r.querySelector('.pchip'), dis = r.querySelector('.pdchip'), badge = r.querySelector(`.fn[data-fn="${l}"] .pbadge`);
+    return {
+      n: ((b._model && b._model.problems) || []).length, chip: chip ? chip.textContent.trim() : null, dis: dis ? dis.textContent.trim() : null,
+      badge: badge ? badge.querySelector('[aria-hidden="true"]').textContent : null,
+      box: !!r.querySelector('.node[data-key="cover.garage_door_old"] ha-icon.prob'), arrow: [...r.querySelectorAll('path.e.prob')].some((p) => p.dataset.edge === `cover.garage_door_old>${k}`),
+      rows: [...b._$.drawer.querySelectorAll('.prow')].length,
+    };
+  }, [lid, KEY]);
+  const stored = async () => ((await store(page)).layouts[lid] || {}).dismissed || [];
+  const two = await until(async () => { const v = await seen(); return v.n === 2 && v.badge === '2' ? v : null; }, 15000);
+  check('0.9.0 two problems to start with: "2 problems", badge 2, nothing dismissed', !!two && two.chip === '2 problems' && !two.dis, two);
+  await fbq(page, '.pchip').click();
+  await fbq(page, '.drawer .probs .prow').first().waitFor({ timeout: 5000 });
+  const btn = await el(page, (b, k) => { const x = b._$.drawer.querySelector(`[data-act="pdis"][data-k="${k}"]`); return x && x.getAttribute('aria-label'); }, SVC);
+  check('0.9.0 each problem has a Dismiss button that says which one', /^Dismiss: The action notify\.mobile_app_gone_phone doesn.t exist/.test(btn || ''), btn);
+  await fbq(page, `.drawer [data-act="pdis"][data-k="${SVC}"]`).click();
+  const one = await until(async () => { const v = await seen(); return v.n === 1 ? v : null; }, 5000);
+  check('0.9.0 two problems, one dismissed: the chip stays, says 1, and Dismissed appears', !!one && one.chip === '1 problem' && one.dis === '1 dismissed', one);
+  check('0.9.0 ... the list\'s badge counts down to 1', !!one && one.badge === '1', one);
+  check('0.9.0 ... and the drawer lists the one left, with a way to the dismissed one', !!one && one.rows === 1 && (await el(page, (b) => !!b._$.drawer.querySelector('.pother [data-act="pdis-list"]'))), one);
+  const st1 = await until(async () => { const d = await stored(); return d.length ? d : null; }, 5000);
+  check('0.9.0 the dismissal is kept with the function (shared, synced): what, and when', !!st1 && st1.length === 1 && st1[0].k === SVC && st1[0].at > 0 && !st1[0].gone, st1);
+  // the toast's Undo brings it straight back
+  await fbq(page, '.toast:not([hidden]) [data-act="toast-act"]').click();
+  const undone = await until(async () => { const v = await seen(); return v.n === 2 ? v : null; }, 5000);
+  check('0.9.0 Undo on the toast brings it back', !!undone && undone.chip === '2 problems' && !undone.dis && undone.badge === '2', undone);
+  await fbq(page, `.drawer [data-act="pdis"][data-k="${SVC}"]`).click();
+  await until(async () => (await seen()).n === 1 || null, 5000);
+  await fbq(page, `.drawer [data-act="pdis"][data-k="${MISS}"]`).click();
+  const none = await until(async () => { const v = await seen(); return v.n === 0 ? v : null; }, 5000);
+  check('0.9.0 the only problem left, dismissed: the chip goes, Dismissed stays (2)', !!none && !none.chip && none.dis === '2 dismissed', none);
+  check('0.9.0 ... the badge next to the function\'s name goes', !!none && !none.badge, none);
+  check('0.9.0 ... and so do the marks on the box and the arrow', !!none && !none.box && !none.arrow, none);
+  // the Dismissed menu: what's there, and Bring back
+  await el(page, (b) => b._closeDrawer());
+  await fbq(page, '.pdchip').click();
+  await fbq(page, '.drawer .probs .prow').first().waitFor({ timeout: 5000 });
+  const menu = await el(page, (b) => ({ title: b._$.drawer.querySelector('.dtitle').textContent, rows: [...b._$.drawer.querySelectorAll('.prow')].map((r) => r.querySelector('.ptxt').textContent), back: b._$.drawer.querySelectorAll('[data-act="pdis-back"]').length, dis: b._$.drawer.querySelectorAll('[data-act="pdis"]').length }));
+  check('0.9.0 Dismissed opens the dismissed ones, each with Bring back', /^Dismissed: /.test(menu.title) && menu.rows.length === 2 && menu.back === 2 && menu.dis === 0, menu);
+  await fbq(page, `.drawer [data-act="pdis-back"][data-k="${MISS}"]`).click();
+  const back = await until(async () => { const v = await seen(); return v.n === 1 ? v : null; }, 5000);
+  check('0.9.0 Bring back: it counts again, on the chip, the badge and the board', !!back && back.chip === '1 problem' && back.dis === '1 dismissed' && back.badge === '1' && back.box, back);
+  // a fresh page: still dismissed
+  await page.reload();
+  await fbq(page, '.nodes .node').first().waitFor({ timeout: 20000 });
+  const again = await until(async () => { const v = await seen(); return v.n === 1 && v.dis ? v : null; }, 15000);
+  check('0.9.0 after a reload, what was dismissed still is', !!again && again.chip === '1 problem' && again.dis === '1 dismissed', again);
+  // fixed: the dismissal notes since when, and is forgotten a day later
+  page.allowFail = [/^automation\/config$/];
+  await api(page, 'DELETE', `config/automation/config/${ID}`);
+  await until(() => page.evaluate((k) => !document.querySelector('home-assistant').hass.states[k], KEY), 10000);
+  await el(page, (b) => { b._configChanged(); return b._open(b._data.ui.current, true); });
+  const gone = await until(async () => { const d = await stored(); return d.length && d[0].gone ? d : null; }, 10000);
+  check('0.9.0 once the problem is fixed, the dismissal notes when it went', !!gone && gone.length === 1 && gone[0].k === SVC, gone);
+  check('0.9.0 ... and nothing shows: no chip, no Dismissed, no badge', !!(await until(async () => { const v = await seen(); return !v.chip && !v.dis && !v.badge ? v : null; }, 5000)));
+  await el(page, (b, l) => { b._data.layouts[l].dismissed[0].gone -= 25 * 3600 * 1000; return b._open(b._data.ui.current, true); }, lid);
+  const forgot = await until(async () => { const d = await stored(); return d.length === 0 ? true : null; }, 10000);
+  check('0.9.0 a day after it\'s fixed the dismissal is forgotten (so if it breaks again, it shows)', !!forgot);
+  check('0.9.0 dismissing: no errors', page.logs.length === 0, page.logs);
+});
+
 test('0.9.0 saved checks: a sandbox run kept with what should come of it, replayed after every change', async (browser) => {
   const { page } = await imported(browser);
   const lid = await openFn(page, /garage/i);

@@ -123,6 +123,9 @@ sh tests/run-all.sh --e2e layout # only the suites matching a pattern
 - **Problems** (`findProblems()` in the library section, 0.9.0): from `analyze()`'s refs and the registries;
   `_buildModel` marks boxes (`n.prob`) and arrows (`e.prob`) and keeps `model.problems`; `_scanProblems()` counts
   every function for the list in the background (configs come from the cache), the open one from its model.
+  Dismissed ones (`layout.dismissed`, `splitDismissed()`, keyed `kind|ref` by `probKey()`) are left out of
+  `model.problems` (kept in `model.dismissed`) before `markProblems()` marks the board; a dismissal notes `gone`
+  when its problem isn't there and is dropped a day later. A version tab shows every problem.
 - **Saved checks** (0.9.0): `cleanCheck()` and `runCheck()` in the library section; a check is kept in the
   layout (`layout.checks`) with its starting states, clock, the automations and scripts that took part (`items`,
   related ones included), steps, answers and expectations. The open sandbox records into `_sbx.rec`; `_runChecks()`

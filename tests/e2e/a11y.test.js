@@ -53,6 +53,13 @@ async function audit(page, name, found) {
     await audit(page, 'board', found);
     await fbq(page, '.pchip').click(); await fbq(page, '.drawer .probs .prow').first().waitFor({ timeout: 5000 });
     await audit(page, 'problems', found);
+    // one dismissed: the header's Dismissed button and the dismissed list
+    await fbq(page, '.drawer [data-act="pdis"]').first().click();
+    await fbq(page, '.pdchip').waitFor({ timeout: 5000 });
+    await fbq(page, '.pdchip').click(); await fbq(page, '.drawer .probs [data-act="pdis-back"]').first().waitFor({ timeout: 5000 });
+    await el(page, (b) => { b._$.toast.hidden = true; });  // the toast after dismissing would sit over the drawer's foot
+    await audit(page, 'dismissed', found);
+    await fbq(page, '.drawer [data-act="pdis-back"]').first().click();
     await el(page, (b) => b._closeDrawer());
     await fbq(page, '[data-act="legend"]').first().click(); await page.waitForTimeout(400);
     await audit(page, 'key', found);

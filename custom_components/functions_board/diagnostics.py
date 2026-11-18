@@ -74,6 +74,10 @@ PHONE = re.compile(r"(?<![\w.:+-])(?:\+\d[\d .-]{7,}\d|\(?\d{3}\)?[ .-]\d{3}[ .-
 # long runs of letters and digits look like keys, tokens or hardware IDs
 SECRET = re.compile(r"\b(?=[A-Za-z0-9_\-]*\d)(?=[A-Za-z0-9_\-]*[A-Za-z])[A-Za-z0-9_\-]{24,}\b")
 TOKEN = re.compile(r"\b([a-z_]+)\.([a-z0-9_]+)\b")
+# the board's names for an area, floor, label or device ("area:garden_shed"), and the config keys that hold their
+# IDs: replaced even when Home Assistant no longer knows them (a problem is often about one that's gone)
+REF = re.compile(r"\b(area|floor|label|device):([A-Za-z0-9_\-]+)")
+ID_KEYS = {"area_id": "area", "floor_id": "floor", "label_id": "label", "device_id": "device"}
 # words the board's and Home Assistant's own structures use: never taken for someone's name, even if something is called that
 STRUCTURE = frozenset(
     "mode state states trigger triggers condition conditions action actions sequence single restart queued parallel on off "
@@ -189,6 +193,7 @@ class Anonymiser:
             return self.entity(dom, obj)
 
         s = TOKEN.sub(token, s)
+        s = REF.sub(lambda m: f"{m.group(1)}:{self._stand_in(m.group(2), m.group(1))}", s)
         if self._known_re is not None:
             s = self._known_re.sub(lambda m: self._stand_in(m.group(0), self._known[m.group(0)]), s)
         return SECRET.sub(lambda m: self._stand_in(m.group(0), "id"), s)
@@ -212,6 +217,8 @@ class Anonymiser:
                 return self.key(v) if v.startswith("mqtt:") else self.topic(v)
             if key in FREE_TEXT_KEYS and v:
                 return f"[text, {len(v)} characters]"
+            if key in ID_KEYS and v:
+                return self._stand_in(v, ID_KEYS[key])
             if key in NAME_KEYS and v:
                 return self._stand_in(v, "name") if v not in self._known else self.text(v)
             return self.text(v)

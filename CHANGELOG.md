@@ -23,6 +23,9 @@ ends closed (got open)"). **Replay** plays it in the sandbox, step by step on th
 sandbox (is it after sunset?) are given again; a question it hasn't been asked before makes the check unsure
 rather than passing. Checks are kept with the function's layout and shared like everything else on the board.
 
+Fixed: anonymised diagnostics now also replace the IDs of areas, floors, labels and devices that Home Assistant no
+longer knows (an automation still pointing at a deleted area), which were left as they were.
+
 Fixed: anonymised diagnostics now also replace the names inside MQTT topics (`home/kitchen/light` keeps its
 shape and protocol words like `zigbee2mqtt` and `set`, not the names).
 
@@ -34,6 +37,12 @@ be set up. Those are red. Unavailable or disabled things and automations that ar
 be on purpose (not while the function is paused). Each function in the list shows how many; the header has a
 **problems** chip that opens the list, with what each one is in, **Show** and **Edit**; and the boxes and arrows
 involved are marked on the board. It replaces the list's old "something is unavailable" dot.
+
+New: **dismiss a problem** you know about (a device unplugged for the winter). It leaves the count, the list's
+badge and the marks on the board; when it was the only one, the problems chip goes too. A **Dismissed** button in
+the header lists what you've dismissed, with **Bring back**, and the toast after dismissing has Undo. Dismissals are
+kept with the function and shared between administrators, and one is forgotten once its problem has been gone for
+a day, so a problem that comes back later shows again.
 
 ## 0.8.2 (2026-11-18)
 

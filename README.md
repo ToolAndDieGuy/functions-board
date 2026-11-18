@@ -72,6 +72,8 @@ Rename or remove an entity, and Home Assistant leaves every automation that used
 
 Each function in the list shows how many it has, the header's **problems** chip opens the list (what each one is in, **Show** it on the board, **Edit** the automation), and the boxes and arrows involved are marked. It only reads, and it keeps up as states and configs change.
 
+A problem you know about (a device that's unplugged for the winter) can be **dismissed**: it leaves the count, the list's badge and the marks on the board, and goes under **Dismissed** in the header, where **Bring back** returns it. Dismissals are kept with the function and shared between administrators. One is forgotten once its problem has been gone for a day, so if the problem comes back later, it shows again.
+
 ### Testing
 
 <table>

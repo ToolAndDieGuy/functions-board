@@ -167,6 +167,11 @@
     if (src.keep != null) out.keep = Array.isArray(src.keep) ? src.keep.filter((k) => typeof k === 'string' && k.length < 300).slice(0, 2000) : [];
     if (out.paused != null) out.paused = Array.isArray(out.paused) ? out.paused.filter((x) => typeof x === 'string') : null;
     if (out.categories != null && typeof out.categories !== 'object') out.categories = null;
+    // dismissed problems (0.9.0): what, when, and since when it's been gone
+    if (src.dismissed != null) {
+      out.dismissed = (Array.isArray(src.dismissed) ? src.dismissed : []).filter((d) => d && typeof d.k === 'string' && d.k.length < 400).slice(0, 500)
+        .map((d) => Object.assign({ k: d.k, at: num(d.at, 0) }, d.gone ? { gone: num(d.gone, 0) } : {}));
+    }
     // saved sandbox checks (0.9.0)
     if (src.checks != null) out.checks = (Array.isArray(src.checks) ? src.checks : []).slice(0, 50).map(cleanCheck).filter(Boolean);
     // test buttons and monitor boxes (Phase 9): only what they can be
@@ -956,6 +961,35 @@
        members: the keys of everything in the function
        ctx: { state(id), ent(id), dev(id), area(id), floor(id), label(id), service(domain, service), paused }
      Returns [{ sev: 'error'|'warn', kind, ref, by: [item keys] }], errors first, one per thing. ---------- */
+  // dismissed problems (0.9.0). A problem is known by what's wrong and with what (not by which automations use it).
+  // A dismissal lasts while its problem is there, and is forgotten once the problem has been gone for a day, so a
+  // problem that comes back later shows again. covers(key): which problems this list is complete for (the rest
+  // are left as they are).
+  const PROB_FORGET_MS = 24 * 3600 * 1000;
+  const probKey = (p) => p.kind + '|' + p.ref;
+  function splitDismissed(problems, dismissed, now, covers) {
+    const list = Array.isArray(dismissed) ? dismissed : [], have = new Set(problems.map(probKey)), out = [];
+    let changed = false;
+    list.forEach((d) => {
+      if (!covers || covers(d.k)) {
+        if (have.has(d.k)) { if (d.gone) { d = { k: d.k, at: d.at }; changed = true; } }
+        else if (!d.gone) { d = { k: d.k, at: d.at, gone: now }; changed = true; }
+        else if (now - d.gone > PROB_FORGET_MS) { changed = true; return; }
+      }
+      out.push(d);
+    });
+    const off = new Set(out.map((d) => d.k));
+    return { shown: problems.filter((p) => !off.has(probKey(p))), hidden: problems.filter((p) => off.has(probKey(p))), dismissed: out, changed };
+  }
+  // the boxes and arrows a function's problems are about: a box takes its worst one; an arrow is marked when an end
+  // of it is gone
+  function markProblems(nodes, edges, problems) {
+    const worst = new Map(), mark = (k, sev) => { if (worst.get(k) !== 'error') worst.set(k, sev); };
+    problems.forEach((pr) => { mark(pr.ref, pr.sev); pr.by.forEach((b) => mark(b, pr.sev)); });
+    nodes.forEach((n, k) => { n.prob = worst.get(k) || null; });
+    const gone = new Set(problems.filter((pr) => pr.sev === 'error' && !/^(m_|s_)/.test(pr.kind)).map((pr) => pr.ref));
+    edges.forEach((e) => { e.prob = gone.has(e.from) || gone.has(e.to); });
+  }
   function findProblems(items, members, ctx) {
     const out = new Map();
     const add = (sev, kind, ref, by) => {
@@ -1968,6 +2002,9 @@ svg path.e.prob{stroke:var(--error-color,#db4437);stroke-dasharray:5 4}
 .pbadge{min-width:18px;height:18px;padding:0 5px;border-radius:9px;font-size:11px;font-weight:600;line-height:18px;text-align:center;color:#fff;flex:none}
 .pbadge.p-error{background:color-mix(in srgb,var(--error-color,#db4437) 75%,#000)}
 .pbadge.p-warn{background:color-mix(in srgb,var(--warning-color,#ffa600) 60%,#000)}
+.pdchip{display:inline-flex;align-items:center;gap:4px;height:26px;padding:0 10px;border-radius:13px;border:1px solid var(--divider-color);background:none;font:inherit;font-size:12px;cursor:pointer;margin-left:6px;white-space:nowrap;color:var(--secondary-text-color)}
+.pdchip ha-icon{--mdc-icon-size:16px}
+.probs .pother{padding:8px 14px 14px}
 .pchip{display:inline-flex;align-items:center;gap:4px;height:26px;padding:0 10px;border-radius:13px;border:1px solid currentColor;background:none;font:inherit;font-size:12px;cursor:pointer;margin-left:6px;white-space:nowrap}
 .pchip ha-icon{--mdc-icon-size:16px}
 .pchip.p-error{color:var(--fb-red-ink)}
@@ -1988,7 +2025,7 @@ svg path.e.prob{stroke:var(--error-color,#db4437);stroke-dasharray:5 4}
 .prow>ha-icon{--mdc-icon-size:20px;flex:none;margin-top:1px}
 .prow .pbody{display:flex;flex-direction:column;gap:4px;min-width:0}
 .prow .pby{font-size:12px;color:var(--secondary-text-color)}
-.prow .pby button.lnk{background:none;border:0;padding:0;margin:0;font:inherit;color:var(--fb-primary-ink);text-decoration:underline;cursor:pointer}
+.prow .pby button.lnk,.probs .pother button.lnk{background:none;border:0;padding:0;margin:0;font:inherit;color:var(--fb-primary-ink);text-decoration:underline;cursor:pointer}
 .prow .pact{display:flex;gap:6px;flex-wrap:wrap}
 .prow .pact button{display:inline-flex;align-items:center;gap:4px;font:inherit;font-size:12px;padding:3px 8px;border-radius:6px;border:1px solid var(--divider-color);background:none;color:var(--primary-text-color);cursor:pointer}
 .prow .pact ha-icon{--mdc-icon-size:14px}
@@ -3270,7 +3307,16 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       prob_c_failed: 'The check "{name}" fails: {what}',
       prob_c_unsure: 'The check "{name}" couldn\'t finish: it needs an answer to "{what}". Replay it to answer.',
       prob_chip_t: 'What this function\'s automations and scripts point at that isn\'t there or can\'t work',
+      prob_back: 'Back to the problems',
       prob_d_disabled: 'The device {what} is disabled',
+      prob_dismiss: 'Dismiss',
+      prob_dismiss_a: 'Dismiss: {what}',
+      prob_dismiss_t: 'Stop counting this one: it leaves the count, the list and the board, and goes under Dismissed',
+      prob_dismissed_n: { one: '{n} dismissed', other: '{n} dismissed' },
+      prob_dismissed_note: 'These don\'t count anywhere: not in the function\'s count, the list or the board. A dismissal is forgotten once its problem has been gone for a day, so if the problem comes back later it shows again.',
+      prob_dismissed_t: 'Problems you dismissed',
+      prob_dismissed_title: 'Dismissed: {fnName}',
+      prob_dismissed_toast: 'Dismissed. It\'s under Dismissed if you want it back.',
       prob_d_missing: 'A device it uses is gone: {what}',
       prob_e_disabled: '{what} is disabled',
       prob_e_missing: '{what} doesn\'t exist: renamed or removed?',
@@ -3284,11 +3330,14 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       prob_n_errors: { one: '{n} problem that stops something working', other: '{n} problems that stop things working' },
       prob_n_warnings: { one: '{n} warning', other: '{n} warnings' },
       prob_none: 'Nothing wrong found.',
+      prob_none_dismissed: 'Nothing dismissed.',
       prob_note: 'Home Assistant doesn\'t warn when something an automation uses is renamed or removed; the automation just stops doing its job. This lists what this function\'s automations and scripts point at that isn\'t there or can\'t work right now. Red stops something working; amber may be on purpose.',
       prob_s_missing: 'The action {what} doesn\'t exist: is its integration set up?',
       prob_show: 'Show',
       prob_t_missing: 'The area, floor or label {what} is gone',
       prob_title: 'Problems: {fnName}',
+      prob_undismiss: 'Bring back',
+      prob_undismiss_a: 'Bring back: {what}',
       privacy_promise: 'Nothing leaves your Home Assistant: the board talks only to it, keeps its data in Home Assistant\'s own storage, and sends no telemetry. Diagnostics are a file you download, anonymised or not as you choose.',
       every_change_is_shown_before: 'Every change is shown before it happens, and Undo (Ctrl+Z) takes it back, except tests and deleting a helper that an integration set up.',
       shared_between_administrators_functions_board: 'shared between administrators (Functions Board integration)',
@@ -5479,14 +5528,12 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._toolNodes(label, nodes, list);
       // what its automations and scripts point at that isn't there or can't work (0.9.0); a saved version is
       // judged against today's home too, since that's where it would be restored
-      const problems = findProblems(logic.map((e, i) => ({ key: e, refs: an[i] ? an[i].refs : [] })), members.concat(devs), this._probCtx(label));
-      const worst = new Map(), mark = (k, sev) => { if (worst.get(k) !== 'error') worst.set(k, sev); };
-      problems.forEach((pr) => { mark(pr.ref, pr.sev); pr.by.forEach((b) => mark(b, pr.sev)); });
-      nodes.forEach((n, k) => { n.prob = worst.get(k) || null; });
-      const gone = new Set(problems.filter((pr) => pr.sev === 'error' && !/^(m_|s_)/.test(pr.kind)).map((pr) => pr.ref));
-      list.forEach((e) => { e.prob = gone.has(e.from) || gone.has(e.to); });
-      if (!V) this._noteProblems(label, problems);
-      return { label, nodes, edges: list, problems };
+      const found = findProblems(logic.map((e, i) => ({ key: e, refs: an[i] ? an[i].refs : [] })), members.concat(devs), this._probCtx(label));
+      // what was dismissed counts nowhere: not on the board, not in the list (a version shows everything)
+      const sp = V ? { shown: found, hidden: [] } : this._splitProbs(label, found, (k) => !k.startsWith('c_'));
+      markProblems(nodes, list, sp.shown);
+      if (!V) this._noteProblems(label, sp.shown);
+      return { label, nodes, edges: list, problems: sp.shown, dismissed: sp.hidden };
     }
 
     // every entity, device and script that any automation or script refers to (cached with the configs)
@@ -6771,7 +6818,10 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         case 'chk-run': this._runChecks(this._data.ui.current, el.dataset.id ? [el.dataset.id] : null, true); break;
         case 'chk-replay': this._checkReplay(el.dataset.id); break;
         case 'chk-del': this._checkDel(el.dataset.id); break;
-        case 'problems': if (this._drawer && this._drawer.mode === 'problems') this._closeDrawer(); else this._openProblems(); break;
+        case 'problems': if (this._drawer && this._drawer.mode === 'problems' && !this._drawer.dismissed && !el.closest('.drawer')) this._closeDrawer(); else this._openProblems(); break;
+        case 'pdis-list': if (this._drawer && this._drawer.mode === 'problems' && this._drawer.dismissed && !el.closest('.drawer')) this._closeDrawer(); else this._openProblems(true); break;
+        case 'pdis': this._probDismiss(el.dataset.k); break;
+        case 'pdis-back': this._probDismiss(el.dataset.k, true); break;
         case 'prob-go': { const k = el.dataset.key; if (this._model && this._model.nodes.has(k)) { this._select(k); this._centerOn(k); } break; }
         case 'prob-open': { const n = this._model && this._model.nodes.get(el.dataset.key); if (n) this._openItem(n); break; }
         case 'diag': this._diagModal(el.dataset.ver || null); break;
@@ -10368,8 +10418,11 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     _applyCheckProblems(label) {
       const m = this._model;
       if (!m || m.label !== label || this._ver) return;
-      m.problems = (m.problems || []).filter((p) => !/^c_/.test(p.kind)).concat(this._checkProblems(label))
+      const all = (m.problems || []).concat(m.dismissed || []).filter((p) => !/^c_/.test(p.kind)).concat(this._checkProblems(label))
         .sort((x, y) => (x.sev === y.sev ? 0 : x.sev === 'error' ? -1 : 1));
+      // checks' results are only known once they've run
+      const sp = this._splitProbs(label, all, (k) => !k.startsWith('c_') || this._checkRes.has(label));
+      m.problems = sp.shown; m.dismissed = sp.hidden;
       this._noteProblems(label, m.problems);
       this._renderHeader();
       if (this._drawer && this._drawer.mode === 'problems') this._openProblems();
@@ -10407,6 +10460,33 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         service: (d, s) => !!(svcs[d] && svcs[d][s]), paused: Array.isArray(L.paused) && L.paused.length > 0,
       };
     }
+    // the function's own layout, not a version's open in a tab
+    _liveLayout(label) { return this._data.layouts[label] || this._layout(label); }
+    // a function's problems, without the ones dismissed; keeps the dismissals' bookkeeping (and saves it)
+    _splitProbs(label, problems, covers) {
+      const L = this._liveLayout(label);
+      if (!(L.dismissed || []).length) return { shown: problems, hidden: [] };
+      const r = splitDismissed(problems, L.dismissed, Date.now(), covers);
+      if (r.changed) { L.dismissed = r.dismissed; this._save(); }
+      return r;
+    }
+    _probDismiss(k, back) {
+      const m = this._model, label = this._data.ui.current;
+      if (!m || m.label !== label || this._ver) return;
+      const L = this._liveLayout(label), all = (m.problems || []).concat(m.dismissed || []), p = all.find((x) => probKey(x) === k);
+      L.dismissed = (L.dismissed || []).filter((d) => d.k !== k);
+      if (!back) L.dismissed.push({ k, at: Date.now() });
+      this._save();
+      const sp = splitDismissed(all, L.dismissed, Date.now(), () => false);
+      m.problems = sp.shown; m.dismissed = sp.hidden;
+      markProblems(m.nodes, m.edges, m.problems);
+      this._noteProblems(label, m.problems);
+      this._renderHeader();
+      this._render();
+      this._drawEdges();
+      if (this._drawer && this._drawer.mode === 'problems') this._openProblems(this._drawer.dismissed && m.dismissed.length > 0);
+      if (!back && p) this._toast(T('prob_dismissed_toast'), [{ text: T('undo'), fn: () => this._probDismiss(k, true) }]);
+    }
     _noteProblems(label, problems) {
       const e = problems.filter((p) => p.sev === 'error').length, w = problems.length - e, was = this._probs.get(label);
       this._probs.set(label, { e, w });
@@ -10429,7 +10509,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           const items = logic.map((e, i) => ({ key: e, refs: cfgs[i] ? analyze(cfgs[i], e.startsWith('script.'), known).refs : [] }));
           const base = findProblems(items, members.concat(devs), this._probCtx(label));
           if ((this._layout(label).checks || []).length) await this._runChecks(label, null, false, logic.map((e, i) => ({ id: e, cfg: cfgs[i] })).filter((x) => x.cfg));
-          this._noteProblems(label, base.concat(this._checkProblems(label)));
+          this._noteProblems(label, this._splitProbs(label, base.concat(this._checkProblems(label)), (k) => !k.startsWith('c_') || this._checkRes.has(label)).shown);
           await new Promise((r) => setTimeout(r, 0));
         }
       } catch (e) { /* the counts stay as they were */ } finally { this._probScanning = false; }
@@ -10440,10 +10520,10 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       return `<span class="pbadge p-${c.e ? 'error' : 'warn'}" title="${esc(say)}"><span aria-hidden="true">${c.e || c.w}</span><span class="srt">${esc(say)}</span></span>`;
     }
     _probChip() {
-      const ps = this._model && this._model.label === (this._data && this._data.ui.current) ? this._model.problems || [] : [];
-      if (!ps.length) return '';
+      const m = this._model && this._model.label === (this._data && this._data.ui.current) ? this._model : null, ps = (m && m.problems) || [], ds = (m && m.dismissed) || [];
       const e = ps.filter((p) => p.sev === 'error').length;
-      return `<button class="pchip p-${e ? 'error' : 'warn'}" data-act="problems" title="${T('prob_chip_t')}"><ha-icon icon="${e ? 'mdi:alert-circle' : 'mdi:alert'}"></ha-icon>${P('prob_n', ps.length)}</button>`;
+      return (ps.length ? `<button class="pchip p-${e ? 'error' : 'warn'}" data-act="problems" title="${T('prob_chip_t')}"><ha-icon icon="${e ? 'mdi:alert-circle' : 'mdi:alert'}"></ha-icon>${P('prob_n', ps.length)}</button>` : '')
+        + (ds.length ? `<button class="pdchip" data-act="pdis-list" title="${T('prob_dismissed_t')}"><ha-icon icon="mdi:eye-off-outline"></ha-icon>${P('prob_dismissed_n', ds.length)}</button>` : '');
     }
     _probWhat(ref) {
       if (ref.startsWith('device:')) { const d = this._devMap.get(ref.slice(7)); return d ? d.name_by_user || d.name || ref.slice(7) : ref.slice(7); }
@@ -10472,13 +10552,14 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const ps = ((this._model && this._model.problems) || []).filter((p) => p.ref === key || p.by.includes(key));
       return ps.map((p) => this._probText(p).replace(/<[^>]+>/g, '')).join('\n');
     }
-    _openProblems() {
+    // the problems drawer; dismissed: the ones dismissed instead
+    _openProblems(dismissed) {
       const label = this._data.ui.current;
       if (!label || !this._model) return;
       this._leaveDrawerMode();
       this._capture = null;
-      this._drawer = { mode: 'problems' };
-      const d = this._$.drawer, ps = this._model.problems || [];
+      this._drawer = { mode: 'problems', dismissed: !!dismissed };
+      const d = this._$.drawer, ps = (dismissed ? this._model.dismissed : this._model.problems) || [], ds = this._model.dismissed || [];
       d.hidden = false;
       const nm = (k) => esc(this._model.nodes.has(k) ? this._model.nodes.get(k).name : this._nameOf(k));
       const row = (p) => `<div class="prow p-${p.sev}"><ha-icon icon="${p.sev === 'error' ? 'mdi:alert-circle' : 'mdi:alert'}"></ha-icon><div class="pbody"><div class="ptxt">${this._probText(p)}</div>`
@@ -10487,9 +10568,14 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         + p.by.filter((b) => /^(automation|script)\./.test(b)).map((b) => `<button data-act="prob-open" data-key="${esc(b)}"><ha-icon icon="mdi:pencil-outline"></ha-icon>${T('prob_edit', { name: nm(b) })}</button>`).join('')
         + (/^c_/.test(p.kind) ? `<button data-act="chk-replay" data-id="${esc(p.ref.slice(6))}"><ha-icon icon="mdi:flask-outline"></ha-icon>${T('chk_replay')}</button>` : '')
         + (!p.by.length && /^(automation|script)\./.test(p.ref) ? `<button data-act="prob-open" data-key="${esc(p.ref)}"><ha-icon icon="mdi:pencil-outline"></ha-icon>${T('prob_edit', { name: nm(p.ref) })}</button>` : '')
+        + (this._ver ? '' : dismissed
+          ? `<button data-act="pdis-back" data-k="${esc(probKey(p))}" aria-label="${esc(T('prob_undismiss_a', { what: this._probText(p).replace(/<[^>]+>/g, '') }))}"><ha-icon icon="mdi:eye-outline"></ha-icon>${T('prob_undismiss')}</button>`
+          : `<button data-act="pdis" data-k="${esc(probKey(p))}" title="${T('prob_dismiss_t')}" aria-label="${esc(T('prob_dismiss_a', { what: this._probText(p).replace(/<[^>]+>/g, '') }))}"><ha-icon icon="mdi:eye-off-outline"></ha-icon>${T('prob_dismiss')}</button>`)
         + `</div></div></div>`;
-      d.innerHTML = `<div class="dhead"><span class="dtitle">${T('prob_title', { fnName: esc(this._fnName(label)) })}</span><button data-act="close" title="${T('close')}"><ha-icon icon="mdi:close"></ha-icon></button></div>`
-        + `<div class="probs"><div class="vnote">${T('prob_note')}</div>${ps.length ? ps.map(row).join('') : `<div class="muted pad">${T('prob_none')}</div>`}</div>`;
+      const other = dismissed ? `<button class="lnk" data-act="problems">${T('prob_back')}</button>`
+        : ds.length ? `<button class="lnk" data-act="pdis-list">${P('prob_dismissed_n', ds.length)}</button>` : '';
+      d.innerHTML = `<div class="dhead"><span class="dtitle">${dismissed ? T('prob_dismissed_title', { fnName: esc(this._fnName(label)) }) : T('prob_title', { fnName: esc(this._fnName(label)) })}</span><button data-act="close" title="${T('close')}"><ha-icon icon="mdi:close"></ha-icon></button></div>`
+        + `<div class="probs"><div class="vnote">${dismissed ? T('prob_dismissed_note') : T('prob_note')}</div>${ps.length ? ps.map(row).join('') : `<div class="muted pad">${dismissed ? T('prob_none_dismissed') : T('prob_none')}</div>`}${other ? `<div class="pother">${other}</div>` : ''}</div>`;
       this._fitLitbar && this._fitLitbar();
     }
     _aboutModal() {

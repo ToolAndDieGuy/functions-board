@@ -25,7 +25,7 @@ from homeassistant.setup import async_setup_component
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 MARK = "bramblewood"
-SECRET_BITS = ["10.0.0.250", "616-555-0123", "tom@example.com", "https://bramble.example.org/hook", "Zx9Kq2LmP4vR7tY1wE5uI8oA3sD6fG0h", "AA:BB:CC:11:22:33", "4321-alarm"]
+SECRET_BITS = ["192.0.2.47", "616-555-0123", "sam@example.com", "https://bramble.example.org/hook", "Zx9Kq2LmP4vR7tY1wE5uI8oA3sD6fG0h", "AA:BB:CC:11:22:33", "4321-alarm"]
 NOTE = "Spare key is under the bramblewood pot, alarm code 4321-alarm, call 616-555-0123"
 
 
@@ -68,15 +68,17 @@ def _snapshot(home: dict[str, str]) -> dict:
             "automation.bramblewood_left_open": {
                 "dom": "automation", "id": "1700000000001", "name": "Bramblewood: left open",
                 "cfg": {
-                    "id": "1700000000001", "alias": "Bramblewood: left open", "description": "Tells Tom when the bramblewood door is open",
+                    "id": "1700000000001", "alias": "Bramblewood: left open", "description": "Tells Sam when the bramblewood door is open",
                     "mode": "single",
                     "triggers": [{"trigger": "state", "entity_id": home["door"], "to": "open", "for": {"minutes": 15}}, {"trigger": "event", "event_type": "timer.finished"}],
                     "conditions": [{"condition": "template", "value_template": "{{ is_state('light.bramblewood_lamp', 'on') }}"}],
                     "actions": [
                         {"action": "notify.mobile_app_bramblewood_phone", "data": {"title": "Bramblewood", "message": NOTE}},
-                        {"action": "rest_command.bramblewood_hook", "data": {"url": "https://bramble.example.org/hook", "token": "Zx9Kq2LmP4vR7tY1wE5uI8oA3sD6fG0h", "host": "10.0.0.250", "to": "tom@example.com"}},
+                        {"action": "rest_command.bramblewood_hook", "data": {"url": "https://bramble.example.org/hook", "token": "Zx9Kq2LmP4vR7tY1wE5uI8oA3sD6fG0h", "host": "192.0.2.47", "to": "sam@example.com"}},
                         {"action": "light.turn_on", "target": {"entity_id": "light.bramblewood_lamp", "area_id": home["area"]}},
                         {"device_id": home["device"], "domain": "cover", "entity_id": home["door"], "type": "close"},
+                        # an area that's gone since (its ID is all that's left, and it names a place)
+                        {"action": "light.turn_off", "target": {"area_id": ["bramblewood_old_shed"]}},
                     ],
                 },
             }
@@ -98,6 +100,9 @@ async def _fill(hass: HomeAssistant, ws, home: dict[str, str]) -> str:
                     "items": ["automation.bramblewood_left_open"], "steps": [{"op": "mqtt", "topic": "home/bramblewood/door", "payload": NOTE}],
                     "answers": [{"key": "automation.bramblewood_left_open", "text": "Is the bramblewood gate shut?", "value": True}],
                     "expect": [{"k": "state", "id": home["door"], "state": "closed"}]}],
+        # dismissed problems (0.9.0): what's wrong and with what, an entity, an action, an area by name
+        "dismissed": [{"k": f"e_unavail|{home['door']}", "at": 1}, {"k": "s_missing|notify.mobile_app_bramblewood_phone", "at": 2},
+                      {"k": "t_missing|area:bramblewood_shed", "at": 3, "gone": 4}],
         "dir": "right",
     }
     for msg in (
@@ -146,6 +151,11 @@ async def test_anonymised_diagnostics_keep_shape_not_names(hass: HomeAssistant, 
     lamp = cfg["actions"][2]["target"]["entity_id"]
     assert lamp in cfg["conditions"][0]["value_template"]
     assert len(d["version_snapshots"]) == 1
+    # an area Home Assistant no longer knows is replaced too, in a config and in the board's own names for it
+    assert cfg["actions"][4]["target"]["area_id"][0].startswith("area_"), cfg["actions"][4]
+    # a dismissed problem keeps what kind it is, with the same stand-in for the thing as everywhere else
+    dis = layout["dismissed"]
+    assert [x["k"].split("|")[0] for x in dis] == ["e_unavail", "s_missing", "t_missing"] and dis[0]["k"] == f"e_unavail|{door}" and dis[2]["gone"] == 4 and dis[2]["k"].startswith("t_missing|area:area_"), dis
     # an MQTT topic keeps its shape and protocol words, not the names in it
     step = d["board"]["layouts"]["label_1"]["checks"][0]["steps"][0]
     assert step["topic"] == "home/topic_1/door" or step["topic"].split("/")[1].startswith("topic_"), step

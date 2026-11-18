@@ -4,7 +4,7 @@ const path = require('path');
 
 const src = fs.readFileSync(path.join(__dirname, '..', 'custom_components', 'functions_board', 'frontend', 'functions-board.js'), 'utf8');
 const start = src.indexOf("'use strict';"), end = src.indexOf('  class FunctionsBoard extends HTMLElement');
-const { analyze, findProblems } = new Function('customElements', 'window', src.slice(start, end) + '\nreturn { analyze, findProblems };')({ get: () => undefined }, {});
+const { analyze, findProblems, splitDismissed, probKey, markProblems, cleanLayout } = new Function('customElements', 'window', src.slice(start, end) + '\nreturn { analyze, findProblems, splitDismissed, probKey, markProblems, cleanLayout };')({ get: () => undefined }, {});
 
 let failed = 0, total = 0;
 const check = (name, ok, detail) => {
@@ -78,6 +78,34 @@ check('a script that\'s simply not running isn\'t a problem', !own.some((g) => /
 // 5. not judged: events, MQTT topics, notification buttons, templates naming unknown things
 const quiet = [item('automation.q', { triggers: [{ trigger: 'event', event_type: 'my_event' }, { trigger: 'mqtt', topic: 'home/x' }], conditions: [{ condition: 'template', value_template: "{{ states('sensor.not_a_thing') }}" }], actions: [{ event: 'done' }] })];
 check('events, MQTT topics and unknown names inside templates aren\'t judged', findProblems(quiet, [], ctx()).length === 0, kinds(findProblems(quiet, [], ctx())));
+
+// 6. dismissing (0.9.0): a problem is known by what's wrong and with what; it's forgotten a day after it's gone
+{
+  const A = { sev: 'error', kind: 'e_missing', ref: 'cover.gone', by: ['automation.a'] }, B = { sev: 'warn', kind: 'e_unavail', ref: 'sensor.flaky', by: ['automation.a'] };
+  const C = { sev: 'error', kind: 'c_failed', ref: 'check:x1', by: [] };
+  const day = 24 * 3600 * 1000, t0 = 1e12;
+  let r = splitDismissed([A, B], [{ k: probKey(A), at: t0 }], t0);
+  check('a dismissed problem is hidden and the rest shown', r.shown.length === 1 && r.shown[0] === B && r.hidden.length === 1 && r.hidden[0] === A && !r.changed, r);
+  check('the same problem used by another automation too stays dismissed', splitDismissed([Object.assign({}, A, { by: ['automation.a', 'automation.b'] })], [{ k: probKey(A), at: t0 }], t0).shown.length === 0);
+  check('a different problem with the same thing isn\'t (missing, then unavailable)', splitDismissed([Object.assign({}, A, { kind: 'e_unavail', sev: 'warn' })], [{ k: probKey(A), at: t0 }], t0).shown.length === 1);
+  r = splitDismissed([B], [{ k: probKey(A), at: t0 }], t0 + 5);
+  check('once its problem is gone, the dismissal notes since when', r.changed && r.dismissed.length === 1 && r.dismissed[0].gone === t0 + 5, r.dismissed);
+  const goneD = r.dismissed;
+  r = splitDismissed([A, B], goneD, t0 + 3600e3);
+  check('back within a day: still dismissed, and no longer marked gone', r.hidden.length === 1 && r.changed && !r.dismissed[0].gone, r.dismissed);
+  r = splitDismissed([B], goneD, t0 + 5 + day - 1);
+  check('gone for less than a day: kept', r.dismissed.length === 1 && !r.changed, r.dismissed);
+  r = splitDismissed([B], goneD, t0 + 5 + day + 1);
+  check('gone for more than a day: forgotten', r.dismissed.length === 0 && r.changed, r.dismissed);
+  check('... so if it comes back after that, it shows again', splitDismissed([A, B], r.dismissed, t0 + 2 * day).shown.length === 2);
+  r = splitDismissed([A], [{ k: probKey(C), at: t0 }], t0, (k) => !k.startsWith('c_'));
+  check('a list that doesn\'t cover checks leaves a check\'s dismissal alone', !r.changed && r.dismissed.length === 1 && !r.dismissed[0].gone, r.dismissed);
+  const nodes = new Map([['automation.a', {}], ['cover.gone', {}], ['sensor.flaky', {}]]), edges = [{ from: 'cover.gone', to: 'automation.a' }, { from: 'sensor.flaky', to: 'automation.a' }];
+  markProblems(nodes, edges, [B]);
+  check('marks come only from what\'s shown: a dismissed missing thing marks no box or arrow', nodes.get('cover.gone').prob === null && nodes.get('sensor.flaky').prob === 'warn' && nodes.get('automation.a').prob === 'warn' && !edges[0].prob, [...nodes].map(([k, n]) => k + ':' + n.prob));
+  const L = cleanLayout({ dismissed: [{ k: probKey(A), at: t0, gone: t0 + 1, extra: '<x>' }, { k: 5 }, null, { k: 'x'.repeat(500) }] });
+  check('the layout keeps dismissals as what, when and since when gone, nothing else', JSON.stringify(L.dismissed) === JSON.stringify([{ k: probKey(A), at: t0, gone: t0 + 1 }]), L.dismissed);
+}
 
 console.log(`\n${total - failed}/${total} passed`);
 process.exit(failed ? 1 : 0);
