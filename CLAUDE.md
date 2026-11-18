@@ -18,7 +18,8 @@ function out in a sandbox. Published through HACS. Read this before changing any
     `SBX_PRELUDE`, `SBX_ETRIG`), the English text table (`T()`, `P()` for plurals);
   - then `class FunctionsBoard extends HTMLElement`: rendering, the drawer modes (pages, debug, sandbox), the
     toolbar actions (one `switch` on `data-act` in `_onClick`), storage and sync.
-- `tests/`: everything below. `scripts/`: `bump.js` (version), `gen_sandbox_triggers.py` (see Sandbox).
+- `tests/`: everything below. `scripts/`: `bump.js` (version), `gen_sandbox_triggers.py` (see Sandbox),
+  `demo_requirements.py` (what `setup.sh` installs before Home Assistant first starts).
 - `docs/images/`: the README's screenshots, taken by `tests/e2e/screens.js` from the demo setup.
 
 ## Testing (do this for every change)

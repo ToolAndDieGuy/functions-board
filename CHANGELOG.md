@@ -38,8 +38,9 @@ Shared lines are easier to follow.
 
 For contributors: the test kit keeps a separate login for the test and demo Home Assistants (starting the demo
 one no longer loses the test one's password), `apitest.py` finds the running instance's config folder on its
-own, and `setup.sh` installs numpy with Home Assistant (the demo integration needs it, and CI sometimes started
-without it).
+own, and `setup.sh` installs the demo integration's requirements before Home Assistant first starts (they're
+read from Home Assistant's manifests; installed during startup, they raced it and CI sometimes started without
+the test entities).
 
 ## 0.7.1 (2026-11-17)
 
