@@ -3,7 +3,13 @@
 The sandbox follows the same rules as Home Assistant's trigger classes. This reads those classes from an installed
 Home Assistant and writes, for each trigger, its kind and settings into the board, between the SBX_ETRIG markers:
 
-    venv/bin/python scripts/gen_sandbox_triggers.py
+    venv/bin/python scripts/gen_sandbox_triggers.py           write them into the board
+    venv/bin/python scripts/gen_sandbox_triggers.py --check   only compare (the weekly beta run): fails if
+                                                              Home Assistant has triggers the board lacks or
+                                                              has differently; ones it dropped are a note
+
+An integration whose trigger module can't be imported here (its packages aren't installed) keeps the entries the
+board has for it, and is named, so a missing package never quietly drops triggers.
 
 Kinds: target (to a state), transition (from one set of states to another), origin (away from a state), stateless
 (any update: buttons, events), num_changed / num_crossed (a number, with options.threshold), cover (opened/closed,
@@ -48,9 +54,13 @@ def _vals(v):
 
 
 def main() -> None:
+    import sys  # noqa: PLC0415
+
     from homeassistant.components.cover.trigger import CoverTriggerBase  # noqa: PLC0415
 
+    check = "--check" in sys.argv[1:]
     table: dict[str, dict] = {}
+    skipped: list[str] = []
     root = Path(comps.__file__).parent
     for d in sorted(root.iterdir()):
         if not (d / "trigger.py").exists():
@@ -58,6 +68,7 @@ def main() -> None:
         try:
             mod = importlib.import_module(f"homeassistant.components.{d.name}.trigger")
         except Exception:  # noqa: BLE001 - an integration whose requirements aren't installed
+            skipped.append(d.name)
             continue
         for verb, cls in (getattr(mod, "TRIGGERS", None) or {}).items():
             if not inspect.isclass(cls) or not issubclass(cls, et.EntityTriggerBase):
@@ -85,8 +96,33 @@ def main() -> None:
             if (fr := _vals(getattr(cls, "_from_states", None) or getattr(cls, "_from_state", None))) is not None:
                 entry["from"] = fr
             table[key] = entry
-    js = json.dumps(table, separators=(",", ":"), sort_keys=True)
     src = BOARD.read_text()
+    m = re.search(r"/\* SBX_ETRIG:start \*/(.*?)/\* SBX_ETRIG:end \*/", src, flags=re.S)
+    if not m:
+        raise SystemExit("SBX_ETRIG markers not found in the board")
+    old: dict[str, dict] = json.loads(m.group(1))
+    # what couldn't be read here stays as the board has it
+    kept = {k: v for k, v in old.items() if k.split(".", 1)[0] in skipped and k not in table}
+    table.update(kept)
+    if skipped:
+        print("couldn't import (packages not installed), kept as the board has them: " + ", ".join(skipped))
+    added = sorted(set(table) - set(old))
+    changed = sorted(k for k in set(table) & set(old) if table[k] != old[k])
+    dropped = sorted(set(old) - set(table))
+    if check:
+        for k in added:
+            print(f"new in Home Assistant: {k} {json.dumps(table[k])}")
+        for k in changed:
+            print(f"changed: {k} {json.dumps(old[k])} -> {json.dumps(table[k])}")
+        if dropped:
+            print("note: Home Assistant no longer has (the board keeps them for older versions): " + ", ".join(dropped))
+        if added or changed:
+            raise SystemExit("The sandbox's per-entity triggers are behind: rerun scripts/gen_sandbox_triggers.py on this version")
+        print(f"{len(table)} triggers: the sandbox has them all")
+        return
+    # writing keeps triggers an older Home Assistant still has, so automations on it still simulate
+    table.update({k: old[k] for k in dropped})
+    js = json.dumps(table, separators=(",", ":"), sort_keys=True)
     new, n = re.subn(r"(/\* SBX_ETRIG:start \*/).*?(/\* SBX_ETRIG:end \*/)", lambda m: f"{m.group(1)}{js}{m.group(2)}", src, flags=re.S)
     if n != 1:
         raise SystemExit("SBX_ETRIG markers not found in the board")

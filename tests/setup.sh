@@ -8,6 +8,8 @@
 #   sh tests/setup.sh all        all of it
 #
 # FB_FRESH=1 rebuilds the Home Assistant config folders (their stored data and onboarding go with them).
+# FB_HA=beta installs Home Assistant's newest release, betas included, instead of the pinned one (the weekly
+# beta run in .github/workflows/beta.yml); FB_HA=2026.12.0 installs that version.
 # Needs: uv (https://docs.astral.sh/uv/; installed with pip if missing), Node 22, and the system TurboJPEG library
 # (libturbojpeg on Debian and Ubuntu) for the demo integration's camera entities.
 set -e
@@ -15,7 +17,7 @@ cd "$(dirname "$0")/.."
 
 # keep these in step with .github/workflows/validate.yml
 PY=3.14
-HA=2026.11.1
+HA=${FB_HA:-2026.11.1}
 PHCC=0.13.375
 
 want() { [ "$1" = "all" ] || [ "$1" = "$2" ]; }
@@ -28,7 +30,12 @@ command -v uv >/dev/null 2>&1 || PATH="$HOME/.local/bin:$PATH"
 if [ ! -x venv314/bin/hass ]; then
   echo "== Home Assistant $HA (Python $PY) in venv314"
   uv venv --python "$PY" venv314
-  uv pip install --python venv314/bin/python "homeassistant==$HA"
+  if [ "$HA" = "beta" ]; then
+    uv pip install --python venv314/bin/python --prerelease allow homeassistant
+  else
+    uv pip install --python venv314/bin/python "homeassistant==$HA"
+  fi
+  venv314/bin/python -c 'from homeassistant.const import __version__ as v; print("== installed Home Assistant", v)'
 fi
 # The demo integration (the test garage door and the rest) sets up platforms whose requirements its manifest
 # doesn't list, and imports numpy unlisted. Installed while Home Assistant starts, they race it (CI lost the test

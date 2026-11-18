@@ -1,0 +1,71 @@
+name: Home Assistant beta
+
+# Every week, against Home Assistant's newest release, betas included: the board's quick tests, whether Home
+# Assistant's per-entity triggers changed (the sandbox copies them), and every browser suite on a real Home
+# Assistant. A failure opens an issue (or adds to the open one), so a breaking change is found before release day.
+# Not a required check: it runs on its own schedule, never on pull requests.
+
+on:
+  schedule:
+    - cron: "41 7 * * 3"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  beta:
+    name: Against Home Assistant's beta
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: astral-sh/setup-uv@v6
+      - name: System libraries
+        run: sudo apt-get update && sudo apt-get install -y libturbojpeg0 || sudo apt-get install -y libturbojpeg
+      - name: Set up the newest Home Assistant and Playwright
+        run: |
+          FB_HA=beta sh tests/setup.sh
+          npx playwright install --with-deps chromium
+          echo "HA_VERSION=$(venv314/bin/python -c 'from homeassistant.const import __version__ as v; print(v)')" >> "$GITHUB_ENV"
+      - name: Quick tests
+        run: sh tests/run-all.sh
+      - name: Per-entity triggers still as the sandbox has them
+        run: venv314/bin/python scripts/gen_sandbox_triggers.py --check
+      - name: Start Home Assistant
+        if: success() || failure()
+        run: sh tests/start-ha.sh
+      - name: Every browser suite
+        if: success() || failure()
+        run: sh tests/run-all.sh --e2e
+      - name: Home Assistant's errors
+        if: failure()
+        run: grep -nE "ERROR|Error setting up|Setup failed|Traceback|ModuleNotFoundError|ImportError" ha/hass.log | grep -v "websocket_api.http.connection" | cut -c1-400 | head -80 || true
+      - name: Home Assistant log and screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: beta-failure
+          path: |
+            ha/hass.log
+            tests/e2e/.state/shots/
+      - name: Open an issue, or add to the open one
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          body="The weekly run against Home Assistant ${HA_VERSION:-beta} failed: $run
+
+          Open the run to see which step and which checks. Nothing is released from this; it's a heads-up before Home Assistant's release."
+          gh label create ha-beta --color FBCA04 --description "Found by the weekly Home Assistant beta run" 2>/dev/null || true
+          open=$(gh issue list --label ha-beta --state open --json number --jq '.[0].number')
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --body "$body"
+          else
+            gh issue create --title "Home Assistant ${HA_VERSION:-beta} breaks something" --label ha-beta --body "$body"
+          fi

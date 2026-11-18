@@ -92,10 +92,17 @@ sh tests/run-all.sh --e2e layout # only the suites matching a pattern
   heading (it writes today's UTC date; fix it to the local date if they differ). Each release gets a CHANGELOG
   entry written for users. Changes not yet given a version go under `## Unreleased` at the top of the CHANGELOG;
   `bump.js` turns that into the version's entry.
-- **Releases** are tagged `vX.Y.Z` on `main` and published as GitHub releases; HACS installs from them.
+- **Releases are automatic** (`.github/workflows/release.yml`): when a push to `main` passes Validate and the
+  manifest's version has no tag yet, it tags `vX.Y.Z` and publishes the GitHub release HACS installs from, with
+  that version's CHANGELOG section as the notes. So bump the version only when you mean to release, and in a
+  stack of PRs bump only in the last one (the others write under `## Unreleased`). It releases only the tip of
+  `main`, so quick merges in a row release once.
   Work on branches with PRs; stacked PRs merge in order.
 - CI (`.github/workflows/validate.yml`) runs the HACS action, hassfest, the quick tests, the backend tests and
-  the browser suites on every push.
+  the browser suites on every push. `.github/workflows/beta.yml` runs weekly against Home Assistant's newest
+  release, betas included (`FB_HA=beta sh tests/setup.sh` does the same locally), checks the sandbox has every
+  per-entity trigger it has (`gen_sandbox_triggers.py --check`; integrations it can't import keep their entries), and opens an issue labelled `ha-beta` when anything fails.
+- **Issues** use the forms in `.github/ISSUE_TEMPLATE` (they ask for versions and an anonymised diagnostics file).
 
 ## Design notes worth knowing
 
