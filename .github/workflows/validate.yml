@@ -85,7 +85,7 @@ jobs:
       - name: Start Home Assistant
         run: sh tests/start-ha.sh
       - name: Run every suite
-        run: sh tests/run.sh --ha --keep --only 'selftest|apitest|e2e-'
+        run: sh tests/run.sh --ha --keep --only 'selftest|board-|apitest|e2e-'
       - name: Home Assistant's errors
         if: failure()
         run: |
