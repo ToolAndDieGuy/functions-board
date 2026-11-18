@@ -1109,6 +1109,22 @@ test('0.7.2 shared lines: point at a box to trace its arrow, select it to keep i
   check('0.7.2 no errors', page.logs.length === 0, page.logs);
 });
 
+test('0.8.1 the Key: "simulated state" is on the same line as its mark', async (browser) => {
+  const { page } = await imported(browser);
+  await openFn(page, /garage/i);
+  await el(page, (b) => { b._data.ui.legend = true; b._renderLegend(); });
+  await page.waitForTimeout(300);
+  const k = await el(page, (b) => {
+    const mark = b.shadowRoot.querySelector('.legend .sw.dashed2'), text = mark && mark.nextSibling;
+    if (!mark || !text) return null;
+    const r = document.createRange(); r.selectNodeContents(text);
+    const m = mark.getBoundingClientRect(), t = r.getBoundingClientRect();
+    return { mark: [m.left, m.top, m.bottom], text: [t.left, t.top, t.bottom], words: text.textContent };
+  });
+  check('0.8.1 the simulated-state mark sits just before its words, on their line', !!k && k.text[0] - k.mark[0] < 60 && k.text[0] > k.mark[0] && Math.abs((k.mark[1] + k.mark[2]) / 2 - (k.text[1] + k.text[2]) / 2) < 10, k);
+  check('0.8.1 no errors', page.logs.length === 0, page.logs);
+});
+
 (async () => {
   const browser = await chromium.launch();
   for (const [name, fn] of cases) {
