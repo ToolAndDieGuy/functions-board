@@ -35,14 +35,7 @@ jobs:
       - name: Quick tests
         run: sh tests/run-all.sh
       - name: Per-entity triggers still as the sandbox has them
-        run: |
-          venv314/bin/python scripts/gen_sandbox_triggers.py
-          if ! git diff --quiet -- custom_components/functions_board/frontend/functions-board.js; then
-            echo "Home Assistant $HA_VERSION changed its per-entity triggers. Rerun scripts/gen_sandbox_triggers.py on it:"
-            git diff --stat -- custom_components/functions_board/frontend/functions-board.js
-            git diff -- custom_components/functions_board/frontend/functions-board.js | head -60
-            exit 1
-          fi
+        run: venv314/bin/python scripts/gen_sandbox_triggers.py --check
       - name: Start Home Assistant
         if: success() || failure()
         run: sh tests/start-ha.sh

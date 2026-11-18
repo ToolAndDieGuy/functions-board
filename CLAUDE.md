@@ -81,8 +81,8 @@ sh tests/run-all.sh --e2e layout # only the suites matching a pattern
   Work on branches with PRs; stacked PRs merge in order.
 - CI (`.github/workflows/validate.yml`) runs the HACS action, hassfest, the quick tests, the backend tests and
   the browser suites on every push. `.github/workflows/beta.yml` runs weekly against Home Assistant's newest
-  release, betas included (`FB_HA=beta sh tests/setup.sh` does the same locally), checks the per-entity triggers
-  haven't changed, and opens an issue labelled `ha-beta` when anything fails.
+  release, betas included (`FB_HA=beta sh tests/setup.sh` does the same locally), checks the sandbox has every
+  per-entity trigger it has (`gen_sandbox_triggers.py --check`; integrations it can't import keep their entries), and opens an issue labelled `ha-beta` when anything fails.
 - **Issues** use the forms in `.github/ISSUE_TEMPLATE` (they ask for versions and an anonymised diagnostics file).
 
 ## Design notes worth knowing
