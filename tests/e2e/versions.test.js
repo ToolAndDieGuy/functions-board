@@ -109,8 +109,12 @@ const settled = (page) => until(() => el(page, (b) => (b._model && !b._$.loading
   await fbq(page, `.drawer [data-act="ver-restore"][data-id="${vid}"]`).click();
   await fbq(page, '.modal .vrdlg').waitFor({ timeout: 15000 });
   const dlg = await fbq(page, '.modal .vrdlg').textContent();
-  check('Restore lists what changes: configs and settings back, YAML ones that can\'t, what was added since', /get their saved configs or settings back/.test(dlg) && /defined in YAML/.test(dlg) && /Garage: added later/.test(dlg) && /Before restoring/.test(dlg), dlg.slice(0, 400));
+  check('Restore lists what changes: configs and settings back, YAML ones that can\'t, what was added since', /get their saved configs or settings back/.test(dlg) && /defined in YAML/.test(dlg) && /Garage: added later/.test(dlg), dlg.slice(0, 400));
   check('... and offers turning off or deleting what was added since', (await fbq(page, '.modal input[name="vextra"]').count()) === 2);
+  const bk = await el(page, (b) => { const c = b._$.modal.querySelector('input[name="vbackup"]'); return { there: !!c, ticked: !!c && c.checked, label: c ? c.parentNode.textContent : '', hint: c ? c.parentNode.nextElementSibling.textContent : '' }; });
+  check('0.8.1 saving what\'s there now first is a choice, not ticked unless you tick it', bk.there && !bk.ticked && /Before restoring/.test(bk.label), bk);
+  check('0.8.1 ... and the dialog says what\'s there now isn\'t saved anywhere (it was edited since)', /isn.t saved as a version/.test(bk.hint), bk.hint);
+  await fbq(page, '.modal input[name="vbackup"]').check();
   await fbq(page, '.modal [data-act="ver-restore-go"]').click();
   await until(() => el(page, (b) => b._$.modal.hidden || null), 30000);
   const after = await api(page, 'GET', `config/automation/config/${LEFT_ID}`);
@@ -121,7 +125,7 @@ const settled = (page) => until(() => el(page, (b) => (b._model && !b._$.loading
   check('... what was added since is turned off, not deleted', !!off);
   await until(async () => (await vlist(page)).length === 2 || null, 10000);
   L = await vlist(page);
-  check('... what was there before is saved first', L.some((x) => /Before restoring "Original"/.test(x.name)), L);
+  check('... with the box ticked, what was there before is saved first', L.some((x) => /Before restoring "Original"/.test(x.name)), L);
   check('... and with the added automation still in it (turned off), the function isn\'t marked as exactly that version', !L.find((x) => x.id === vid).on, L);
 
   // again, deleting what was added since; and a version whose steps use a device that's gone
@@ -140,8 +144,12 @@ const settled = (page) => until(() => el(page, (b) => (b._model && !b._$.loading
   const realDev = (await ws(page, { type: 'config/device_registry/list' })).find((d) => d.name);
   await el(page, (b, [o, n]) => { b._verPending.devmap[o] = n; }, [ghostDev, realDev.id]);
   await fbq(page, '.modal input[name="vextra"][value="delete"]').check();
+  const n0 = (await vlist(page)).length;
   await fbq(page, '.modal [data-act="ver-restore-go"]').click();
   await until(() => el(page, (b) => b._$.modal.hidden || null), 30000);
+  await el(page, (b) => b._renderVersions());
+  await page.waitForTimeout(1500);
+  check('0.8.1 with the box left as it is, restoring saves no extra copy', (await vlist(page)).length === n0, await vlist(page));
   const after2 = await api(page, 'GET', `config/automation/config/${LEFT_ID}`);
   check('the replaced device\'s step now names the device picked', JSON.stringify(after2.actions).includes(realDev.id) && !JSON.stringify(after2.actions).includes(ghostDev), after2.actions);
   const gone = await api(page, 'GET', 'config/automation/config/fbver1').then(() => false, () => true);
@@ -157,6 +165,14 @@ const settled = (page) => until(() => el(page, (b) => (b._model && !b._$.loading
   await el(page, (b) => b._renderVersions());
   const back = await until(async () => ((await vlist(page)).find((x) => x.id === vid) || {}).on || null, 15000);
   check('switching back to a version: once the function is exactly it again, it\'s the active one', !!back, await vlist(page));
+  check('0.8.1 ... and switching back and forth piles up no copies', (await vlist(page)).length === n0, await vlist(page));
+  // what's there now is a saved version: the dialog says so (no backup needed)
+  const bef = (await vlist(page)).find((x) => /Before restoring/.test(x.name));
+  await fbq(page, `.drawer [data-act="ver-restore"][data-id="${bef.id}"]`).click();
+  await fbq(page, '.modal .vrdlg').waitFor({ timeout: 15000 });
+  const hint2 = await el(page, (b) => b._$.modal.querySelector('input[name="vbackup"]').parentNode.nextElementSibling.textContent);
+  check('0.8.1 when what\'s there now is already a saved version, the dialog names it', /already saved as "Original"/.test(hint2), hint2);
+  await fbq(page, '.modal [data-act="modal-cancel"]').click();
 
   // rename and delete
   await fbq(page, `.drawer [data-act="ver-edit"][data-id="${dv.id}"]`).click();
