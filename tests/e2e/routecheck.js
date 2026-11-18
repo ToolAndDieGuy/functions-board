@@ -33,8 +33,10 @@ function routeCheck(el, opt) {
   }
   segs.forEach((s) => {
     const [fk, tk] = R.boxes[s.ri];
-    m.nodes.forEach((b, k) => {
+    m.nodes.forEach((b0, k) => {
       if (k === fk || k === tk || !el._visibleKeys().has(k)) return;
+      // top to bottom, routes are in the frame turned a quarter turn: turn the box the same way
+      const b = R.vert ? { x: b0.y, y: b0.x, w: b0.h, h: b0.w } : b0;
       const x0 = s.vert ? s.c : s.lo, x1 = s.vert ? s.c : s.hi, y0 = s.vert ? s.lo : s.c, y1 = s.vert ? s.hi : s.c;
       if (Math.max(x0, x1) > b.x + 1 && Math.min(x0, x1) < b.x + b.w - 1 && Math.max(y0, y1) > b.y + 1 && Math.min(y0, y1) < b.y + b.h - 1) through.push({ edge: R.ids[s.ri], box: k });
     });

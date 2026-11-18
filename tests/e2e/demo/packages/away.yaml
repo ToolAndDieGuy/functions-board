@@ -1,0 +1,20 @@
+input_select:
+  house_mode:
+    name: House mode
+    icon: mdi:home-switch
+    options: [Home, Away, Night]
+    initial: Home
+input_boolean:
+  guest_mode:
+    name: Guest mode
+    icon: mdi:account-group
+timer:
+  away_grace:
+    name: Away grace period
+    duration: "00:05:00"
+template:
+  - binary_sensor:
+      - name: Anyone home
+        unique_id: anyone_home
+        icon: mdi:home-account
+        state: "{{ ['device_tracker.demo_paulus', 'device_tracker.demo_anne_therese'] | select('is_state', 'home') | list | count > 0 }}"

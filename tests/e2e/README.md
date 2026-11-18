@@ -5,6 +5,8 @@ the demo config in `config/`. They are what found most of the v0.3.0 bugs.
 
 ## Start a test Home Assistant
 
+`sh tests/setup.sh` and `sh tests/start-ha.sh` do all of this (see `tests/README.md`); by hand:
+
 ```sh
 uv venv --python 3.14 venv314
 uv pip install --python venv314/bin/python homeassistant==2026.11.1
@@ -31,6 +33,8 @@ files rather than linking them.
 
 ## Run
 
+`sh tests/run-all.sh --e2e` runs all of these in turn, `apitest.py` before each. One at a time:
+
 ```sh
 export FB_HA_CONFIG="$PWD/ha/config"      # where apitest.py checks the stored board data
 venv314/bin/python tests/e2e/apitest.py  # backend API checks; onboards a test owner and a non-admin, writes tokens
@@ -38,6 +42,8 @@ node tests/e2e/ui.test.js                 # first run, import, migration, live s
 node tests/e2e/regress.test.js [filter]   # one check per fixed bug and new behaviour
 node tests/e2e/sync.test.js               # two boards editing at once
 node tests/e2e/tools.test.js              # developer tools: debugger, live checks, tests, arrow editor
+node tests/e2e/sandbox.test.js            # the sandbox, templates rendered by Home Assistant
+node tests/e2e/layout.test.js [filter]    # large synthetic functions, both directions (FB_SHOTS=1 saves screenshots)
 ```
 
 Run one suite at a time: they share the test Home Assistant and reset the board data. Tokens last 30 minutes:
@@ -52,7 +58,8 @@ frontend, not the board; the tests ignore them.
 
 ## Screenshots
 
-`node tests/e2e/screens.js [name]` takes the README's images from the demo setup and writes them to
+`node tests/e2e/screens.js [name]` takes the README's images from the demo setup (`sh tests/setup.sh demo`,
+`sh tests/start-ha.sh demo`, then `FB_HA_CONFIG=$PWD/ha-demo/config venv314/bin/python tests/e2e/apitest.py`) and writes them to
 `docs/images/` (1440×820 at 2×). With `sharp` installed they are saved as palette PNGs; `FB_SHOTS_RAW=1` skips
 that, and `FB_SHOTS_OUT` changes the folder. Retake them after visible changes and look at each one.
 

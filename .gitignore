@@ -4,3 +4,6 @@ __pycache__/
 node_modules/
 tests/e2e/.state/
 ha/
+ha-demo/
+venv314/
+venvtest/

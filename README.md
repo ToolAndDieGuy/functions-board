@@ -25,6 +25,7 @@ Home Assistant files things by type: automations in one list, scripts in another
   - **Live checks** put a tick or a cross on each check arrow, and hovering an arrow that comes from a template shows its value now.
   - **Watch triggers** pulses an automation's trigger arrows whenever one would fire, without running it. With Pause, that's a dry run.
   - **Monitor boxes** list the last events of one type, or MQTT messages on a topic, while the function is open.
+  - The **sandbox** runs the function on a copy of its states, with its own clock: set a state, fire an event or run an automation, and watch what the function would do, step by step, without anything changing in your home. Works in either mode.
   - **Tests** (Full manager only) change a helper, simulate a state, fire an event, send a notification, or run an automation or script. A test can be kept on the board as a button.
 - **Arrow editor** (Full manager only): drag from a box's dots (or from one box) onto another to add a trigger, a check, an action or a script call, chosen from Home Assistant's own lists. The YAML is shown and checked before it's saved. Click an arrow to remove what it stands for.
 - **Node-RED flows** (off until you switch them on in the board's Key): each wired group in a flow is a box, with arrows to what it triggers on, reads, changes and runs.
@@ -72,6 +73,24 @@ The screenshots come from the demo setup the tests run on: a garage door that st
 
 ![A test button "Garage Door → open (simulated)" wired to the garage door, and a monitor box listing a timer.finished event](https://raw.githubusercontent.com/ToolAndDieGuy/functions-board/main/docs/images/tools.png)
 
+### Top to bottom
+
+The **Auto-arrange** button's menu sets which way a function flows: **left to right** (the default) or **top to bottom**, like a sequential function chart: what sets things off at the top, arrows leaving each box by its bottom edge and entering the next by its top. Each function keeps its own direction. Switching lays the whole function out again and lets go of boxes kept in place (Undo puts it all back). A row that would get too wide wraps: inputs move up a row and end points down a row, so a script that drives thirty things doesn't make one row thirty boxes wide. The arrows follow the same rules both ways: never closer than 16 px, never through a box, a hop at every crossing.
+
+### Sandbox
+
+**Sandbox** (in the function's toolbar) tries the function out on a copy of its states. Each time it opens, a dialog explains what it's for and everything it can't show you, to click through. Set a state, fire an event or run an automation, and the board shows what the function would do: what triggers, which conditions pass and why, what each action changes, and what that sets off next, lit up on the board and listed in the drawer. Nothing is sent to your devices, and the board goes back to your home's states when you close it.
+
+![The sandbox beside the Garage board: the door set to open started the open timer; 15 minutes on, the timer finished, "Garage: left open" ran, its condition passed, and auto-close being off stopped it from closing the door](https://raw.githubusercontent.com/ToolAndDieGuy/functions-board/main/docs/images/sandbox.png)
+
+- **Its own clock.** Delays, timers, `for:` durations, time triggers and time patterns run on the sandbox clock: **+1 min**, **+10 min**, **+1 h**, or **Next** to jump to the next thing due. "Left open for 15 minutes, then close it" takes a click.
+- **Templates are real.** Home Assistant renders each template the way it would in a real run, but `states()`, `is_state()`, `state_attr()`, `states.x.y`, `states[...]`, `states | ...`, `expand()`, `now()` and the like read the sandbox's states and clock. A template that reads locations (`closest()`, `distance()`) is marked *partly real*.
+- **It asks what it can't know**: a sun, zone or device condition, or a template Home Assistant couldn't render. Your answer is used for that step.
+- **What it follows:** state, numeric state, event, MQTT, time, time pattern and template triggers (with `for:`), and Home Assistant's per-entity triggers (`light.turned_on`, `door.opened`, `lock.unlocked`, `event.received`, thresholds and the rest), by the same rules as Home Assistant's own; state, numeric state, template, time, trigger, and/or/not conditions; service calls on helpers, lights, switches, covers, locks, climate, timers, counters, selects and more, and `mqtt.publish`; scripts, `choose`, `if`, `repeat`, `parallel`, `variables`, `wait_template`, `wait_for_trigger` (any of those triggers), `stop`, and the run modes (single, restart, queued, parallel). Notifications, TTS and log messages are listed as messages; any other call it doesn't know the effect of is listed as one it would make. A change that sets off more than 2,000 steps is stopped as a loop.
+- **Triggers it can't follow** (zone, sun, Home Assistant starting, webhooks, device triggers) are named when it opens. **Run** an automation as if any one of its triggers fired, so `trigger.id` conditions and `trigger.` templates work. An **MQTT** row sends a message on a topic the function listens to.
+- Only the automations and scripts on the board run in the sandbox. Test buttons and the Test dialog act on the sandbox while it's open.
+- **Follow it on the board.** Whatever you do is played on the board step by step: each step's arrow lights with a dot running along it and a number beside it, conditions show ✓ or ✕ on their arrows, and what isn't on the board (the event a run stood in for, a sensor it checked, the MQTT topic a script publishes to) gets a temporary dashed box beside what it touches. A box with a delay running shows how long is left. Step with ◀ ▶ in the bar under the board, or click a row in the drawer.
+
 ### Import, and on a phone
 
 <table>
@@ -101,6 +120,7 @@ Every change is shown before it happens, and **Undo** takes it back, except test
 In either mode:
 
 - The debugger, Watch triggers, monitor boxes and the live checks on arrows only read. Watching a trigger never runs the automation.
+- The sandbox only reads: your states once when it opens, and templates it asks Home Assistant to render. It never calls a service, fires an event or sets a state.
 - **Show Node-RED flows** reads your Node-RED app's flows in your browser, through the app's page in Home Assistant, only while it's switched on. That page opens to the board once you've opened Node-RED from the sidebar (or with the board's **Open Node-RED** button); until then the board shows the flows last read on any device, marked with when. The integration keeps that summary (group and tab names and the entity IDs they use, no flow code) so every board shares it. The board never signs itself in to the app.
 - The board's own data (which labels are functions, box positions, frames, notes and test buttons) is kept in `.storage/functions_board` and shared between administrators. The Node-RED flow summary, when you use Node-RED flows, is kept in `.storage/functions_board.nodered`. Your view (zoom, whether the list is open) is kept per user.
 - Nothing leaves your Home Assistant: no network calls, no external libraries, no telemetry.
@@ -174,7 +194,7 @@ To try a table without editing the file, add it from the browser console on the 
 
 ## Feedback
 
-This is a prototype (v0.6.2). Please open an [issue](https://github.com/ToolAndDieGuy/functions-board/issues) for bugs, wrong or missing arrows, or ideas. A screenshot of the board and the automation's YAML help a lot.
+This is a prototype (v0.7.1). Please open an [issue](https://github.com/ToolAndDieGuy/functions-board/issues) for bugs, wrong or missing arrows, or ideas. A screenshot of the board and the automation's YAML help a lot.
 
 ## Credits
 
