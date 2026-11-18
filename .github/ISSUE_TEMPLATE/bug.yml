@@ -1,0 +1,71 @@
+name: Something's wrong
+description: A bug, a wrong or missing arrow, or something the board does that it shouldn't.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. The more of this you can fill in, the sooner it can be fixed.
+        A diagnostics file helps most: in the board, **About → Diagnostics…**. Anonymised is fine; it keeps the
+        shape of your setup (layouts, triggers, conditions, actions) and replaces names, IDs and addresses.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what the board did instead.
+      placeholder: "I opened the Garage function and the arrow from the door to 'Garage: left open' was missing…"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to make it happen again
+      description: Steps, if you know them.
+      placeholder: |
+        1. Open …
+        2. Click …
+  - type: input
+    id: board
+    attributes:
+      label: Functions Board version
+      description: Shown at the bottom of the board's list, and in About.
+      placeholder: "0.9.0"
+    validations:
+      required: true
+  - type: input
+    id: ha
+    attributes:
+      label: Home Assistant version
+      description: Settings → About.
+      placeholder: "2026.11.1"
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Mode
+      options:
+        - Organise only
+        - Full manager
+        - Not sure
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where you saw it
+      multiple: true
+      options:
+        - Desktop browser
+        - Phone app
+        - Phone browser
+        - Dashboard card
+  - type: textarea
+    id: yaml
+    attributes:
+      label: The automation or script's YAML (if it's about arrows or the sandbox)
+      description: Remove anything you'd rather not share. Or attach an anonymised diagnostics file below instead.
+      render: yaml
+  - type: textarea
+    id: files
+    attributes:
+      label: Diagnostics, screenshots, the browser console
+      description: Drag files here. Diagnostics come from About → Diagnostics… (anonymised or not, your choice).
