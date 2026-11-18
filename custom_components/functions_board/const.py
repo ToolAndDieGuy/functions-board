@@ -24,6 +24,11 @@ MAX_LABEL_LEN: Final = 100
 MAX_CLIENT_LEN: Final = 64
 MAX_SOURCES: Final = 500
 MAX_NODERED_BYTES: Final = 1_000_000
+# saved versions of functions (versions.py): one snapshot, how many per function, all of them together
+MAX_VERSION_BYTES: Final = 1_000_000
+MAX_VERSIONS: Final = 50
+MAX_VERSIONS_BYTES: Final = 20_000_000
+MAX_VERSION_TEXT: Final = 2000
 
 # options
 CONF_MODE: Final = "mode"

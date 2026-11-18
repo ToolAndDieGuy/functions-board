@@ -29,7 +29,7 @@ if [ -n "$E2E" ]; then
   export FB_HA_CONFIG="${FB_HA_CONFIG:-$PWD/ha/config}"
   curl -s -o /dev/null http://127.0.0.1:8123/api/ || sh tests/start-ha.sh || exit 1
   run apitest venv314/bin/python tests/e2e/apitest.py
-  SUITES="ui regress tools sync sandbox layout"
+  SUITES="ui regress tools sync sandbox versions layout"
   [ -n "$SIZE" ] && SUITES="$SUITES size"
   for s in $SUITES; do
     [ -n "$PAT" ] && ! echo "$s" | grep -qE "$PAT" && continue

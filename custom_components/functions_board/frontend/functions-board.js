@@ -1,5 +1,5 @@
 /*!
- * Functions board v0.7.2 (prototype) for Home Assistant
+ * Functions board v0.8.0 (prototype) for Home Assistant
  *
  * One page per "function": every automation, script, helper and device that makes one job work,
  * grouped by a Home Assistant label and wired together from their own configs.
@@ -13,7 +13,7 @@
  */
 (() => {
   'use strict';
-  const VERSION = '0.7.2';
+  const VERSION = '0.8.0';
   const loaded = customElements.get('functions-board');
   if (loaded) {
     if (loaded.VERSION !== VERSION) {
@@ -1560,6 +1560,28 @@
   }
   const getPath = (o, path) => path.reduce((x, k) => (x == null ? x : x[k]), o);
   // JSON with its keys sorted: two configs compare equal whatever order Home Assistant stored their keys in
+  // the UI helpers whose settings a version keeps (their <domain>/list, update, create and delete commands)
+  // the "Other…" entry of the sandbox's dropdowns
+  const SBX_OTHER = '\u0001other';
+  const VER_HELPERS = new Set(['input_boolean', 'input_number', 'input_text', 'input_select', 'input_datetime', 'input_button', 'counter', 'timer', 'schedule']);
+  // what may be clicked on a saved version's board: looking, the sandbox, and the versions themselves
+  const VER_OK_ACTS = /^(zoomin|zoomout|fit|togglelist|legend|hl|hl-.+|sandbox|sbx-.+|flow-.+|lit-.+|edge|close|back|newtab|modal-.+|ver-.+|vtab.*|versions|about|hint-x|find-x|nr-open)$/;
+  // a short fingerprint of a snapshot's items and members: equal when the function is the same as that version
+  const verPrint = (snap) => {
+    const body = JSON.stringify([[...(snap.members || [])].sort(), Object.keys(snap.items || {}).sort().map((k) => [k, (snap.items[k] || {}).cfg || null])]);
+    const str = canon(JSON.parse(body));
+    let h1 = 0x811c9dc5, h2 = 0x01000193;
+    for (let i = 0; i < str.length; i++) { const c = str.charCodeAt(i); h1 = Math.imul(h1 ^ c, 16777619); h2 = Math.imul(h2 ^ c, 2246822519); }
+    return (h1 >>> 0).toString(16).padStart(8, '0') + (h2 >>> 0).toString(16).padStart(8, '0') + str.length.toString(16);
+  };
+  // every device id a config names, at any depth
+  const devIdsIn = (v, out = new Set()) => {
+    if (Array.isArray(v)) v.forEach((x) => devIdsIn(x, out));
+    else if (v && typeof v === 'object') Object.entries(v).forEach(([k, x]) => { if (k === 'device_id') [].concat(x).forEach((d) => { if (typeof d === 'string' && /^[0-9a-f]{32}$/.test(d)) out.add(d); }); else devIdsIn(x, out); });
+    return out;
+  };
+  // a config with some device ids swapped for others (a replaced device)
+  const swapDevs = (v, map) => (Array.isArray(v) ? v.map((x) => swapDevs(x, map)) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, swapDevs(x, map)])) : typeof v === 'string' && map[v] ? map[v] : v);
   const canon = (v) => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.keys(x).sort().reduce((o, kk) => { o[kk] = x[kk]; return o; }, {}) : x));
   // an id such as garage_door.opened as words: "Garage door opened"
   const humanize = (s) => { const x = String(s).replace('.', ' ').replace(/_/g, ' '); return x.charAt(0).toUpperCase() + x.slice(1); };
@@ -2001,6 +2023,46 @@ button{font:inherit;color:inherit}
 .board.sbx .node.sbch[data-sbx]::after{background:var(--fb-amber);border-color:var(--fb-amber);color:#000}
 .board.sbx .node.sbch::before{content:'';position:absolute;left:-5px;top:-5px;width:9px;height:9px;border-radius:50%;background:var(--fb-amber)}
 .board.sbx .node.dim{opacity:.42}
+.sbctl .sbf{display:inline-flex;gap:4px;flex:1 1 140px;min-width:0}
+.sbctl .sbf select,.sbctl .sbf input{flex:1 1 auto;min-width:0;max-width:100%}
+.vtabs{position:absolute;left:12px;right:12px;top:10px;z-index:8;display:flex;flex-direction:column;gap:6px;pointer-events:none}
+.vtabs>*{pointer-events:auto}
+.vtabs:not([hidden])~.sbxpill{top:58px}
+.vtabs .vtrow{display:flex;flex-wrap:wrap;gap:4px;align-self:flex-start;padding:3px;border-radius:12px;background:var(--card-background-color);border:1px solid var(--divider-color);box-shadow:0 2px 8px rgba(0,0,0,.2)}
+.vtabs .vtab{display:inline-flex;align-items:center;gap:4px;border-radius:9px;font-size:12.5px;color:var(--secondary-text-color)}
+.vtabs button.vtab,.vtabs .vtab>button:first-child{border:0;background:none;padding:5px 9px;cursor:pointer;color:inherit;display:inline-flex;align-items:center;gap:5px;font-size:12.5px}
+.vtabs .vtab .ib{border:0;background:none;padding:3px;cursor:pointer;color:var(--secondary-text-color);display:inline-flex}
+.vtabs .vtab ha-icon{--mdc-icon-size:15px}
+.vtabs .vtab.on{background:color-mix(in srgb,var(--primary-color) 16%,transparent);color:var(--primary-text-color);font-weight:500}
+.vtabs .vdot{width:8px;height:8px;border-radius:50%;background:var(--success-color,#43a047)}
+.vtabs .vact{font-size:10.5px;padding:0 6px;border-radius:7px;background:var(--success-color,#43a047);color:#fff;font-weight:600}
+.vtabs .vban{align-self:flex-start;max-width:min(860px,100%);display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;padding:7px 12px;border-radius:10px;background:color-mix(in srgb,var(--card-background-color) 85%,var(--primary-color));border:1px solid var(--primary-color);font-size:12.5px}
+.vtabs .vban button{border:1px solid var(--divider-color);background:var(--card-background-color);border-radius:8px;padding:4px 9px;cursor:pointer;display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--primary-text-color)}
+.vtabs .vban ha-icon{--mdc-icon-size:16px}
+.board.vview .vp{background-image:repeating-linear-gradient(-45deg,color-mix(in srgb,var(--primary-color) 5%,transparent) 0 14px,transparent 14px 28px)}
+.node .vdtag{position:absolute;left:10px;top:-9px;font-size:10px;line-height:14px;padding:0 6px;border-radius:7px;z-index:2;white-space:nowrap}
+.node.vd-chg{outline:2px dashed var(--primary-color);outline-offset:2px}.node.vd-chg .vdtag{background:var(--primary-color);color:#fff}
+.node.vd-only{outline:2px dashed var(--fb-red);outline-offset:2px}.node.vd-only .vdtag{background:var(--fb-red);color:#fff}
+.vers{display:flex;flex-direction:column;min-height:0;flex:1;overflow:auto}
+.vers .vnote{padding:10px 14px;font-size:12.5px;color:var(--secondary-text-color);border-bottom:1px solid var(--divider-color)}
+.vers .vact{padding:10px 14px}
+.vers .vact button{display:inline-flex;align-items:center;gap:6px}
+.vers .vrow{padding:10px 14px;border-top:1px solid var(--divider-color);font-size:13px}
+.vers .vrow.on{box-shadow:inset 3px 0 0 var(--success-color,#43a047)}
+.vers .vrow.view{background:color-mix(in srgb,var(--primary-color) 8%,transparent)}
+.vers .vh{display:flex;align-items:center;flex-wrap:wrap;gap:6px}
+.vers .vbadge{font-size:10.5px;padding:0 6px;border-radius:7px;background:var(--success-color,#43a047);color:#fff;font-weight:600}
+.vers .vauto{font-size:10.5px;padding:0 6px;border-radius:7px;border:1px solid var(--divider-color);color:var(--secondary-text-color)}
+.vers .vdesc{margin-top:3px;white-space:pre-wrap}
+.vers .vm{margin-top:2px;font-size:11.5px;color:var(--secondary-text-color)}
+.vers .vb{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.vers .vb button{border:1px solid var(--divider-color);background:none;border-radius:8px;padding:4px 9px;cursor:pointer;display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--primary-text-color)}
+.vers .vb button.ib{padding:4px 6px}
+.vers .vb button:disabled{opacity:.45;cursor:default}
+.vers .vb ha-icon{--mdc-icon-size:15px}
+.vrdlg .vplan{margin:6px 0 10px;padding-left:18px;font-size:13px}.vrdlg .vplan li{margin:3px 0}
+.vrdlg .vdevrow{margin:8px 0;display:flex;flex-direction:column;gap:4px;font-size:13px}
+.vrdlg .vdevpick select{width:100%}
 .board.sbx .edges path.dim,.board.sbx .edges path.chev.dim{opacity:.22}
 .flowx{position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;pointer-events:none}
 .flowx path.fx{fill:none;stroke:var(--fb-amber);stroke-width:2;stroke-dasharray:6 4}
@@ -2561,7 +2623,6 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       sbx_empty: 'Set a state, fire an event or run an automation, and watch what the function does. Nothing changes in your home.',
       sbx_entity: 'Entity',
       sbx_event: 'Event',
-      sbx_event_data: 'Event data',
       sbx_event_data_ph: 'data, e.g. {"entity_id": "timer.hall"}',
       sbx_event_type: 'event type',
       sbx_event_x: 'Event {type}',
@@ -2598,6 +2659,79 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       sbx_test_here: 'Test in the sandbox',
       sbx_title: 'Sandbox · {fnName}',
       sbx_triggered: '{name} triggered',
+      sbx_data_as: '{data} (what {name} looks for)',
+      sbx_data_none: 'no data',
+      sbx_other: 'Other…',
+      sbx_payload_as: '{payload} (what {name} waits for)',
+      sbx_payload_none: 'empty payload',
+      sbx_state_now: '{state} (now)',
+      ver_active: 'active',
+      ver_added_delete: 'Delete them',
+      ver_added_h: 'Added since this version was saved',
+      ver_added_off: 'Turn them off (automations; scripts and helpers stay as they are)',
+      ver_added_other: 'Taken out of the function (they lose its label, nothing else changes): {list}',
+      ver_auto: 'saved before a restore',
+      ver_banner: 'Saved version "{name}" ({when}): not active. Nothing on this tab changes your home, and moving boxes here isn\'t saved.',
+      ver_before_name: 'Before restoring "{name}"',
+      ver_button: 'Versions',
+      ver_button_t: 'Versions: save this function as it is, compare, try a saved version in the sandbox, and restore one',
+      ver_changed_t: 'Its config is different now',
+      ver_changed_tag: 'changed since',
+      ver_checking: 'Comparing it with what\'s there now…',
+      ver_current_tab: 'Now',
+      ver_del_h: 'Delete "{name}"?',
+      ver_del_t: 'Delete this version',
+      ver_del_text: 'Only the saved version is deleted. Nothing in Home Assistant changes.',
+      ver_desc_ph: 'What\'s different about it (optional)',
+      ver_dev_gone: '{name} {model} isn\'t in Home Assistant any more.',
+      ver_dev_h: 'Devices that were replaced',
+      ver_dev_hint: 'Steps in this version use these devices. Pick what replaced each one, and its steps are pointed at the new device. Left empty, those steps keep the old device and won\'t work until you fix them in the editor.',
+      ver_dev_keep: 'Keep the old device',
+      ver_dev_pick: 'The device that replaced it',
+      ver_diff: 'Changed since: {changed}. Only in this version: {only}. Added since: {added}.',
+      ver_edit_h: 'Rename version',
+      ver_edit_t: 'Rename or describe',
+      ver_gone: 'That version isn\'t there any more',
+      ver_is_active: 'This is what\'s there now',
+      ver_name_needed: 'Give it a name',
+      ver_name_ph: 'e.g. Winter timings',
+      ver_needs_integration: 'Versions need the Functions Board integration (they\'re kept by it)',
+      ver_new_window: 'Open in a new window, to see it beside what\'s there now',
+      ver_none: 'No saved versions yet. Save one to keep this function as it is now.',
+      ver_not_saved: 'Not saved: {e}',
+      ver_note: 'A version keeps this function as it is: the configs of its automations and scripts, its helpers\' settings, what\'s in it, the devices its steps use, and its layout. Saving one changes nothing in Home Assistant.',
+      ver_now: 'What\'s there now',
+      ver_now_is: 'the same as "{name}"',
+      ver_now_unsaved: 'not saved as a version',
+      ver_only_t: 'Not in the function now (taken out or deleted since)',
+      ver_only_tag: 'only in this version',
+      ver_open: 'Open',
+      ver_p_layout: 'The board\'s layout comes back too.',
+      ver_p_recreate: { one: '{n} deleted since comes back:', other: '{n} deleted since come back:' },
+      ver_p_rejoin: { one: '{n} rejoins the function:', other: '{n} rejoin the function:' },
+      ver_p_same: { one: '{n} is the same already:', other: '{n} are the same already:' },
+      ver_p_write: { one: '{n} gets its saved config or settings back:', other: '{n} get their saved configs or settings back:' },
+      ver_p_yaml: { one: '{n} is defined in YAML and can\'t be restored from here:', other: '{n} are defined in YAML and can\'t be restored from here:' },
+      ver_reading: 'Reading the saved versions…',
+      ver_promise: 'Versions: saving one reads the function through Home Assistant\'s own APIs and keeps a copy in .storage/functions_board.versions. Saving, opening and trying a version in the sandbox change nothing.',
+      ver_promise_full: 'Restoring a version (Full manager) writes its automations\' and scripts\' configs and its helpers\' settings back through Home Assistant\'s own config APIs (automations.yaml and scripts.yaml are rewritten), relabels what it had, and turns off or deletes what was added since, as you choose. It lists every change first, and saves what\'s there before as a version of its own.',
+      ver_readonly: 'This is a saved version: switch to the Now tab to change things',
+      ver_restore: 'Restore',
+      ver_restore_full: 'Restoring rewrites configs: it needs Full manager (in the integration\'s settings)',
+      ver_restore_h: 'Restore "{name}"?',
+      ver_restore_h0: 'Restore',
+      ver_restore_lead: '{fnName} goes back to how it was saved ({when}), through Home Assistant\'s own config APIs, the way its editors save.',
+      ver_restore_safety: 'What\'s there now is saved first as a version of its own ("Before restoring …"), so you can go back.',
+      ver_restore_t: 'Put this function back as it was in this version',
+      ver_restored: 'Restored "{name}"',
+      ver_restored_errs: 'Restored "{name}", with {n} problem(s): {list}',
+      ver_restoring: 'Restoring…',
+      ver_save_b: 'Save this version',
+      ver_save_h: 'Save this version',
+      ver_save_hint: 'Kept by the integration, with the function as it is now. Nothing in Home Assistant changes.',
+      ver_saved: 'Saved "{name}"',
+      ver_title: 'Versions · {fnName}',
+      ver_try: 'Try in sandbox',
       sbx_cond_mark: 'In the sandbox: {text} was {res}',
       sbx_f_calls: '{a}: {svc}{to}',
       sbx_f_checks: '{a} checks {c}',
@@ -4524,6 +4658,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (d.what === 'mode') { this._fbMode = d.mode === 'full' ? 'full' : 'organise'; this._$.board.classList.toggle('full', this._fbMode === 'full'); this._renderHeader(); this._renderNodebar(); return; }
       if (d.client && d.client === this._client()) return;
       // another board read Node-RED: one showing older flows takes the new ones (only with Node-RED switched on)
+      if (d.what === 'versions') { if (this._drawer && this._drawer.mode === 'versions' && d.label === this._data.ui.current) this._renderVersions(); return; }
       if (d.what === 'nodered') {
         if (this._data.ui.nodered === true && this._nrCache && this._nrCache.need && this._model) { this._nrCache = null; this._open(this._model.label, true).then(() => this._renderLegend()); }
         return;
@@ -4564,6 +4699,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       return (u.views && u.views[this._viewKey(label)]) || (!this._compact && this._mode() !== 'card' && old) || null;
     }
     _layout(label) {
+      if (this._ver && this._ver.label === label) return this._ver.layout;
       const all = this._data.layouts;
       if (!all[label]) all[label] = { nodes: {}, frames: [], notes: [], view: null, categories: null };
       const L = all[label];
@@ -4623,6 +4759,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         <button class="sec" data-act="runs" title="${T('every_run_of_every_automation')}"><ha-icon icon="mdi:timeline-clock-outline"></ha-icon><span>${T('runs')}</span></button>
         <button class="sec" data-act="debug" title="${T('debugger_what_happens_in_this')}"><ha-icon icon="mdi:bug-outline"></ha-icon><span>${T('debug_2')}</span></button>
         <button class="sec" data-act="sandbox" title="${T('sbx_button_t')}"><ha-icon icon="mdi:flask-outline"></ha-icon><span>${T('sbx_button')}</span></button>
+        <button class="sec vonly" data-act="versions" title="${T('ver_button_t')}"><ha-icon icon="mdi:history"></ha-icon><span>${T('ver_button')}</span></button>
         <button data-act="pause" class="pause sec" hidden></button>
       </div>
     </header>
@@ -4637,6 +4774,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       <div class="zoom"><button data-act="zoomout" title="${T('zoom_out')}">&minus;</button><button data-act="fit" title="${T('fit_everything')}"><ha-icon icon="mdi:fit-to-screen-outline"></ha-icon></button><button data-act="zoomin" title="${T('zoom_in')}">+</button></div>
       <div class="legend"></div>
       <div class="loading" hidden>${T('reading_configs')}</div>
+      <div class="vtabs" hidden></div>
       <div class="sbxpill" hidden><ha-icon icon="mdi:flask-outline"></ha-icon>${T('sbx_pill')}</div>
       <div class="litbar" hidden></div>
       <div class="ttip" hidden></div>
@@ -4653,7 +4791,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         world: q('.world'), frames: q('.frames'), edges: q('.edges'), nodes: q('.nodes'), notes: q('.notes'),
         empty: q('.empty'), nodebar: q('.nodebar'), legend: q('.legend'), loading: q('.loading'), toast: q('.toast'),
         drawer: q('.drawer'), modal: q('.modal'), cardhint: q('.cardhint'), litbar: q('.litbar'), ttip: q('.ttip'),
-        edgebar: q('.edgebar'), links: q('.links'), lh: q('.lh'), sbxpill: q('.sbxpill'), flow: q('.flow'), flowx: q('.flowx'),
+        edgebar: q('.edgebar'), links: q('.links'), lh: q('.lh'), sbxpill: q('.sbxpill'), flow: q('.flow'), flowx: q('.flowx'), vtabs: q('.vtabs'),
       };
       // the shadow root outlives a rebuild in another language (_relang): it keeps its listeners
       if (!this._rootOn) {
@@ -4860,6 +4998,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
 
     async _open(label, keep, opt = {}) {
       if (!label) return;
+      if (this._ver && this._ver.label !== label) { this._ver = null; this._$.board.classList.remove('vview'); }
       if (this._sbx && this._sbx.label !== label) this._closeDrawer();
       if (this._capture && this._capture.label !== label) this._capture = null;
       this._data.ui.current = label;
@@ -4890,6 +5029,11 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._pendingSelect = null;
       this._loadRuns();
       this._afterOpen(label);
+      this._renderVtabs();
+      // a link to a saved version (…/functions/<function>?version=<id>, from "open in a new window")
+      const q = !this._verUrlDone && new URLSearchParams(location.search).get('version');
+      this._verUrlDone = true;
+      if (q && /^[0-9a-f]{32}$/.test(q) && !this._ver && this._verOK()) this._verOpenTab(q);
     }
     // the developer tools follow the open function (Phase 9)
     _afterOpen(label) {
@@ -4943,6 +5087,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     }
 
     async _fetchConfig(entityId) {
+      // a saved version's own configs, while its tab is open
+      const V = this._ver, it = V && V.snap.items[entityId];
+      if (it && it.cfg && /^(automation|script)\./.test(entityId)) return this._verCfg(entityId, it);
       // configs are cached for a minute; saving, reloading or closing the editor drawer clears the cache
       const hit = this._cfgCache.get(entityId);
       if (hit && Date.now() - hit.at < 60000) return hit.cfg;
@@ -4969,9 +5116,16 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     async _buildModel(label) {
       const token = ++this._token;
       const nodes = new Map(), edges = new Map(), tgts = [];
-      const members = this._ents.filter((e) => (e.labels || []).includes(label)).map((e) => e.entity_id);
-      const devs = this._devs.filter((d) => (d.labels || []).includes(label)).map((d) => 'device:' + d.id);
-      members.concat(devs).forEach((k) => nodes.set(k, this._mkNode(k, 'member')));
+      const V = this._ver && this._ver.label === label ? this._ver : null;
+      const members = V ? V.snap.members.filter((k) => !k.startsWith('device:')) : this._ents.filter((e) => (e.labels || []).includes(label)).map((e) => e.entity_id);
+      const devs = V ? V.snap.members.filter((k) => k.startsWith('device:')) : this._devs.filter((d) => (d.labels || []).includes(label)).map((d) => 'device:' + d.id);
+      members.concat(devs).forEach((k) => {
+        const n = this._mkNode(k, 'member');
+        // its name as it was when the version was saved (renamed or deleted since)
+        const it = V && V.snap.items[k];
+        if (it && (it.cfg && it.cfg.alias || it.name)) n.name = (it.cfg && it.cfg.alias) || it.name;
+        nodes.set(k, n);
+      });
       const known = (x) => this._known(x);
       const logic = members.filter((e) => e.startsWith('automation.') || e.startsWith('script.'));
       const cfgs = await Promise.all(logic.map((e) => this._fetchConfig(e)));
@@ -4981,7 +5135,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         // Related = any automation or script outside the function whose config references a member
         // (triggers on it, checks it, changes it, or calls it). Reads every config: ~30 ms for 120 items.
         const memberSet = new Set(members.concat(devs));
-        const all = this._logicIds().filter((e) => !memberSet.has(e));
+        // on a saved version's board, what's in the function now isn't "related" (it was added since)
+        const now = V ? new Set(this._verMembers(label)) : null;
+        const all = this._logicIds().filter((e) => !memberSet.has(e) && !(now && now.has(e)));
         const cf = await Promise.all(all.map((e) => this._fetchConfig(e)));
         all.forEach((e, i) => {
           if (!cf[i]) return;
@@ -5399,7 +5555,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         + (n.unref ? `<ha-icon class="unref" icon="mdi:link-variant-off" title="${T('it_may_be_used_by', { extra: n.domain === 'script' ? T('no_automation_or_script_runs') : T('no_automation_or_script_refers') })}"></ha-icon>` : '')
         + (n.hidden ? `<span class="wr hid" title="${T('its_arrows_are_hidden_by')}">${P('n_hidden', n.hidden)}</span>` : '')
         + ((this._layout(this._model.label).keep || []).includes(n.key) ? `<ha-icon class="kept" icon="mdi:pin" title="${T('kept_in_place_auto_arrange')}"></ha-icon>` : '');
-      return `<div class="node ${n.kind} d-${esc(n.domain)}" data-key="${esc(n.key)}" role="button" tabindex="-1" style="left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${n.h}px">`
+      const vd = this._ver && this._ver.diff ? (this._ver.diff.changed.has(n.key) ? 'chg' : this._ver.diff.only.has(n.key) ? 'only' : '') : '';
+      return `<div class="node ${n.kind} d-${esc(n.domain)}${vd ? ' vd-' + vd : ''}" data-key="${esc(n.key)}" role="button" tabindex="-1" style="left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${n.h}px">`
+        + (vd ? `<span class="vdtag" title="${vd === 'chg' ? T('ver_changed_t') : T('ver_only_t')}">${vd === 'chg' ? T('ver_changed_tag') : T('ver_only_tag')}</span>` : '')
         + `<span class="tag">${esc(this._tagOf(n.key))}</span><ha-icon class="ic" icon="${esc(n.icon)}"></ha-icon><div class="txt"><div class="name">${esc(n.name)}</div>`
         + (n.kind === 'outside' ? '' : '<div class="sub"></div>') + '</div>'
         + (b ? `<div class="badges">${b}</div>` : '')
@@ -5897,6 +6055,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     }
 
     _renderHeader() {
+      const vb = this._$.tools && this._$.tools.querySelector('[data-act="versions"]');
+      if (vb) vb.hidden = !this._verOK();
       const l = this._labelMap.get(this._data && this._data.ui.current);
       const t = this._$.title;
       if (!l) { t.innerHTML = `<span class="muted">${T('functions')}</span>`; this._$.tools.hidden = true; return; }
@@ -6281,6 +6441,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (el.dataset.run != null) { this._openRun(+el.dataset.run); return; }
       const a = el.dataset.act, label = this._data && this._data.ui.current;
       const need = () => { if (!label) { this._toast(T('create_or_pick_a_function')); return false; } return true; };
+      if (a && this._ver && !VER_OK_ACTS.test(a)) { this._toast(T('ver_readonly')); return; }
       if (a && a.startsWith('sbx-') && a !== 'sbx-start' && a !== 'sbx-about' && this._sbxOn()) { this._sbxBox(a, el); return; }
       switch (a) {
         case 'sandbox': if (need()) { if (this._sbxOn()) this._closeDrawer(); else if (this._data.ui.sbxIntro === false) this._openSandbox(); else this._sbxIntro(); } break;
@@ -6419,6 +6580,21 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         case 'why-run': this._showRun({ kind: 'run', key: el.dataset.key, t: Date.now(), run: { domain: 'automation', item_id: el.dataset.item, run_id: el.dataset.rid } }, null); break;
         case 'lit-clear': this._clearLit(); this._dbgSel = null; this._renderDbg(); break;
         case 'lit-replay': if (this._litSteps) this._lightSteps(this._litSteps, this._litRun); break;
+        case 'versions': if (need()) { if (this._drawer && this._drawer.mode === 'versions') this._closeDrawer(); else this._openVersions(); } break;
+        case 'ver-new': this._verNewDlg(); break;
+        case 'ver-save': this._verSave(); break;
+        case 'ver-open': this._verOpenTab(el.dataset.id); break;
+        case 'ver-sbx': this._verOpenTab(el.dataset.id, true); break;
+        case 'ver-sbx-cur': this._verTrySandbox(); break;
+        case 'ver-restore': this._verRestore(el.dataset.id); break;
+        case 'ver-restore-go': this._verRestoreGo(); break;
+        case 'ver-edit': this._verEditDlg(el.dataset.id); break;
+        case 'ver-edit-save': this._verEditSave(); break;
+        case 'ver-del': this._verDelDlg(el.dataset.id); break;
+        case 'ver-del-go': this._verDel(); break;
+        case 'vtab': this._verView(el.dataset.id || null); break;
+        case 'vtab-x': this._verCloseTab(el.dataset.id); break;
+        case 'vtab-win': window.open(location.pathname + '?version=' + encodeURIComponent(el.dataset.id), '_blank', 'noopener'); break;
         case 'flow-go': this._flowGo(+el.dataset.i, true); break;
         case 'flow-prev': if (this._flow) this._flowGo(this._flow.at - 1, true); break;
         case 'flow-next': if (this._flow) this._flowGo(this._flow.at + 1, true); break;
@@ -6450,6 +6626,12 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const t = e.target, g = this._mgr;
       if (t.classList && t.classList.contains('sbent')) { this._sbxPick(t.value); return; }
       if (t.classList && t.classList.contains('sbrun')) { this._sbxTrigs(); return; }
+      if (t.classList && t.classList.contains('sbsel')) {
+        this._sbxOther(t, true);
+        if (t.dataset.f === 'sbev') this._sbxEvData();
+        if (t.dataset.f === 'sbtop') this._sbxPayloads();
+        return;
+      }
       if (t.hasAttribute && t.hasAttribute('data-nr')) {
         // the Node-RED switch is yours, for every function: off means no request to Node-RED at all
         this._data.ui.nodered = t.checked; this._save(); this._nrCache = null;
@@ -6964,7 +7146,11 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         alarm_control_panel: ['disarmed', 'armed_home', 'armed_away', 'armed_night', 'triggered'] };
       (by[n.domain] || []).forEach((s) => out.add(s));
       if (n.domain === 'climate') toList(A.hvac_modes).forEach((s) => out.add(s));
-      if (n.domain === 'select') toList(A.options).forEach((s) => out.add(s));
+      if (n.domain === 'select' || n.domain === 'input_select') toList(A.options).forEach((s) => out.add(s));
+      if (n.domain === 'input_boolean') ['on', 'off'].forEach((s) => out.add(s));
+      if (n.domain === 'timer') ['idle', 'active', 'paused'].forEach((s) => out.add(s));
+      if (n.domain === 'sun') ['above_horizon', 'below_horizon'].forEach((s) => out.add(s));
+      if (n.domain === 'input_number' || n.domain === 'number') [A.min, A.max].forEach((s) => { if (s != null) out.add(String(s)); });
       if (st) out.add(st.state);
       return [...out].filter((s) => s != null && s !== '').map(String).slice(0, 30);
     }
@@ -7789,6 +7975,330 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       try { return st && this._hass.formatEntityState ? this._hass.formatEntityState(Object.assign({}, st, { state: String(state) })) : String(state); } catch (e) { return String(state); }
     }
     /* ---------- Sandbox (Phase 10): the drawer, the controls, the timeline ---------- */
+    /* ---------- versions (0.8.0): named snapshots of a function, kept by the integration (functions_board/version_*).
+       A snapshot is what Home Assistant's own APIs return: the configs of the function's automations and scripts,
+       its UI helpers' settings, which items are in it, its layout, and the devices its steps use. Saving one changes
+       nothing. A version opens in a tab of its own (read-only, marked against what's there now), can be tried in
+       the sandbox, and in Full manager can be restored through the same config APIs Home Assistant's editors use,
+       after a dialog that lists every change; what's there before is saved first. ---------- */
+    _verOK() { return this._storeMode === 'shared'; }
+    async _verList(label) { const r = await this._ws({ type: 'functions_board/versions', label }); return (r && r.versions) || []; }
+    _verGet(label, id) { return this._ws({ type: 'functions_board/version_get', label, version_id: id }); }
+    // a saved config as the board reads it: a blueprint automation or script is filled in by Home Assistant
+    async _verCfg(k, it) {
+      const V = this._ver;
+      if (V.cfgs.has(k)) return V.cfgs.get(k);
+      let cfg = it.cfg;
+      const bp = cfg && cfg.use_blueprint;
+      if (bp && bp.path) {
+        try { const r = await this._ws({ type: 'blueprint/substitute', domain: it.dom, path: bp.path, input: bp.input || {} }); if (r && r.substituted_config) cfg = Object.assign({}, r.substituted_config, { alias: cfg.alias, id: cfg.id, use_blueprint: bp }); } catch (e) { /* inputs only */ }
+      }
+      V.cfgs.set(k, cfg);
+      return cfg;
+    }
+    _verMembers(label) {
+      return this._ents.filter((e) => (e.labels || []).includes(label)).map((e) => e.entity_id).concat(this._devs.filter((d) => (d.labels || []).includes(label)).map((d) => 'device:' + d.id));
+    }
+    // the function as it is now, read through Home Assistant's own APIs (nothing is changed)
+    async _verSnapshot(label) {
+      const members = this._verMembers(label), items = {}, lists = new Map(), devices = {};
+      const list = async (dom) => { if (!lists.has(dom)) lists.set(dom, await this._ws({ type: dom + '/list' }).catch(() => null)); return lists.get(dom) || []; };
+      for (const k of members) {
+        if (k.startsWith('device:')) continue;
+        const dom = k.split('.')[0], name = this._nameOf(k);
+        if (dom === 'automation' || dom === 'script') {
+          const r = await this._ws({ type: dom + '/config', entity_id: k }).catch(() => null), cfg = r && r.config;
+          if (!cfg) continue;
+          const id = dom === 'automation' ? cfg.id || null : k.slice(7);
+          // only what's in automations.yaml or scripts.yaml can be written back: Home Assistant's editors say the same
+          const own = id ? !!(await this._hass.callApi('GET', `config/${dom}/config/${encodeURIComponent(id)}`).catch(() => null)) : false;
+          items[k] = { dom, id, name, cfg, yaml: !own };
+        } else if (VER_HELPERS.has(dom)) {
+          const reg = this._entMap.get(k), it = (await list(dom)).find((x) => reg && x.id === reg.unique_id);
+          if (it) { const cfg = Object.assign({}, it); delete cfg.id; items[k] = { dom, id: it.id, name, cfg }; } else items[k] = { dom, id: null, name, yaml: true };
+        }
+      }
+      const ids = new Set(members.filter((k) => k.startsWith('device:')).map((k) => k.slice(7)));
+      Object.values(items).forEach((it) => { if (it.cfg) devIdsIn(it.cfg, ids); });
+      ids.forEach((id) => { const d = this._devMap.get(id); if (d) devices[id] = { name: d.name_by_user || d.name || '', model: d.model || '', manufacturer: d.manufacturer || '' }; });
+      const L = this._data.layouts[label] ? JSON.parse(JSON.stringify(this._data.layouts[label])) : null;
+      if (L) delete L.view;
+      return { fmt: 1, members, items, devices, layout: L };
+    }
+    _verWhen(at) { try { return new Date(at).toLocaleString(this._hass.language || undefined, { dateStyle: 'medium', timeStyle: 'short' }); } catch (e) { return new Date(at).toLocaleString(); } }
+
+    async _openVersions() {
+      const label = this._data.ui.current;
+      if (!label || !this._model) return;
+      if (!this._verOK()) { this._toast(T('ver_needs_integration')); return; }
+      this._leaveDrawerMode();
+      this._capture = null;
+      this._drawer = { mode: 'versions' };
+      const d = this._$.drawer;
+      d.hidden = false;
+      d.innerHTML = `<div class="dhead"><span class="dtitle">${T('ver_title', { fnName: esc(this._fnName(label)) })}</span><button data-act="close" title="${T('close')}"><ha-icon icon="mdi:close"></ha-icon></button></div><div class="vers"><div class="vnote">${T('ver_note')}</div><div class="vact"><button class="primary" data-act="ver-new"><ha-icon icon="mdi:camera-outline"></ha-icon>${T('ver_save_b')}</button></div><div class="vlist"><div class="muted pad">${T('ver_reading')}</div></div></div>`;
+      this._fitLitbar();
+      await this._renderVersions();
+    }
+    async _renderVersions() {
+      const label = this._data.ui.current, box = this._$.drawer.querySelector('.vlist');
+      if (!box || !this._drawer || this._drawer.mode !== 'versions') return;
+      let vs;
+      try { vs = await this._verList(label); } catch (e) { box.innerHTML = `<div class="lgerr">${esc((e && (e.message || e.code)) || e)}</div>`; return; }
+      // which version (if any) is what's there now
+      let print = null;
+      try { print = verPrint(await this._verSnapshot(label)); } catch (e) { /* no match shown */ }
+      if (!this._drawer || this._drawer.mode !== 'versions' || label !== this._data.ui.current) return;
+      const active = vs.slice().reverse().find((v) => v.print && v.print === print), full = this._full(), viewing = this._ver && this._ver.label === label ? this._ver.id : null;
+      this._verCache = { label, vs, active: active ? active.id : null };
+      const row = (v) => `<div class="vrow${active && active.id === v.id ? ' on' : ''}${viewing === v.id ? ' view' : ''}" data-id="${esc(v.id)}"><div class="vh"><b>${esc(v.name)}</b>${active && active.id === v.id ? `<span class="vbadge">${T('ver_active')}</span>` : ''}${v.auto ? `<span class="vauto">${T('ver_auto')}</span>` : ''}</div>${v.desc ? `<div class="vdesc">${esc(v.desc)}</div>` : ''}<div class="vm">${esc(this._verWhen(v.at))}${v.by ? ' · ' + esc(v.by) : ''}</div>`
+        + `<div class="vb"><button data-act="ver-open" data-id="${esc(v.id)}"><ha-icon icon="mdi:tab"></ha-icon>${T('ver_open')}</button><button data-act="ver-sbx" data-id="${esc(v.id)}"><ha-icon icon="mdi:flask-outline"></ha-icon>${T('ver_try')}</button>`
+        + `<button data-act="ver-restore" data-id="${esc(v.id)}"${full && !(active && active.id === v.id) ? '' : ' disabled'} title="${full ? (active && active.id === v.id ? T('ver_is_active') : T('ver_restore_t')) : T('ver_restore_full')}"><ha-icon icon="mdi:backup-restore"></ha-icon>${T('ver_restore')}</button>`
+        + `<button class="ib" data-act="ver-edit" data-id="${esc(v.id)}" title="${T('ver_edit_t')}"><ha-icon icon="mdi:pencil-outline"></ha-icon></button><button class="ib" data-act="ver-del" data-id="${esc(v.id)}" title="${T('ver_del_t')}"><ha-icon icon="mdi:delete-outline"></ha-icon></button></div></div>`;
+      const now = `<div class="vrow cur${active ? '' : ' on'}"><div class="vh"><b>${T('ver_now')}</b>${active ? `<span class="muted">${T('ver_now_is', { name: esc(active.name) })}</span>` : `<span class="vbadge">${T('ver_active')}</span><span class="muted">${T('ver_now_unsaved')}</span>`}</div></div>`;
+      box.innerHTML = now + (vs.length ? vs.slice().reverse().map(row).join('') : `<div class="muted pad">${T('ver_none')}</div>`);
+    }
+    _verNewDlg() {
+      const m = this._$.modal;
+      m.hidden = false;
+      m.innerHTML = `<div class="dlg"><h3>${T('ver_save_h')}</h3><label>${T('name')}<input name="vname" maxlength="100" placeholder="${T('ver_name_ph')}"></label><label>${T('description')}<textarea name="vdesc" rows="3" maxlength="2000" placeholder="${T('ver_desc_ph')}"></textarea></label><div class="hint">${T('ver_save_hint')}</div><div class="aval hint"></div><div class="btns"><button data-act="modal-cancel">${T('cancel')}</button><button class="primary" data-act="ver-save">${T('save')}</button></div></div>`;
+      m.querySelector('input[name="vname"]').focus();
+    }
+    async _verSave() {
+      const m = this._$.modal, label = this._data.ui.current, name = (m.querySelector('input[name="vname"]').value || '').trim(), desc = (m.querySelector('textarea[name="vdesc"]').value || '').trim();
+      const val = m.querySelector('.aval'), btn = m.querySelector('[data-act="ver-save"]');
+      if (!name) { val.textContent = T('ver_name_needed'); return; }
+      btn.disabled = true;
+      try {
+        const snap = await this._verSnapshot(label);
+        await this._ws({ type: 'functions_board/version_save', label, name, desc, snapshot: snap, print: verPrint(snap), client: this._client() });
+      } catch (e) { val.textContent = T('ver_not_saved', { e: (e && (e.message || e.code)) || e }); btn.disabled = false; return; }
+      this._closeModal();
+      this._toast(T('ver_saved', { name }));
+      if (!this._drawer || this._drawer.mode !== 'versions') this._openVersions(); else this._renderVersions();
+    }
+    _verFind(id) { return this._verCache && this._verCache.vs.find((v) => v.id === id); }
+    _verEditDlg(id) {
+      const v = this._verFind(id), m = this._$.modal;
+      if (!v) return;
+      this._verEditing = id;
+      m.hidden = false;
+      m.innerHTML = `<div class="dlg"><h3>${T('ver_edit_h')}</h3><label>${T('name')}<input name="vname" maxlength="100" value="${esc(v.name)}"></label><label>${T('description')}<textarea name="vdesc" rows="3" maxlength="2000">${esc(v.desc || '')}</textarea></label><div class="aval hint"></div><div class="btns"><button data-act="modal-cancel">${T('cancel')}</button><button class="primary" data-act="ver-edit-save">${T('save')}</button></div></div>`;
+    }
+    async _verEditSave() {
+      const m = this._$.modal, name = (m.querySelector('input[name="vname"]').value || '').trim(), desc = (m.querySelector('textarea[name="vdesc"]').value || '').trim();
+      if (!name) { m.querySelector('.aval').textContent = T('ver_name_needed'); return; }
+      try { await this._ws({ type: 'functions_board/version_edit', label: this._data.ui.current, version_id: this._verEditing, name, desc, client: this._client() }); }
+      catch (e) { m.querySelector('.aval').textContent = T('ver_not_saved', { e: (e && (e.message || e.code)) || e }); return; }
+      const tabs = this._vtabs && this._vtabs.get(this._data.ui.current), t = tabs && tabs.find((x) => x.id === this._verEditing);
+      if (t) t.name = name;
+      if (this._ver && this._ver.id === this._verEditing) this._ver.name = name;
+      this._closeModal();
+      this._renderVersions();
+      this._renderVtabs();
+    }
+    _verDelDlg(id) {
+      const v = this._verFind(id), m = this._$.modal;
+      if (!v) return;
+      this._verEditing = id;
+      m.hidden = false;
+      m.innerHTML = `<div class="dlg"><h3>${T('ver_del_h', { name: esc(v.name) })}</h3><p class="dtext">${T('ver_del_text')}</p><div class="btns"><button data-act="modal-cancel">${T('cancel')}</button><button class="primary danger" data-act="ver-del-go">${T('delete_3')}</button></div></div>`;
+    }
+    async _verDel() {
+      const id = this._verEditing, label = this._data.ui.current;
+      try { await this._ws({ type: 'functions_board/version_delete', label, version_id: id, client: this._client() }); } catch (e) { this._toast(T('ver_not_saved', { e: (e && (e.message || e.code)) || e })); return; }
+      this._closeModal();
+      if (this._vtabs && this._vtabs.has(label)) this._verCloseTab(id);
+      this._renderVersions();
+    }
+
+    // ---- tabs: what's there now (active) and saved versions, one shown at a time
+    async _verOpenTab(id, sandbox) {
+      const label = this._data.ui.current;
+      if (!label) return;
+      let v;
+      try { v = await this._verGet(label, id); } catch (e) { this._toast(T('ver_gone')); return; }
+      this._vtabs = this._vtabs || new Map();
+      const tabs = this._vtabs.get(label) || [];
+      if (!tabs.some((t) => t.id === id)) tabs.push({ id, name: v.name });
+      this._vtabs.set(label, tabs);
+      await this._verView(id, v);
+      if (sandbox) this._verTrySandbox();
+    }
+    _verTrySandbox() {
+      if (this._sbxOn()) return;
+      if (this._data.ui.sbxIntro === false) this._openSandbox(); else this._sbxIntro();
+    }
+    _verCloseTab(id) {
+      const label = this._data.ui.current, tabs = (this._vtabs && this._vtabs.get(label)) || [];
+      this._vtabs.set(label, tabs.filter((t) => t.id !== id));
+      if (this._ver && this._ver.id === id) this._verView(null); else this._renderVtabs();
+    }
+    // show a saved version (id), or what's there now (null)
+    async _verView(id, v) {
+      const label = this._data.ui.current;
+      if (!label) return;
+      if (id && !v) { try { v = await this._verGet(label, id); } catch (e) { this._toast(T('ver_gone')); return; } }
+      if (this._sbx || (this._drawer && this._drawer.mode === 'sandbox')) this._closeDrawer();
+      this._clearLit(true);
+      if (v) {
+        const raw = v.snapshot.layout ? JSON.parse(JSON.stringify(v.snapshot.layout)) : {};
+        const layout = Object.assign({ nodes: {}, frames: [], notes: [], view: null, categories: null }, cleanLayout(raw) || {});
+        this._ver = { label, id: v.id, name: v.name, at: v.at, snap: v.snapshot, layout, cfgs: new Map(), diff: null };
+        this._ver.diff = await this._verDiff(label, v.snapshot).catch(() => null);
+      } else this._ver = null;
+      this._$.board.classList.toggle('vview', !!v);
+      try { history.replaceState(history.state, '', location.pathname + (v ? '?version=' + v.id : '')); } catch (e) { /* the link just won't carry it */ }
+      await this._open(label, false, { fromRoute: true });
+      if (this._drawer && this._drawer.mode === 'versions') this._renderVersions();
+    }
+    // what differs between a version and what's there now: boxes changed since, only in the version, added since
+    async _verDiff(label, snap) {
+      const cur = new Set(this._verMembers(label)), ver = new Set(snap.members), changed = new Set(), only = new Set(), lists = new Map();
+      for (const k of ver) {
+        if (!cur.has(k)) { only.add(k); continue; }
+        const it = snap.items[k];
+        if (!it || !it.cfg) continue;
+        let now = null;
+        if (it.dom === 'automation' || it.dom === 'script') { const r = await this._ws({ type: it.dom + '/config', entity_id: k }).catch(() => null); now = r && r.config; }
+        else {
+          if (!lists.has(it.dom)) lists.set(it.dom, await this._ws({ type: it.dom + '/list' }).catch(() => null));
+          const x = (lists.get(it.dom) || []).find((y) => y.id === it.id);
+          if (x) { now = Object.assign({}, x); delete now.id; }
+        }
+        if (now && canon(now) !== canon(it.cfg)) changed.add(k);
+      }
+      return { changed, only, added: [...cur].filter((k) => !ver.has(k)) };
+    }
+    _renderVtabs() {
+      const el = this._$.vtabs, label = this._data && this._data.ui.current, tabs = (label && this._vtabs && this._vtabs.get(label)) || [];
+      if (!el) return;
+      const V = this._ver && this._ver.label === label ? this._ver : null;
+      if (!tabs.length && !V) { el.hidden = true; el.innerHTML = ''; return; }
+      el.hidden = false;
+      this._fitLitbar();
+      const d = V && V.diff;
+      el.innerHTML = `<div class="vtrow"><button class="vtab${V ? '' : ' on'}" data-act="vtab" data-id=""><span class="vdot"></span>${T('ver_current_tab')}<span class="vact">${T('ver_active')}</span></button>`
+        + tabs.map((t) => `<span class="vtab${V && V.id === t.id ? ' on' : ''}"><button data-act="vtab" data-id="${esc(t.id)}"><ha-icon icon="mdi:history"></ha-icon>${esc(t.name)}</button><button class="ib" data-act="vtab-win" data-id="${esc(t.id)}" title="${T('ver_new_window')}"><ha-icon icon="mdi:open-in-new"></ha-icon></button><button class="ib" data-act="vtab-x" data-id="${esc(t.id)}" title="${T('close')}"><ha-icon icon="mdi:close"></ha-icon></button></span>`).join('') + '</div>'
+        + (V ? `<div class="vban"><ha-icon icon="mdi:history"></ha-icon><span>${T('ver_banner', { name: esc(V.name), when: esc(this._verWhen(V.at)) })}${d ? ' ' + T('ver_diff', { changed: d.changed.size, only: d.only.size, added: d.added.length }) : ''}</span><button data-act="ver-sbx-cur"><ha-icon icon="mdi:flask-outline"></ha-icon>${T('ver_try')}</button>${this._full() ? `<button data-act="ver-restore" data-id="${esc(V.id)}"><ha-icon icon="mdi:backup-restore"></ha-icon>${T('ver_restore')}</button>` : ''}</div>` : '');
+    }
+
+    // ---- restoring (Full manager): plan, dialog, then the writes, each through Home Assistant's own config APIs
+    async _verRestore(id) {
+      if (!this._full()) { this._toast(T('ver_restore_full')); return; }
+      const label = this._data.ui.current, m = this._$.modal;
+      m.hidden = false;
+      m.innerHTML = `<div class="dlg"><h3>${T('ver_restore_h0')}</h3><div class="muted">${T('ver_checking')}</div></div>`;
+      let v, plan;
+      try { v = await this._verGet(label, id); plan = await this._verPlan(label, v.snapshot); }
+      catch (e) { m.innerHTML = `<div class="dlg"><h3>${T('ver_restore_h0')}</h3><p class="dtext">${esc((e && (e.message || e.code)) || e)}</p><div class="btns"><button data-act="modal-cancel">${T('close')}</button></div></div>`; return; }
+      this._verPending = { label, v, plan, devmap: {} };
+      this._verRestoreDlg();
+    }
+    async _verPlan(label, snap) {
+      const diff = await this._verDiff(label, snap), cur = new Set(this._verMembers(label));
+      const plan = { write: [], recreate: [], same: [], yaml: [], rejoin: [], added: [], missing: [] };
+      Object.entries(snap.items).forEach(([k, it]) => {
+        if (it.yaml || !it.cfg || !it.id && (it.dom === 'automation' || it.dom === 'script')) { plan.yaml.push(k); return; }
+        const there = !!(this._hass.states[k] || this._entMap.has(k));
+        if (!there) plan.recreate.push(k); else if (diff.changed.has(k)) plan.write.push(k); else plan.same.push(k);
+      });
+      snap.members.forEach((k) => { if (!cur.has(k) && !plan.recreate.includes(k) && (k.startsWith('device:') ? this._devMap.has(k.slice(7)) : this._entMap.has(k))) plan.rejoin.push(k); });
+      plan.added = diff.added;
+      plan.missing = Object.keys(snap.devices || {}).filter((d) => !this._devMap.has(d));
+      return plan;
+    }
+    _verRestoreDlg() {
+      const p = this._verPending, { v, plan } = p, snap = v.snapshot, m = this._$.modal, nm = (k) => esc((snap.items[k] && snap.items[k].name) || this._boxName(k));
+      const line = (ks, text) => (ks.length ? `<li>${text} <span class="muted">${ks.slice(0, 8).map(nm).join(', ')}${ks.length > 8 ? ' …' : ''}</span></li>` : '');
+      const logic = (k) => /^(automation|script)\./.test(k) || VER_HELPERS.has(k.split('.')[0]);
+      const addLogic = plan.added.filter(logic), addOther = plan.added.filter((k) => !logic(k));
+      const doms = new Set(plan.write.concat(plan.recreate).map((k) => k.split('.')[0]));
+      const devs = plan.missing.map((d) => { const o = snap.devices[d] || {}; return `<div class="vdevrow"><div>${T('ver_dev_gone', { name: esc(o.name || d), model: esc([o.manufacturer, o.model].filter(Boolean).join(' ')) })}</div><div class="vdevpick" data-old="${esc(d)}"></div></div>`; }).join('');
+      m.hidden = false;
+      m.innerHTML = `<div class="dlg wide vrdlg"><h3>${T('ver_restore_h', { name: esc(v.name) })}</h3><p class="dtext">${T('ver_restore_lead', { fnName: esc(this._fnName(p.label)), when: esc(this._verWhen(v.at)) })}</p>`
+        + `<ul class="vplan">${line(plan.write, P('ver_p_write', plan.write.length))}${line(plan.recreate, P('ver_p_recreate', plan.recreate.length))}${line(plan.rejoin, P('ver_p_rejoin', plan.rejoin.length))}${line(plan.same, P('ver_p_same', plan.same.length))}${line(plan.yaml, P('ver_p_yaml', plan.yaml.length))}${snap.layout ? `<li>${T('ver_p_layout')}</li>` : ''}</ul>`
+        + (plan.missing.length ? `<h4>${T('ver_dev_h')}</h4><div class="hint">${T('ver_dev_hint')}</div>${devs}` : '')
+        + (addLogic.length || addOther.length ? `<h4>${T('ver_added_h')}</h4>${addLogic.length ? `<div class="hint">${addLogic.map(nm).join(', ')}</div><label class="chk"><input type="radio" name="vextra" value="off" checked>${T('ver_added_off')}</label><label class="chk"><input type="radio" name="vextra" value="delete">${T('ver_added_delete')}</label>` : ''}${addOther.length ? `<div class="hint">${T('ver_added_other', { list: addOther.map(nm).join(', ') })}</div>` : ''}` : '')
+        + `<div class="okbox"><ha-icon icon="mdi:backup-restore"></ha-icon><span>${T('ver_restore_safety')}</span></div>`
+        + [...doms].filter((d) => d === 'automation' || d === 'script').map((d) => this._yamlWarn(d)).join('')
+        + `<div class="aval hint"></div><div class="btns"><button data-act="modal-cancel">${T('cancel')}</button><button class="primary" data-act="ver-restore-go">${T('ver_restore')}</button></div></div>`;
+      // a replaced device: Home Assistant's own device picker, or a plain list if it isn't loaded
+      m.querySelectorAll('.vdevpick').forEach((box) => {
+        const old = box.dataset.old;
+        if (customElements.get('ha-selector')) {
+          const sel = document.createElement('ha-selector');
+          sel.hass = this._hass; sel.selector = { device: {} }; sel.label = T('ver_dev_pick'); sel.value = '';
+          sel.addEventListener('value-changed', (e) => { p.devmap[old] = (e.detail && e.detail.value) || ''; });
+          box.appendChild(sel);
+        } else {
+          const devs2 = this._devs.slice().sort((a, b) => (a.name_by_user || a.name || '').localeCompare(b.name_by_user || b.name || ''));
+          box.innerHTML = `<select aria-label="${T('ver_dev_pick')}"><option value="">${T('ver_dev_keep')}</option>${devs2.map((d) => `<option value="${esc(d.id)}">${esc((d.name_by_user || d.name || d.id) + (d.model ? ' (' + d.model + ')' : ''))}</option>`).join('')}</select>`;
+          box.querySelector('select').addEventListener('change', (e) => { p.devmap[old] = e.target.value; });
+        }
+      });
+    }
+    async _verRestoreGo() {
+      const p = this._verPending, m = this._$.modal, val = m.querySelector('.aval'), btn = m.querySelector('[data-act="ver-restore-go"]');
+      if (!p) return;
+      const extra = (m.querySelector('input[name="vextra"]:checked') || { value: 'off' }).value;
+      const { label, v, plan } = p, snap = v.snapshot, map = Object.fromEntries(Object.entries(p.devmap).filter(([, x]) => x)), errs = [], name = (k) => (snap.items[k] && snap.items[k].name) || this._boxName(k);
+      btn.disabled = true;
+      val.textContent = T('ver_restoring');
+      // what's there now is saved first, so the restore can be undone
+      let back = null;
+      try {
+        const now = await this._verSnapshot(label);
+        back = await this._ws({ type: 'functions_board/version_save', label, name: T('ver_before_name', { name: v.name }), desc: '', snapshot: now, print: verPrint(now), auto: true, client: this._client() });
+      } catch (e) { val.textContent = T('ver_not_saved', { e: (e && (e.message || e.code)) || e }); btn.disabled = false; return; }
+      const exists = (k) => !!(this._hass.states[k] || this._entMap.has(k));
+      for (const k of plan.write.concat(plan.recreate)) {
+        const it = snap.items[k], cfg = swapDevs(it.cfg, map);
+        try {
+          if (it.dom === 'automation' || it.dom === 'script') await this._saveCfg(it.dom, it.id, cfg);
+          else if (exists(k)) await this._ws(Object.assign({}, cfg, { type: it.dom + '/update', [it.dom + '_id']: it.id }));
+          else { const made = await this._ws(Object.assign({}, cfg, { type: it.dom + '/create' })); it.newId = made && made.id; }
+        } catch (e) { errs.push(name(k) + ': ' + ((e && (e.message || e.body || e.code)) || e)); }
+      }
+      // what came back, and what had left the function, wear its label again
+      await new Promise((r) => setTimeout(r, plan.recreate.length ? 1500 : 200));
+      const reg = await this._ws({ type: 'config/entity_registry/list' }).catch(() => []);
+      const findNew = (k) => { const it = snap.items[k], uid = it.newId || it.id; const e = reg.find((x) => x.platform === it.dom && x.unique_id === uid); return e ? e.entity_id : null; };
+      for (const k of plan.rejoin.concat(plan.recreate)) {
+        const id = plan.recreate.includes(k) ? findNew(k) : k;
+        if (id) { try { await this._label(id, label, true, false); } catch (e) { errs.push(name(k) + ': ' + ((e && e.message) || e)); } }
+      }
+      // what was added since: turned off or deleted, as chosen; anything else is taken out of the function
+      for (const k of plan.added) {
+        const dom = k.split('.')[0];
+        try {
+          if (dom === 'automation') {
+            const r = await this._ws({ type: 'automation/config', entity_id: k }).catch(() => null), aid = r && r.config && r.config.id;
+            if (extra === 'delete' && aid) await this._hass.callApi('DELETE', `config/automation/config/${encodeURIComponent(aid)}`);
+            else await this._hass.callService('automation', 'turn_off', { entity_id: k });
+          } else if (dom === 'script') {
+            if (extra === 'delete') await this._hass.callApi('DELETE', `config/script/config/${encodeURIComponent(k.slice(7))}`);
+          } else if (VER_HELPERS.has(dom)) {
+            const e = this._entMap.get(k);
+            if (extra === 'delete' && e && e.unique_id) await this._ws({ type: dom + '/delete', [dom + '_id']: e.unique_id });
+          } else await this._label(k, label, false, false);
+        } catch (e) { errs.push(this._boxName(k) + ': ' + ((e && (e.message || e.body || e.code)) || e)); }
+      }
+      // the board as it was laid out
+      if (snap.layout) { this._data.layouts[label] = Object.assign(cleanLayout(JSON.parse(JSON.stringify(snap.layout))) || {}, { view: (this._data.layouts[label] || {}).view || null }); this._save(); }
+      this._verPending = null;
+      this._closeModal();
+      this._cfgCache.clear();
+      this._ver = null;
+      this._$.board.classList.remove('vview');
+      try { history.replaceState(history.state, '', location.pathname); } catch (e) { /* fine */ }
+      await this._loadRegistries().catch(() => {});
+      await this._open(label, true);
+      const undo = back && back.id ? [{ text: T('undo'), fn: () => this._verRestore(back.id) }] : [];
+      this._toast(errs.length ? T('ver_restored_errs', { name: v.name, n: errs.length, list: errs.slice(0, 3).join('; ') }) : T('ver_restored', { name: v.name }), undo);
+      if (this._drawer && this._drawer.mode === 'versions') this._renderVersions();
+    }
+
     _sbxOn() { return !!(this._sbx && this._drawer && this._drawer.mode === 'sandbox'); }
     // a box's state as the board shows it: the sandbox's while it's open, Home Assistant's otherwise
     _stOf(k) {
@@ -7819,7 +8329,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._drawer = { mode: 'sandbox' };
       const d = this._$.drawer;
       d.hidden = false;
-      d.innerHTML = `<div class="dhead"><span class="dtitle">${T('sbx_title', { fnName: esc(this._fnName(label)) })}</span><span class="sbclock"></span><button data-act="sbx-about" title="${T('sbx_about_t')}"><ha-icon icon="mdi:information-outline"></ha-icon></button><button data-act="sbx-reset" title="${T('sbx_reset_t')}"><ha-icon icon="mdi:restore"></ha-icon></button><button data-act="close" title="${T('sbx_close_t')}"><ha-icon icon="mdi:close"></ha-icon></button></div><div class="dbg sbx"><div class="sbnote">${T('sbx_note')}</div><div class="sbask"></div><div class="sbctl"></div><div class="sbdue"></div><div class="dtl sbtl"><div class="muted pad">${T('reading_configs')}</div></div></div>`;
+      d.innerHTML = `<div class="dhead"><span class="dtitle">${T('sbx_title', { fnName: esc(this._fnName(label) + (this._ver ? ' · ' + this._ver.name : '')) })}</span><span class="sbclock"></span><button data-act="sbx-about" title="${T('sbx_about_t')}"><ha-icon icon="mdi:information-outline"></ha-icon></button><button data-act="sbx-reset" title="${T('sbx_reset_t')}"><ha-icon icon="mdi:restore"></ha-icon></button><button data-act="close" title="${T('sbx_close_t')}"><ha-icon icon="mdi:close"></ha-icon></button></div><div class="dbg sbx"><div class="sbnote">${T('sbx_note')}</div><div class="sbask"></div><div class="sbctl"></div><div class="sbdue"></div><div class="dtl sbtl"><div class="muted pad">${T('reading_configs')}</div></div></div>`;
       this._$.board.classList.add('sbx');
       this._$.sbxpill.hidden = false;
       this._fitLitbar();
@@ -7928,14 +8438,78 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const topics = new Set([...m.nodes.keys()].filter((k) => k.startsWith('mqtt:')).map((k) => k.slice(5)));
       g.eng.items.forEach((it) => { if (it.kind === 'automation') g.eng._trigs(it).forEach((t) => { if (g.eng._plat(t) === 'mqtt' && t.topic && !/[+#]/.test(t.topic)) topics.add(String(t.topic)); }); });
       const opt = (k) => `<option value="${esc(k)}">${esc(nm(k))}</option>`;
-      box.innerHTML = `<div class="sbrow"><span class="sbl">${T('sbx_set')}</span><select class="sbent" aria-label="${T('sbx_entity')}">${ents.map(opt).join('')}</select><input class="sbval" list="sbvals" aria-label="${T('sbx_state')}" placeholder="${T('sbx_state')}"><datalist id="sbvals"></datalist><button class="chip" data-act="sbx-set">${T('sbx_set_b')}</button></div>`
-        + `<div class="sbrow"><span class="sbl">${T('sbx_event')}</span><input class="sbev" list="sbevs" aria-label="${T('sbx_event_type')}" placeholder="${T('sbx_event_type')}"><datalist id="sbevs">${evs.map((x) => `<option value="${esc(x)}"></option>`).join('')}</datalist><input class="sbevd" aria-label="${T('sbx_event_data')}" placeholder='${T('sbx_event_data_ph')}'><button class="chip" data-act="sbx-fire">${T('sbx_fire')}</button></div>`
-        + (topics.size ? `<div class="sbrow"><span class="sbl">MQTT</span><input class="sbtop" list="sbtops" aria-label="${T('sbx_topic')}" placeholder="${T('sbx_topic')}"><datalist id="sbtops">${[...topics].map((x) => `<option value="${esc(x)}"></option>`).join('')}</datalist><input class="sbpay" aria-label="${T('sbx_payload')}" placeholder="${T('sbx_payload')}"><button class="chip" data-act="sbx-mqtt">${T('sbx_send')}</button></div>` : '')
+      box.innerHTML = `<div class="sbrow"><span class="sbl">${T('sbx_set')}</span><select class="sbent" aria-label="${T('sbx_entity')}">${ents.map(opt).join('')}</select>${this._sbxField('sbval', [], T('sbx_state'))}<button class="chip" data-act="sbx-set">${T('sbx_set_b')}</button></div>`
+        + `<div class="sbrow"><span class="sbl">${T('sbx_event')}</span>${this._sbxField('sbev', evs.map((x) => ({ v: x, l: x })), T('sbx_event_type'))}${this._sbxField('sbevd', [], T('sbx_event_data_ph'))}<button class="chip" data-act="sbx-fire">${T('sbx_fire')}</button></div>`
+        + (topics.size ? `<div class="sbrow"><span class="sbl">MQTT</span>${this._sbxField('sbtop', [...topics].map((x) => ({ v: x, l: x })), T('sbx_topic'))}${this._sbxField('sbpay', [], T('sbx_payload'))}<button class="chip" data-act="sbx-mqtt">${T('sbx_send')}</button></div>` : '')
         + `<div class="sbrow"><span class="sbl">${T('sbx_run')}</span><select class="sbrun" aria-label="${T('sbx_run_what')}">${runs.map(opt).join('')}</select><select class="sbtrig" aria-label="${T('sbx_as_if')}"></select><label class="sbcb"><input type="checkbox" class="sbconds" checked>${T('sbx_check_conds')}</label><button class="chip" data-act="sbx-run">${T('sbx_run_b')}</button></div>`
         + `<div class="sbrow"><span class="sbl">${T('sbx_clock')}</span><button class="chip" data-act="sbx-adv" data-ms="60000">+1 min</button><button class="chip" data-act="sbx-adv" data-ms="600000">+10 min</button><button class="chip" data-act="sbx-adv" data-ms="3600000">+1 h</button><button class="chip sbnext" data-act="sbx-next"></button></div>`;
       const pick = this._sel && ents.includes(this._sel) ? this._sel : ents[0];
       if (pick) this._sbxPick(pick);
       this._sbxTrigs();
+      this._sbxEvData();
+      this._sbxPayloads();
+    }
+    // a dropdown of what fits, ending with Other… which opens a box to type anything else
+    _sbxField(cls, opts, ph) {
+      return `<span class="sbf"><select class="sbsel ${cls}-sel" data-f="${cls}" aria-label="${esc(ph)}">${opts.map((o) => `<option value="${esc(o.v)}">${esc(o.l)}</option>`).join('')}<option value="${SBX_OTHER}">${T('sbx_other')}</option></select><input class="${cls}" placeholder="${esc(ph)}" aria-label="${esc(ph)}"${opts.length ? ' hidden' : ''}></span>`;
+    }
+    _sbxOpts(cls, opts, keep) {
+      const sel = this._$.drawer.querySelector(`.${cls}-sel`);
+      if (!sel) return;
+      const was = sel.value;
+      sel.innerHTML = opts.map((o) => `<option value="${esc(o.v)}">${esc(o.l)}</option>`).join('') + `<option value="${SBX_OTHER}">${T('sbx_other')}</option>`;
+      // keep: what was picked stays (a refresh); otherwise the suggested one, else the first
+      if (keep === true && [...sel.options].some((o) => o.value === was)) sel.value = was;
+      else if (opts.length) sel.value = (opts.find((o) => o.pick) || opts[0]).v;
+      this._sbxOther(sel);
+    }
+    // Other… shows the typing box (and focuses it); anything picked from the list hides it
+    _sbxOther(sel, focus) {
+      const inp = sel.parentNode.querySelector('input');
+      if (!inp) return;
+      const other = sel.value === SBX_OTHER;
+      inp.hidden = !other;
+      if (other && focus) inp.focus();
+    }
+    _sbxVal(cls) {
+      const d = this._$.drawer, sel = d.querySelector(`.${cls}-sel`), inp = d.querySelector(`input.${cls}`);
+      return sel && sel.value !== SBX_OTHER ? sel.value : inp ? inp.value.trim() : '';
+    }
+    // the data an event can carry: what the function's own event triggers for that type look for
+    _sbxEvData() {
+      const g = this._sbx;
+      if (!g) return;
+      const type = this._sbxVal('sbev'), out = [], seen = new Set();
+      g.eng.items.forEach((it) => {
+        if (it.kind !== 'automation') return;
+        g.eng._trigs(it).forEach((t) => {
+          if (g.eng._plat(t) !== 'event' || !toList(t.event_type).includes(type) || !t.event_data || typeof t.event_data !== 'object') return;
+          const v = JSON.stringify(t.event_data);
+          if (seen.has(v)) return;
+          seen.add(v);
+          out.push({ v, l: T('sbx_data_as', { name: this._boxName(it.id), data: shorten(Object.entries(t.event_data).map(([a, b]) => `${a}: ${typeof b === 'object' ? JSON.stringify(b) : b}`).join(', '), 60) }), pick: true });
+        });
+      });
+      out.push({ v: '', l: T('sbx_data_none') });
+      this._sbxOpts('sbevd', out, 'pick');
+    }
+    // the payloads the function's MQTT triggers on that topic wait for
+    _sbxPayloads() {
+      const g = this._sbx;
+      if (!g || !this._$.drawer.querySelector('.sbpay-sel')) return;
+      const topic = this._sbxVal('sbtop'), out = [], seen = new Set();
+      g.eng.items.forEach((it) => {
+        if (it.kind !== 'automation') return;
+        g.eng._trigs(it).forEach((t) => {
+          if (g.eng._plat(t) !== 'mqtt' || t.payload == null || !(t.topic === topic || sbxTopic(String(t.topic || ''), topic))) return;
+          const v = String(t.payload);
+          if (seen.has(v)) return;
+          seen.add(v);
+          out.push({ v, l: T('sbx_payload_as', { name: this._boxName(it.id), payload: shorten(v, 50) }), pick: true });
+        });
+      });
+      out.push({ v: '', l: T('sbx_payload_none') });
+      this._sbxOpts('sbpay', out, 'pick');
     }
     // the triggers of the automation picked under Run: run it as if one of them fired
     _sbxTrigs() {
@@ -7954,15 +8528,21 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     // soft: only bring the suggestions and the "now …" hint up to date, if that entity is still the one picked, and
     // leave what's typed (after a Set settles, the person may already be on the next one)
     _sbxPick(k, soft) {
-      const d = this._$.drawer, sel = d.querySelector('.sbent'), dl = d.querySelector('#sbvals'), val = d.querySelector('.sbval');
+      const d = this._$.drawer, sel = d.querySelector('.sbent'), val = d.querySelector('input.sbval');
       if (!sel || !this._sbx) return;
       if (soft && sel.value !== k) return;
       sel.value = k;
-      const n = this._model.nodes.get(k), s = this._sbx.eng.get(k);
+      const n = this._model.nodes.get(k), s = this._sbx.eng.get(k), now = s ? String(s.state) : null;
       const hints = new Set(n ? this._stateHints(n) : []);
-      if (s) hints.add(String(s.state));
-      if (dl) dl.innerHTML = [...hints].map((x) => `<option value="${esc(x)}"></option>`).join('');
-      if (val) { if (!soft) val.value = ''; val.placeholder = s ? T('sbx_now_is', { state: String(s.state) }) : T('sbx_state'); }
+      if (now != null) hints.add(now);
+      // a sandbox is where you'd try what a missing or failing device does
+      ['unavailable', 'unknown'].forEach((x) => hints.add(x));
+      const opts = [...hints].map((x) => ({ v: x, l: x === now ? T('sbx_state_now', { state: x }) : x }));
+      // the first state it isn't in already, so Set does something
+      const first = opts.find((o) => o.v !== now && o.v !== 'unavailable' && o.v !== 'unknown');
+      if (first) first.pick = true;
+      this._sbxOpts('sbval', opts, soft ? true : 'pick');
+      if (val) { if (!soft) val.value = ''; val.placeholder = now != null ? T('sbx_now_is', { state: now }) : T('sbx_state'); }
     }
     async _sbxDo(fn) {
       const g = this._sbx;
@@ -7982,23 +8562,27 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     // the box bar's sandbox buttons fill in the drawer's controls; the rest are the drawer's own
     _sbxBox(act, el) {
       const d = this._$.drawer, k = this._sel;
-      if (act === 'sbx-setbox' && k) { this._sbxPick(k); const v = d.querySelector('.sbval'); if (v) v.focus(); return; }
+      if (act === 'sbx-setbox' && k) { this._sbxPick(k); const v = d.querySelector('.sbval-sel'); if (v) v.focus(); return; }
       if (act === 'sbx-runbox' && k) { const r = d.querySelector('.sbrun'); if (r) r.value = k; this._sbxAction('sbx-run', el); return; }
-      if (act === 'sbx-firebox' && k) { const v = d.querySelector('.sbev'); if (v) { v.value = k.slice(6); d.querySelector('.sbevd').focus(); } return; }
+      if (act === 'sbx-firebox' && k) {
+        const sel = d.querySelector('.sbev-sel'), inp = d.querySelector('input.sbev'), type = k.slice(6);
+        if (sel) { if ([...sel.options].some((o) => o.value === type)) sel.value = type; else { sel.value = SBX_OTHER; if (inp) inp.value = type; } this._sbxOther(sel); this._sbxEvData(); const n = d.querySelector('.sbevd-sel'); if (n) n.focus(); }
+        return;
+      }
       this._sbxAction(act, el);
     }
     _sbxAction(act, el) {
       const d = this._$.drawer, q = (s) => d.querySelector(s);
       switch (act) {
         case 'sbx-set': {
-          const id = q('.sbent').value, v = q('.sbval').value.trim();
+          const id = q('.sbent').value, v = this._sbxVal('sbval');
           if (!id || !v) { this._toast(T('sbx_pick_state')); return; }
-          q('.sbval').value = '';
+          if (q('input.sbval')) q('input.sbval').value = '';
           this._sbxDo((e) => e.userSet(id, v)).then(() => this._sbxPick(id, true));
           break;
         }
         case 'sbx-fire': {
-          const type = q('.sbev').value.trim(), raw = q('.sbevd').value.trim();
+          const type = this._sbxVal('sbev'), raw = this._sbxVal('sbevd');
           if (!type) { this._toast(T('sbx_pick_event')); return; }
           let data = {};
           if (raw) { try { data = JSON.parse(raw); } catch (e) { const p = parseLoose(raw); if (p && typeof p === 'object') data = p; else { this._toast(T('sbx_bad_data')); return; } } }
@@ -8011,9 +8595,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           break;
         }
         case 'sbx-mqtt': {
-          const topic = q('.sbtop').value.trim();
+          const topic = this._sbxVal('sbtop');
           if (!topic) { this._toast(T('sbx_pick_topic')); return; }
-          this._sbxDo((e) => e.userMqtt(topic, q('.sbpay').value));
+          this._sbxDo((e) => e.userMqtt(topic, this._sbxVal('sbpay')));
           break;
         }
         case 'sbx-adv': this._sbxDo((e) => e.advance(+el.dataset.ms)); break;
@@ -8459,7 +9043,12 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const W = this._$.vp.clientWidth, d = this._$.drawer;
       return d && !d.hidden && this._drawer ? Math.max(200, W - d.offsetWidth) : W;
     }
-    _fitLitbar() { const b = this._$.litbar; if (b && !b.hidden) b.style.right = (12 + this._$.vp.clientWidth - this._openWidth()) + 'px'; }
+    _fitLitbar() {
+      const r = (12 + this._$.vp.clientWidth - this._openWidth()) + 'px', b = this._$.litbar, vt = this._$.vtabs;
+      if (b && !b.hidden) b.style.right = r;
+      // the version tabs and their banner keep to the part of the board the drawer leaves free too
+      if (vt) vt.style.right = r;
+    }
     // bring boxes into the visible part of the board, zooming out only when they don't fit
     _frameKeys(keys, extra) {
       const m = this._model, ns = [...new Set(keys)].map((k) => m && m.nodes.get(k)).filter(Boolean).concat(extra || []);
@@ -8966,6 +9555,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     // step: { label, text, undo(), redo(), check?(dir) } - check returns false when the item has changed
     // since the step (someone edited it elsewhere); the board then asks before overwriting
     _history(step) {
+      if (this._ver) return;
       this._undoStack.push(step);
       if (this._undoStack.length > 50) this._undoStack.shift();
       this._redoStack = [];
@@ -9218,12 +9808,14 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       ];
       if (full) {
         li.push(T('full_manager_is_on_the'));
+        li.push(T('ver_promise_full'));
         li.push(T('tests_full_manager_a_helper'));
       } else {
         li.push(T('this_install_is_set_to'));
       }
       li.push(T('the_debugger_watch_triggers_monitor'));
       li.push(T('show_node_red_flows_in'));
+      li.push(T('ver_promise'));
       li.push(T('every_change_is_shown_before'));
       return li;
     }

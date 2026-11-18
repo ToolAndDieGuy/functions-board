@@ -250,14 +250,14 @@ const caption = (page, text) => page.evaluate((t) => {
     await caption(page, 'Turn auto-close on and open the garage door: <b>in the sandbox only</b>.');
     await page.waitForTimeout(1600);
     await fbq(page, '.drawer .sbent').selectOption('input_boolean.garage_auto_close');
-    await clickSel('.drawer .sbval', 600);
-    await fbq(page, '.drawer .sbval').type('on', { delay: 90 });
+    await clickSel('.drawer .sbval-sel', 600);
+    await fbq(page, '.drawer .sbval-sel').selectOption('on');
     await clickSel('.drawer [data-act="sbx-set"]', 400);
     await until(() => el(page, (b) => !b._sbx.busy || null), 8000);
     await page.waitForTimeout(1400);
     await fbq(page, '.drawer .sbent').selectOption('cover.garage_door');
-    await clickSel('.drawer .sbval', 500);
-    await fbq(page, '.drawer .sbval').type('open', { delay: 90 });
+    await clickSel('.drawer .sbval-sel', 500);
+    await fbq(page, '.drawer .sbval-sel').selectOption('open');
     await clickSel('.drawer [data-act="sbx-set"]', 400);
     await caption(page, 'What that sets off plays on the board, step by step:<br>the open timer starts, and its box shows the time left.');
     await until(() => el(page, (b) => (b._flow && b._flow.at === b._flow.steps.length - 1) || null), 15000);

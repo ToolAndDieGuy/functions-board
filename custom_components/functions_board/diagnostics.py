@@ -32,6 +32,7 @@ async def async_get_config_entry_diagnostics(
         "card": bool(board.extra_js),
         "functions": len(functions),
         "store_bytes": len(json_bytes(board.stored())),
+        "versions": board.versions.counts() if board.versions else None,
         "layouts": [
             {
                 "on_board": label in functions,

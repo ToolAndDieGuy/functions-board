@@ -6,8 +6,8 @@ const path = require('path');
 
 const src = fs.readFileSync(path.join(__dirname, '..', 'custom_components', 'functions_board', 'frontend', 'functions-board.js'), 'utf8');
 const start = src.indexOf("'use strict';"), end = src.indexOf('  class FunctionsBoard extends HTMLElement');
-const lib = new Function('customElements', 'window', src.slice(start, end) + '\nreturn { Sandbox, sbxRewrite, SBX_PRELUDE, durMs, asBool, localAt, tzParts, sbxEffect, sbxReads, flowPath, flowCrossings };')({ get: () => undefined }, {});
-const { Sandbox, sbxRewrite, durMs, localAt, sbxEffect, sbxReads, flowPath, flowCrossings } = lib;
+const lib = new Function('customElements', 'window', src.slice(start, end) + '\nreturn { Sandbox, sbxRewrite, SBX_PRELUDE, durMs, asBool, localAt, tzParts, sbxEffect, sbxReads, flowPath, flowCrossings, verPrint, devIdsIn, swapDevs };')({ get: () => undefined }, {});
+const { Sandbox, sbxRewrite, durMs, localAt, sbxEffect, sbxReads, flowPath, flowCrossings, verPrint, devIdsIn, swapDevs } = lib;
 
 let failed = 0, total = 0;
 const check = (name, ok, detail) => {
@@ -303,6 +303,17 @@ const st = (sb, id) => (sb.get(id) || {}).state;
     const tr = sb.log.filter((e) => e.kind === 'trigger' && e.by === 'you');
     check('0.7.1 a run as if a trigger fired says where it would have come from (for the flow view)', tr[0].src === 'person.me' && tr[1].src === 'binary_sensor.motion', tr.map((e) => e.src));
     check('0.7.1 a condition says which entities it read', sb.log.some((e) => e.kind === 'cond' && Array.isArray(e.ents)));
+  }
+
+  // ---- versions (0.8.0): the fingerprint that says which version is active, and replaced devices
+  {
+    const D1 = 'a'.repeat(32), D2 = 'b'.repeat(32);
+    const s1 = { members: ['automation.a', 'light.b'], items: { 'automation.a': { cfg: { alias: 'A', actions: [{ device_id: D1, type: 'turn_on' }, { action: 'light.turn_on', target: { device_id: [D1, 'not-a-device'] } }] } } } };
+    const s2 = { members: ['light.b', 'automation.a'], items: { 'automation.a': { cfg: { actions: s1.items['automation.a'].cfg.actions, alias: 'A' } } }, layout: { nodes: { x: 1 } } };
+    check('0.8.0 a version\'s fingerprint ignores order and layout, and changes with any config', verPrint(s1) === verPrint(s2) && verPrint(s1) !== verPrint({ members: s1.members, items: { 'automation.a': { cfg: { alias: 'B' } } } }));
+    check('0.8.0 the devices a config names, at any depth', JSON.stringify([...devIdsIn(s1.items['automation.a'].cfg)]) === JSON.stringify([D1]));
+    const sw = swapDevs(s1.items['automation.a'].cfg, { [D1]: D2 });
+    check('0.8.0 a replaced device is swapped everywhere it\'s named, nothing else touched', JSON.stringify(sw).split(D2).length === 3 && !JSON.stringify(sw).includes(D1) && sw.alias === 'A' && sw.actions[1].target.device_id[1] === 'not-a-device', sw);
   }
 
   // ---- the flow view's helpers (0.7.1)
