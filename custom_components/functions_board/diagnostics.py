@@ -36,7 +36,7 @@ from homeassistant.loader import async_get_integration
 from .const import DOMAIN
 
 # values under these keys are someone's words: anonymised, only their length is kept
-FREE_TEXT_KEYS = frozenset({"message", "title", "text", "desc", "description", "note", "notes", "body", "content", "comment", "subtitle", "caption", "tts", "speech"})
+FREE_TEXT_KEYS = frozenset({"message", "title", "text", "desc", "description", "note", "notes", "body", "content", "comment", "subtitle", "caption", "tts", "speech", "payload"})
 # values under these keys name something: a stand-in, the same one wherever that name appears
 NAME_KEYS = frozenset({"alias", "name", "friendly_name", "name_by_user", "original_name", "by", "user", "tab", "tabLabel"})
 # service names many integrations share say nothing about a home (turn_on, set_value …); others may (notify.mobile_app_toms_phone)
@@ -54,6 +54,12 @@ GENERIC_SERVICES = frozenset(
     "volume_mute volume_up volume_down play_media select_source set_datetime increment decrement reset start pause "
     "cancel finish change trigger create dismiss dismiss_all log set_level set_options send_command return_to_base "
     "clean_spot locate set_operation_mode set_away_mode set_speed snapshot record speak apply".split()
+)
+# MQTT topic parts that are protocol, not someone's naming (zigbee2mqtt/<name>/set keeps zigbee2mqtt and set)
+TOPIC_WORDS = frozenset(
+    "zigbee2mqtt zwave zwavejs2mqtt homeassistant tasmota tele stat cmnd shellies shelly esphome frigate valetudo "
+    "ring theengs rtl_433 openmqttgateway owntracks set get state status availability attributes config command "
+    "cmd result sensor bridge event events device devices info lwt online power".split()
 )
 # Home Assistant's own event types with a dot in them, kept whether or not anything listens right now
 KNOWN_EVENTS = frozenset({"timer.started", "timer.finished", "timer.cancelled", "timer.paused", "timer.restarted", "timer.changed"})
@@ -187,13 +193,23 @@ class Anonymiser:
             s = self._known_re.sub(lambda m: self._stand_in(m.group(0), self._known[m.group(0)]), s)
         return SECRET.sub(lambda m: self._stand_in(m.group(0), "id"), s)
 
+    def topic(self, t: str) -> str:
+        """An MQTT topic: its shape and protocol words kept, the names in it replaced (the same one everywhere)."""
+        return "/".join(p if p in ("+", "#", "") or p.lower() in TOPIC_WORDS or p.isdigit() else self._stand_in(p, "topic") for p in t.split("/"))
+
+    def key(self, k: str) -> str:
+        """A dict key: a board key for an MQTT topic (mqtt:…) is a topic; anything else is text."""
+        return "mqtt:" + self.topic(k[5:]) if k.startswith("mqtt:") else self.text(k)
+
     def value(self, v: Any, key: str | None = None) -> Any:
         """A value with everything personal in it replaced; its shape stays."""
         if isinstance(v, dict):
-            return {self.text(k) if isinstance(k, str) else k: self.value(x, k if isinstance(k, str) else None) for k, x in v.items()}
+            return {self.key(k) if isinstance(k, str) else k: self.value(x, k if isinstance(k, str) else None) for k, x in v.items()}
         if isinstance(v, list):
             return [self.value(x, key) for x in v]
         if isinstance(v, str):
+            if key == "topic" or v.startswith("mqtt:"):
+                return self.key(v) if v.startswith("mqtt:") else self.topic(v)
             if key in FREE_TEXT_KEYS and v:
                 return f"[text, {len(v)} characters]"
             if key in NAME_KEYS and v:

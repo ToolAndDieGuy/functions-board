@@ -1168,6 +1168,57 @@ test('0.9.0 problems: what an automation points at that isn\'t there, on the lis
   check('0.9.0 problems: no errors', page.logs.length === 0, page.logs);
 });
 
+test('0.9.0 saved checks: a sandbox run kept with what should come of it, replayed after every change', async (browser) => {
+  const { page } = await imported(browser);
+  const lid = await openFn(page, /garage/i);
+  const DOOR = 'cover.garage_door', AUTO = 'input_boolean.garage_auto_close';
+  const script0 = await api(page, 'GET', 'config/script/config/close_garage');
+  await fbq(page, '.tools [data-act="sandbox"]').click();
+  await fbq(page, '.modal [data-act="sbx-start"]').click({ timeout: 3000 }).catch(() => {});
+  await fbq(page, '.drawer .sbctl .sbent').waitFor({ timeout: 10000 });
+  const idle = () => until(() => el(page, (b) => (b._sbx && !b._sbx.busy) || null), 20000);
+  check('0.9.0 Save as a check waits until something\'s been done in the sandbox', await el(page, (b) => b._$.drawer.querySelector('[data-act="chk-save"]').disabled));
+  for (const [ent, val] of [[AUTO, 'on'], [DOOR, 'open']]) {
+    await fbq(page, '.drawer .sbent').selectOption(ent);
+    await fbq(page, '.drawer .sbval-sel').selectOption(val);
+    await fbq(page, '.drawer [data-act="sbx-set"]').click();
+    await idle();
+  }
+  await fbq(page, '.drawer [data-act="sbx-next"]').click();
+  await idle();
+  check('0.9.0 the sandbox ran it: the door closed there', (await el(page, (b, k) => b._sbx.eng.get(k).state, DOOR)) === 'closed');
+  await fbq(page, '.drawer [data-act="chk-save"]').click();
+  await fbq(page, '.modal .ckdlg').waitFor({ timeout: 5000 });
+  const dlg = await el(page, (b) => ({ steps: [...b._$.modal.querySelectorAll('.cksteps li')].map((l) => l.textContent), x: [...b._$.modal.querySelectorAll('input[name="ckx"]')].map((c) => [c.parentNode.textContent, c.checked]) }));
+  check('0.9.0 the dialog lists the steps you took', dlg.steps.length === 3 && /Set .*Auto.*on/i.test(dlg.steps[0]) && /Set Garage Door to open/.test(dlg.steps[1]) && /Clock to what/.test(dlg.steps[2]), dlg.steps);
+  check('0.9.0 ... and suggests what came of it, ticked: the door ends closed, what ran ran', dlg.x.some(([t, on]) => /Garage Door ends closed/.test(t) && on) && dlg.x.some(([t, on]) => /Garage: left open runs to the end/.test(t) && on) && dlg.x.some(([t, on]) => /Close garage runs to the end/.test(t) && on), dlg.x);
+  await fbq(page, '.modal input[name="ckname"]').fill('Left open: closes itself');
+  await fbq(page, '.modal [data-act="chk-save-go"]').click();
+  const saved = await until(async () => { const L = (await store(page)).layouts[lid]; return L && (L.checks || []).length ? L.checks : null; }, 8000);
+  check('0.9.0 it\'s kept in the function\'s layout (shared, synced)', !!saved && saved[0].name === 'Left open: closes itself' && saved[0].steps.length === 3 && saved[0].start[DOOR].state === 'closed', saved && saved[0]);
+  const pass = await until(() => el(page, (b) => { const r = b.shadowRoot.querySelector('.sbchk .ckst'); return r && (r.classList.contains('ok') || r.classList.contains('bad')) ? r.className : null; }), 20000);
+  check('0.9.0 it runs straight away and passes', /ok/.test(pass || ''), pass);
+  // someone breaks the script: the check fails, and the function shows it as a problem
+  await api(page, 'POST', 'config/script/config/close_garage', Object.assign({}, script0, { sequence: script0.sequence.filter((x) => x.action !== 'cover.close_cover') }));
+  await el(page, (b) => b._configChanged());
+  const fail = await until(() => el(page, (b) => (b._model && (b._model.problems || []).find((p) => p.kind === 'c_failed')) || null), 25000);
+  check('0.9.0 after an edit that stops it working, the check fails as a problem, saying what it got', !!fail && /Left open: closes itself/.test(fail.name) && /Garage Door ends closed \(got open\)/.test(fail.detail), fail);
+  check('0.9.0 ... counted in the header', /problem/.test(await el(page, (b) => (b.shadowRoot.querySelector('.pchip') || {}).textContent || '')));
+  // fixed: it passes again
+  await api(page, 'POST', 'config/script/config/close_garage', script0);
+  await el(page, (b) => b._configChanged());
+  const ok2 = await until(() => el(page, (b) => (b._model && !(b._model.problems || []).some((p) => /^c_/.test(p.kind)) && b._checkRes.get(b._data.ui.current) && [...b._checkRes.get(b._data.ui.current).res.values()].every((r) => r.ok)) || null), 25000);
+  check('0.9.0 put right, it passes again and the problem goes', !!ok2);
+  // replay: its own states and steps, played in the sandbox
+  await el(page, (b) => b._closeDrawer());
+  await el(page, (b, id) => b._checkReplay(id), saved[0].id);
+  const rep = await until(() => el(page, (b, k) => (b._sbx && !b._sbx.busy && b._sbx.rec.steps.length === 3 ? b._sbx.eng.get(k).state : null), DOOR), 30000);
+  check('0.9.0 Replay plays it in the sandbox from its own states: the door ends closed again', rep === 'closed', rep);
+  await el(page, (b) => b._closeDrawer());
+  page.allowFail = [/^automation\/config$/, /^script\/config$/];
+  check('0.9.0 saved checks: no errors', page.logs.length === 0, page.logs);
+});
+
 (async () => {
   const browser = await chromium.launch();
   for (const [name, fn] of cases) {

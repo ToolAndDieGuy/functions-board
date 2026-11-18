@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+New: **saved checks.** Do something in the sandbox (open the garage door, let the clock run), then **Save as a
+check**: the board keeps the steps, the states and the time they started from, and what came of it, which you
+tick (the door ends closed, "Close garage" runs to the end, an automation is stopped by its conditions or doesn't
+run at all). The check is replayed on the function's current configs every time they change, and when you open
+the function. If it stops passing, the function shows it as a problem, saying what happened instead ("Garage Door
+ends closed (got open)"). **Replay** plays it in the sandbox, step by step on the board. Answers you gave the
+sandbox (is it after sunset?) are given again; a question it hasn't been asked before makes the check unsure
+rather than passing. Checks are kept with the function's layout and shared like everything else on the board.
+
+Fixed: anonymised diagnostics now also replace the names inside MQTT topics (`home/kitchen/light` keeps its
+shape and protocol words like `zigbee2mqtt` and `set`, not the names).
+
 New: **problems.** Home Assistant doesn't warn when something an automation uses is renamed or removed; the
 automation just stops doing its job. The board now finds what each function's automations and scripts point at
 that isn't there or can't work: an entity that doesn't exist (renamed or removed), one no integration provides,

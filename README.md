@@ -26,6 +26,7 @@ Home Assistant files things by type: automations in one list, scripts in another
   - **Watch triggers** pulses an automation's trigger arrows whenever one would fire, without running it. With Pause, that's a dry run.
   - **Monitor boxes** list the last events of one type, or MQTT messages on a topic, while the function is open.
   - The **sandbox** runs the function on a copy of its states, with its own clock: set a state, fire an event or run an automation, and watch what the function would do played on the board step by step, without anything changing in your home. Works in either mode.
+  - **Saved checks:** keep a sandbox run, with what should come of it, as a check that's replayed after every change to the function. If it stops passing, it shows up as a problem.
   - **Tests** (Full manager only) change a helper, simulate a state, fire an event, send a notification, or run an automation or script. A test can be kept on the board as a button.
 - **Problems:** the board finds what each function's automations and scripts point at that isn't there or can't work (an entity renamed or removed, a device or area that's gone, an action whose integration isn't set up), counts them on the list and marks them on the board. Home Assistant itself doesn't warn about these.
 - **Versions:** save a function as it is, with a name and a description, open a saved version in a tab beside what's there now, try it in the sandbox, and restore it (Full manager).
@@ -103,6 +104,8 @@ The **Auto-arrange** button's menu sets which way a function flows: **left to ri
 - **Triggers it can't follow** (zone, sun, Home Assistant starting, webhooks, device triggers) are named when it opens. **Run** an automation as if any one of its triggers fired, so `trigger.id` conditions and `trigger.` templates work. An **MQTT** row sends a message on a topic the function listens to.
 - Only the automations and scripts on the board run in the sandbox. Test buttons and the Test dialog act on the sandbox while it's open.
 - **Follow it on the board.** Whatever you do is played on the board step by step: each step's arrow lights with a dot running along it and a number beside it, conditions show ✓ or ✕ on their arrows, and what isn't on the board (the event a run stood in for, a sensor it checked, the MQTT topic a script publishes to) gets a temporary dashed box beside what it touches. A box with a delay running shows how long is left. Step with ◀ ▶ in the bar under the board, or click a row in the drawer.
+
+**Saved checks.** After doing something in the sandbox, **Save as a check** keeps the steps, the states and the time they started from, and what came of it (you tick which: the door ends closed, "Close garage" runs to the end, an automation is stopped by its conditions or doesn't run). The board replays every check on the function's current configs when they change and when you open it; a check that stops passing is a red problem saying what happened instead, and **Replay** plays it in the sandbox, step by step. It's a regression test for a part of your home, and like the sandbox it never touches your devices.
 
 ### Versions
 

@@ -93,6 +93,11 @@ async def _fill(hass: HomeAssistant, ws, home: dict[str, str]) -> str:
         "frames": [{"id": "f1", "title": "Bramblewood corner", "x": 0, "y": 0, "w": 500, "h": 300}],
         "notes": [{"id": "n1", "text": NOTE, "x": 0, "y": 400}],
         "tests": [{"id": "t1", "name": "Bramblewood open test", "kind": "state", "target": home["door"], "state": "open"}],
+        # a saved check (0.9.0): its name, starting states, steps (an MQTT payload) and the answers it was given
+        "checks": [{"id": "k1", "name": "Bramblewood closes itself", "at": 0, "start": {home["door"]: {"state": "closed", "attributes": {"friendly_name": "Bramblewood door"}}},
+                    "items": ["automation.bramblewood_left_open"], "steps": [{"op": "mqtt", "topic": "home/bramblewood/door", "payload": NOTE}],
+                    "answers": [{"key": "automation.bramblewood_left_open", "text": "Is the bramblewood gate shut?", "value": True}],
+                    "expect": [{"k": "state", "id": home["door"], "state": "closed"}]}],
         "dir": "right",
     }
     for msg in (
@@ -141,6 +146,9 @@ async def test_anonymised_diagnostics_keep_shape_not_names(hass: HomeAssistant, 
     lamp = cfg["actions"][2]["target"]["entity_id"]
     assert lamp in cfg["conditions"][0]["value_template"]
     assert len(d["version_snapshots"]) == 1
+    # an MQTT topic keeps its shape and protocol words, not the names in it
+    step = d["board"]["layouts"]["label_1"]["checks"][0]["steps"][0]
+    assert step["topic"] == "home/topic_1/door" or step["topic"].split("/")[1].startswith("topic_"), step
 
 
 async def test_home_assistants_own_download_is_anonymised(hass: HomeAssistant, hass_ws_client) -> None:

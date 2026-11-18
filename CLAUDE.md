@@ -110,5 +110,11 @@ sh tests/run-all.sh --e2e layout # only the suites matching a pattern
 - **Problems** (`findProblems()` in the library section, 0.9.0): from `analyze()`'s refs and the registries;
   `_buildModel` marks boxes (`n.prob`) and arrows (`e.prob`) and keeps `model.problems`; `_scanProblems()` counts
   every function for the list in the background (configs come from the cache), the open one from its model.
+- **Saved checks** (0.9.0): `cleanCheck()` and `runCheck()` in the library section; a check is kept in the
+  layout (`layout.checks`) with its starting states, clock, the automations and scripts that took part (`items`,
+  related ones included), steps, answers and expectations. The open sandbox records into `_sbx.rec`; `_runChecks()`
+  replays them on the current configs (results per config generation, `_cfgGen`), and failing ones join the
+  problems (`c_failed`, `c_unsure`). The engine passes itself to `tpl(template, vars, engine)`, so templates read
+  the states of the engine that asked.
 - Debug hooks for tests: `board._ortho` (routes, owners, hops, `vert`), `board._sbx.eng` (the sandbox engine and
   its log), `window.__fbStyle` (overrides `PROTO()` layout switches).

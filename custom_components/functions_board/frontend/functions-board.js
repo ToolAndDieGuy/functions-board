@@ -167,6 +167,8 @@
     if (src.keep != null) out.keep = Array.isArray(src.keep) ? src.keep.filter((k) => typeof k === 'string' && k.length < 300).slice(0, 2000) : [];
     if (out.paused != null) out.paused = Array.isArray(out.paused) ? out.paused.filter((x) => typeof x === 'string') : null;
     if (out.categories != null && typeof out.categories !== 'object') out.categories = null;
+    // saved sandbox checks (0.9.0)
+    if (src.checks != null) out.checks = (Array.isArray(src.checks) ? src.checks : []).slice(0, 50).map(cleanCheck).filter(Boolean);
     // test buttons and monitor boxes (Phase 9): only what they can be
     if (src.tools != null) {
       out.tools = [];
@@ -1626,7 +1628,7 @@
   const SBX_OTHER = '\u0001other';
   const VER_HELPERS = new Set(['input_boolean', 'input_number', 'input_text', 'input_select', 'input_datetime', 'input_button', 'counter', 'timer', 'schedule']);
   // what may be clicked on a saved version's board: looking, the sandbox, and the versions themselves
-  const VER_OK_ACTS = /^(zoomin|zoomout|fit|togglelist|legend|hl|hl-.+|sandbox|sbx-.+|flow-.+|lit-.+|edge|close|back|newtab|modal-.+|ver-.+|vtab.*|versions|about|diag|diag-.+|problems|prob-.+|hint-x|find-x|nr-open)$/;
+  const VER_OK_ACTS = /^(zoomin|zoomout|fit|togglelist|legend|hl|hl-.+|sandbox|sbx-.+|flow-.+|lit-.+|edge|close|back|newtab|modal-.+|ver-.+|vtab.*|versions|about|diag|diag-.+|problems|prob-.+|chk-run|chk-replay|hint-x|find-x|nr-open)$/;
   // a short fingerprint of a snapshot's items and members: equal when the function is the same as that version
   const verPrint = (snap) => {
     const body = JSON.stringify([[...(snap.members || [])].sort(), Object.keys(snap.items || {}).sort().map((k) => [k, (snap.items[k] || {}).cfg || null])]);
@@ -1959,6 +1961,17 @@ svg path.e.prob{stroke:var(--error-color,#db4437);stroke-dasharray:5 4}
 .pchip ha-icon{--mdc-icon-size:16px}
 .pchip.p-error{color:var(--error-color,#db4437)}
 .pchip.p-warn{color:var(--warning-color,#b26a00)}
+.sbchk{padding:6px 12px 2px;display:flex;flex-direction:column;gap:3px}
+.sbchk .ckhead{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--secondary-text-color)}
+.sbchk .ckhead span{flex:1}
+.sbchk .ckhead .chip ha-icon{--mdc-icon-size:16px;margin-right:3px}
+.sbchk .ckrow{display:flex;align-items:center;gap:6px;font-size:13px}
+.sbchk .ckname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sbchk .ckst{width:16px;text-align:center;font-weight:700}
+.sbchk .ckst.ok{color:var(--success-color,#43a047)}
+.sbchk .ckst.bad{color:var(--error-color,#db4437)}
+.sbchk .ckst.unsure{color:var(--warning-color,#b26a00)}
+.dlg.ckdlg .cksteps{margin:0;padding-left:20px;font-size:13px}
 .probs{padding:10px 14px;overflow:auto;display:flex;flex-direction:column;gap:8px}
 .prow{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border-radius:8px;background:var(--secondary-background-color)}
 .prow>ha-icon{--mdc-icon-size:20px;flex:none;margin-top:1px}
@@ -3201,6 +3214,44 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this_install_is_set_to: 'This install is set to Organise only: the board doesn\'t edit or delete automations, scripts, helpers or devices, and doesn\'t run tests. Full manager, which adds deleting and tests, is in the Functions Board integration\'s options.',
       the_debugger_watch_triggers_monitor: 'The debugger, Watch triggers, monitor boxes and the live checks on arrows only read: watching a trigger never runs the automation.',
       show_node_red_flows_in: 'Show Node-RED flows (in the Key, off until you switch it on) reads your Node-RED app\'s flows in your browser to draw what they use. The flows last read (names and entity IDs, no flow code) are kept by the integration for every board.',
+      chk_cant: 'This run can\'t be kept as a check.',
+      chk_default: 'Check',
+      chk_del_t: 'Delete this check',
+      chk_deleted: 'Deleted the check "{name}"',
+      chk_expect_h: 'What should come of it',
+      chk_expect_none: 'Nothing changed and nothing ran in this run, so there\'s nothing to check yet.',
+      chk_fails: 'Fails on the current configs',
+      chk_got: '(got {got})',
+      chk_n: { one: '{n} saved check', other: '{n} saved checks' },
+      chk_name: 'Name',
+      chk_not_run: 'Not run yet',
+      chk_passes: 'Passes on the current configs',
+      chk_pick_one: 'Tick at least one thing it should check.',
+      chk_replay: 'Replay in the sandbox',
+      chk_replay_t: 'Play it in the sandbox, step by step on the board',
+      chk_replayed: 'Replayed "{name}"',
+      chk_run_all_t: 'Run every saved check on the current configs',
+      chk_run_t: 'Run this check on the current configs',
+      chk_s_advance: 'Clock +{dur}',
+      chk_s_event: 'Fire {type}',
+      chk_s_mqtt: 'MQTT {topic}: {payload}',
+      chk_s_next: 'Clock to what\'s due',
+      chk_s_run: 'Run {name}',
+      chk_s_set: 'Set {name} to {state}',
+      chk_save: 'Save as a check',
+      chk_save_b: 'Save check',
+      chk_save_h: 'Keep this run as a check',
+      chk_save_lead: 'The check replays these steps from the states and the time they started at, on the function\'s configs as they are then, after every change. If what you tick below stops coming of it, the function shows a problem. Nothing is sent to your home.',
+      chk_save_none: 'Do something in the sandbox first; the run is what gets kept',
+      chk_save_t: 'Keep what you did in this sandbox, and what came of it, as a check that runs after every change',
+      chk_saved: 'Saved the check "{name}"',
+      chk_steps_h: 'Steps',
+      chk_x_notran: '{name} doesn\'t run',
+      chk_x_ran: '{name} runs to the end',
+      chk_x_state: '{name} ends {state}',
+      chk_x_stopped: '{name} is stopped by its conditions',
+      prob_c_failed: 'The check "{name}" fails: {what}',
+      prob_c_unsure: 'The check "{name}" couldn\'t finish: it needs an answer to "{what}". Replay it to answer.',
       prob_chip_t: 'What this function\'s automations and scripts point at that isn\'t there or can\'t work',
       prob_d_disabled: 'The device {what} is disabled',
       prob_d_missing: 'A device it uses is gone: {what}',
@@ -3689,7 +3740,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         for (let i = 0; i < ts.length; i++) {
           const t = ts[i];
           if (this._plat(t) === 'template' && t.enabled !== false) {
-            const r = await this.o.tpl(String(t.value_template), this._vars(null));
+            const r = await this.o.tpl(String(t.value_template), this._vars(null), this);
             this.tplLast.set(it.id + '#' + i, r.ok ? asBool(r.value) : null);
           }
         }
@@ -3776,7 +3827,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (!t.topic || !sbxTopic(t.topic, msg.topic)) return false;
       if (t.payload == null) return true;
       let v = msg.payload;
-      if (t.value_template) { const r = await this.o.tpl(String(t.value_template), { value: msg.payload, value_json: msg.payload_json }); v = r.ok ? r.value : undefined; }
+      if (t.value_template) { const r = await this.o.tpl(String(t.value_template), { value: msg.payload, value_json: msg.payload_json }, this); v = r.ok ? r.value : undefined; }
       return String(v) === String(t.payload);
     }
     async mqtt(topic, payload, cause, byYou) {
@@ -3816,7 +3867,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     async _numVal(t, id, s, run) {
       if (!s) return null;
       if (t.value_template) {
-        const r = await this.o.tpl(String(t.value_template), Object.assign(this._vars(run), { state: this.obj(id) }));
+        const r = await this.o.tpl(String(t.value_template), Object.assign(this._vars(run), { state: this.obj(id) }), this);
         const v = r.ok ? parseFloat(r.value) : NaN;
         return isFinite(v) ? v : null;
       }
@@ -3966,7 +4017,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (old) { this._drop(old.timer); this.pend.delete(key); }
       if (t.for == null) { this._fire(it, i, vars, lid); return; }
       let ms = durMs(t.for);
-      if (ms == null && TPL_RE.test(String(t.for))) { const r = await this.o.tpl(String(t.for), this._vars(null)); ms = r.ok ? durMs(r.value) : null; }
+      if (ms == null && TPL_RE.test(String(t.for))) { const r = await this.o.tpl(String(t.for), this._vars(null), this); ms = r.ok ? durMs(r.value) : null; }
       if (ms == null && typeof t.for === 'object') { const r = await this._render(t.for, null); ms = durMs(r); }
       if (ms == null) ms = 0;
       vars.for = fmtDur(ms);
@@ -3974,14 +4025,14 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this.pend.set(key, { id, timer, still });
     }
     async _tplTrig(it, i, t, lid) {
-      const k = it.id + '#' + i, r = await this.o.tpl(String(t.value_template), this._vars(null));
+      const k = it.id + '#' + i, r = await this.o.tpl(String(t.value_template), this._vars(null), this);
       const v = r.ok ? asBool(r.value) : null, was = this.tplLast.get(k), pk = 'tpl:' + k;
       this.tplLast.set(k, v);
       // with for:, it must stay true that long; false again lets the wait go
       if (v !== true) { const p = this.pend.get(pk); if (p) { this._drop(p.timer); this.pend.delete(pk); } return; }
       if (was !== false) return;
       const vars = { platform: 'template', entity_id: null };
-      let ms = t.for != null ? durMs(typeof t.for === 'object' ? t.for : TPL_RE.test(String(t.for)) ? (await this.o.tpl(String(t.for), {})).value : t.for) : null;
+      let ms = t.for != null ? durMs(typeof t.for === 'object' ? t.for : TPL_RE.test(String(t.for)) ? (await this.o.tpl(String(t.for), {}, this)).value : t.for) : null;
       if (ms == null || ms <= 0) { this._fire(it, i, vars, lid, r.partly); return; }
       vars.for = fmtDur(ms);
       const timer = this._at(this.now + ms, () => { this.pend.delete(pk); this._task(() => this._fire(it, i, vars, lid, r.partly)); }, null, T('sbx_for_label', { name: this._name(it.id), d: fmtDur(ms) }), it.id);
@@ -4140,7 +4191,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     }
     // ---- templates and conditions
     async _tpl(s, run) {
-      const r = await this.o.tpl(String(s), this._vars(run));
+      const r = await this.o.tpl(String(s), this._vars(run), this);
       return r;
     }
     async _render(v, run) {
@@ -4559,6 +4610,75 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     return { text: s, leftovers: [...left] };
   }
 
+  /* ---------- saved checks (0.9.0): a run in the sandbox kept with what should come of it, replayed on the
+     function's current configs, so "did I just break it?" has an answer. A check is
+       { id, name, at: the sandbox clock it started at, start: { entity: { state, attributes } } as they were,
+         items: the automations and scripts that took part (the function's own and the related ones on its board),
+         steps: [{ op: set|event|mqtt|run|advance|next, … }], answers: [{ key, text, value }] given to its questions,
+         expect: [{ k: state, id, state } | { k: ran|stopped|notran, id }] } ---------- */
+  const CHECK_OPS = new Set(['set', 'event', 'mqtt', 'run', 'advance', 'next']);
+  const CHECK_EXP = new Set(['state', 'ran', 'stopped', 'notran']);
+  // what a check may hold, and no more (it's kept in the layout, shared and synced)
+  function cleanCheck(c) {
+    if (!c || typeof c !== 'object' || !SAFE_ID.test(String(c.id))) return null;
+    const str = (v, n) => String(v == null ? '' : v).slice(0, n), id = (v) => (typeof v === 'string' && v.length < 300 ? v : null);
+    const plain = (v) => { try { const j = JSON.stringify(v == null ? {} : v); return j.length <= 4000 ? JSON.parse(j) : {}; } catch (e) { return {}; } };
+    const start = {};
+    Object.entries(c.start && typeof c.start === 'object' ? c.start : {}).slice(0, 300).forEach(([k, v]) => {
+      if (EXACT_RE.test(k) && v && typeof v === 'object') start[k] = { state: str(v.state, 255), attributes: plain(v.attributes) };
+    });
+    const steps = (Array.isArray(c.steps) ? c.steps : []).slice(0, 100).map((x) => {
+      if (!x || !CHECK_OPS.has(x.op)) return null;
+      if (x.op === 'set') return id(x.id) && { op: 'set', id: x.id, state: str(x.state, 255) };
+      if (x.op === 'event') return { op: 'event', type: str(x.type, 255), data: plain(x.data) };
+      if (x.op === 'mqtt') return { op: 'mqtt', topic: str(x.topic, 255), payload: str(x.payload, 4000) };
+      if (x.op === 'run') return id(x.id) && { op: 'run', id: x.id, conds: !!x.conds, ti: Number.isInteger(x.ti) ? x.ti : null };
+      if (x.op === 'advance') return { op: 'advance', ms: Math.max(0, Math.min(366 * 864e5, Math.round(+x.ms || 0))) };
+      return { op: 'next' };
+    }).filter(Boolean);
+    const answers = (Array.isArray(c.answers) ? c.answers : []).slice(0, 50).filter((a) => a && typeof a === 'object').map((a) => ({ key: str(a.key, 300), text: str(a.text, 500), value: typeof a.value === 'boolean' || typeof a.value === 'number' ? a.value : str(a.value, 500) }));
+    const expect = (Array.isArray(c.expect) ? c.expect : []).slice(0, 100).filter((x) => x && CHECK_EXP.has(x.k) && id(x.id)).map((x) => (x.k === 'state' ? { k: 'state', id: x.id, state: str(x.state, 255) } : { k: x.k, id: x.id }));
+    const items = (Array.isArray(c.items) ? c.items : []).filter((k) => typeof k === 'string' && /^(automation|script)\.[a-z0-9_]+$/.test(k)).slice(0, 300);
+    if (!steps.length || !expect.length) return null;
+    return { id: String(c.id), name: str(c.name, 160) || 'Check', at: Number.isFinite(+c.at) ? Math.round(+c.at) : Date.now(), start, items, steps, answers, expect };
+  }
+  // replay one: o is what the board's sandbox gets (states, items, tz, tpl, resolve, fetch, name, condText). Returns
+  // { ok, unsure (a question it had no answer for), res: [{ ok, got }] per expectation, log }
+  async function runCheck(c, o) {
+    const states = Object.assign({}, o.states);
+    Object.entries(c.start).forEach(([k, v]) => { states[k] = Object.assign({}, o.states[k] || {}, { state: v.state, attributes: Object.keys(v.attributes || {}).length ? v.attributes : (o.states[k] || {}).attributes || {} }); });
+    const answers = c.answers.slice();
+    let unsure = null;
+    const eng = new Sandbox(Object.assign({}, o, {
+      states, now: c.at, onLog: null,
+      ask: (q) => {
+        const key = q.run ? q.run.item.id || '' : '', i = answers.findIndex((a) => a.key === key && a.text === q.text);
+        if (i >= 0) return Promise.resolve(answers.splice(i, 1)[0].value);
+        unsure = unsure || q.text;
+        return Promise.resolve(false);
+      },
+    }));
+    await eng.start();
+    for (const s of c.steps) {
+      if (s.op === 'set') await eng.userSet(s.id, s.state);
+      else if (s.op === 'event') await eng.userEvent(s.type, s.data);
+      else if (s.op === 'mqtt') await eng.userMqtt(s.topic, s.payload);
+      else if (s.op === 'run') await eng.userRun(s.id, s.conds, s.ti);
+      else if (s.op === 'advance') await eng.advance(s.ms);
+      else if (s.op === 'next') await eng.toNext();
+    }
+    await eng.settle();
+    const runs = (k) => eng.log.filter((e) => e.kind === 'run' && e.key === k).map((e) => e.outcome);
+    const res = c.expect.map((x) => {
+      if (x.k === 'state') { const st = eng.get(x.id), got = st ? String(st.state) : null; return { ok: got === x.state, got }; }
+      const r = runs(x.id), got = r.length ? r.join(', ') : 'none';
+      if (x.k === 'ran') return { ok: r.includes('finished'), got };
+      if (x.k === 'stopped') return { ok: r.includes('stopped') && !r.includes('finished'), got };
+      return { ok: !r.includes('finished'), got };
+    });
+    return { ok: !unsure && res.every((r) => r.ok), unsure, res, log: eng.log };
+  }
+
   class FunctionsBoard extends HTMLElement {
     constructor() {
       super();
@@ -4571,7 +4691,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     _init() {
       this._data = null; this._model = null;
       this._labels = []; this._ents = []; this._devs = [];
-      this._probs = new Map();
+      this._probs = new Map(); this._checkRes = new Map();
       this._entMap = new Map(); this._devMap = new Map(); this._labelMap = new Map(); this._regIdMap = new Map();
       this._view = { x: 40, y: 40, k: 1 };
       this._sel = null; this._focus = null; this._focusEdges = new Set(); this._els = new Map();
@@ -5067,7 +5187,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     }
     // configs changed: forget the cached ones and redraw the open function, at most once a second
     _configChanged() {
-      this._cfgCache.clear(); this._src = new Map(); this._grefs = null;
+      this._cfgCache.clear(); this._src = new Map(); this._grefs = null; this._cfgGen = (this._cfgGen || 0) + 1;
       this._throttle('probscan2', 3000, () => this._scanProblems());
       this._throttle('cfg', 1000, () => {
         if (this._drag) { this._configChanged(); return; }
@@ -5155,7 +5275,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._$.loading.hidden = true;
       if (!model || this._data.ui.current !== label) return;
       this._model = model;
+      this._applyCheckProblems(label);
       this._renderHeader();
+      this._checksSoon(label);
       if (this._drawer && this._drawer.mode === 'problems') this._openProblems();
       this._place();
       this._render();
@@ -6622,6 +6744,11 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         case 'add-existing': this._openManager('pick', label || '__new'); break;
         case 'import': this._openManager('detect'); break;
         case 'about': this._aboutModal(); break;
+        case 'chk-save': this._checkSaveDlg(); break;
+        case 'chk-save-go': this._checkSaveGo(); break;
+        case 'chk-run': this._runChecks(this._data.ui.current, el.dataset.id ? [el.dataset.id] : null, true); break;
+        case 'chk-replay': this._checkReplay(el.dataset.id); break;
+        case 'chk-del': this._checkDel(el.dataset.id); break;
         case 'problems': if (this._drawer && this._drawer.mode === 'problems') this._closeDrawer(); else this._openProblems(); break;
         case 'prob-go': { const k = el.dataset.key; if (this._model && this._model.nodes.has(k)) { this._select(k); this._centerOn(k); } break; }
         case 'prob-open': { const n = this._model && this._model.nodes.get(el.dataset.key); if (n) this._openItem(n); break; }
@@ -8492,7 +8619,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const b = m.querySelector('[data-act="sbx-start"]');
       if (b) b.focus();
     }
-    async _openSandbox() {
+    async _openSandbox(opt = {}) {
       const label = this._data.ui.current;
       if (!label || !this._model) return;
       this._leaveDrawerMode();
@@ -8501,23 +8628,28 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._drawer = { mode: 'sandbox' };
       const d = this._$.drawer;
       d.hidden = false;
-      d.innerHTML = `<div class="dhead"><span class="dtitle">${T('sbx_title', { fnName: esc(this._fnName(label) + (this._ver ? ' · ' + this._ver.name : '')) })}</span><span class="sbclock"></span><button data-act="sbx-about" title="${T('sbx_about_t')}"><ha-icon icon="mdi:information-outline"></ha-icon></button><button data-act="sbx-reset" title="${T('sbx_reset_t')}"><ha-icon icon="mdi:restore"></ha-icon></button><button data-act="close" title="${T('sbx_close_t')}"><ha-icon icon="mdi:close"></ha-icon></button></div><div class="dbg sbx"><div class="sbnote">${T('sbx_note')}</div><div class="sbask"></div><div class="sbctl"></div><div class="sbdue"></div><div class="dtl sbtl"><div class="muted pad">${T('reading_configs')}</div></div></div>`;
+      d.innerHTML = `<div class="dhead"><span class="dtitle">${T('sbx_title', { fnName: esc(this._fnName(label) + (this._ver ? ' · ' + this._ver.name : '')) })}</span><span class="sbclock"></span><button data-act="sbx-about" title="${T('sbx_about_t')}"><ha-icon icon="mdi:information-outline"></ha-icon></button><button data-act="sbx-reset" title="${T('sbx_reset_t')}"><ha-icon icon="mdi:restore"></ha-icon></button><button data-act="close" title="${T('sbx_close_t')}"><ha-icon icon="mdi:close"></ha-icon></button></div><div class="dbg sbx"><div class="sbnote">${T('sbx_note')}</div><div class="sbask"></div><div class="sbctl"></div><div class="sbchk"></div><div class="sbdue"></div><div class="dtl sbtl"><div class="muted pad">${T('reading_configs')}</div></div></div>`;
       this._$.board.classList.add('sbx');
       this._$.sbxpill.hidden = false;
       this._fitLitbar();
-      await this._sbxNew(label);
+      await this._sbxNew(label, opt.check);
       if (!this._sbxOn()) return;
       this._renderSbxCtl();
+      this._renderChecks();
       this._renderSbx();
       this._refreshStates();
       this._renderNodebar();
       this._renderLegend();
     }
-    async _sbxNew(label) {
+    async _sbxNew(label, check) {
       const m = this._model;
       const ids = [...m.nodes.keys()].filter((k) => /^(automation|script)\./.test(k));
       const cfgs = await Promise.all(ids.map((k) => this._fetchConfig(k)));
-      const g = { label, asks: [], fn: null, tplN: 0 };
+      const g = { label, asks: [], tplN: 0, pre: check ? check.answers.slice() : [] };
+      // what you do from here, so the run can be kept as a check: the states it starts from, the clock, the steps
+      const now = check ? check.at : Date.now(), states = Object.assign({}, this._hass.states);
+      if (check) Object.entries(check.start).forEach(([k, v]) => { states[k] = Object.assign({}, states[k] || {}, { state: v.state, attributes: Object.keys(v.attributes || {}).length ? v.attributes : (states[k] || {}).attributes || {} }); });
+      g.rec = { at: now, start: this._checkStart(states), items: ids.slice(), steps: [], answers: [] };
       this._sbx = g;
       const resolve = (ref) => {
         if (ref.startsWith('device:')) return this._ents.filter((e) => e.device_id === ref.slice(7)).map((e) => e.entity_id);
@@ -8525,8 +8657,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         return t ? t.entities : [];
       };
       g.eng = new Sandbox({
-        states: this._hass.states, items: ids.map((id, i) => ({ id, cfg: cfgs[i] })), now: Date.now(), tz: this._hass.config && this._hass.config.time_zone,
-        tpl: (t, v) => this._sbxTpl(t, v), ask: (q) => this._sbxAsk(q), resolve, fetch: (id) => this._fetchConfig(id),
+        states, items: ids.map((id, i) => ({ id, cfg: cfgs[i] })), now, tz: this._hass.config && this._hass.config.time_zone,
+        tpl: (t, v, e) => this._sbxTpl(t, v, e), ask: (q) => this._sbxAsk(q), resolve, fetch: (id) => this._fetchConfig(id),
         name: (id) => this._boxName(id), condText: (c) => condText(c, (x) => this._boxName(x)), onLog: () => this._sbxLogged(),
       });
       await g.eng.start();
@@ -8554,23 +8686,25 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._clearLit(true);
       await this._sbxNew(label);
       this._renderSbxCtl();
+      this._renderChecks();
       this._renderSbx();
       this._refreshStates();
     }
     // Home Assistant renders the template, pointed at the sandbox's states and clock (sbxRewrite)
-    async _sbxTpl(t, vars) {
-      const g = this._sbx;
-      if (!g) return { ok: false, err: 'closed' };
-      if (g.fn == null) g.fn = await this._renderRaw('{%- macro m(returns) -%}{%- do returns(1) -%}{%- endmacro -%}{{ (m | as_function)() }}', {}).then((v) => String(v) === '1', () => false);
-      if (!g.fn) return { ok: false, err: T('sbx_needs_newer') };
-      const rw = sbxRewrite(t), eng = g.eng, fb_s = {};
+    // the engine that asks (the open sandbox's, or a saved check's being replayed) is the one whose states are read
+    async _sbxTpl(t, vars, engine) {
+      const g = this._sbx, eng = engine || (g && g.eng);
+      if (!eng) return { ok: false, err: 'closed' };
+      if (this._asFn == null) this._asFn = await this._renderRaw('{%- macro m(returns) -%}{%- do returns(1) -%}{%- endmacro -%}{{ (m | as_function)() }}', {}).then((v) => String(v) === '1', () => false);
+      if (!this._asFn) return { ok: false, err: T('sbx_needs_newer') };
+      const rw = sbxRewrite(t), fb_s = {};
       const add = (id) => { const s = eng.get(id); if (s) fb_s[id] = { state: String(s.state), attributes: s.attributes || {}, last_changed: s.last_changed, last_updated: s.last_updated }; };
       eng.changed.forEach((v, id) => add(id));
       for (const x of String(t).matchAll(ENTITY_RE)) add(x[0]);
       let variables = {};
       try { variables = JSON.parse(JSON.stringify(vars || {})); } catch (e) { /* only what can be sent */ }
       Object.assign(variables, { fb_s, fb_t: new Date(eng.now).toISOString() });
-      g.tplN++;
+      if (g && eng === g.eng) g.tplN++;
       try { return { ok: true, value: await this._renderRaw(SBX_PRELUDE + rw.text, variables), partly: rw.leftovers }; }
       catch (e) { return { ok: false, err: (e && e.message) || String(e) }; }
     }
@@ -8589,8 +8723,11 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     _sbxAsk(q) {
       const g = this._sbx;
       if (!g) return Promise.resolve(false);
+      const key = q.run ? q.run.item.id || '' : '';
+      const pre = g.pre.findIndex((a) => a.key === key && a.text === q.text);
+      if (pre >= 0) { const v = g.pre.splice(pre, 1)[0].value; g.rec.answers.push({ key, text: q.text, value: v }); return Promise.resolve(v); }
       return new Promise((res) => {
-        g.asks.push({ q, res: (v) => { g.asks = g.asks.filter((a) => a.q !== q); res(v); this._renderSbx(); } });
+        g.asks.push({ q, res: (v) => { g.asks = g.asks.filter((a) => a.q !== q); g.rec.answers.push({ key, text: q.text, value: v }); res(v); this._renderSbx(); } });
         this._renderSbx();
         if (q.key) this._centerOn(q.key);
       });
@@ -8750,7 +8887,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           const id = q('.sbent').value, v = this._sbxVal('sbval');
           if (!id || !v) { this._toast(T('sbx_pick_state')); return; }
           if (q('input.sbval')) q('input.sbval').value = '';
-          this._sbxDo((e) => e.userSet(id, v)).then(() => this._sbxPick(id, true));
+          this._sbxDo((e) => { this._sbxRec({ op: 'set', id, state: v }); return e.userSet(id, v); }).then(() => this._sbxPick(id, true));
           break;
         }
         case 'sbx-fire': {
@@ -8758,22 +8895,24 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           if (!type) { this._toast(T('sbx_pick_event')); return; }
           let data = {};
           if (raw) { try { data = JSON.parse(raw); } catch (e) { const p = parseLoose(raw); if (p && typeof p === 'object') data = p; else { this._toast(T('sbx_bad_data')); return; } } }
-          this._sbxDo((e) => e.userEvent(type, data));
+          this._sbxDo((e) => { this._sbxRec({ op: 'event', type, data }); return e.userEvent(type, data); });
           break;
         }
         case 'sbx-run': {
           const id = q('.sbrun').value, tv = q('.sbtrig') && !q('.sbtrig').hidden ? q('.sbtrig').value : '';
-          if (id) this._sbxDo((e) => e.userRun(id, q('.sbconds').checked, tv === '' ? null : +tv));
+          const conds = q('.sbconds').checked, ti = tv === '' ? null : +tv;
+          if (id) this._sbxDo((e) => { this._sbxRec({ op: 'run', id, conds, ti }); return e.userRun(id, conds, ti); });
           break;
         }
         case 'sbx-mqtt': {
           const topic = this._sbxVal('sbtop');
           if (!topic) { this._toast(T('sbx_pick_topic')); return; }
-          this._sbxDo((e) => e.userMqtt(topic, this._sbxVal('sbpay')));
+          const payload = this._sbxVal('sbpay');
+          this._sbxDo((e) => { this._sbxRec({ op: 'mqtt', topic, payload }); return e.userMqtt(topic, payload); });
           break;
         }
-        case 'sbx-adv': this._sbxDo((e) => e.advance(+el.dataset.ms)); break;
-        case 'sbx-next': this._sbxDo((e) => e.toNext()); break;
+        case 'sbx-adv': { const ms = +el.dataset.ms; this._sbxDo((e) => { this._sbxRec({ op: 'advance', ms }); return e.advance(ms); }); break; }
+        case 'sbx-next': this._sbxDo((e) => { this._sbxRec({ op: 'next' }); return e.toNext(); }); break;
         case 'sbx-reset': this._sbxReset(); break;
         case 'sbx-ans': { const a = this._sbx && this._sbx.asks[+el.dataset.i]; if (!a) return; if (a.q.value) { const inp = d.querySelector(`.sbav[data-i="${el.dataset.i}"]`); a.res(parseLoose(inp ? inp.value : '')); } else a.res(el.dataset.v === '1'); break; }
         case 'sbx-pick': this._sbxLight(+el.dataset.id); break;
@@ -9051,6 +9190,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     }
     _renderSbxSoon() { this._throttle('sbxr', 120, () => this._renderSbx()); }
     _renderSbx() {
+      this._renderChecks(true);
       const g = this._sbx, d = this._$.drawer;
       if (!g || !this._sbxOn()) return;
       const eng = g.eng, box = d.querySelector('.sbtl');
@@ -10045,6 +10185,171 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         btns.forEach((b) => { b.disabled = false; });
       }
     }
+    /* ---------- saved checks (0.9.0): keep a sandbox run with what should come of it; replayed on the current
+       configs after every change, a failing one is a problem ---------- */
+    // the states a check starts from: the function's own entities and what they point at (big attributes left out)
+    _checkStart(states) {
+      const out = {}, m = this._model;
+      if (!m) return out;
+      [...m.nodes.keys()].filter((k) => EXACT_RE.test(k) && states[k]).forEach((k) => {
+        const a = {};
+        Object.entries(states[k].attributes || {}).forEach(([n, v]) => { try { if (JSON.stringify(v).length <= 400) a[n] = v; } catch (e) { /* not kept */ } });
+        out[k] = { state: String(states[k].state), attributes: a };
+      });
+      return out;
+    }
+    _sbxRec(step) { const g = this._sbx; if (g && g.rec) g.rec.steps.push(step); }
+    _checkName(k) { return this._model && this._model.nodes.has(k) ? this._model.nodes.get(k).name : this._nameOf(k); }
+    _stepText(s) {
+      const nm = (k) => esc(this._checkName(k));
+      if (s.op === 'set') return T('chk_s_set', { name: nm(s.id), state: esc(s.state) });
+      if (s.op === 'event') return T('chk_s_event', { type: esc(s.type) });
+      if (s.op === 'mqtt') return T('chk_s_mqtt', { topic: esc(s.topic), payload: esc(shorten(s.payload, 40)) });
+      if (s.op === 'run') return T('chk_s_run', { name: nm(s.id) });
+      if (s.op === 'advance') return T('chk_s_advance', { dur: esc(clockShort(s.ms)) });
+      return T('chk_s_next');
+    }
+    _expText(x, got) {
+      const nm = esc(this._checkName(x.id)), g = got == null ? '' : ' ' + T('chk_got', { got: esc(got) });
+      if (x.k === 'state') return T('chk_x_state', { name: nm, state: esc(x.state) }) + g;
+      if (x.k === 'ran') return T('chk_x_ran', { name: nm }) + g;
+      if (x.k === 'stopped') return T('chk_x_stopped', { name: nm }) + g;
+      return T('chk_x_notran', { name: nm }) + g;
+    }
+    // what the run in the sandbox suggests checking: states that changed, and how each automation and script ended
+    _checkSuggest() {
+      const g = this._sbx, eng = g.eng, out = [];
+      // what the function changed (whatever you set yourself is a step, not an outcome), as it ended
+      const byFn = new Set(eng.log.filter((e) => e.kind === 'state' && e.by !== 'you' && EXACT_RE.test(e.key || '') && !/^(automation|script)\./.test(e.key)).map((e) => e.key));
+      byFn.forEach((k) => { const v = eng.get(k); if (v) out.push({ x: { k: 'state', id: k, state: String(v.state) }, on: true }); });
+      const runs = new Map();
+      eng.log.filter((e) => e.kind === 'run').forEach((e) => { const r = runs.get(e.key) || []; r.push(e.outcome); runs.set(e.key, r); });
+      runs.forEach((r, k) => { if (r.includes('finished')) out.push({ x: { k: 'ran', id: k }, on: true }); else if (r.includes('stopped')) out.push({ x: { k: 'stopped', id: k }, on: true }); });
+      [...this._model.nodes.values()].filter((n) => n.kind === 'member' && /^(automation|script)$/.test(n.domain) && !runs.has(n.key)).forEach((n) => out.push({ x: { k: 'notran', id: n.key }, on: false }));
+      return out;
+    }
+    _renderChecks(soft) {
+      const box = this._$.drawer.querySelector('.sbchk'), g = this._sbx;
+      if (!box || !g) return;
+      const label = g.label, list = this._ver ? [] : this._layout(label).checks || [], have = this._checkRes.get(label) || {}, res = have.res || new Map();
+      const can = !this._ver && !!g.rec && g.rec.steps.length > 0, sig = [list.length, can, have.at || 0].join('|');
+      if (soft && box.dataset.sig === sig) return;
+      box.dataset.sig = sig;
+      const mark = (c) => { const r = res.get(c.id); if (!r) return `<span class="ckst muted" title="${T('chk_not_run')}">·</span>`; if (r.unsure) return `<span class="ckst unsure" title="${esc(r.unsure)}">?</span>`; return r.ok ? `<span class="ckst ok" title="${T('chk_passes')}">&#10003;</span>` : `<span class="ckst bad" title="${T('chk_fails')}">&#10005;</span>`; };
+      const row = (c) => `<div class="ckrow" data-id="${esc(c.id)}">${mark(c)}<span class="ckname" title="${esc(c.steps.map((x) => this._stepText(x).replace(/<[^>]+>/g, '')).join(' → '))}">${esc(c.name)}</span><button class="ib" data-act="chk-run" data-id="${esc(c.id)}" title="${T('chk_run_t')}"><ha-icon icon="mdi:play-circle-outline"></ha-icon></button><button class="ib" data-act="chk-replay" data-id="${esc(c.id)}" title="${T('chk_replay_t')}"><ha-icon icon="mdi:movie-open-play-outline"></ha-icon></button><button class="ib" data-act="chk-del" data-id="${esc(c.id)}" title="${T('chk_del_t')}"><ha-icon icon="mdi:delete-outline"></ha-icon></button></div>`;
+      box.innerHTML = this._ver ? '' : `<div class="ckhead"><span>${P('chk_n', list.length)}</span>${list.length ? `<button class="ib" data-act="chk-run" title="${T('chk_run_all_t')}"><ha-icon icon="mdi:play-box-multiple-outline"></ha-icon></button>` : ''}<button class="chip" data-act="chk-save"${can ? '' : ' disabled'} title="${can ? T('chk_save_t') : T('chk_save_none')}"><ha-icon icon="mdi:content-save-check-outline"></ha-icon>${T('chk_save')}</button></div>${list.map(row).join('')}`;
+    }
+    _checkSaveDlg() {
+      const g = this._sbx;
+      if (!g || !g.rec || !g.rec.steps.length || this._ver) return;
+      const sug = this._checkSuggest(), m = this._$.modal;
+      this._chkDraft = { sug };
+      m.hidden = false;
+      m.innerHTML = `<div class="dlg ckdlg"><h3>${T('chk_save_h')}</h3><p class="dtext">${T('chk_save_lead')}</p>`
+        + `<label>${T('chk_name')}<input name="ckname" maxlength="160" value="${esc(this._stepText(g.rec.steps[0]).replace(/<[^>]+>/g, ''))}"></label>`
+        + `<h4>${T('chk_steps_h')}</h4><ol class="cksteps">${g.rec.steps.map((x) => `<li>${this._stepText(x)}</li>`).join('')}</ol>`
+        + `<h4>${T('chk_expect_h')}</h4>${sug.length ? sug.map((s, i) => `<label class="chk"><input type="checkbox" name="ckx" value="${i}"${s.on ? ' checked' : ''}>${this._expText(s.x)}</label>`).join('') : `<p class="muted">${T('chk_expect_none')}</p>`}`
+        + `<div class="dval"></div><div class="btns"><button data-act="modal-cancel">${T('cancel')}</button><button class="primary" data-act="chk-save-go">${T('chk_save_b')}</button></div></div>`;
+      const n = m.querySelector('input[name="ckname"]'); if (n) { n.focus(); n.select(); }
+    }
+    _checkSaveGo() {
+      const g = this._sbx, m = this._$.modal, d = this._chkDraft;
+      if (!g || !d) return;
+      const expect = [...m.querySelectorAll('input[name="ckx"]:checked')].map((x) => d.sug[+x.value].x);
+      if (!expect.length) { m.querySelector('.dval').textContent = T('chk_pick_one'); return; }
+      const c = cleanCheck({ id: uid(), name: m.querySelector('input[name="ckname"]').value.trim() || T('chk_default'), at: g.rec.at, start: g.rec.start, items: g.rec.items, steps: g.rec.steps, answers: g.rec.answers, expect });
+      if (!c) { m.querySelector('.dval').textContent = T('chk_cant'); return; }
+      const label = g.label, L = this._layout(label);
+      L.checks = (L.checks || []).concat([c]);
+      this._save();
+      this._closeModal();
+      this._toast(T('chk_saved', { name: c.name }));
+      this._renderChecks();
+      this._runChecks(label, [c.id], true);
+    }
+    _checkDel(id) {
+      const label = this._data.ui.current, L = this._layout(label), c = (L.checks || []).find((x) => x.id === id);
+      if (!c) return;
+      L.checks = L.checks.filter((x) => x.id !== id);
+      const r = this._checkRes.get(label); if (r) r.res.delete(id);
+      this._save();
+      this._renderChecks();
+      this._applyCheckProblems(label);
+      this._toast(T('chk_deleted', { name: c.name }));
+    }
+    _checksSoon(label) { clearTimeout(this._timers.chk); this._timers.chk = setTimeout(() => this._runChecks(label), 400); }
+    // replay checks on the function's current configs; results kept until the configs change. given: the configs
+    // the scan already read (another function's)
+    async _runChecks(label, ids, force, given) {
+      const L = this._layout(label), list = (L.checks || []).filter((c) => !ids || ids.includes(c.id));
+      if (!list.length || this._ver) return;
+      const gen = this._cfgGen || 0, have = this._checkRes.get(label);
+      if (!force && have && have.gen === gen && list.every((c) => have.res.has(c.id))) return;
+      const members = this._ents.filter((e) => (e.labels || []).includes(label)).map((e) => e.entity_id).filter((e) => /^(automation|script)\./.test(e));
+      const cfgOf = new Map((given || []).map((x) => [x.id, x.cfg]));
+      const itemsFor = async (c) => {
+        const ids = [...new Set(members.concat(c.items || []))];
+        const cfgs = await Promise.all(ids.map((e) => (cfgOf.has(e) ? cfgOf.get(e) : this._fetchConfig(e))));
+        return ids.map((e, i) => ({ id: e, cfg: cfgs[i] })).filter((x) => x.cfg);
+      };
+      const resolve = (ref) => { if (ref.startsWith('device:')) return this._ents.filter((e) => e.device_id === ref.slice(7)).map((e) => e.entity_id); const t = this._tgt.get(ref); return t ? t.entities : []; };
+      const o = { states: this._hass.states, tz: this._hass.config && this._hass.config.time_zone, tpl: (t, v, e) => this._sbxTpl(t, v, e), resolve,
+        fetch: (id) => this._fetchConfig(id), name: (id) => this._boxName(id), condText: (c) => condText(c, (x) => this._boxName(x)) };
+      const rec = have && have.gen === gen ? have : { gen, res: new Map() };
+      for (const c of list) {
+        try { const r = await runCheck(c, Object.assign({ items: await itemsFor(c) }, o)); rec.res.set(c.id, { ok: r.ok, unsure: r.unsure, res: r.res }); }
+        catch (e) { rec.res.set(c.id, { ok: false, unsure: (e && e.message) || String(e), res: [] }); }
+      }
+      rec.at = Date.now();
+      this._checkRes.set(label, rec);
+      this._applyCheckProblems(label);
+      if (this._sbx && this._sbx.label === label) this._renderChecks();
+    }
+    _checkProblems(label) {
+      const r = this._checkRes.get(label), out = [];
+      if (!r) return out;
+      (this._layout(label).checks || []).forEach((c) => {
+        const x = r.res.get(c.id);
+        if (!x || x.ok) return;
+        if (x.unsure) { out.push({ sev: 'warn', kind: 'c_unsure', ref: 'check:' + c.id, by: [], name: c.name, detail: x.unsure }); return; }
+        const i = x.res.findIndex((y) => !y.ok);
+        out.push({ sev: 'error', kind: 'c_failed', ref: 'check:' + c.id, by: [], name: c.name, detail: i >= 0 ? this._expText(c.expect[i], x.res[i].got).replace(/<[^>]+>/g, '') : '' });
+      });
+      return out;
+    }
+    _applyCheckProblems(label) {
+      const m = this._model;
+      if (!m || m.label !== label || this._ver) return;
+      m.problems = (m.problems || []).filter((p) => !/^c_/.test(p.kind)).concat(this._checkProblems(label))
+        .sort((x, y) => (x.sev === y.sev ? 0 : x.sev === 'error' ? -1 : 1));
+      this._noteProblems(label, m.problems);
+      this._renderHeader();
+      if (this._drawer && this._drawer.mode === 'problems') this._openProblems();
+    }
+    // a check played in the sandbox, step by step on the board: its states, its clock, its steps, its answers
+    async _checkReplay(id) {
+      const label = this._data.ui.current, c = (this._layout(label).checks || []).find((x) => x.id === id);
+      if (!c || !this._model) return;
+      if (this._sbxOn()) this._closeDrawer();
+      await this._openSandbox({ check: c });
+      for (const s of c.steps) {
+        if (!this._sbxOn()) return;
+        const g = this._sbx;
+        await this._sbxDo((e) => {
+          this._sbxRec(s);
+          if (s.op === 'set') return e.userSet(s.id, s.state);
+          if (s.op === 'event') return e.userEvent(s.type, s.data);
+          if (s.op === 'mqtt') return e.userMqtt(s.topic, s.payload);
+          if (s.op === 'run') return e.userRun(s.id, s.conds, s.ti);
+          if (s.op === 'advance') return e.advance(s.ms);
+          return e.toNext();
+        });
+        if (this._sbx !== g) return;
+        await new Promise((r) => setTimeout(r, 300));
+      }
+      this._toast(T('chk_replayed', { name: c.name }));
+    }
+
     /* ---------- problems (0.9.0) ---------- */
     _probCtx(label) {
       const L = this._layout(label), svcs = this._hass.services || {};
@@ -10074,7 +10379,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           // the open function's own result is newer than anything read before it was built
           if (this._model && this._model.label === label && !this._ver) { this._noteProblems(label, this._model.problems || []); continue; }
           const items = logic.map((e, i) => ({ key: e, refs: cfgs[i] ? analyze(cfgs[i], e.startsWith('script.'), known).refs : [] }));
-          this._noteProblems(label, findProblems(items, members.concat(devs), this._probCtx(label)));
+          const base = findProblems(items, members.concat(devs), this._probCtx(label));
+          if ((this._layout(label).checks || []).length) await this._runChecks(label, null, false, logic.map((e, i) => ({ id: e, cfg: cfgs[i] })).filter((x) => x.cfg));
+          this._noteProblems(label, base.concat(this._checkProblems(label)));
           await new Promise((r) => setTimeout(r, 0));
         }
       } catch (e) { /* the counts stay as they were */ } finally { this._probScanning = false; }
@@ -10107,6 +10414,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         case 's_missing': return T('prob_s_missing', { what });
         case 'm_broken': return T('prob_m_broken', { what });
         case 'm_off': return T('prob_m_off', { what });
+        case 'c_failed': return T('prob_c_failed', { name: esc(p.name), what: esc(p.detail) });
+        case 'c_unsure': return T('prob_c_unsure', { name: esc(p.name), what: esc(p.detail) });
         default: return what;
       }
     }
@@ -10127,6 +10436,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         + (p.by.length ? `<div class="pby">${T('prob_in')} ${p.by.map((b) => `<button class="lnk" data-act="prob-go" data-key="${esc(b)}">${nm(b)}</button>`).join(', ')}</div>` : '')
         + `<div class="pact">${this._model.nodes.has(p.ref) ? `<button data-act="prob-go" data-key="${esc(p.ref)}"><ha-icon icon="mdi:crosshairs-gps"></ha-icon>${T('prob_show')}</button>` : ''}`
         + p.by.filter((b) => /^(automation|script)\./.test(b)).map((b) => `<button data-act="prob-open" data-key="${esc(b)}"><ha-icon icon="mdi:pencil-outline"></ha-icon>${T('prob_edit', { name: nm(b) })}</button>`).join('')
+        + (/^c_/.test(p.kind) ? `<button data-act="chk-replay" data-id="${esc(p.ref.slice(6))}"><ha-icon icon="mdi:flask-outline"></ha-icon>${T('chk_replay')}</button>` : '')
         + (!p.by.length && /^(automation|script)\./.test(p.ref) ? `<button data-act="prob-open" data-key="${esc(p.ref)}"><ha-icon icon="mdi:pencil-outline"></ha-icon>${T('prob_edit', { name: nm(p.ref) })}</button>` : '')
         + `</div></div></div>`;
       d.innerHTML = `<div class="dhead"><span class="dtitle">${T('prob_title', { fnName: esc(this._fnName(label)) })}</span><button data-act="close" title="${T('close')}"><ha-icon icon="mdi:close"></ha-icon></button></div>`
