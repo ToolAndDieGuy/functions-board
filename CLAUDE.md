@@ -29,20 +29,31 @@ Set up once: `sh tests/setup.sh all` (Home Assistant 2026.11.1 in `venv314`, con
 `ha-demo/config`, Playwright, the backend venv). Then:
 
 ```sh
-sh tests/run.sh                  # self-test, rules, library, Python units: seconds, no Home Assistant
-sh tests/run.sh --ha             # plus the API test and every browser suite, on a fresh test Home Assistant
-sh tests/run.sh --ha --keep --only e2e-layout   # the one running as it is; only the suites matching a pattern
-FB_ONLY=0.9.1 sh tests/run.sh --ha --keep --only e2e-regress   # only the regress cases whose names match
+sh tests/run.sh                  # rules, library, Python units, the board on the fake Home Assistant (~2 min)
+sh tests/run.sh --ha             # plus the API test and every real-HA suite, on a fresh test Home Assistant
+sh tests/run.sh --ha --keep --only e2e-ui   # the one running as it is; only the suites matching a pattern
+FB_ONLY=0.9.1 sh tests/run.sh --only board-regress   # only the regress cases whose names match
 ```
 
 `--ha` rebuilds `ha/config` from `tests/e2e/config` and starts Home Assistant new (`tests/start-ha.sh`, its log
 `ha/hass.log`), as CI does; `tests/e2e/hasetup.js` then onboards it and logs in the test users (setup, not a test).
 
-The browser suites run on Playwright Test (`tests/playwright.config.js`, one suite at a time, one worker), with
+The tests are layers (`tests/README.md` explains the whole design): rules on the source; the library and the
+Python units; **the board on a fake Home Assistant** (`tests/board/`, Playwright Test in parallel,
+`tests/board.config.js`); the real Home Assistant (`tests/e2e/`); the weekly beta run. Put a check in the lowest
+layer that can make it fail.
+
+The fake (`tests/board/fake-ha.js`) answers the board's calls from `tests/board/garage.json`, recorded from a
+fresh test Home Assistant by `node tests/board/capture.js` (re-record after changing `tests/e2e/config` or moving
+Home Assistant); a call it doesn't know fails the test (`fake.unknown`), so teach it anything new the board asks.
+`tests/e2e/contract.test.js` compares the fake's answers with the real Home Assistant's, so the fake can't drift.
+`tests/board/helpers.js` has the same API as `tests/e2e/lib.js`.
+
+The real-HA suites run on Playwright Test (`tests/playwright.config.js`, one suite at a time, one worker), with
 `tests/e2e/fixtures.js`: each test starts from a snapshot of what tests may change in Home Assistant and is put back
 to it afterwards, even when it fails (`snapshot()` and `restore()` in `tests/e2e/ha-api.js`; proven by
 `isolation.test.js`), so no test may count on what an earlier one left. A failed test keeps the traces of its
-browser contexts: `npx playwright show-report tests/.results/html-<suite>`.
+browser contexts: `npx playwright show-report tests/.results/html-<suite>` (`htmlb-<suite>` for the board layer).
 
 Every runner writes JUnit into `tests/.results/` (and its screen output to `<suite>.log` there), and the run's
 result comes from those reports (`tests/lib/report.js`): a failure, a missing or empty report, or a non-zero exit
@@ -57,27 +68,31 @@ returns everything the library section defines.
 | `tests/problems.test.js` | `findProblems()`: missing, not-loaded, disabled and unavailable entities, devices, areas, actions that don't exist, the function's own pieces |
 | `tests/sandbox.test.js` | the sandbox engine with a stand-in template renderer: triggers, conditions, actions, modes, waits, MQTT, per-entity triggers, `sbxRewrite` |
 | `tests/backend/` (pytest) | the Python side: setup, store, websocket commands, diagnostics; `test_privacy.py`: canary data through the anonymiser and the log, no network modules, the manifest (sockets are blocked in all of it) |
+| `tests/board/smoke.test.js` | the board starts, imports and draws the garage, on the fake |
+| `tests/board/a11y.test.js` | axe-core (WCAG 2.2 AA) on every view in dark and light mode, with a problem on the board; the keyboard (roving box focus, arrows, Space, Enter, Escape, dialog and drawer focus in and back); spoken names; less motion |
+| `tests/board/layout.test.js` | large synthetic functions in both directions: no overlap, arrows 16 px apart, none through a box, every crossing hops, rows wrap |
+| `tests/board/regress.test.js [FB_ONLY]` | the regress cases the fake can show, named by version |
 | `tests/e2e/apitest.py` | backend over the real API (setup, websocket commands, store, non-admin, config flow) |
 | `tests/e2e/isolation.test.js` | a test that changes Home Assistant and fails half way leaves nothing behind for the next |
+| `tests/e2e/contract.test.js` | the fake answers as the real Home Assistant does (read commands, changes, the snapshot) |
 | `tests/e2e/ui.test.js` | first run, import, migration, live sync, dashboard modes, non-admin |
-| `tests/e2e/regress.test.js [filter]` | one case per fixed bug or new behaviour, named by version (`0.7.0 …`) |
+| `tests/e2e/regress.test.js [FB_ONLY]` | the regress cases that need the real Home Assistant, named by version (`0.7.0 …`) |
 | `tests/e2e/tools.test.js` | debugger, live checks, tests, arrow editor, Node-RED |
 | `tests/e2e/sync.test.js` | two boards editing at once |
 | `tests/e2e/sandbox.test.js` | the sandbox on the garage function, templates rendered by the real Home Assistant, nothing sent that changes anything |
 | `tests/e2e/versions.test.js` | versions on the garage: save, compare in a tab, sandbox a version, restore (off/delete what was added since), replaced devices |
 | `tests/e2e/privacy.test.js` | a tour of everything: every request the board starts goes to this Home Assistant; no connection from the integration (`ha/netguard.log`); its data only in its own `.storage` files; nothing without an admin login; the Diagnostics dialog's forced choice and its files |
-| `tests/e2e/a11y.test.js` | axe-core (WCAG 2.2 AA) on every view in dark and light mode, with a problem on the board; the keyboard (roving box focus, arrows, Space, Enter, Escape, dialog and drawer focus in and back); spoken names; less motion |
-| `tests/e2e/layout.test.js` | large synthetic functions in both directions: no overlap, arrows 16 px apart, none through a box, every crossing hops, rows wrap |
 | `tests/e2e/size.test.js` | 1,000 automations: import and open times (slow; `--size`) |
 
 - **Checkers** used by the suites: `tests/e2e/routecheck.js` (arrow spacing, arrows through boxes) and
   `tests/e2e/hopcheck.js` (every crossing hops). They read `board._ortho`, the router's last output.
 - **Look at the result**, not only the tests: `tests/e2e/layshot.js` screenshots a function's layout;
-  `FB_SHOTS=1 node tests/e2e/layout.test.js` saves the large ones; screenshots go to `tests/e2e/.state/shots/`.
-- Add a regress case for each bug fixed and each behaviour added, named with the version it ships in. Make sure
-  a new check can fail (break the code on purpose once).
+  `FB_SHOTS=1 sh tests/run.sh --only board-layout` saves the large ones; screenshots go to `tests/e2e/.state/shots/`.
+- Add a regress case for each bug fixed and each behaviour added, named with the version it ships in, in
+  `tests/board/regress.test.js` if the fake can show it. Make sure a new check can fail (break the code on purpose
+  once).
 - `tools.test.js` 9.2 is timing-sensitive and fails now and then; rerun before chasing it.
-- One browser suite at a time: they share the Home Assistant. The backend unit tests use their own venv
+- One real-HA suite at a time: they share the Home Assistant. The board suites run in parallel, a fake each. The backend unit tests use their own venv
   (`venvtest`): `pytest-homeassistant-custom-component` doesn't have a release for Home Assistant 2026.11 yet (its
   newest pins 2026.10.4); move them into `venv314` once it does.
 

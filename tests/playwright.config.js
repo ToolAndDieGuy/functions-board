@@ -8,8 +8,9 @@ const { defineConfig } = require('@playwright/test');
 const results = process.env.FB_RESULTS || path.join(__dirname, '.results');
 const suite = process.env.FB_SUITE || 'all';
 module.exports = defineConfig({
+  globalSetup: require.resolve('./lib/pw-setup'),
   testDir: path.join(__dirname, 'e2e'),
-  testMatch: process.env.FB_SUITE ? new RegExp(`(^|/)${process.env.FB_SUITE}\\.test\\.js$`) : /(^|\/)(isolation|ui|regress|tools|sync|sandbox|versions|privacy|a11y|layout)\.test\.js$/,
+  testMatch: process.env.FB_SUITE ? new RegExp(`(^|/)${process.env.FB_SUITE}\\.test\\.js$`) : /(^|\/)(isolation|contract|ui|regress|tools|sync|sandbox|versions|privacy)\.test\.js$/,
   workers: 1,
   fullyParallel: false,
   retries: 0,

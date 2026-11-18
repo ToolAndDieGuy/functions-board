@@ -1,15 +1,15 @@
-// Layout and arrows on large functions, in both directions, without needing them in Home Assistant: synthetic
+// On the fake Home Assistant (layer 3; on the real one until 0.9.1). Layout and arrows on large functions, in both directions, without needing them in Home Assistant: synthetic
 // functions shaped like real ones that broke the layout before (one automation reading 28 helpers, a script
 // driving 30 things, parallel chains with loops, a random 55-box tangle) are put straight into the board's model,
 // laid out left to right and top to bottom, and checked: no two boxes overlap, no two arrows run within 16 px,
 // no arrow through a box, every crossing hops, and top to bottom no row runs away sideways.
-// Run apitest.py first.  node tests/e2e/layout.test.js [filter]   FB_SHOTS=1 also saves a screenshot of each
+// sh tests/run.sh --only board-layout   (FB_SHOTS=1 also saves a screenshot of each, to tests/e2e/.state/shots/)
 const path = require('path');
-const { chromium, BASE, STATE, session, ready, fbq, board, suite } = require('./lib');
-const { routeCheck } = require('./routecheck');
-const { hopCheck } = require('./hopcheck');
+const { chromium, BASE, STATE, session, ready, fbq, board, suite } = require('./helpers');
+const { routeCheck } = require('../e2e/routecheck');
+const { hopCheck } = require('../e2e/hopcheck');
 const { test } = require('./fixtures');
-const { check, done } = suite('layout');
+const { check, done } = suite('board-layout');
 // FB_ONLY=<pattern> runs only the parts whose names match (Playwright's --grep picks whole tests)
 const only = process.env.FB_ONLY ? new RegExp(process.env.FB_ONLY, 'i') : null;
 
@@ -69,8 +69,6 @@ function shapes() {
 
 test('layout', async ({ browser }) => {
   const { ctx, page } = await session(browser, 'owner', { viewport: { width: 1600, height: 900 }, scale: 1 });
-  await page.goto(BASE + '/functions');
-  await ready(page);
   await fbq(page, '.nodes .node, .welcome, .empty').first().waitFor({ timeout: 20000 }).catch(() => {});
   await page.waitForTimeout(800);
   for (const fn of shapes()) {

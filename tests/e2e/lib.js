@@ -84,6 +84,8 @@ async function until(fn, ms = 5000, step = 100) {
 // A suite's checks, counted and written as JUnit (tests/.results/e2e-<name>.xml, or $FB_RESULTS) for run.sh.
 // A suite that crashes before done() leaves no report, and run.sh counts that as a failure.
 const RESULTS = process.env.FB_RESULTS || path.join(__dirname, '..', '.results');
+// its report's name: board-<name> for the board tests on the fake (they name themselves so), e2e-<name> here
+const file = (name) => (name.startsWith('board-') ? name : 'e2e-' + name);
 function suite(name) {
   const results = [];
   let last = Date.now();
@@ -93,7 +95,7 @@ function suite(name) {
     results.push(r);
     // kept as it happens: Playwright starts a new worker after a failed test, and that worker's done() must still
     // report the checks made before it
-    try { fs.mkdirSync(RESULTS, { recursive: true }); fs.appendFileSync(path.join(RESULTS, 'e2e-' + name + '.jsonl'), JSON.stringify(r) + '\n'); } catch (e) { /* the report is best effort here */ }
+    try { fs.mkdirSync(RESULTS, { recursive: true }); fs.appendFileSync(path.join(RESULTS, file(name) + '.jsonl'), JSON.stringify(r) + '\n'); } catch (e) { /* the report is best effort here */ }
     last = Date.now();
     console.log((ok ? 'PASS ' : 'FAIL ') + n + (d ? '  -- ' + d : ''));
     if (hooks.soft) { try { hooks.soft(!!ok, n + (d ? '  -- ' + d : '')); } catch (e) { /* outside a test */ } }
@@ -101,10 +103,10 @@ function suite(name) {
   };
   const done = () => {
     let all = results;
-    try { all = fs.readFileSync(path.join(RESULTS, 'e2e-' + name + '.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)); } catch (e) { /* only this process's */ }
+    try { all = fs.readFileSync(path.join(RESULTS, file(name) + '.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)); } catch (e) { /* only this process's */ }
     const bad = all.filter((r) => !r.ok).map((r) => r.name);
     console.log(`\n${name}: ${all.length - bad.length}/${all.length} passed` + (bad.length ? ': failed ' + bad.join(', ') : ''));
-    require('../lib/junit').write(path.join(RESULTS, 'e2e-' + name + '.xml'), name, all);
+    require('../lib/junit').write(path.join(RESULTS, file(name) + '.xml'), name, all);
     process.exitCode = bad.length ? 1 : 0;
   };
   const me = { check, done, results };

@@ -5866,9 +5866,12 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       shown.forEach((e) => { vis2.add(e.from); vis2.add(e.to); });
       m.nodes.forEach((n, k) => { n.hidden = cnt.has(k) && !vis2.has(k) ? cnt.get(k) : 0; });
       this._renderFrames();
+      // a keyboard user's place: the box that has focus keeps it when the boxes are drawn anew
+      const fa = this.shadowRoot.activeElement, fk = fa && fa.classList && fa.classList.contains('node') ? fa.dataset.key : null;
       this._$.nodes.innerHTML = [...vis].map((k) => this._nodeHTML(m.nodes.get(k))).join('');
       this._els = new Map();
       this._$.nodes.querySelectorAll('.node').forEach((el) => this._els.set(el.dataset.key, el));
+      if (fk && this._els.get(fk)) this._els.get(fk).focus({ preventScroll: true });
       this._renderNotes();
       this._renderMons();
       this._conn = this._connText();

@@ -1,4 +1,4 @@
-// Accessibility, on the real Home Assistant: what a keyboard and a screen reader get from the board.
+// Accessibility, on the fake Home Assistant (layer 3; it was on the real one until 0.9.1): what a keyboard and a screen reader get from the board.
 //
 //   X1  axe-core (WCAG 2.2 A and AA rules) finds nothing on the board, the Key, a selected box, the debugger,
 //       runs, versions, the sandbox, the save-a-check dialog, About, Diagnostics and the import manager,
@@ -9,10 +9,10 @@
 //   N   what's read out: a box says what it shows and its problems; the list's count says what it counts
 //   M   less motion: with the system set to reduce motion, a flow shows its last step instead of playing
 const fs = require('fs');
-const { chromium, fbq, board, until, suite, freshBoard, importAll, openFn, ws, svc } = require('./lib');
+const { chromium, fbq, board, until, suite, freshBoard, importAll, openFn, ws, svc } = require('./helpers');
 
 const { test } = require('./fixtures');
-const { check, done } = suite('a11y');
+const { check, done } = suite('board-a11y');
 const PID = 'fba11y1', PKEY = 'automation.garage_a11y_points_at_gone';
 const AXE = fs.readFileSync(require.resolve('axe-core/axe.min.js', { paths: [process.cwd(), __dirname] }), 'utf8');
 const el = (page, fn, arg) => board(page).evaluate(fn, arg);

@@ -116,4 +116,22 @@ async function reset() {
   for (const r of await ws({ type: 'lovelace/resources' })) if (/functions/.test(r.url)) await ws({ type: 'lovelace/resources/delete', resource_id: r.id });
 }
 
-module.exports = { BASE, STATE, token, rest, ws, snapshot, restore, reset };
+// The first message of a subscription (trigger_platforms/subscribe and the like), then unsubscribed.
+async function first(msg, ms = 8000) {
+  const sock = new WebSocket(BASE.replace(/^http/, 'ws') + '/api/websocket');
+  const got = [];
+  let wake = null;
+  sock.addEventListener('message', (ev) => { const m = JSON.parse(ev.data); (Array.isArray(m) ? m : [m]).forEach((x) => got.push(x)); if (wake) { wake(); wake = null; } });
+  const next = async () => { const end = Date.now() + ms; while (!got.length) { if (Date.now() > end) throw new Error('ha-api: no message for ' + msg.type); await new Promise((r) => { wake = r; setTimeout(r, 200); }); } return got.shift(); };
+  await new Promise((res, rej) => { sock.addEventListener('open', res, { once: true }); sock.addEventListener('error', rej, { once: true }); });
+  try {
+    await next();
+    sock.send(JSON.stringify({ type: 'auth', access_token: await token() }));
+    await next();
+    sock.send(JSON.stringify(Object.assign({ id: 1 }, msg)));
+    let r; do { r = await next(); } while (!(r.id === 1 && r.type === 'event'));
+    return r.event;
+  } finally { sock.close(); }
+}
+
+module.exports = { BASE, STATE, token, rest, ws, first, snapshot, restore, reset };
