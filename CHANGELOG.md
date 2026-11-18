@@ -17,6 +17,11 @@ New: **versions** of a function, to save it as it is, compare, try one in the sa
   turned off or deleted; and a device its steps used that's been replaced can be swapped for the new one with
   Home Assistant's device picker. Items defined in YAML are listed as not restorable.
 
+Changed: the **sandbox's fields are lists** of what fits, so you don't need to know what to type. Set offers the
+states the entity can take (its current one marked "now", plus unavailable and unknown), Event the event types the
+function listens for and the data its triggers look for, MQTT its topics and the payloads its triggers wait for.
+Each list ends with **Other…** for anything else.
+
 ## 0.7.2 (2026-11-17)
 
 Shared lines are easier to follow.

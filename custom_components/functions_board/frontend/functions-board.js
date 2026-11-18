@@ -1561,6 +1561,8 @@
   const getPath = (o, path) => path.reduce((x, k) => (x == null ? x : x[k]), o);
   // JSON with its keys sorted: two configs compare equal whatever order Home Assistant stored their keys in
   // the UI helpers whose settings a version keeps (their <domain>/list, update, create and delete commands)
+  // the "Other…" entry of the sandbox's dropdowns
+  const SBX_OTHER = '\u0001other';
   const VER_HELPERS = new Set(['input_boolean', 'input_number', 'input_text', 'input_select', 'input_datetime', 'input_button', 'counter', 'timer', 'schedule']);
   // what may be clicked on a saved version's board: looking, the sandbox, and the versions themselves
   const VER_OK_ACTS = /^(zoomin|zoomout|fit|togglelist|legend|hl|hl-.+|sandbox|sbx-.+|flow-.+|lit-.+|edge|close|back|newtab|modal-.+|ver-.+|vtab.*|versions|about|hint-x|find-x|nr-open)$/;
@@ -2021,6 +2023,8 @@ button{font:inherit;color:inherit}
 .board.sbx .node.sbch[data-sbx]::after{background:var(--fb-amber);border-color:var(--fb-amber);color:#000}
 .board.sbx .node.sbch::before{content:'';position:absolute;left:-5px;top:-5px;width:9px;height:9px;border-radius:50%;background:var(--fb-amber)}
 .board.sbx .node.dim{opacity:.42}
+.sbctl .sbf{display:inline-flex;gap:4px;flex:1 1 140px;min-width:0}
+.sbctl .sbf select,.sbctl .sbf input{flex:1 1 auto;min-width:0;max-width:100%}
 .vtabs{position:absolute;left:12px;right:12px;top:10px;z-index:8;display:flex;flex-direction:column;gap:6px;pointer-events:none}
 .vtabs>*{pointer-events:auto}
 .vtabs:not([hidden])~.sbxpill{top:58px}
@@ -2619,7 +2623,6 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       sbx_empty: 'Set a state, fire an event or run an automation, and watch what the function does. Nothing changes in your home.',
       sbx_entity: 'Entity',
       sbx_event: 'Event',
-      sbx_event_data: 'Event data',
       sbx_event_data_ph: 'data, e.g. {"entity_id": "timer.hall"}',
       sbx_event_type: 'event type',
       sbx_event_x: 'Event {type}',
@@ -2656,6 +2659,12 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       sbx_test_here: 'Test in the sandbox',
       sbx_title: 'Sandbox · {fnName}',
       sbx_triggered: '{name} triggered',
+      sbx_data_as: '{data} (what {name} looks for)',
+      sbx_data_none: 'no data',
+      sbx_other: 'Other…',
+      sbx_payload_as: '{payload} (what {name} waits for)',
+      sbx_payload_none: 'empty payload',
+      sbx_state_now: '{state} (now)',
       ver_active: 'active',
       ver_added_delete: 'Delete them',
       ver_added_h: 'Added since this version was saved',
@@ -6617,6 +6626,12 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const t = e.target, g = this._mgr;
       if (t.classList && t.classList.contains('sbent')) { this._sbxPick(t.value); return; }
       if (t.classList && t.classList.contains('sbrun')) { this._sbxTrigs(); return; }
+      if (t.classList && t.classList.contains('sbsel')) {
+        this._sbxOther(t, true);
+        if (t.dataset.f === 'sbev') this._sbxEvData();
+        if (t.dataset.f === 'sbtop') this._sbxPayloads();
+        return;
+      }
       if (t.hasAttribute && t.hasAttribute('data-nr')) {
         // the Node-RED switch is yours, for every function: off means no request to Node-RED at all
         this._data.ui.nodered = t.checked; this._save(); this._nrCache = null;
@@ -7131,7 +7146,11 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         alarm_control_panel: ['disarmed', 'armed_home', 'armed_away', 'armed_night', 'triggered'] };
       (by[n.domain] || []).forEach((s) => out.add(s));
       if (n.domain === 'climate') toList(A.hvac_modes).forEach((s) => out.add(s));
-      if (n.domain === 'select') toList(A.options).forEach((s) => out.add(s));
+      if (n.domain === 'select' || n.domain === 'input_select') toList(A.options).forEach((s) => out.add(s));
+      if (n.domain === 'input_boolean') ['on', 'off'].forEach((s) => out.add(s));
+      if (n.domain === 'timer') ['idle', 'active', 'paused'].forEach((s) => out.add(s));
+      if (n.domain === 'sun') ['above_horizon', 'below_horizon'].forEach((s) => out.add(s));
+      if (n.domain === 'input_number' || n.domain === 'number') [A.min, A.max].forEach((s) => { if (s != null) out.add(String(s)); });
       if (st) out.add(st.state);
       return [...out].filter((s) => s != null && s !== '').map(String).slice(0, 30);
     }
@@ -8419,14 +8438,78 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const topics = new Set([...m.nodes.keys()].filter((k) => k.startsWith('mqtt:')).map((k) => k.slice(5)));
       g.eng.items.forEach((it) => { if (it.kind === 'automation') g.eng._trigs(it).forEach((t) => { if (g.eng._plat(t) === 'mqtt' && t.topic && !/[+#]/.test(t.topic)) topics.add(String(t.topic)); }); });
       const opt = (k) => `<option value="${esc(k)}">${esc(nm(k))}</option>`;
-      box.innerHTML = `<div class="sbrow"><span class="sbl">${T('sbx_set')}</span><select class="sbent" aria-label="${T('sbx_entity')}">${ents.map(opt).join('')}</select><input class="sbval" list="sbvals" aria-label="${T('sbx_state')}" placeholder="${T('sbx_state')}"><datalist id="sbvals"></datalist><button class="chip" data-act="sbx-set">${T('sbx_set_b')}</button></div>`
-        + `<div class="sbrow"><span class="sbl">${T('sbx_event')}</span><input class="sbev" list="sbevs" aria-label="${T('sbx_event_type')}" placeholder="${T('sbx_event_type')}"><datalist id="sbevs">${evs.map((x) => `<option value="${esc(x)}"></option>`).join('')}</datalist><input class="sbevd" aria-label="${T('sbx_event_data')}" placeholder='${T('sbx_event_data_ph')}'><button class="chip" data-act="sbx-fire">${T('sbx_fire')}</button></div>`
-        + (topics.size ? `<div class="sbrow"><span class="sbl">MQTT</span><input class="sbtop" list="sbtops" aria-label="${T('sbx_topic')}" placeholder="${T('sbx_topic')}"><datalist id="sbtops">${[...topics].map((x) => `<option value="${esc(x)}"></option>`).join('')}</datalist><input class="sbpay" aria-label="${T('sbx_payload')}" placeholder="${T('sbx_payload')}"><button class="chip" data-act="sbx-mqtt">${T('sbx_send')}</button></div>` : '')
+      box.innerHTML = `<div class="sbrow"><span class="sbl">${T('sbx_set')}</span><select class="sbent" aria-label="${T('sbx_entity')}">${ents.map(opt).join('')}</select>${this._sbxField('sbval', [], T('sbx_state'))}<button class="chip" data-act="sbx-set">${T('sbx_set_b')}</button></div>`
+        + `<div class="sbrow"><span class="sbl">${T('sbx_event')}</span>${this._sbxField('sbev', evs.map((x) => ({ v: x, l: x })), T('sbx_event_type'))}${this._sbxField('sbevd', [], T('sbx_event_data_ph'))}<button class="chip" data-act="sbx-fire">${T('sbx_fire')}</button></div>`
+        + (topics.size ? `<div class="sbrow"><span class="sbl">MQTT</span>${this._sbxField('sbtop', [...topics].map((x) => ({ v: x, l: x })), T('sbx_topic'))}${this._sbxField('sbpay', [], T('sbx_payload'))}<button class="chip" data-act="sbx-mqtt">${T('sbx_send')}</button></div>` : '')
         + `<div class="sbrow"><span class="sbl">${T('sbx_run')}</span><select class="sbrun" aria-label="${T('sbx_run_what')}">${runs.map(opt).join('')}</select><select class="sbtrig" aria-label="${T('sbx_as_if')}"></select><label class="sbcb"><input type="checkbox" class="sbconds" checked>${T('sbx_check_conds')}</label><button class="chip" data-act="sbx-run">${T('sbx_run_b')}</button></div>`
         + `<div class="sbrow"><span class="sbl">${T('sbx_clock')}</span><button class="chip" data-act="sbx-adv" data-ms="60000">+1 min</button><button class="chip" data-act="sbx-adv" data-ms="600000">+10 min</button><button class="chip" data-act="sbx-adv" data-ms="3600000">+1 h</button><button class="chip sbnext" data-act="sbx-next"></button></div>`;
       const pick = this._sel && ents.includes(this._sel) ? this._sel : ents[0];
       if (pick) this._sbxPick(pick);
       this._sbxTrigs();
+      this._sbxEvData();
+      this._sbxPayloads();
+    }
+    // a dropdown of what fits, ending with Other… which opens a box to type anything else
+    _sbxField(cls, opts, ph) {
+      return `<span class="sbf"><select class="sbsel ${cls}-sel" data-f="${cls}" aria-label="${esc(ph)}">${opts.map((o) => `<option value="${esc(o.v)}">${esc(o.l)}</option>`).join('')}<option value="${SBX_OTHER}">${T('sbx_other')}</option></select><input class="${cls}" placeholder="${esc(ph)}" aria-label="${esc(ph)}"${opts.length ? ' hidden' : ''}></span>`;
+    }
+    _sbxOpts(cls, opts, keep) {
+      const sel = this._$.drawer.querySelector(`.${cls}-sel`);
+      if (!sel) return;
+      const was = sel.value;
+      sel.innerHTML = opts.map((o) => `<option value="${esc(o.v)}">${esc(o.l)}</option>`).join('') + `<option value="${SBX_OTHER}">${T('sbx_other')}</option>`;
+      // keep: what was picked stays (a refresh); otherwise the suggested one, else the first
+      if (keep === true && [...sel.options].some((o) => o.value === was)) sel.value = was;
+      else if (opts.length) sel.value = (opts.find((o) => o.pick) || opts[0]).v;
+      this._sbxOther(sel);
+    }
+    // Other… shows the typing box (and focuses it); anything picked from the list hides it
+    _sbxOther(sel, focus) {
+      const inp = sel.parentNode.querySelector('input');
+      if (!inp) return;
+      const other = sel.value === SBX_OTHER;
+      inp.hidden = !other;
+      if (other && focus) inp.focus();
+    }
+    _sbxVal(cls) {
+      const d = this._$.drawer, sel = d.querySelector(`.${cls}-sel`), inp = d.querySelector(`input.${cls}`);
+      return sel && sel.value !== SBX_OTHER ? sel.value : inp ? inp.value.trim() : '';
+    }
+    // the data an event can carry: what the function's own event triggers for that type look for
+    _sbxEvData() {
+      const g = this._sbx;
+      if (!g) return;
+      const type = this._sbxVal('sbev'), out = [], seen = new Set();
+      g.eng.items.forEach((it) => {
+        if (it.kind !== 'automation') return;
+        g.eng._trigs(it).forEach((t) => {
+          if (g.eng._plat(t) !== 'event' || !toList(t.event_type).includes(type) || !t.event_data || typeof t.event_data !== 'object') return;
+          const v = JSON.stringify(t.event_data);
+          if (seen.has(v)) return;
+          seen.add(v);
+          out.push({ v, l: T('sbx_data_as', { name: this._boxName(it.id), data: shorten(Object.entries(t.event_data).map(([a, b]) => `${a}: ${typeof b === 'object' ? JSON.stringify(b) : b}`).join(', '), 60) }), pick: true });
+        });
+      });
+      out.push({ v: '', l: T('sbx_data_none') });
+      this._sbxOpts('sbevd', out, 'pick');
+    }
+    // the payloads the function's MQTT triggers on that topic wait for
+    _sbxPayloads() {
+      const g = this._sbx;
+      if (!g || !this._$.drawer.querySelector('.sbpay-sel')) return;
+      const topic = this._sbxVal('sbtop'), out = [], seen = new Set();
+      g.eng.items.forEach((it) => {
+        if (it.kind !== 'automation') return;
+        g.eng._trigs(it).forEach((t) => {
+          if (g.eng._plat(t) !== 'mqtt' || t.payload == null || !(t.topic === topic || sbxTopic(String(t.topic || ''), topic))) return;
+          const v = String(t.payload);
+          if (seen.has(v)) return;
+          seen.add(v);
+          out.push({ v, l: T('sbx_payload_as', { name: this._boxName(it.id), payload: shorten(v, 50) }), pick: true });
+        });
+      });
+      out.push({ v: '', l: T('sbx_payload_none') });
+      this._sbxOpts('sbpay', out, 'pick');
     }
     // the triggers of the automation picked under Run: run it as if one of them fired
     _sbxTrigs() {
@@ -8445,15 +8528,21 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     // soft: only bring the suggestions and the "now …" hint up to date, if that entity is still the one picked, and
     // leave what's typed (after a Set settles, the person may already be on the next one)
     _sbxPick(k, soft) {
-      const d = this._$.drawer, sel = d.querySelector('.sbent'), dl = d.querySelector('#sbvals'), val = d.querySelector('.sbval');
+      const d = this._$.drawer, sel = d.querySelector('.sbent'), val = d.querySelector('input.sbval');
       if (!sel || !this._sbx) return;
       if (soft && sel.value !== k) return;
       sel.value = k;
-      const n = this._model.nodes.get(k), s = this._sbx.eng.get(k);
+      const n = this._model.nodes.get(k), s = this._sbx.eng.get(k), now = s ? String(s.state) : null;
       const hints = new Set(n ? this._stateHints(n) : []);
-      if (s) hints.add(String(s.state));
-      if (dl) dl.innerHTML = [...hints].map((x) => `<option value="${esc(x)}"></option>`).join('');
-      if (val) { if (!soft) val.value = ''; val.placeholder = s ? T('sbx_now_is', { state: String(s.state) }) : T('sbx_state'); }
+      if (now != null) hints.add(now);
+      // a sandbox is where you'd try what a missing or failing device does
+      ['unavailable', 'unknown'].forEach((x) => hints.add(x));
+      const opts = [...hints].map((x) => ({ v: x, l: x === now ? T('sbx_state_now', { state: x }) : x }));
+      // the first state it isn't in already, so Set does something
+      const first = opts.find((o) => o.v !== now && o.v !== 'unavailable' && o.v !== 'unknown');
+      if (first) first.pick = true;
+      this._sbxOpts('sbval', opts, soft ? true : 'pick');
+      if (val) { if (!soft) val.value = ''; val.placeholder = now != null ? T('sbx_now_is', { state: now }) : T('sbx_state'); }
     }
     async _sbxDo(fn) {
       const g = this._sbx;
@@ -8473,23 +8562,27 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     // the box bar's sandbox buttons fill in the drawer's controls; the rest are the drawer's own
     _sbxBox(act, el) {
       const d = this._$.drawer, k = this._sel;
-      if (act === 'sbx-setbox' && k) { this._sbxPick(k); const v = d.querySelector('.sbval'); if (v) v.focus(); return; }
+      if (act === 'sbx-setbox' && k) { this._sbxPick(k); const v = d.querySelector('.sbval-sel'); if (v) v.focus(); return; }
       if (act === 'sbx-runbox' && k) { const r = d.querySelector('.sbrun'); if (r) r.value = k; this._sbxAction('sbx-run', el); return; }
-      if (act === 'sbx-firebox' && k) { const v = d.querySelector('.sbev'); if (v) { v.value = k.slice(6); d.querySelector('.sbevd').focus(); } return; }
+      if (act === 'sbx-firebox' && k) {
+        const sel = d.querySelector('.sbev-sel'), inp = d.querySelector('input.sbev'), type = k.slice(6);
+        if (sel) { if ([...sel.options].some((o) => o.value === type)) sel.value = type; else { sel.value = SBX_OTHER; if (inp) inp.value = type; } this._sbxOther(sel); this._sbxEvData(); const n = d.querySelector('.sbevd-sel'); if (n) n.focus(); }
+        return;
+      }
       this._sbxAction(act, el);
     }
     _sbxAction(act, el) {
       const d = this._$.drawer, q = (s) => d.querySelector(s);
       switch (act) {
         case 'sbx-set': {
-          const id = q('.sbent').value, v = q('.sbval').value.trim();
+          const id = q('.sbent').value, v = this._sbxVal('sbval');
           if (!id || !v) { this._toast(T('sbx_pick_state')); return; }
-          q('.sbval').value = '';
+          if (q('input.sbval')) q('input.sbval').value = '';
           this._sbxDo((e) => e.userSet(id, v)).then(() => this._sbxPick(id, true));
           break;
         }
         case 'sbx-fire': {
-          const type = q('.sbev').value.trim(), raw = q('.sbevd').value.trim();
+          const type = this._sbxVal('sbev'), raw = this._sbxVal('sbevd');
           if (!type) { this._toast(T('sbx_pick_event')); return; }
           let data = {};
           if (raw) { try { data = JSON.parse(raw); } catch (e) { const p = parseLoose(raw); if (p && typeof p === 'object') data = p; else { this._toast(T('sbx_bad_data')); return; } } }
@@ -8502,9 +8595,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           break;
         }
         case 'sbx-mqtt': {
-          const topic = q('.sbtop').value.trim();
+          const topic = this._sbxVal('sbtop');
           if (!topic) { this._toast(T('sbx_pick_topic')); return; }
-          this._sbxDo((e) => e.userMqtt(topic, q('.sbpay').value));
+          this._sbxDo((e) => e.userMqtt(topic, this._sbxVal('sbpay')));
           break;
         }
         case 'sbx-adv': this._sbxDo((e) => e.advance(+el.dataset.ms)); break;

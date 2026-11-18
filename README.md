@@ -79,7 +79,7 @@ The **Auto-arrange** button's menu sets which way a function flows: **left to ri
 
 ### Sandbox
 
-**Sandbox** (in the function's toolbar) tries the function out on a copy of its states. Each time it opens, a dialog explains what it's for and everything it can't show you, to click through. Set a state, fire an event or run an automation, and the board shows what the function would do: what triggers, which conditions pass and why, what each action changes, and what that sets off next, lit up on the board and listed in the drawer. Nothing is sent to your devices, and the board goes back to your home's states when you close it.
+**Sandbox** (in the function's toolbar) tries the function out on a copy of its states. Each time it opens, a dialog explains what it's for and everything it can't show you, to click through. Set a state, fire an event or run an automation (each picked from a list of what fits the function, with Other… for anything else), and the board shows what the function would do: what triggers, which conditions pass and why, what each action changes, and what that sets off next, lit up on the board and listed in the drawer. Nothing is sent to your devices, and the board goes back to your home's states when you close it.
 
 ![The sandbox beside the Garage board: the door set to open started the open timer; 15 minutes on, the timer finished, "Garage: left open" ran, its condition passed, and auto-close being off stopped it from closing the door](https://raw.githubusercontent.com/ToolAndDieGuy/functions-board/main/docs/images/sandbox.png)
 

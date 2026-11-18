@@ -53,20 +53,36 @@ const DOOR = 'cover.garage_door', TIMER = 'timer.garage_open', AUTO = 'input_boo
   check('the sandbox opens in the drawer, the board is marked', await el(page, (b) => b._$.board.classList.contains('sbx') && !b._$.sbxpill.hidden && b._drawer.mode === 'sandbox'));
   check('it runs every automation and script on the board', await el(page, (b) => [...b._sbx.eng.items.keys()].filter((k) => k.startsWith('automation.')).length >= 3 && b._sbx.eng.items.has('script.close_garage')));
 
+  // 0.8.0: the fields are lists of what fits, with Other… for anything else
+  await fbq(page, '.drawer .sbent').selectOption(DOOR);
+  const dl = await el(page, (b) => { const s = b._$.drawer.querySelector('.sbval-sel'); return { opts: [...s.options].map((o) => [o.value, o.textContent]), v: s.value, inp: b._$.drawer.querySelector('input.sbval').hidden }; });
+  check('0.8.0 Set: a list of the states the door can take, its own state marked now', ['open', 'closed', 'opening', 'closing', 'unavailable'].every((x) => dl.opts.some((o) => o[0] === x)) && dl.opts.some((o) => /\(now\)/.test(o[1])) && dl.inp, dl);
+  check('0.8.0 ... a state it isn\'t in already is picked, so Set does something', dl.v !== (await el(page, (b, k) => b._sbx.eng.get(k).state, DOOR)), dl.v);
+  check('0.8.0 ... ending with Other…', dl.opts[dl.opts.length - 1][1] === 'Other…');
+  await fbq(page, '.drawer .sbval-sel').selectOption({ label: 'Other…' });
+  check('0.8.0 Other… opens a box to type in, and what\'s typed is used', await el(page, (b) => !b._$.drawer.querySelector('input.sbval').hidden));
+  await fbq(page, '.drawer input.sbval').fill('stopped');
+  check('0.8.0 ... (the typed state)', await el(page, (b) => b._sbxVal('sbval') === 'stopped'));
+  await fbq(page, '.drawer .sbval-sel').selectOption('closed');
+  check('0.8.0 ... picking from the list again hides the box', await el(page, (b) => b._$.drawer.querySelector('input.sbval').hidden && b._sbxVal('sbval') === 'closed'));
+  const ev = await el(page, (b) => { const t = b._$.drawer.querySelector('.sbev-sel'), d = b._$.drawer.querySelector('.sbevd-sel'); return { types: [...t.options].map((o) => o.value), type: t.value, data: [...d.options].map((o) => [o.value, o.textContent]), dv: d.value }; });
+  check('0.8.0 Event: the types the function listens for', ev.types.includes('timer.finished') && ev.type === 'timer.finished', ev);
+  check('0.8.0 ... and the data its triggers look for, picked, with no data and Other… after', /timer\.garage_open/.test(ev.dv) && /^entity_id: timer\.garage_open \(what Garage: left open looks for\)/.test(ev.data[0][1]) && ev.data.some((o) => o[0] === '' && o[1] === 'no data') && ev.data[ev.data.length - 1][1] === 'Other…', ev);
+
   // auto-close on, in the sandbox only
   await fbq(page, '.drawer .sbent').selectOption(AUTO);
-  await fbq(page, '.drawer .sbval').fill('on');
+  await fbq(page, '.drawer .sbval-sel').selectOption('on');
   await fbq(page, '.drawer [data-act="sbx-set"]').click();
   await until(() => el(page, (b, k) => b._sbx.eng.get(k).state === 'on', AUTO), 5000);
   // the next entity picked and typed straight away, before the first Set has settled: what's typed stays
   await fbq(page, '.drawer .sbent').selectOption(DOOR);
-  await fbq(page, '.drawer .sbval').fill('open');
+  await fbq(page, '.drawer .sbval-sel').selectOption('open');
   await until(() => el(page, (b) => !b._sbx.busy || null), 8000);
   await page.waitForTimeout(300);
-  check('a Set settling later doesn\'t change the entity picked next or clear what\'s typed', await el(page, (b) => b._$.drawer.querySelector('.sbent').value === 'cover.garage_door' && b._$.drawer.querySelector('.sbval').value === 'open'));
+  check('a Set settling later doesn\'t change the entity picked next or clear what\'s picked', await el(page, (b) => b._$.drawer.querySelector('.sbent').value === 'cover.garage_door' && b._$.drawer.querySelector('.sbval-sel').value === 'open'));
   // open the door
   await fbq(page, '.drawer .sbent').selectOption(DOOR);
-  await fbq(page, '.drawer .sbval').fill('open');
+  await fbq(page, '.drawer .sbval-sel').selectOption('open');
   await fbq(page, '.drawer [data-act="sbx-set"]').click();
   const started = await until(() => el(page, (b, k) => b._sbx.eng.get(k).state === 'active' || null, TIMER), 8000);
   check('opening the door starts the open timer (Garage: start open timer)', !!started);
