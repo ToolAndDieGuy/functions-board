@@ -129,6 +129,21 @@ check('counts have one and other, and other shows {n}', noN.length === 0, noN.ma
 const ingress = (src.match(/ingress\/session|ingress_session/g) || []);
 check('no ingress session is made, and no ingress cookie written', ingress.length === 0, ingress);
 
+// 0.9.1: a method defined twice in the board's class: the later one silently replaces the first (0.9.0 gave the
+// saved checks a _stepText, and the steps of a run on the board all read "Clock to what's due"). A getter and its
+// setter share a name, and that's fine.
+{
+  const cls = src.slice(src.indexOf('class FunctionsBoard extends HTMLElement'));
+  const seen = new Map();
+  for (const m of cls.matchAll(/^ {4}(get |set |static |async )?([_a-zA-Z$][\w$]*)\s*\([^)]*\)\s*\{/gm)) {
+    const k = (m[1] === 'get ' || m[1] === 'set ' ? m[1] : '') + m[2];
+    seen.set(k, (seen.get(k) || 0) + 1);
+  }
+  check('found the board\'s methods', seen.size > 300, seen.size);
+  const twice = [...seen].filter(([, n]) => n > 1).map(([k]) => k);
+  check('no method of the board is defined twice (the later one would replace the first)', twice.length === 0, twice);
+}
+
 // ---------- privacy: the board talks to this Home Assistant and nothing else ----------
 // (comments are left out, so a note about a rule doesn't trip it)
 const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`\\])\/\/[^\n]*/g, '$1');
@@ -182,3 +197,19 @@ check('A4 the Supervisor is only asked (method get), never told', sup.length > 0
 const pubs = code.match(/[^\n]{0,40}'mqtt\.publish'[^\n]{0,20}/g) || [];
 check('A4 MQTT: the board listens; a message is published only by the person\'s own MQTT test step (the sandbox only simulates one)', !/mqtt\/publish|callService\(\s*'mqtt'/.test(code) && pubs.length === 2 && pubs.some((p) => /if \(svc === 'mqtt\.publish'\) \{ await this\.mqtt\(/.test(p)) && pubs.some((p) => /case 'mqtt': return call\('mqtt\.publish'/.test(p)), pubs);
 
+
+// 0.9.1: the real-HA suites are split between two CI jobs by --only patterns: a suite added to run.sh must be in
+// exactly one, or it never runs in CI (or runs twice)
+{
+  const root = path.join(__dirname, '..');
+  const runsh = fs.readFileSync(path.join(root, 'tests', 'run.sh'), 'utf8');
+  const wf = fs.readFileSync(path.join(root, '.github', 'workflows', 'validate.yml'), 'utf8');
+  const suites = ((runsh.match(/^\s*SUITES="([^"]+)"/m) || [])[1] || '').split(/\s+/).filter(Boolean).map((x) => 'e2e-' + x).concat(['apitest']);
+  const pats = [...wf.matchAll(/sh tests\/run\.sh --ha --keep --only '([^']+)'/g)].map((m) => new RegExp(m[1]));
+  check('found the real-HA suites and the CI jobs that run them', suites.length >= 9 && pats.length >= 2, { suites, pats: pats.map(String) });
+  const wrong = suites.filter((x) => pats.filter((p) => p.test(x)).length !== 1);
+  check('every real-HA suite runs in exactly one CI job', wrong.length === 0, wrong);
+  const board = ((runsh.match(/^BOARD="([^"]+)"/m) || [])[1] || '').split(/\s+/).filter(Boolean).map((x) => 'board-' + x);
+  const bpats = [...wf.matchAll(/sh tests\/run\.sh --only '([^']+)'/g)].map((m) => new RegExp(m[1]));
+  check('every board suite runs in CI', board.length >= 4 && board.every((x) => bpats.some((p) => p.test(x))), { board, bpats: bpats.map(String) });
+}

@@ -16,7 +16,8 @@ const strict = !!process.env.FB_STRICT;
 const qfile = process.env.FB_QUARANTINE || path.join(__dirname, '..', 'quarantine.json');
 let bad = 0;
 const md = ['| Suite | Result |', '|---|---|'], notes = [];
-const out = (n, s) => { console.log(n.padEnd(14) + ' ' + s); md.push(`| ${n} | ${s.replace(/\|/g, '\\|')} |`); };
+const secs = (n) => { try { return +fs.readFileSync(path.join(dir, n + '.secs'), 'utf8'); } catch (e) { return null; } };
+const out = (n, s) => { const t = secs(n); if (t != null) s += ` (${t} s)`; console.log(n.padEnd(14) + ' ' + s); md.push(`| ${n} | ${s.replace(/\|/g, '\\|')} |`); };
 const note = (s) => { console.log('    ' + s); notes.push('- ' + s); };
 
 let quarantine = [];
@@ -57,6 +58,7 @@ if (strict) {
     if (want.includes(q.suite) && !seen.has(q)) { bad++; note(`FAILED: quarantined, but no such check any more: ${q.suite}: ${q.check}`); }
   }
 }
+if (secs('board') != null && want.some((n) => n.startsWith('board-'))) { const l = `board layer, all at once: ${secs('board')} s`; console.log(l); notes.push('- ' + l); }
 const summary = md.join('\n') + (notes.length ? '\n\n' + notes.join('\n') : '') + '\n';
 try { fs.writeFileSync(path.join(dir, 'summary.md'), summary); } catch (e) { /* the summary is extra */ }
 if (process.env.GITHUB_STEP_SUMMARY) { try { fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary); } catch (e) { /* extra */ } }

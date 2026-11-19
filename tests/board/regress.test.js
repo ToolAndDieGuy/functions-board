@@ -695,6 +695,19 @@ test('0.9.1 a simulated state stays marked when Home Assistant\'s word of it com
   check('0.9.1 simulated: no errors', page.logs.length === 0, page.logs);
 });
 
+test('0.9.1 an arrow\'s choices come in the same order every time, whatever order Home Assistant lists them in', async ({ browser, fake }) => {
+  const { page } = await imported(browser);
+  await openFn(page, /garage/i);
+  const k = 'input_boolean.garage_auto_close';
+  const order = async (list) => {
+    fake.answers = { get_triggers_for_target: list, get_conditions_for_target: list.map((t) => t.replace('turned_', 'is_')) };
+    return el(page, (b, k) => b._linkChoices({ kinds: ['trigger', 'condition'], other: k }).then((cs) => cs.map((c) => c.item.trigger || c.item.condition)), k);
+  };
+  const a = await order(['switch.turned_on', 'switch.turned_off']), b = await order(['switch.turned_off', 'switch.turned_on']);
+  fake.answers = null;
+  check('0.9.1 an arrow\'s choices come in one order, whatever order Home Assistant lists them in (they were in its order, which changes)', JSON.stringify(a) === JSON.stringify(b) && a.length >= 4, { a, b });
+});
+
 test('0.9.1 a focused box keeps focus when the board is drawn again around it', async ({ browser }) => {
   const { page } = await imported(browser);
   await openFn(page, /garage/i);
