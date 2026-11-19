@@ -87,6 +87,9 @@ function steady(text) {
 }
 
 async function snap(page, name, extra = '') {
+  // the mouse off the board and the drawer: where the last click left it, a box under it would be traced (and dim
+  // the rest) or not, as the drawer's last redraw happened to fall
+  await page.mouse.move(1, 1);
   await page.waitForTimeout(250);
   await current.fake.idle(300);
   // at rest: marks that last a moment (an arrow lit for 2.5 s after a run, a pulse, a toast) have run out

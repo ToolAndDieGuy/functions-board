@@ -180,8 +180,8 @@
  {
   "name": "board: Bring back does nothing",
   "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "case 'pdis-back': this._probDismiss(el.dataset.k, true); break;",
-  "replace": "case 'pdis-back': break;",
+  "find": "'pdis-back': (el) => { this._probDismiss(el.dataset.k, true); },",
+  "replace": "'pdis-back': () => {},",
   "suite": "board-regress",
   "only": "0.9.0 dismissing",
   "expect": "Bring back: it counts again"
@@ -545,6 +545,54 @@
   "suite": "board-regress",
   "expect": "0.10.0 the plan made right after the delete",
   "only": "0.10.0 a restore planned"
+ },
+ {
+  "name": "actions: a button's action has no handler",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "          'mgr-more': () => { this._mgr.pshow = (this._mgr.pshow || 200) + 200; this._renderPicks(); },\n",
+  "replace": "",
+  "suite": "static",
+  "expect": "every action a button names has a handler"
+ },
+ {
+  "name": "actions: a handler no button names",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "          'mgr-more': () => { this._mgr.pshow = (this._mgr.pshow || 200) + 200; this._renderPicks(); },\n",
+  "replace": "          'mgr-more': () => { this._mgr.pshow = (this._mgr.pshow || 200) + 200; this._renderPicks(); },\n          'never-named': () => {},\n",
+  "suite": "static",
+  "expect": "every handler in the tables is named"
+ },
+ {
+  "name": "actions: an action in two tables",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "          'mgr-more': () => { this._mgr.pshow = (this._mgr.pshow || 200) + 200; this._renderPicks(); },\n",
+  "replace": "          'mgr-more': () => { this._mgr.pshow = (this._mgr.pshow || 200) + 200; this._renderPicks(); },\n          'undo': () => {},\n",
+  "suite": "static",
+  "expect": "no action is in two tables"
+ },
+ {
+  "name": "actions: actionMap lets a later table's name win",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "        if (m.has(name)) throw new Error(",
+  "replace": "        if (false) throw new Error(",
+  "suite": "static",
+  "expect": "actionMap joins the tables, and refuses"
+ },
+ {
+  "name": "actions: an undo step made around _history",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "    _history(step) {\n      if (this._ver) return;\n      this._undoStack.push(step);",
+  "replace": "    _history(step) {\n      if (this._ver) return;\n      this._undoStack.push(step); if (step.twice) this._undoStack.push(step);",
+  "suite": "static",
+  "expect": "an undo step is made in one place"
+ },
+ {
+  "name": "actions: handlers aren't told the open function",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      if (h) h(el, { a, label, need, ev });",
+  "replace": "      if (h) h(el, { a, need, ev });",
+  "suite": "board-snapshots",
+  "expect": "S1 edit function"
  },
  {
   "name": "isolation: an automation a test added is left behind",

@@ -19,7 +19,7 @@ function out in a sandbox. Published through HACS. Read this before changing any
     `untangle`, `busDots`, `hopsOf`), the **sandbox engine** (`class Sandbox`, `sbxEffect`, `sbxRewrite`,
     `SBX_PRELUDE`, `SBX_ETRIG`), the English text table (`T()`, `P()` for plurals);
   - then `class FunctionsBoard extends HTMLElement`: rendering, the drawer modes (pages, debug, sandbox), the
-    toolbar actions (one `switch` on `data-act` in `_onClick`), storage and sync.
+    actions (`_actionTables()`: one table per view from `data-act` to its handler), storage and sync.
 - `tests/`: everything below. `scripts/`: `bump.js` (version), `gen_sandbox_triggers.py` (see Sandbox),
   `demo_requirements.py` (what `setup.sh` installs before Home Assistant first starts).
 - `docs/images/`: the README's screenshots, taken by `tests/e2e/screens.js` on a fresh test Home Assistant
@@ -213,5 +213,11 @@ returns everything the library section defines.
   also drops functions and layouts whose label is gone, but only on registries asked after the board data
   (`newer('reg', 'data')`): that rule replaced 0.9.2's check. A restore plan reads the registries asked when it's
   made (`_regNow()`). The board's own data (`this._data`) and its sync with the shared store are as they were.
+- **Actions** (0.10.0, `_actionTables()`): what every button does, one table per view (list, create, manager, canvas,
+  arrows, tools, drawer, problems, debug, versions, sandbox, dialogs). `_onClick` finds the button's `data-act` in
+  them (`actionMap()` joins the tables and refuses a name in two) and calls `handler(el, { a, label, need, ev })`.
+  A new button: its `data-act` and a handler in the table of its view. Static rules: every action named by a
+  button, a menu item (`act: '…'`) or the box's bar (`['…', 'mdi:…']`) has a handler, every handler is named, and
+  an undo step is made only in `_history()`.
 - Debug hooks for tests: `board._ortho` (routes, owners, hops, `vert`), `board._sbx.eng` (the sandbox engine and
   its log), `window.__fbStyle` (overrides `PROTO()` layout switches).
