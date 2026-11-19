@@ -167,6 +167,9 @@ jobs:
     if: github.event_name == 'schedule' || inputs.only == 'all' || inputs.only == 'pictures'
     name: README pictures
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -186,7 +189,25 @@ jobs:
           sh tests/setup.sh
           npx playwright install --with-deps chromium
       - name: Take them again and compare
+        id: shots
         run: sh tests/shots.sh
+      # The README's pictures are the ones taken here: fonts are drawn a little differently on every machine, so
+      # pictures taken anywhere else never match exactly. When the board has changed what they show, the new ones go
+      # to the branch readme-pictures, and the issue links to the comparison: GitHub shows each picture before and
+      # after; open a pull request from it to take them.
+      - name: New pictures to the readme-pictures branch
+        id: branch
+        if: failure() && steps.shots.outcome == 'failure' && hashFiles('tests/.results/shots/board.png') != ''
+        run: |
+          for f in docs/images/*.png; do n=$(basename "$f"); [ -f "tests/.results/shots/$n" ] && cp "tests/.results/shots/$n" "$f"; done
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B readme-pictures
+          git add docs/images
+          git commit -m "README pictures, taken again by the weekly run" -m "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          git push -f origin readme-pictures
+          echo "compare=${{ github.server_url }}/${{ github.repository }}/compare/main...readme-pictures?expand=1" >> "$GITHUB_OUTPUT"
+          echo "New pictures: ${{ github.server_url }}/${{ github.repository }}/compare/main...readme-pictures?expand=1" >> "$GITHUB_STEP_SUMMARY"
       - name: The new pictures, their differences and the logs
         if: failure()
         uses: actions/upload-artifact@v4
@@ -201,4 +222,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           run="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          sh .github/issue.sh docs "The README's pictures are out of date" "The weekly run took the README's screenshots again and some no longer match docs/images. The run's artifact has the new pictures and a picture of each difference: $run"
+          link="${{ steps.branch.outputs.compare }}"
+          if [ -n "$link" ]; then body="The weekly run took the README's screenshots again and some no longer match docs/images. The new ones are on the branch readme-pictures; see each before and after, and open a pull request to take them: $link (run: $run)"
+          else body="The weekly run couldn't take the README's screenshots: $run"; fi
+          sh .github/issue.sh docs "The README's pictures are out of date" "$body"

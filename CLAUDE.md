@@ -22,7 +22,8 @@ function out in a sandbox. Published through HACS. Read this before changing any
 - `tests/`: everything below. `scripts/`: `bump.js` (version), `gen_sandbox_triggers.py` (see Sandbox),
   `demo_requirements.py` (what `setup.sh` installs before Home Assistant first starts).
 - `docs/images/`: the README's screenshots, taken by `tests/e2e/screens.js` on a fresh test Home Assistant
-  (`sh tests/shots.sh` takes them and compares them with these; weekly in CI).
+  in CI (weekly, or by hand: Actions → Weekly → pictures). When they change, the job pushes the new ones to the
+  branch `readme-pictures` to take by pull request; don't commit pictures taken locally (fonts differ by machine).
 
 ## Testing (do this for every change)
 
