@@ -206,6 +206,15 @@ check('A4 MQTT: the board listens; a message is published only by the person\'s 
   check('the board sets no timer of its own: every wait goes through this._clock', raw.length === 0, raw);
 }
 
+// 0.10.0: every mutant's text is in its file exactly once, checked on every push (the mutants themselves run weekly,
+// and a change to the code they break would otherwise only show then)
+{
+  const root = path.join(__dirname, '..');
+  const ms = JSON.parse(fs.readFileSync(path.join(root, 'tests', 'mutants.json'), 'utf8'));
+  const stale = ms.filter((x) => { try { return fs.readFileSync(path.join(root, x.file), 'utf8').split(x.find).length !== 2; } catch (e) { return true; } }).map((x) => x.name);
+  check('every mutant in tests/mutants.json still finds its text, once', ms.length > 30 && stale.length === 0, stale);
+}
+
 // 0.9.1: the real-HA suites are split between two CI jobs by --only patterns: a suite added to run.sh must be in
 // exactly one, or it never runs in CI (or runs twice)
 {

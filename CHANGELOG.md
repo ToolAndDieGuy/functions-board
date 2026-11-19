@@ -11,6 +11,14 @@ Fixed: a board taken off the page (another sidebar entry opened, a dashboard vie
 in the background, and could show a message, for up to a minute afterwards. Now everything the board waits on
 stops when it leaves the page, and starts again when it's back.
 
+## 0.9.2 (2026-11-19)
+
+Fixed: a function another admin made could be deleted from the shared store. If you left the board and came back to
+it within ten minutes in the same browser tab, the board reused the lists of labels and entities it had fetched
+before you left. A function made on another device in the meantime wasn't in those lists, so the board dropped it
+from the list of functions and deleted its layout for everyone. The board now fetches the lists again whenever the
+old ones don't know every function in the shared store.
+
 ## 0.9.1 (2026-11-18)
 
 Fixed: the sandbox got **and**, **or** and **not** conditions wrong (since 0.7.0). An "and" passed as soon as its

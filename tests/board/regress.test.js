@@ -708,6 +708,27 @@ test('0.9.1 an arrow\'s choices come in the same order every time, whatever orde
   check('0.9.1 an arrow\'s choices come in one order, whatever order Home Assistant lists them in (they were in its order, which changes)', JSON.stringify(a) === JSON.stringify(b) && a.length >= 4, { a, b });
 });
 
+test('0.9.2 a board started on another board\'s registries keeps a function made elsewhere since', async ({ browser, fake }) => {
+  const { page } = await imported(browser);
+  await openFn(page, /garage/i);
+  // this board closes (you go to another page in Home Assistant); its registries stay for the next board in this tab
+  await page.evaluate(() => { document.querySelector('functions-board').remove(); });
+  // meanwhile another admin, on another device, makes a function: a new label, on the list, with a layout
+  const lid = 'fb_elsewhere';
+  fake.labels.push({ label_id: lid, name: 'Made elsewhere', icon: 'mdi:star', color: null, description: null, created_at: Date.now() / 1000, modified_at: Date.now() / 1000 });
+  const layout = { nodes: { 'automation.garage_left_open': { x: 10, y: 20 } }, notes: [{ id: 'n1', text: 'from the other board', x: 0, y: 0 }] };
+  fake.store.data = Object.assign({}, fake.store.data, { functions: fake.store.data.functions.concat([lid]), layouts: Object.assign({}, fake.store.data.layouts, { [lid]: layout }) });
+  fake.store.revs = Object.assign({}, fake.store.revs, { [lid]: 1 });
+  // you come back to the board within a few minutes: a new board element in the same tab
+  await page.evaluate(() => window.__fbAttach());
+  await until(() => el(page, (b) => !!(b._data && !b._booting) || null), 10000);
+  await fake.idle(800);
+  const kept = fake.store.data.layouts[lid], listed = fake.store.data.functions.includes(lid);
+  check('0.9.2 the other board\'s function and its layout are still in the store', !!kept && listed && JSON.stringify(kept) === JSON.stringify(layout), { listed, kept });
+  check('0.9.2 ... and this board shows it', await until(() => el(page, (b, l) => b._data.functions.includes(l) || null, lid), 5000), await el(page, (b) => b._data.functions));
+  check('0.9.2 warm registries: no errors', page.logs.length === 0, page.logs);
+});
+
 test('0.9.1 a focused box keeps focus when the board is drawn again around it', async ({ browser }) => {
   const { page } = await imported(browser);
   await openFn(page, /garage/i);
