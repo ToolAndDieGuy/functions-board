@@ -73,6 +73,7 @@ parallel (`tests/board.config.js`, one worker per CPU).
 | `board/regress.test.js` | the regress cases that need only the board (named by version, like `e2e/regress.test.js`) |
 | `board/snapshots.test.js` | every view's shadow DOM as text, compared with `board/snapshots/<view>.txt` (taken from 0.9.1, before the rebuild); `FB_SNAP_UPDATE=1` records them again, on purpose, in the commit that changes what's shown |
 | `board/leak.test.js` | the board taken off the page and put back 50 times: no subscription, interval, running timer or window listener left, every board let go (garbage collected), the 50th asking no more than the 2nd |
+| `board/draw.test.js` | `morph()`, which draws the board's views in place: the same result as innerHTML, elements kept with their focus, scroll and listeners, form fields, SVG |
 
 ### Layer 4: a real Home Assistant
 

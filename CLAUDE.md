@@ -82,6 +82,7 @@ returns everything the library section defines.
 | `tests/board/regress.test.js [FB_ONLY]` | the regress cases the fake can show, named by version |
 | `tests/board/snapshots.test.js` | every view's shadow DOM as text against `tests/board/snapshots/` (from 0.9.1): what the rebuild must keep; `FB_SNAP_UPDATE=1` records a change on purpose |
 | `tests/board/leak.test.js` | the board taken off and put back 50 times: nothing left subscribed, running or listening, every board let go |
+| `tests/board/draw.test.js` | `morph()` in a real page: what innerHTML would make, elements kept by what they are (focus, scroll and listeners with them), form fields, SVG |
 | `tests/e2e/apitest.py` | backend over the real API (setup, websocket commands, store, non-admin, config flow) |
 | `tests/e2e/isolation.test.js` | a test that changes Home Assistant and fails half way leaves nothing behind for the next |
 | `tests/e2e/contract.test.js` | the fake answers as the real Home Assistant does (read commands, changes, the snapshot) |
@@ -219,5 +220,12 @@ returns everything the library section defines.
   A new button: its `data-act` and a handler in the table of its view. Static rules: every action named by a
   button, a menu item (`act: '…'`) or the box's bar (`['…', 'mdi:…']`) has a handler, every handler is named, and
   an undo step is made only in `_history()`.
+- **Drawing** (0.10.0, `morph()` in the library section, `this._put(el, html)`): the list, the header, the boxes, the
+  box's and the arrow's bars, the Key and the drawer are drawn by updating what's on the page: an element still in
+  the HTML stays (matched by tag and `data-key`/`data-id`/`data-label`/`data-fn`/`data-act`/`data-tid`/`data-e`/
+  `data-i`, else by tag in order), so focus, a scrolled place and listeners stay with it; a form field gets the
+  value its HTML gives unless it has focus; an `<svg>`'s content is put whole. Give a new repeated element a
+  `data-key` (or one of the others) so it's matched by what it is. Dialogs, menus and the arrows' SVG are still
+  put whole with `innerHTML`. A static rule holds the working views to `_put`.
 - Debug hooks for tests: `board._ortho` (routes, owners, hops, `vert`), `board._sbx.eng` (the sandbox engine and
   its log), `window.__fbStyle` (overrides `PROTO()` layout switches).
