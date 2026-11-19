@@ -6,8 +6,8 @@
   "scripts": {
     "setup": "sh tests/setup.sh",
     "start-ha": "sh tests/start-ha.sh",
-    "test": "sh tests/run-all.sh",
-    "test:e2e": "sh tests/run-all.sh --e2e"
+    "test": "sh tests/run.sh",
+    "test:e2e": "sh tests/run.sh --ha"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",

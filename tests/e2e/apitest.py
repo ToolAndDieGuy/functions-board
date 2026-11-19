@@ -15,7 +15,7 @@ try:
 except OSError:
     INSTANCE = "test"
 CREDS = os.path.join(STATE, "creds.json" if INSTANCE == "test" else f"creds-{INSTANCE}.json")
-# the running instance's config folder (run-all.sh sets FB_HA_CONFIG; by hand, it follows tests/start-ha.sh)
+# the running instance's config folder (run.sh sets FB_HA_CONFIG; by hand, it follows tests/start-ha.sh)
 HA_CONFIG = os.environ.get("FB_HA_CONFIG") or os.path.join(HERE, "..", "..", "ha-demo" if INSTANCE == "demo" else "ha", "config")
 results = []
 

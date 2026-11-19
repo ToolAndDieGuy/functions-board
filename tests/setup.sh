@@ -78,4 +78,4 @@ if want "$MODE" backend && [ ! -x venvtest/bin/pytest ]; then
   uv pip install --python venvtest/bin/python "pytest-homeassistant-custom-component==$PHCC" home-assistant-frontend
 fi
 
-echo "== ready. Start Home Assistant with: sh tests/start-ha.sh   then run: sh tests/run-all.sh --e2e"
+echo "== ready. Run the tests with: sh tests/run.sh   (and everything, on a fresh Home Assistant: sh tests/run.sh --ha)"
