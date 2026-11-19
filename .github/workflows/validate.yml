@@ -10,6 +10,15 @@ on:
 permissions:
   contents: read
 
+# The test layers (tests/README.md) as parallel jobs, so a push is done in about the time of the slowest one:
+#   Board script                              rules on the source, the library, the self-test (seconds)
+#   Backend unit tests                        the Python side
+#   The board on a fake Home Assistant        layer 3, every core in parallel
+#   Browser suites on a real Home Assistant   layer 4, one suite at a time; in two jobs, each with its own Home
+#   (and ", part 2")                          Assistant, half the suites each, so neither takes long
+# Every job's results come from tests/lib/report.js and show in the job's summary; reports are kept as artifacts.
+# A browser test that fails is run once more (CI is set): one that passes then is listed as flaky, not hidden.
+
 jobs:
   marketplace:
     name: Marketplace (HACS) checks
@@ -53,6 +62,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: tests/setup.sh
       - name: Set up (versions as in tests/setup.sh)
         run: |
           uv venv --python 3.14 venvtest
@@ -66,6 +78,35 @@ jobs:
           name: results-backend
           path: tests/.results/
 
+  fake:
+    name: The board on a fake Home Assistant
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Node packages
+        run: npm ci --no-audit --no-fund
+      - name: Playwright's Chromium (cached by its version)
+        id: pwcache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - name: Chromium and its libraries
+        run: npx playwright install --with-deps chromium
+      - name: Self-test and the board suites (in parallel)
+        run: sh tests/run.sh --only 'selftest|board-'
+      - name: Test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: results-fake
+          path: tests/.results/
+
   e2e:
     name: Browser suites on a real Home Assistant
     runs-on: ubuntu-latest
@@ -75,17 +116,29 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
       - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            tests/setup.sh
+            scripts/demo_requirements.py
       - name: System libraries
         run: sudo apt-get update && sudo apt-get install -y libturbojpeg0 || sudo apt-get install -y libturbojpeg
+      - name: Playwright's Chromium (cached by its version)
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - name: Set up Home Assistant and Playwright
         run: |
+          npm ci --no-audit --no-fund
           sh tests/setup.sh
           npx playwright install --with-deps chromium
       - name: Start Home Assistant
         run: sh tests/start-ha.sh
-      - name: Run every suite
-        run: sh tests/run.sh --ha --keep --only 'selftest|board-|apitest|e2e-'
+      - name: Its half of the suites (the other half runs beside it)
+        run: sh tests/run.sh --ha --keep --only 'selftest|apitest|e2e-(isolation|contract|ui|regress|sync)$'
       - name: Home Assistant's errors
         if: failure()
         run: |
@@ -96,6 +149,53 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: e2e-failure
+          path: |
+            ha/hass.log
+            tests/e2e/.state/shots/
+            tests/.results/
+
+  e2e2:
+    name: Browser suites on a real Home Assistant, part 2
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            tests/setup.sh
+            scripts/demo_requirements.py
+      - name: System libraries
+        run: sudo apt-get update && sudo apt-get install -y libturbojpeg0 || sudo apt-get install -y libturbojpeg
+      - name: Playwright's Chromium (cached by its version)
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - name: Set up Home Assistant and Playwright
+        run: |
+          npm ci --no-audit --no-fund
+          sh tests/setup.sh
+          npx playwright install --with-deps chromium
+      - name: Start Home Assistant
+        run: sh tests/start-ha.sh
+      - name: Its half of the suites (the other half runs beside it)
+        run: sh tests/run.sh --ha --keep --only 'selftest|e2e-(tools|sandbox|versions|privacy)$'
+      - name: Home Assistant's errors
+        if: failure()
+        run: |
+          python3 --version; ha_py=$(venv314/bin/python -V); echo "Home Assistant runs on $ha_py"
+          grep -nE "ERROR|Error setting up|Setup failed|Unable to (install|prepare)|Traceback|ModuleNotFoundError|ImportError" ha/hass.log | grep -v "websocket_api.http.connection" | cut -c1-400 | head -80 || true
+      - name: Home Assistant log and screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e2-failure
           path: |
             ha/hass.log
             tests/e2e/.state/shots/

@@ -7,7 +7,10 @@ name: Weekly
 #    is found before release day (issues labelled ha-beta).
 #  - mutants: every break in tests/mutants.json, each caught by the check it names (issues labelled test-gap).
 #  - strict: everything on the pinned Home Assistant with FB_STRICT=1: no flaky test, and nothing quarantined for
-#    more than 30 days (issues labelled test-gap).
+#    more than 30 days; with the size test (1,000 automations: import and open within their time budgets)
+#    (issues labelled test-gap).
+#  - pictures: the README's screenshots taken again and compared with docs/images (tests/shots.sh), so pictures
+#    that no longer show the board as it is are noticed (issues labelled docs).
 
 on:
   schedule:
@@ -31,6 +34,9 @@ jobs:
         with:
           node-version: 22
       - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: tests/setup.sh
       - name: System libraries
         run: sudo apt-get update && sudo apt-get install -y libturbojpeg0 || sudo apt-get install -y libturbojpeg
       - name: Set up the newest Home Assistant and Playwright
@@ -86,6 +92,9 @@ jobs:
         with:
           node-version: 22
       - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: tests/setup.sh
       - name: System libraries
         run: sudo apt-get update && sudo apt-get install -y libturbojpeg0 || sudo apt-get install -y libturbojpeg
       - name: Set up (the pinned Home Assistant), Playwright, the backend venv
@@ -118,16 +127,19 @@ jobs:
         with:
           node-version: 22
       - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: tests/setup.sh
       - name: System libraries
         run: sudo apt-get update && sudo apt-get install -y libturbojpeg0 || sudo apt-get install -y libturbojpeg
       - name: Set up (the pinned Home Assistant), Playwright, the backend venv
         run: |
           sh tests/setup.sh all
           npx playwright install --with-deps chromium
-      - name: Everything, with retries, failing on any flaky test
+      - name: Everything and the size test, with retries, failing on any flaky test
         env:
           FB_STRICT: "1"
-        run: sh tests/run.sh --ha
+        run: sh tests/run.sh --ha --size
       - name: Reports
         if: failure()
         uses: actions/upload-artifact@v4
@@ -141,3 +153,40 @@ jobs:
         run: |
           run="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           sh .github/issue.sh test-gap "A flaky test, or an old quarantine" "The weekly strict run failed: a test passed only on its second try, or a check has been quarantined for more than 30 days (tests/quarantine.json). The run's summary lists which: $run"
+
+  pictures:
+    name: README pictures
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: tests/setup.sh
+      - name: System libraries
+        run: sudo apt-get update && sudo apt-get install -y libturbojpeg0 || sudo apt-get install -y libturbojpeg
+      - name: Set up (the pinned Home Assistant) and Playwright
+        run: |
+          npm ci --no-audit --no-fund
+          sh tests/setup.sh
+          npx playwright install --with-deps chromium
+      - name: Take them again and compare
+        run: sh tests/shots.sh
+      - name: The new pictures and their differences
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pictures
+          path: tests/.results/shots/
+      - name: Open an issue, or add to the open one
+        if: failure() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          sh .github/issue.sh docs "The README's pictures are out of date" "The weekly run took the README's screenshots again and some no longer match docs/images. The run's artifact has the new pictures and a picture of each difference: $run"

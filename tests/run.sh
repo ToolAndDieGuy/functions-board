@@ -32,8 +32,10 @@ want() { [ -z "$ONLY" ] || echo "$1" | grep -qE "$ONLY"; }
 run() {
   name="$1"; shift
   WANT="$WANT $name"
+  t0=$(date +%s)
   "$@" > "$R/$name.log" 2>&1
   echo $? > "$R/$name.exit"
+  echo $(( $(date +%s) - t0 )) > "$R/$name.secs"
 }
 nodetest() { run "$1" node --test --test-reporter=junit --test-reporter-destination="$R/$1.xml" --test-reporter=spec --test-reporter-destination=stdout "tests/$1.test.js"; }
 
@@ -50,9 +52,12 @@ BW=""
 for b in $BOARD; do want "board-$b" && BW="$BW board-$b"; done
 if [ -n "$BW" ]; then
   if [ "$(echo $BW | wc -w)" = "$(echo $BOARD | wc -w)" ]; then MATCH=""; else MATCH="$(echo $BW | sed 's/board-//g; s/ /|/g')"; fi
+  t0=$(date +%s)
   FB_SUITE="${MATCH:+($MATCH)}" npx playwright test -c tests/board.config.js > "$R/board.log" 2>&1
   code=$?
   for b in $BW; do WANT="$WANT $b"; echo $code > "$R/$b.exit"; done
+  # the board suites run together: their time is the whole layer's
+  echo $(( $(date +%s) - t0 )) > "$R/board.secs"
 fi
 
 if [ -n "$HA" ]; then

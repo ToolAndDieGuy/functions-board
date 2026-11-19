@@ -1,4 +1,5 @@
-// The README's screenshots, taken on the test Home Assistant's demo setup. Run apitest.py first (tokens).
+// The README's screenshots, taken on a fresh test Home Assistant: sh tests/shots.sh does it all, and compares them
+// with docs/images. By hand: node tests/e2e/hasetup.js first (tokens).
 // node tests/e2e/screens.js [name]   (name: a regular expression; only matching shots are written)
 // It resets the board, imports the demo functions and writes docs/images/<name>.png (FB_SHOTS_OUT to change).
 // Tests run for real on the test Home Assistant; the garage is put back at rest at the end.

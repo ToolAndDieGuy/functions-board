@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.9.1 (2026-11-18)
 
 Fixed: the sandbox got **and**, **or** and **not** conditions wrong (since 0.7.0). An "and" passed as soon as its
 first condition was true, an "or" passed even when none was, and a "not" let the run go on when what it held was
@@ -13,11 +13,24 @@ opened it, when the board had redrawn that button in the meantime (the function 
 changes). Focus now goes back to that button. And a box that has focus keeps it when the board is drawn again
 around it.
 
+Fixed: since 0.9.0, the bar that follows a run on the board (from Runs or the debugger) showed every step as
+"Clock to what's due" instead of what happened (Garage Door → Open, ran Garage: left open …). The saved checks'
+steps had taken over its wording.
+
 Fixed: a state set with Test → Simulate a state could lose its "simulated" mark on the box at once, when Home
 Assistant's word of the new state reached the board after its answer to setting it (more likely on a busy Home
 Assistant). The mark now stays until the device or its integration really reports again.
 
-For contributors: the test system was rebuilt as a whole (`tests/README.md`).
+Fixed: when you draw an arrow, the choices of what it means (a light turned on, turned off …) came in whatever
+order Home Assistant listed them, which changes from one start to the next. They now come in the same order every
+time.
+
+For contributors: the test system was rebuilt as a whole; `tests/README.md` explains it. One runner
+(`sh tests/run.sh`) whose result comes from the reports, with a self-test proving a failure can't pass unseen; a
+fresh, isolated Home Assistant for every run; the board tested on a fake Home Assistant, in parallel, kept honest
+by a contract test against the real one; mutants (`tests/mutants.json`) proving each check can fail, which found
+the bugs above; flaky tests reported rather than hidden; and weekly runs against Home Assistant's beta, every
+mutant, a strict run with the size budget, and the README's pictures (retaken for this release).
 
 ## 0.9.0 (2026-11-18)
 

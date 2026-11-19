@@ -21,7 +21,8 @@ function out in a sandbox. Published through HACS. Read this before changing any
     toolbar actions (one `switch` on `data-act` in `_onClick`), storage and sync.
 - `tests/`: everything below. `scripts/`: `bump.js` (version), `gen_sandbox_triggers.py` (see Sandbox),
   `demo_requirements.py` (what `setup.sh` installs before Home Assistant first starts).
-- `docs/images/`: the README's screenshots, taken by `tests/e2e/screens.js` from the demo setup.
+- `docs/images/`: the README's screenshots, taken by `tests/e2e/screens.js` on a fresh test Home Assistant
+  (`sh tests/shots.sh` takes them and compares them with these; weekly in CI).
 
 ## Testing (do this for every change)
 
@@ -131,8 +132,10 @@ returns everything the library section defines.
   stack of PRs bump only in the last one (the others write under `## Unreleased`). It releases only the tip of
   `main`, so quick merges in a row release once.
   Work on branches with PRs; stacked PRs merge in order.
-- CI (`.github/workflows/validate.yml`) runs the HACS action, hassfest, the quick tests, the backend tests and
-  the browser suites on every push. `.github/workflows/weekly.yml` runs weekly: against Home Assistant's newest
+- CI (`.github/workflows/validate.yml`) runs the layers as parallel jobs on every push (`tests/README.md`, "In
+  CI"): the HACS action, hassfest, the quick tests, the backend tests, the board on the fake, and the real-HA suites
+  split over two jobs (a new suite goes into one of their `--only` patterns; a static rule checks). Main requires
+  them all. `.github/workflows/weekly.yml` runs weekly: against Home Assistant's newest
   release, betas included (`FB_HA=beta sh tests/setup.sh` does the same locally; it also checks the sandbox has
   every per-entity trigger it has, `gen_sandbox_triggers.py --check`, and integrations it can't import keep their
   entries; issues labelled `ha-beta`), every mutant (`node tests/mutants.js --ha`), and everything with

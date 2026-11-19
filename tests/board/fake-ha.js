@@ -175,6 +175,8 @@ class FakeHA {
 
   async ws(m) {
     const ent = (id) => this.entities.get(id);
+    // a test's own answer for one message type (a value, or a function of the message): fake.answers[type]
+    if (this.answers && Object.prototype.hasOwnProperty.call(this.answers, m.type)) { const a = this.answers[m.type]; return clone(typeof a === 'function' ? a(m) : a); }
     switch (m.type) {
       // registries
       case 'config/entity_registry/list': return [...this.entities.values()];

@@ -245,6 +245,31 @@
   "expect": "and: needs every condition"
  },
  {
+  "name": "board: an arrow's trigger choices in Home Assistant's order",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "filter((t) => ok((this._trigDesc || {})[t])).sort().forEach(",
+  "replace": "filter((t) => ok((this._trigDesc || {})[t])).forEach(",
+  "suite": "board-regress",
+  "only": "0.9.1 an arrow",
+  "expect": "choices come in one order"
+ },
+ {
+  "name": "board: the saved checks' step text takes the name of the runs' one again",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "    _chkStepText(s) {",
+  "replace": "    _stepText(s) {",
+  "suite": "static",
+  "expect": "no method of the board is defined twice"
+ },
+ {
+  "name": "CI: a real-HA suite left out of both jobs",
+  "file": ".github/workflows/validate.yml",
+  "find": "e2e-(isolation|contract|ui|regress|sync)$",
+  "replace": "e2e-(isolation|contract|ui|regress)$",
+  "suite": "static",
+  "expect": "every real-HA suite runs in exactly one CI job"
+ },
+ {
   "name": "isolation: an automation a test added is left behind",
   "file": "tests/e2e/ha-api.js",
   "find": "if (!(id in snap.autos)) { await rest('DELETE'",

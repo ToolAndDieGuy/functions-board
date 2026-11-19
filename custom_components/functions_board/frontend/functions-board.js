@@ -1,5 +1,5 @@
 /*!
- * Functions board v0.9.0 (prototype) for Home Assistant
+ * Functions board v0.9.1 (prototype) for Home Assistant
  *
  * One page per "function": every automation, script, helper and device that makes one job work,
  * grouped by a Home Assistant label and wired together from their own configs.
@@ -13,7 +13,7 @@
  */
 (() => {
   'use strict';
-  const VERSION = '0.9.0';
+  const VERSION = '0.9.1';
   const loaded = customElements.get('functions-board');
   if (loaded) {
     if (loaded.VERSION !== VERSION) {
@@ -9657,11 +9657,11 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           else if (k.startsWith('nact:')) { const b = this._buttonEvent(this._model.nodes.get(k)); out.push({ kind, text: T('pressing_it_triggers_it'), item: { trigger: 'event', event_type: b.event_type, event_data: b.event_data } }); }
           else {
             out.push({ kind, text: T('it_changes_state'), state: 'to', item: { trigger: 'state', entity_id: k } });
-            ((await get('get_triggers_for_target')) || []).filter((t) => ok((this._trigDesc || {})[t])).forEach((t) => out.push({ kind, text: names[t] || humanize(t), item: { trigger: t, target: { entity_id: k } } }));
+            ((await get('get_triggers_for_target')) || []).filter((t) => ok((this._trigDesc || {})[t])).sort().forEach((t) => out.push({ kind, text: names[t] || humanize(t), item: { trigger: t, target: { entity_id: k } } }));
           }
         } else if (kind === 'condition') {
           out.push({ kind, text: T('its_state_is'), state: 'state', item: { condition: 'state', entity_id: k, state: '' } });
-          ((await get('get_conditions_for_target')) || []).filter((t) => ok((this._condDesc || {})[t])).forEach((t) => out.push({ kind, text: names[t] || humanize(t), item: { condition: t, target: { entity_id: k } } }));
+          ((await get('get_conditions_for_target')) || []).filter((t) => ok((this._condDesc || {})[t])).sort().forEach((t) => out.push({ kind, text: names[t] || humanize(t), item: { condition: t, target: { entity_id: k } } }));
         } else if (kind === 'call') {
           out.push({ kind, text: T('it_runs_it'), item: { action: k }, fields: await this._scriptFields(k).then((fs) => fs.filter((f) => f.required)) });
         } else if (kind === 'action') {
@@ -10321,7 +10321,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     }
     _sbxRec(step) { const g = this._sbx; if (g && g.rec) g.rec.steps.push(step); }
     _checkName(k) { return this._model && this._model.nodes.has(k) ? this._model.nodes.get(k).name : this._nameOf(k); }
-    _stepText(s) {
+    _chkStepText(s) {
       const nm = (k) => esc(this._checkName(k));
       if (s.op === 'set') return T('chk_s_set', { name: nm(s.id), state: esc(s.state) });
       if (s.op === 'event') return T('chk_s_event', { type: esc(s.type) });
@@ -10357,7 +10357,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (soft && box.dataset.sig === sig) return;
       box.dataset.sig = sig;
       const mark = (c) => { const r = res.get(c.id); if (!r) return `<span class="ckst muted" title="${T('chk_not_run')}">·</span>`; if (r.unsure) return `<span class="ckst unsure" title="${esc(r.unsure)}">?</span>`; return r.ok ? `<span class="ckst ok" title="${T('chk_passes')}">&#10003;</span>` : `<span class="ckst bad" title="${T('chk_fails')}">&#10005;</span>`; };
-      const row = (c) => `<div class="ckrow" data-id="${esc(c.id)}">${mark(c)}<span class="ckname" title="${esc(c.steps.map((x) => this._stepText(x).replace(/<[^>]+>/g, '')).join(' → '))}">${esc(c.name)}</span><button class="ib" data-act="chk-run" data-id="${esc(c.id)}" title="${T('chk_run_t')}"><ha-icon icon="mdi:play-circle-outline"></ha-icon></button><button class="ib" data-act="chk-replay" data-id="${esc(c.id)}" title="${T('chk_replay_t')}"><ha-icon icon="mdi:movie-open-play-outline"></ha-icon></button><button class="ib" data-act="chk-del" data-id="${esc(c.id)}" title="${T('chk_del_t')}"><ha-icon icon="mdi:delete-outline"></ha-icon></button></div>`;
+      const row = (c) => `<div class="ckrow" data-id="${esc(c.id)}">${mark(c)}<span class="ckname" title="${esc(c.steps.map((x) => this._chkStepText(x).replace(/<[^>]+>/g, '')).join(' → '))}">${esc(c.name)}</span><button class="ib" data-act="chk-run" data-id="${esc(c.id)}" title="${T('chk_run_t')}"><ha-icon icon="mdi:play-circle-outline"></ha-icon></button><button class="ib" data-act="chk-replay" data-id="${esc(c.id)}" title="${T('chk_replay_t')}"><ha-icon icon="mdi:movie-open-play-outline"></ha-icon></button><button class="ib" data-act="chk-del" data-id="${esc(c.id)}" title="${T('chk_del_t')}"><ha-icon icon="mdi:delete-outline"></ha-icon></button></div>`;
       box.innerHTML = this._ver ? '' : `<div class="ckhead"><span>${P('chk_n', list.length)}</span>${list.length ? `<button class="ib" data-act="chk-run" title="${T('chk_run_all_t')}"><ha-icon icon="mdi:play-box-multiple-outline"></ha-icon></button>` : ''}<button class="chip" data-act="chk-save"${can ? '' : ' disabled'} title="${can ? T('chk_save_t') : T('chk_save_none')}"><ha-icon icon="mdi:content-save-check-outline"></ha-icon>${T('chk_save')}</button></div>${list.map(row).join('')}`;
     }
     _checkSaveDlg() {
@@ -10367,8 +10367,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._chkDraft = { sug };
       m.hidden = false;
       m.innerHTML = `<div class="dlg ckdlg"><h3>${T('chk_save_h')}</h3><p class="dtext">${T('chk_save_lead')}</p>`
-        + `<label>${T('chk_name')}<input name="ckname" maxlength="160" value="${esc(this._stepText(g.rec.steps[0]).replace(/<[^>]+>/g, ''))}"></label>`
-        + `<h4>${T('chk_steps_h')}</h4><ol class="cksteps">${g.rec.steps.map((x) => `<li>${this._stepText(x)}</li>`).join('')}</ol>`
+        + `<label>${T('chk_name')}<input name="ckname" maxlength="160" value="${esc(this._chkStepText(g.rec.steps[0]).replace(/<[^>]+>/g, ''))}"></label>`
+        + `<h4>${T('chk_steps_h')}</h4><ol class="cksteps">${g.rec.steps.map((x) => `<li>${this._chkStepText(x)}</li>`).join('')}</ol>`
         + `<h4>${T('chk_expect_h')}</h4>${sug.length ? sug.map((s, i) => `<label class="chk"><input type="checkbox" name="ckx" value="${i}"${s.on ? ' checked' : ''}>${this._expText(s.x)}</label>`).join('') : `<p class="muted">${T('chk_expect_none')}</p>`}`
         + `<div class="dval"></div><div class="btns"><button data-act="modal-cancel">${T('cancel')}</button><button class="primary" data-act="chk-save-go">${T('chk_save_b')}</button></div></div>`;
       const n = m.querySelector('input[name="ckname"]'); if (n) { n.focus(); n.select(); }

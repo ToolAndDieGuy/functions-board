@@ -21,7 +21,7 @@ The tests are layers. Each one tests what the layer below can't, and is as fast 
 | 2. Units | `wiring`, `problems`, `sandbox` `.test.js`; `backend/` | Node; pytest | the board's library (pure functions) and the Python side, case by case |
 | 3. The board | `board/` | Chromium, a fake Home Assistant | everything the board draws and does, in parallel, in seconds per test |
 | 4. Home Assistant | `e2e/` | Chromium, a real Home Assistant | what only the real thing can show: its API, its frontend, templates, isolation, privacy |
-| 5. Weekly | `.github/workflows/weekly.yml` | a real Home Assistant (pinned, and the newest beta) | Home Assistant changing under us; checks that went blind (mutants); flaky tests |
+| 5. Weekly | `.github/workflows/weekly.yml` | a real Home Assistant (pinned, and the newest beta) | Home Assistant changing under us; checks that went blind (mutants); flaky tests; the size budget; README pictures out of date |
 
 A check belongs in the lowest layer that can make it fail. A layout rule is a board test, not a Home Assistant
 test; how `analyze()` reads one automation shape is a unit test, not a board test.
@@ -103,6 +103,27 @@ days old, or one whose check isn't there any more.
 
 A failed browser test keeps the traces of its browser contexts: `npx playwright show-report tests/.results/html-<suite>`
 (real Home Assistant) or `tests/.results/htmlb-<suite>` (the fake). Every check prints its detail in `<suite>.log`.
+
+## In CI
+
+`.github/workflows/validate.yml` runs the layers as parallel jobs on every push and pull request; main requires
+them all to pass:
+
+| Job | What | Time |
+|---|---|---|
+| Board script | self-test, rules, library units (`selftest\|static\|wiring\|problems\|sandbox`) | about 1 min |
+| Backend unit tests | the Python side, in `venvtest` | about 1 min |
+| The board on a fake Home Assistant | `selftest\|board-`, every core | about 3 min |
+| Browser suites on a real Home Assistant | apitest, isolation, contract, ui, regress, sync, one at a time | about 7 min |
+| Browser suites on a real Home Assistant, part 2 | tools, sandbox, versions, privacy, on a Home Assistant of its own | about 7 min |
+| Marketplace (HACS) checks, hassfest | Home Assistant's and HACS's own checks | about 1 min |
+
+The two real-HA jobs split the suites between them (a rule in `static.test.js` checks each suite is in exactly
+one). uv's downloads, npm's and Playwright's Chromium are cached between runs. Each job's summary shows the report
+(`summary.md`: results, times, flaky tests, quarantined checks), and its `tests/.results/` is kept as an artifact.
+
+`.github/workflows/weekly.yml` runs once a week (and by hand): the beta, mutants, strict (with the size test) and
+README pictures jobs. None is a required check; a failure opens or adds to an issue.
 
 ## Adding a test
 
