@@ -12,7 +12,7 @@ FB_FRESH=1 sh tests/setup.sh ${FB_SHOTS_ON:-test} > "$R/shots-setup.log" 2>&1 ||
 sh tests/start-ha.sh ${FB_SHOTS_ON:-test} || exit 1
 node tests/e2e/hasetup.js > "$R/shots-hasetup.log" 2>&1 || { cat "$R/shots-hasetup.log"; exit 1; }
 rm -rf "$R/shots"; mkdir -p "$R/shots"
-FB_SHOTS_OUT="$R/shots" node tests/e2e/screens.js > "$R/e2e-shots.log" 2>&1
+FONTCONFIG_FILE="$PWD/tests/e2e/fonts.conf" FB_SHOTS_OUT="$R/shots" node tests/e2e/screens.js > "$R/e2e-shots.log" 2>&1
 echo $? > "$R/e2e-shots.exit"
 node tests/e2e/shotcompare.js "$R/shots" >> "$R/e2e-shots.log" 2>&1
 sh tests/start-ha.sh stop > /dev/null
