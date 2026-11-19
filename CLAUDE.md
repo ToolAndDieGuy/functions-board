@@ -18,8 +18,10 @@ function out in a sandbox. Published through HACS. Read this before changing any
     `condText`), layout (`layeredOnce`, `layered`), arrow routing (`arrowGeo`, `orthoAll`, `laneSpread`,
     `untangle`, `busDots`, `hopsOf`), the **sandbox engine** (`class Sandbox`, `sbxEffect`, `sbxRewrite`,
     `SBX_PRELUDE`, `SBX_ETRIG`), the English text table (`T()`, `P()` for plurals);
-  - then `class FunctionsBoard extends HTMLElement`: rendering, the drawer modes (pages, debug, sandbox), the
-    actions (`_actionTables()`: one table per view from `data-act` to its handler), storage and sync.
+  - then `class FunctionsBoard extends HTMLElement`, in parts (`PARTS`): core (start and stop, data and sync, the
+    store's maps, drawing the board, the drawer, the actions in `_actionTables()`, undo), then list, functions,
+    manager, problems, tools, debug, arrows, sandbox, versions, nodered and diagnostics, each a block under a
+    `part:` heading.
 - `tests/`: everything below. `scripts/`: `bump.js` (version), `gen_sandbox_triggers.py` (see Sandbox),
   `demo_requirements.py` (what `setup.sh` installs before Home Assistant first starts).
 - `docs/images/`: the README's screenshots, taken by `tests/e2e/screens.js` on a fresh test Home Assistant
@@ -227,5 +229,12 @@ returns everything the library section defines.
   value its HTML gives unless it has focus; an `<svg>`'s content is put whole. Give a new repeated element a
   `data-key` (or one of the others) so it's matched by what it is. Dialogs, menus and the arrows' SVG are still
   put whole with `innerHTML`. A static rule holds the working views to `_put`.
+- **Parts** (0.10.0, `PARTS` in the library section): the board's class is in blocks, one per part, each under a
+  `part: <name>:` heading. A part's own state (`owns`) is used only by its own methods and its view's action table;
+  another part asks one of its methods (`_probCount`, `_watching`, `_dbgNote`, `_nrState` …). What no part owns is
+  the shared state of core: the store and its maps, the open function and model, the board's modes (`_ver`,
+  `_sbx`, `_lit`, `_linking` …) and the page. A new method goes in the block of its part; new state of a part goes
+  in its `owns`. `_onChange`/`_onInput` ask each part's `_<part>Change(t)`/`_<part>Input(t)` in turn. Static rules:
+  every method is in a part, no part uses another's state, no state is owned by two parts.
 - Debug hooks for tests: `board._ortho` (routes, owners, hops, `vert`), `board._sbx.eng` (the sandbox engine and
   its log), `window.__fbStyle` (overrides `PROTO()` layout switches).

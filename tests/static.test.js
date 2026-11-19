@@ -269,6 +269,36 @@ check('A4 MQTT: the board listens; a message is published only by the person\'s 
   check('the list, header, boxes, bar, Key and drawer are drawn in place (_put), not replaced (innerHTML)', whole.length === 0 && (cls.match(/this\._put\(/g) || []).length >= 25, whole);
 }
 
+// 0.10.0: the board's parts (PARTS in the library section): each part's own state is used only by its own methods
+// (and by its view's action table); every method is in a part's block; _init declares the state and _relang clears it
+{
+  const { PARTS } = require('./lib/board-lib');
+  const start = src.indexOf('  class FunctionsBoard extends HTMLElement'), cls = src.slice(start);
+  const lines = cls.split('\n'), at = (i) => src.slice(0, start).split('\n').length + i;
+  const owner = new Map();
+  Object.entries(PARTS).forEach(([p, d]) => d.owns.forEach((f) => owner.set(f, p)));
+  const tablePart = new Map(Object.entries(PARTS).filter(([, d]) => d.table).map(([p, d]) => [d.table, p]));
+  let part = null, method = null, table = null;
+  const bad = [], outside = [], seenParts = new Set();
+  lines.forEach((l, i) => {
+    const h = /^ {7}part: ([a-z]+):/.exec(l);
+    if (h) { part = h[1]; seenParts.add(part); return; }
+    const m = /^ {4}(?:async |get |set |static )?([_a-zA-Z$][\w$]*)\s*\([^)]*\)\s*\{/.exec(l);
+    if (m) { method = m[1]; table = null; if (!part) outside.push(method); }
+    if (method === '_actionTables') { const t = /^ {8}([a-z]+): \{$/.exec(l); if (t) table = t[1]; }
+    if (!method || method === '_init' || method === '_relang' || method === 'constructor') return;
+    const who = method === '_actionTables' && table ? tablePart.get(table) || 'core' : part;
+    for (const x of l.matchAll(/this\.(_[a-zA-Z$][\w$]*)\b(?!\s*\()/g)) {
+      const o = owner.get(x[1]);
+      if (o && o !== who) bad.push(`${x[1]} (${o}'s) in ${method} (${who}), line ${at(i)}`);
+    }
+  });
+  check('the board\'s class is in parts, every method in one, each part in PARTS (or core)', outside.length === 0 && seenParts.has('core') && Object.keys(PARTS).every((p) => seenParts.has(p)) && [...seenParts].every((p) => p === 'core' || PARTS[p]), { outside, seenParts: [...seenParts] });
+  check('a part\'s own state is used only by its own methods and its view\'s actions', bad.length === 0, bad.slice(0, 10));
+  const twice = [...owner.keys()].filter((f) => Object.values(PARTS).filter((d) => d.owns.includes(f)).length > 1);
+  check('no state is owned by two parts', twice.length === 0, twice);
+}
+
 // 0.10.0: every mutant's text is in its file exactly once, checked on every push (the mutants themselves run weekly,
 // and a change to the code they break would otherwise only show then)
 {

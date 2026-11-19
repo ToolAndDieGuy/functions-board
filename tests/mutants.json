@@ -635,6 +635,39 @@
   "expect": "drawn in place"
  },
  {
+  "name": "parts: one part reads another's state",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "    _closeModal() { this._$.modal.hidden = true;",
+  "replace": "    _closeModal() { if (this._mgr) this._mgr.closed = true; this._$.modal.hidden = true;",
+  "suite": "static",
+  "expect": "a part's own state is used only by its own methods"
+ },
+ {
+  "name": "parts: two parts own the same state",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "    list: { owns: ['_findQ'], table: 'list' },",
+  "replace": "    list: { owns: ['_findQ', '_mgr'], table: 'list' },",
+  "suite": "static",
+  "expect": "no state is owned by two parts"
+ },
+ {
+  "name": "parts: a method outside every part",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "    /* ======================================================================================================\n       part: core:",
+  "replace": "    _stray() { return 1; }\n    /* ======================================================================================================\n       part: core:",
+  "suite": "static",
+  "expect": "every method in one"
+ },
+ {
+  "name": "board: a box turned off since the board was built keeps its old problems",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      if (m.probSig != null && !this._ver && this._probSig(m, this._hass.states) !== m.probSig) {",
+  "replace": "      if (false) {",
+  "suite": "board-regress",
+  "only": "0.10.0 an automation turned off",
+  "expect": "0.10.0 turned off, its warning shows"
+ },
+ {
   "name": "isolation: an automation a test added is left behind",
   "file": "tests/e2e/ha-api.js",
   "find": "if (!(id in snap.autos)) { await rest('DELETE'",
