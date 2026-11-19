@@ -14,8 +14,9 @@ const R = process.env.FB_RESULTS || path.join(__dirname, '..', '.results');
 // a pixel differs when any channel is more than TOL out of 255; a picture differs when more than SHARE of them do
 const TOL = 24, SHARE = 0.01;
 // pictures with a part Home Assistant doesn't hold still: the debugger lists events of the same instant in the order
-// they arrive, which changes from run to run
-const LOOSE = { 'debug.png': 0.06 };
+// they arrive, which changes from run to run (two CI runs of the same code: 17% of debug.png differed), so for it only
+// its size and a large change count
+const LOOSE = { 'debug.png': 0.35 };
 
 const raw = async (f) => { const { data, info } = await sharp(f).ensureAlpha().raw().toBuffer({ resolveWithObject: true }); return { data, w: info.width, h: info.height }; };
 
