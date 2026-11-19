@@ -178,8 +178,7 @@ test('versions', async ({ browser }) => {
   // tests/mutants.json found this unchecked)
   await api(page, 'DELETE', `config/automation/config/${LEFT_ID}`);
   await until(async () => (await api(page, 'GET', `config/automation/config/${LEFT_ID}`).then(() => null, () => true)), 10000);
-  // the board reloads its registries a moment after Home Assistant says something changed
-  await until(() => el(page, (b, k) => !b._entMap.has(k) || null, LEFT), 10000);
+  // (0.10.0: no wait here for the board to reload its registries: the restore plan asks for them when it's made)
   await el(page, (b) => b._renderVersions());
   await until(async () => (await vlist(page)).some((x) => x.id === vid && x.restore) || null, 10000);
   await fbq(page, `.drawer [data-act="ver-restore"][data-id="${vid}"]`).click();

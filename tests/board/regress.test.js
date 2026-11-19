@@ -785,4 +785,42 @@ test('0.10.0 a call that fails is reported: in the Diagnostics file, anonymised 
   check('0.10.0 failure reported: no errors', page.logs.length === 0, page.logs);
 });
 
+test('0.10.0 a config read before a save isn\'t taken for the saved one', async ({ browser, fake }) => {
+  const { page } = await imported(browser);
+  await openFn(page, /garage/i);
+  const K = 'automation.garage_left_open', id = fake.states.get(K).attributes.id;
+  // the next read of its config answers what was there when it was asked, but slowly: the save lands meanwhile
+  let hold = true;
+  fake.answers = { 'automation/config': async (m) => {
+    const a = fake.answers; fake.answers = null;
+    const then = await fake.ws(m);
+    fake.answers = a;
+    if (hold && m.entity_id === K) { hold = false; await sleep(800); }
+    return then;
+  } };
+  await el(page, (b, k) => { b._store.changed('cfg:'); window.__fbRead = b._fetchConfig(k); }, K);
+  await sleep(100);
+  fake.autos[id] = Object.assign({}, fake.autos[id] || {}, { alias: 'Garage: saved since' });
+  delete fake.autoByEntity[K];
+  await fake._automationSaved(id);
+  const old = await el(page, () => window.__fbRead.then((c) => c && c.alias));
+  const now = await el(page, (b, k) => b._fetchConfig(k).then((c) => c && c.alias), K);
+  check('0.10.0 the read asked before the save answers what was there then', !!old && old !== 'Garage: saved since', old);
+  check('0.10.0 ... but isn\'t kept as the current config: the next read has the saved one', now === 'Garage: saved since', { old, now });
+  check('0.10.0 config before a save: no errors', page.logs.length === 0, page.logs);
+});
+
+test('0.10.0 a restore planned just after an automation was deleted makes it again', async ({ browser, fake }) => {
+  fake.store.mode = 'full';
+  const { page } = await imported(browser);
+  const lid = await openFn(page, /garage/i);
+  const K = 'automation.garage_left_open', id = fake.states.get(K).attributes.id;
+  await el(page, async (b, l) => { window.__fbSnap = await b._verSnapshot(l); }, lid);
+  // deleted, and the plan made at once: before the board has heard of it, or reloaded its registries
+  await fake.api('DELETE', 'config/automation/config/' + id);
+  const plan = await el(page, (b, l) => b._verPlan(l, window.__fbSnap), lid);
+  check('0.10.0 the plan made right after the delete makes the automation again (not "the same")', plan.recreate.includes(K) && !plan.same.includes(K), plan);
+  check('0.10.0 restore plan: no errors', page.logs.length === 0, page.logs);
+});
+
 pwTest.afterAll(() => done());
