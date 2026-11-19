@@ -1,0 +1,192 @@
+name: Weekly
+
+# The checks too slow or too strict for every push (layer 5 in tests/README.md). Not required checks: they run on
+# their own schedule, never on pull requests, and a failure opens an issue (or adds to the open one).
+#  - beta: against Home Assistant's newest release, betas included: the quick tests, whether its per-entity
+#    triggers changed (the sandbox copies them), and every suite on a real Home Assistant, so a breaking change
+#    is found before release day (issues labelled ha-beta).
+#  - mutants: every break in tests/mutants.json, each caught by the check it names (issues labelled test-gap).
+#  - strict: everything on the pinned Home Assistant with FB_STRICT=1: no flaky test, and nothing quarantined for
+#    more than 30 days; with the size test (1,000 automations: import and open within their time budgets)
+#    (issues labelled test-gap).
+#  - pictures: the README's screenshots taken again and compared with docs/images (tests/shots.sh), so pictures
+#    that no longer show the board as it is are noticed (issues labelled docs).
+
+on:
+  schedule:
+    - cron: "41 7 * * 3"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  beta:
+    name: Against Home Assistant's beta
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      FB_HA: beta
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: tests/setup.sh
+      - name: System libraries
+        run: sudo apt-get update && sudo apt-get install -y libturbojpeg0 || sudo apt-get install -y libturbojpeg
+      - name: Set up the newest Home Assistant and Playwright
+        run: |
+          sh tests/setup.sh
+          npx playwright install --with-deps chromium
+          echo "HA_VERSION=$(venv314/bin/python -c 'from homeassistant.const import __version__ as v; print(v)')" >> "$GITHUB_ENV"
+      - name: Quick tests
+        run: sh tests/run.sh
+      - name: Per-entity triggers still as the sandbox has them
+        run: venv314/bin/python scripts/gen_sandbox_triggers.py --check
+      - name: Start Home Assistant
+        if: success() || failure()
+        run: sh tests/start-ha.sh
+      - name: Every browser suite
+        if: success() || failure()
+        run: sh tests/run.sh --ha
+      - name: Home Assistant's errors
+        if: failure()
+        run: grep -nE "ERROR|Error setting up|Setup failed|Traceback|ModuleNotFoundError|ImportError" ha/hass.log | grep -v "websocket_api.http.connection" | cut -c1-400 | head -80 || true
+      - name: Home Assistant log and screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: beta-failure
+          path: |
+            ha/hass.log
+            tests/e2e/.state/shots/
+      - name: Open an issue, or add to the open one
+        if: failure() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          body="The weekly run against Home Assistant ${HA_VERSION:-beta} failed: $run
+
+          Open the run to see which step and which checks. Nothing is released from this; it's a heads-up before Home Assistant's release."
+          gh label create ha-beta --color FBCA04 --description "Found by the weekly Home Assistant beta run" 2>/dev/null || true
+          open=$(gh issue list --label ha-beta --state open --json number --jq '.[0].number')
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --body "$body"
+          else
+            gh issue create --title "Home Assistant ${HA_VERSION:-beta} breaks something" --label ha-beta --body "$body"
+          fi
+
+  mutants:
+    name: Mutants
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: tests/setup.sh
+      - name: System libraries
+        run: sudo apt-get update && sudo apt-get install -y libturbojpeg0 || sudo apt-get install -y libturbojpeg
+      - name: Set up (the pinned Home Assistant), Playwright, the backend venv
+        run: |
+          sh tests/setup.sh all
+          npx playwright install --with-deps chromium
+      - name: Every mutant, each caught by its check
+        run: node tests/mutants.js --ha && node tests/lib/report.js tests/.results mutants
+      - name: The mutants' logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutants
+          path: tests/.results/
+      - name: Open an issue, or add to the open one
+        if: failure() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          sh .github/issue.sh test-gap "A test gap: a mutant went uncaught" "The weekly mutants run found a break no check caught, or a mutant whose text is no longer in the code (tests/mutants.json must follow it): $run"
+
+  strict:
+    name: Strict (no flaky tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: tests/setup.sh
+      - name: System libraries
+        run: sudo apt-get update && sudo apt-get install -y libturbojpeg0 || sudo apt-get install -y libturbojpeg
+      - name: Set up (the pinned Home Assistant), Playwright, the backend venv
+        run: |
+          sh tests/setup.sh all
+          npx playwright install --with-deps chromium
+      - name: Everything and the size test, with retries, failing on any flaky test
+        env:
+          FB_STRICT: "1"
+        run: sh tests/run.sh --ha --size
+      - name: Reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: strict
+          path: tests/.results/
+      - name: Open an issue, or add to the open one
+        if: failure() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          sh .github/issue.sh test-gap "A flaky test, or an old quarantine" "The weekly strict run failed: a test passed only on its second try, or a check has been quarantined for more than 30 days (tests/quarantine.json). The run's summary lists which: $run"
+
+  pictures:
+    name: README pictures
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: tests/setup.sh
+      - name: System libraries
+        run: sudo apt-get update && sudo apt-get install -y libturbojpeg0 || sudo apt-get install -y libturbojpeg
+      - name: Set up (the pinned Home Assistant) and Playwright
+        run: |
+          npm ci --no-audit --no-fund
+          sh tests/setup.sh
+          npx playwright install --with-deps chromium
+      - name: Take them again and compare
+        run: sh tests/shots.sh
+      - name: The new pictures and their differences
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pictures
+          path: tests/.results/shots/
+      - name: Open an issue, or add to the open one
+        if: failure() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          sh .github/issue.sh docs "The README's pictures are out of date" "The weekly run took the README's screenshots again and some no longer match docs/images. The run's artifact has the new pictures and a picture of each difference: $run"

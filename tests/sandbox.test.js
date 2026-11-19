@@ -1,20 +1,11 @@
-// The sandbox engine (Phase 10), without a browser or Home Assistant. Run: node tests/sandbox.test.js
+// The sandbox engine (Phase 10), without a browser or Home Assistant. Run: node --test tests/sandbox.test.js
 // Templates go to a stand-in for Home Assistant's renderer that knows a few forms and reads the sandbox's states;
 // tests/e2e/sandbox.test.js renders them with the real Home Assistant.
-const fs = require('fs');
-const path = require('path');
 
-const src = fs.readFileSync(path.join(__dirname, '..', 'custom_components', 'functions_board', 'frontend', 'functions-board.js'), 'utf8');
-const start = src.indexOf("'use strict';"), end = src.indexOf('  class FunctionsBoard extends HTMLElement');
-const lib = new Function('customElements', 'window', src.slice(start, end) + '\nreturn { cleanCheck, runCheck, Sandbox, sbxRewrite, SBX_PRELUDE, durMs, asBool, localAt, tzParts, sbxEffect, sbxReads, flowPath, flowCrossings, verPrint, devIdsIn, swapDevs };')({ get: () => undefined }, {});
+const lib = require('./lib/board-lib');
 const { cleanCheck, runCheck, Sandbox, sbxRewrite, durMs, localAt, sbxEffect, sbxReads, flowPath, flowCrossings, verPrint, devIdsIn, swapDevs } = lib;
 
-let failed = 0, total = 0;
-const check = (name, ok, detail) => {
-  total++;
-  if (!ok) failed++;
-  console.log((ok ? 'PASS ' : 'FAIL ') + name + (ok || detail === undefined ? '' : '  -- ' + JSON.stringify(detail)));
-};
+const { check } = require('./lib/check');
 const TZ = 'America/New_York';
 const at = (hhmm) => localAt(Date.parse('2026-11-17T12:00:00Z'), hhmm.split(':').map(Number), TZ);  // Tue 17 Nov 2026
 const S = (state, attributes) => ({ state, attributes: attributes || {}, last_changed: '2026-11-17T10:00:00Z', last_updated: '2026-11-17T10:00:00Z' });
@@ -194,6 +185,24 @@ const st = (sb, id) => (sb.get(id) || {}).state;
     await sb2.userEvent('go');
     await sb2.advance(3 * MIN);
     check('wait for trigger: timed out with continue_on_timeout false, it stops', st(sb2, 'light.l') === 'off' && kinds(sb2, 'run')[0].outcome === 'stopped', kinds(sb2, 'run'));
+  }
+
+  // ---- and, or, not (0.9.1; a mutant in tests/mutants.json found these untested)
+  {
+    const on = { condition: 'state', entity_id: 'input_boolean.a', state: 'on' }, off = { condition: 'state', entity_id: 'input_boolean.b', state: 'on' };
+    const go = async (cond) => {
+      const sb = make({ 'input_boolean.a': S('on'), 'input_boolean.b': S('off'), 'light.l': S('off') }, { 'automation.t': { triggers: [{ trigger: 'event', event_type: 'go' }], conditions: [cond], actions: [{ action: 'light.turn_on', target: { entity_id: 'light.l' } }] } });
+      await sb.start();
+      await sb.userEvent('go');
+      return st(sb, 'light.l') === 'on';
+    };
+    const r = {
+      notTrue: await go({ condition: 'not', conditions: [on] }), notFalse: await go({ condition: 'not', conditions: [off] }),
+      andMixed: await go({ condition: 'and', conditions: [on, off] }), andTrue: await go({ condition: 'and', conditions: [on, on] }),
+      orMixed: await go({ condition: 'or', conditions: [off, on] }), orFalse: await go({ condition: 'or', conditions: [off, off] }),
+    };
+    check('not: stops the run when what it holds is true, and lets it go when false', !r.notTrue && r.notFalse, r);
+    check('and: needs every condition; or: any one', !r.andMixed && r.andTrue && r.orMixed && !r.orFalse, r);
   }
 
   // ---- a template it can't render: asked
@@ -397,6 +406,4 @@ const st = (sb, id) => (sb.get(id) || {}).state;
     check('checks: steps and expectations it doesn\'t know are dropped', cleanCheck({ id: 'x', steps: [{ op: 'next' }, { op: 'shell', cmd: 'rm' }], expect: [{ k: 'ran', id: 'a.b' }, { k: 'eval', id: 'x' }] }).steps.length === 1);
   }
 
-  console.log(`\n${total - failed}/${total} passed`);
-  process.exit(failed ? 1 : 0);
-})().catch((e) => { console.error(e); process.exit(1); });
+})().catch((e) => check('the sandbox tests ran to the end', false, String(e && e.stack || e)));

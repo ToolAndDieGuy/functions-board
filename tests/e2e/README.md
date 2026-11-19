@@ -33,35 +33,29 @@ files rather than linking them.
 
 ## Run
 
-`sh tests/run-all.sh --e2e` runs all of these in turn, `apitest.py` before each. One at a time:
+`sh tests/run.sh --ha` starts a fresh one and runs every suite here (see `tests/README.md`);
+`sh tests/run.sh --ha --keep --only e2e-tools` runs one on the Home Assistant as it is. By hand, with it running:
 
 ```sh
-export FB_HA_CONFIG="$PWD/ha/config"      # where apitest.py checks the stored board data
-venv314/bin/python tests/e2e/apitest.py  # backend API checks; onboards a test owner and a non-admin, writes tokens
-node tests/e2e/ui.test.js                 # first run, import, migration, live sync, dashboard modes, non-admin
-node tests/e2e/regress.test.js [filter]   # one check per fixed bug and new behaviour
-node tests/e2e/sync.test.js               # two boards editing at once
-node tests/e2e/tools.test.js              # developer tools: debugger, live checks, tests, arrow editor
-node tests/e2e/sandbox.test.js            # the sandbox, templates rendered by Home Assistant
-node tests/e2e/layout.test.js [filter]    # large synthetic functions, both directions (FB_SHOTS=1 saves screenshots)
+node tests/e2e/hasetup.js                              # onboard, the non-admin user, logins (writes tests/e2e/.state/)
+FB_HA_CONFIG="$PWD/ha/config" venv314/bin/python tests/e2e/apitest.py
+FB_SUITE=tools npx playwright test -c tests/playwright.config.js
 ```
 
-Run one suite at a time: they share the test Home Assistant and reset the board data. Tokens last 30 minutes:
-run `apitest.py` again before each long suite. Tokens, credentials and screenshots go
-to `tests/e2e/.state/` (ignored by git), or to `FB_E2E_STATE` if set. `FB_HA_URL` changes the address.
-
-Playwright and its Chromium must be installed (`npm i playwright` and `npx playwright install chromium`). Where
-Chromium is already installed and can't be downloaded, install the Playwright version that matches it.
-
-Known noise: a `recorder/info` rejection and `lovelace/config` not-found come from Home Assistant's own
-frontend, not the board; the tests ignore them.
+Tokens, credentials and screenshots go to `tests/e2e/.state/` (ignored by git), or to `FB_E2E_STATE` if set.
+`FB_HA_URL` changes the address. Known noise: a `recorder/info` rejection and `lovelace/config` not-found come
+from Home Assistant's own frontend, not the board; the tests ignore them.
 
 ## Screenshots
 
-`node tests/e2e/screens.js [name]` takes the README's images from the demo setup (`sh tests/setup.sh demo`,
-`sh tests/start-ha.sh demo`, then `FB_HA_CONFIG=$PWD/ha-demo/config venv314/bin/python tests/e2e/apitest.py`) and writes them to
-`docs/images/` (1440×820 at 2×). With `sharp` installed they are saved as palette PNGs; `FB_SHOTS_RAW=1` skips
-that, and `FB_SHOTS_OUT` changes the folder. Retake them after visible changes and look at each one.
+`sh tests/shots.sh` starts a fresh test Home Assistant, takes the README's images again into
+`tests/.results/shots/` with `tests/e2e/screens.js` (1440×820 at 2×), and compares each with the one in `docs/images/`
+(`tests/e2e/shotcompare.js`; a picture of the difference for each that changed). It runs weekly in CI, so pictures
+that no longer show the board as it is are noticed. After a visible change, run it, copy the new pictures into
+`docs/images/`, and look at each one. By hand, `node tests/e2e/screens.js [name]` on a running test Home Assistant
+(after `node tests/e2e/hasetup.js`) writes them straight to `docs/images/`; `FB_SHOTS_OUT` changes the folder, and
+`FB_SHOTS_RAW=1` keeps the browser's PNGs instead of palette ones. The demo instance (`FB_SHOTS_ON=demo`) adds the
+"Away mode" function, for the demo video.
 
 ## Size
 
@@ -71,10 +65,5 @@ then removes them and their registry entries.
 
 ## Backend unit tests
 
-```sh
-pip install pytest-homeassistant-custom-component home-assistant-frontend
-pytest tests/backend
-```
-
-`pytest-homeassistant-custom-component` pins its own Home Assistant version, so give it its own venv rather than
-`venv314`.
+`sh tests/run.sh --only backend`. They run in their own venv (`venvtest`, made by `tests/setup.sh`):
+`pytest-homeassistant-custom-component` pins its own Home Assistant version, and has no release for 2026.11 yet.

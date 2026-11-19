@@ -1,12 +1,12 @@
 // Two boards open at once: an idle board writes nothing, a change reaches the other board, and two
 // changes to different functions made at the same moment both survive. node sync.test.js
 const { chromium, BASE, session, fbq, board, ws, ready, until, suite, reset, importAll } = require('./lib');
+const { test } = require('./fixtures');
 const { check, done } = suite('sync');
 
 const writes = (page) => page.sent.filter((m) => /^functions_board\/(set|set_layout|set_functions)$/.test(m.type)).length;
 
-(async () => {
-  const browser = await chromium.launch();
+test('sync', async ({ browser }) => {
   {
     const s = await session(browser, 'owner');
     await s.page.goto(BASE + '/');
@@ -45,6 +45,5 @@ const writes = (page) => page.sent.filter((m) => /^functions_board\/(set|set_lay
   const hasB = (data.layouts[fns[1]] || { notes: [] }).notes.some((n) => n.id === 'nb');
   check('simultaneous edits to two functions both survive', hasA && hasB, { hasA, hasB });
   check('no errors on A or B', !A.page.logs.length && !B.page.logs.length, A.page.logs.concat(B.page.logs));
-  await browser.close();
-  done();
-})().catch((e) => { console.error(e); process.exit(1); });
+});
+test.afterAll(() => done());

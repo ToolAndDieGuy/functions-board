@@ -1,20 +1,11 @@
-// Tests for the config reader and loop finder in the board script. Run: node tests/wiring.test.js
+// Tests for the config reader and loop finder in the board script. Run: node --test tests/wiring.test.js
 const fs = require('fs');
 const path = require('path');
 
-const src = fs.readFileSync(path.join(__dirname, '..', 'custom_components', 'functions_board', 'frontend', 'functions-board.js'), 'utf8');
-const start = src.indexOf("'use strict';"), end = src.indexOf('  class FunctionsBoard extends HTMLElement');
-if (start < 0 || end < 0) throw new Error('could not find the board library section');
-// the pure functions live above the element class; run them without a browser
-const lib = new Function('customElements', 'window', src.slice(start, end) + '\nreturn { analyze, loopEdges, layered, ROLE_RANK, cssColor, cleanLayout, esc, setDomains, focusSet, sides, edgeGeom, whyStopped, runPath, srcKey, parseLoose, toLoose, cleanTest, condText, trigVar, toYaml, refsTo, dropRefs, refPlace, nrGroups, T, P, setLang, onLang, STR };')({ get: () => undefined }, {});
+const lib = require('./lib/board-lib');
 const { analyze, loopEdges, layered, ROLE_RANK, cssColor, cleanLayout, esc, setDomains, focusSet, sides, edgeGeom, whyStopped, runPath, srcKey, parseLoose, toLoose, cleanTest, condText, trigVar, toYaml, refsTo, dropRefs, refPlace, nrGroups, T: tx, P: px, setLang, onLang, STR } = lib;
 
-let failed = 0, total = 0;
-const check = (name, ok, detail) => {
-  total++;
-  if (!ok) failed++;
-  console.log((ok ? 'PASS ' : 'FAIL ') + name + (ok || detail === undefined ? '' : '  -- ' + JSON.stringify(detail)));
-};
+const { check } = require('./lib/check');
 
 // mirrors FunctionsBoard._wire: refs become merged edges carrying services and trigger filters
 function edgesOf(cfgs) {
@@ -409,5 +400,3 @@ for (const [name, cfgs, want] of phase2) { const got = loops(cfgs); check(name, 
   setLang('en');
 }
 
-console.log(`\n${total - failed}/${total} passed`);
-process.exit(failed ? 1 : 0);

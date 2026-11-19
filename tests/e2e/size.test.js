@@ -4,6 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const { chromium, BASE, session, ws, svc, ready, board, until, suite, reset } = require('./lib');
+const { test } = require('./fixtures');
 const { check, done } = suite('size');
 
 const CONFIG = process.env.FB_HA_CONFIG;
@@ -25,9 +26,8 @@ function bulkYaml() {
 }
 const count = (page) => page.evaluate(() => Object.keys(document.querySelector('home-assistant').hass.states).filter((k) => /^automation\.bulk_/.test(k)).length);
 
-(async () => {
+test('size', async ({ browser }) => {
   if (!CONFIG) throw new Error('set FB_HA_CONFIG to the test instance\'s config folder');
-  const browser = await chromium.launch();
   const { ctx, page } = await session(browser, 'owner', { viewport: { width: 1500, height: 900 } });
   await page.goto(BASE + '/');
   await ready(page);
@@ -73,7 +73,6 @@ const count = (page) => page.evaluate(() => Object.keys(document.querySelector('
     }
     await reset(page).catch(() => {});
     await ctx.close();
-    await browser.close();
   }
-  done();
-})().catch((e) => { console.error(e); process.exit(1); });
+});
+test.afterAll(() => done());

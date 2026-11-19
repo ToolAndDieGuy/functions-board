@@ -1,5 +1,5 @@
 /*!
- * Functions board v0.9.0 (prototype) for Home Assistant
+ * Functions board v0.9.1 (prototype) for Home Assistant
  *
  * One page per "function": every automation, script, helper and device that makes one job work,
  * grouped by a Home Assistant label and wired together from their own configs.
@@ -13,7 +13,7 @@
  */
 (() => {
   'use strict';
-  const VERSION = '0.9.0';
+  const VERSION = '0.9.1';
   const loaded = customElements.get('functions-board');
   if (loaded) {
     if (loaded.VERSION !== VERSION) {
@@ -4309,7 +4309,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         for (const x of subs()) {
           const r = await this._cond(x, run);
           if (r.partly) partly = (partly || []).concat(r.partly);
-          if (r.ok !== want) return { hit: true, r, partly };
+          if (r.ok === want) return { hit: true, r, partly };
         }
         return { hit: false, partly };
       };
@@ -4768,7 +4768,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._undoStack = []; this._redoStack = [];
       this._tgt = new Map(); this._src = new Map();
       // developer tools (Phase 9): simulated states, trigger watches, check results, monitors, the debugger
-      this._sim = new Map(); this._tw = new Map(); this._cond = new Map(); this._liveE = new Map();
+      this._sim = new Map(); this._simAt = new Map(); this._tw = new Map(); this._cond = new Map(); this._liveE = new Map();
       this._monSubs = new Map(); this._monData = new Map(); this._monCount = new Map();
       this._testLog = []; this._testOk = false; this._dbg = null; this._dbgSeq = 0; this._lit = null;
     }
@@ -5866,9 +5866,12 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       shown.forEach((e) => { vis2.add(e.from); vis2.add(e.to); });
       m.nodes.forEach((n, k) => { n.hidden = cnt.has(k) && !vis2.has(k) ? cnt.get(k) : 0; });
       this._renderFrames();
+      // a keyboard user's place: the box that has focus keeps it when the boxes are drawn anew
+      const fa = this.shadowRoot.activeElement, fk = fa && fa.classList && fa.classList.contains('node') ? fa.dataset.key : null;
       this._$.nodes.innerHTML = [...vis].map((k) => this._nodeHTML(m.nodes.get(k))).join('');
       this._els = new Map();
       this._$.nodes.querySelectorAll('.node').forEach((el) => this._els.set(el.dataset.key, el));
+      if (fk && this._els.get(fk)) this._els.get(fk).focus({ preventScroll: true });
       this._renderNotes();
       this._renderMons();
       this._conn = this._connText();
@@ -5964,7 +5967,12 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       // a simulated state stays marked until the device or its integration reports again (9.2)
       if (this._sim.has(n.key)) {
         const st = this._hass.states[n.key];
-        if (st && st.context && st.context.id === this._sim.get(n.key)) { r.text += T('simulated_2'); r.sim = true; } else this._sim.delete(n.key);
+        const at = this._simAt.get(n.key);
+        if (st && st.context && st.context.id === this._sim.get(n.key)) { r.text += T('simulated_2'); r.sim = true; }
+        // Home Assistant's word of the simulated state may come after its answer to setting it: until then the
+        // state here is the one from before, which is no report from the device (0.9.1: this cleared the mark)
+        else if (st && at && Date.parse(st.last_updated) < at) { /* not yet */ }
+        else { this._sim.delete(n.key); this._simAt.delete(n.key); }
       }
       return r;
     }
@@ -7739,7 +7747,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           // Home Assistant's copy only: the next update from the device or its integration puts the real state back
           const st = this._hass.states[id];
           const r = await this._hass.callApi('POST', 'states/' + id, { state: t.state, attributes: st ? st.attributes : {} });
-          if (r && r.context && r.context.id) this._sim.set(id, r.context.id);
+          if (r && r.context && r.context.id) { this._sim.set(id, r.context.id); this._simAt.set(id, Date.parse(r.last_updated) || Date.now()); }
           this._refreshStates();
           return r;
         }
@@ -9649,11 +9657,11 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           else if (k.startsWith('nact:')) { const b = this._buttonEvent(this._model.nodes.get(k)); out.push({ kind, text: T('pressing_it_triggers_it'), item: { trigger: 'event', event_type: b.event_type, event_data: b.event_data } }); }
           else {
             out.push({ kind, text: T('it_changes_state'), state: 'to', item: { trigger: 'state', entity_id: k } });
-            ((await get('get_triggers_for_target')) || []).filter((t) => ok((this._trigDesc || {})[t])).forEach((t) => out.push({ kind, text: names[t] || humanize(t), item: { trigger: t, target: { entity_id: k } } }));
+            ((await get('get_triggers_for_target')) || []).filter((t) => ok((this._trigDesc || {})[t])).sort().forEach((t) => out.push({ kind, text: names[t] || humanize(t), item: { trigger: t, target: { entity_id: k } } }));
           }
         } else if (kind === 'condition') {
           out.push({ kind, text: T('its_state_is'), state: 'state', item: { condition: 'state', entity_id: k, state: '' } });
-          ((await get('get_conditions_for_target')) || []).filter((t) => ok((this._condDesc || {})[t])).forEach((t) => out.push({ kind, text: names[t] || humanize(t), item: { condition: t, target: { entity_id: k } } }));
+          ((await get('get_conditions_for_target')) || []).filter((t) => ok((this._condDesc || {})[t])).sort().forEach((t) => out.push({ kind, text: names[t] || humanize(t), item: { condition: t, target: { entity_id: k } } }));
         } else if (kind === 'call') {
           out.push({ kind, text: T('it_runs_it'), item: { action: k }, fields: await this._scriptFields(k).then((fs) => fs.filter((f) => f.required)) });
         } else if (kind === 'action') {
@@ -9915,7 +9923,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         if (open && !this._drawerOpen) {
           this._drawerOpen = true;
           const a = this.shadowRoot.activeElement;
-          this._drawerBack = a && !d.contains(a) ? a : null;
+          this._drawerBack = a && !d.contains(a) ? this._remember(a) : null;
           setTimeout(() => {
             if (d.hidden || !this._$.modal.hidden || d.contains(this.shadowRoot.activeElement)) return;
             const h = d.querySelector('.dtitle');
@@ -9923,14 +9931,29 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           }, 0);
         } else if (!open && this._drawerOpen) {
           this._drawerOpen = false;
-          const back = this._drawerBack, box = this._roveKey && this._els && this._els.get(this._roveKey);
+          const back = this._recall(this._drawerBack), box = this._roveKey && this._els && this._els.get(this._roveKey);
           this._drawerBack = null;
           const a = this.shadowRoot.activeElement;
-          if (!a || a === d || d.contains(a) || a === this.shadowRoot.host) { if (back && back.isConnected) back.focus({ preventScroll: true }); else if (box) box.focus({ preventScroll: true }); }
+          if (!a || a === d || d.contains(a) || a === this.shadowRoot.host) { if (back) back.focus({ preventScroll: true }); else if (box) box.focus({ preventScroll: true }); }
         }
       }).observe(d, { attributes: true, attributeFilter: ['hidden'], childList: true });
     }
     // dialogs: named, focus moves in and stays in, and goes back where it was when they close
+    // where focus should go back to, found again if the board drew it anew meanwhile (the list redraws when a
+    // count changes): the same button by what it does and what it's for, at the same place among its like
+    _remember(el) {
+      if (!el || !el.dataset) return null;
+      const keys = ['act', 'label', 'key', 'fn', 'id', 'k'].filter((k) => el.dataset[k] != null);
+      const sel = keys.length ? keys.map((k) => `[data-${k}="${CSS.escape(el.dataset[k])}"]`).join('') : null;
+      return { el, sel, i: sel ? [...this.shadowRoot.querySelectorAll(sel)].indexOf(el) : -1 };
+    }
+    _recall(r) {
+      if (!r) return null;
+      if (r.el.isConnected) return r.el;
+      if (!r.sel) return null;
+      const all = [...this.shadowRoot.querySelectorAll(r.sel)];
+      return all[r.i] || all[0] || null;
+    }
     _watchModal() {
       const md = this._$.modal;
       new MutationObserver(() => {
@@ -9943,13 +9966,13 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         }
         if (open && !this._modalOpen) {
           this._modalOpen = true;
-          this._modalBack = this.shadowRoot.activeElement || null;
+          this._modalBack = this._remember(this.shadowRoot.activeElement);
           setTimeout(() => { if (md.hidden) return; const f = md.querySelector('input:not([type=hidden]):not([disabled]), textarea, select, button.primary:not([disabled])') || md.querySelector('button'); if (f && !md.contains(this.shadowRoot.activeElement)) f.focus(); }, 60);
         } else if (!open && this._modalOpen) {
           this._modalOpen = false;
-          const back = this._modalBack, box = this._roveKey && this._els.get(this._roveKey);
+          const back = this._recall(this._modalBack), box = this._roveKey && this._els.get(this._roveKey);
           this._modalBack = null;
-          if (back && back.isConnected) back.focus(); else if (box) box.focus();
+          if (back) back.focus(); else if (box) box.focus();
         }
       }).observe(md, { attributes: true, attributeFilter: ['hidden'], childList: true });
       md.addEventListener('keydown', (e) => {
@@ -10298,7 +10321,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     }
     _sbxRec(step) { const g = this._sbx; if (g && g.rec) g.rec.steps.push(step); }
     _checkName(k) { return this._model && this._model.nodes.has(k) ? this._model.nodes.get(k).name : this._nameOf(k); }
-    _stepText(s) {
+    _chkStepText(s) {
       const nm = (k) => esc(this._checkName(k));
       if (s.op === 'set') return T('chk_s_set', { name: nm(s.id), state: esc(s.state) });
       if (s.op === 'event') return T('chk_s_event', { type: esc(s.type) });
@@ -10334,7 +10357,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (soft && box.dataset.sig === sig) return;
       box.dataset.sig = sig;
       const mark = (c) => { const r = res.get(c.id); if (!r) return `<span class="ckst muted" title="${T('chk_not_run')}">·</span>`; if (r.unsure) return `<span class="ckst unsure" title="${esc(r.unsure)}">?</span>`; return r.ok ? `<span class="ckst ok" title="${T('chk_passes')}">&#10003;</span>` : `<span class="ckst bad" title="${T('chk_fails')}">&#10005;</span>`; };
-      const row = (c) => `<div class="ckrow" data-id="${esc(c.id)}">${mark(c)}<span class="ckname" title="${esc(c.steps.map((x) => this._stepText(x).replace(/<[^>]+>/g, '')).join(' → '))}">${esc(c.name)}</span><button class="ib" data-act="chk-run" data-id="${esc(c.id)}" title="${T('chk_run_t')}"><ha-icon icon="mdi:play-circle-outline"></ha-icon></button><button class="ib" data-act="chk-replay" data-id="${esc(c.id)}" title="${T('chk_replay_t')}"><ha-icon icon="mdi:movie-open-play-outline"></ha-icon></button><button class="ib" data-act="chk-del" data-id="${esc(c.id)}" title="${T('chk_del_t')}"><ha-icon icon="mdi:delete-outline"></ha-icon></button></div>`;
+      const row = (c) => `<div class="ckrow" data-id="${esc(c.id)}">${mark(c)}<span class="ckname" title="${esc(c.steps.map((x) => this._chkStepText(x).replace(/<[^>]+>/g, '')).join(' → '))}">${esc(c.name)}</span><button class="ib" data-act="chk-run" data-id="${esc(c.id)}" title="${T('chk_run_t')}"><ha-icon icon="mdi:play-circle-outline"></ha-icon></button><button class="ib" data-act="chk-replay" data-id="${esc(c.id)}" title="${T('chk_replay_t')}"><ha-icon icon="mdi:movie-open-play-outline"></ha-icon></button><button class="ib" data-act="chk-del" data-id="${esc(c.id)}" title="${T('chk_del_t')}"><ha-icon icon="mdi:delete-outline"></ha-icon></button></div>`;
       box.innerHTML = this._ver ? '' : `<div class="ckhead"><span>${P('chk_n', list.length)}</span>${list.length ? `<button class="ib" data-act="chk-run" title="${T('chk_run_all_t')}"><ha-icon icon="mdi:play-box-multiple-outline"></ha-icon></button>` : ''}<button class="chip" data-act="chk-save"${can ? '' : ' disabled'} title="${can ? T('chk_save_t') : T('chk_save_none')}"><ha-icon icon="mdi:content-save-check-outline"></ha-icon>${T('chk_save')}</button></div>${list.map(row).join('')}`;
     }
     _checkSaveDlg() {
@@ -10344,8 +10367,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._chkDraft = { sug };
       m.hidden = false;
       m.innerHTML = `<div class="dlg ckdlg"><h3>${T('chk_save_h')}</h3><p class="dtext">${T('chk_save_lead')}</p>`
-        + `<label>${T('chk_name')}<input name="ckname" maxlength="160" value="${esc(this._stepText(g.rec.steps[0]).replace(/<[^>]+>/g, ''))}"></label>`
-        + `<h4>${T('chk_steps_h')}</h4><ol class="cksteps">${g.rec.steps.map((x) => `<li>${this._stepText(x)}</li>`).join('')}</ol>`
+        + `<label>${T('chk_name')}<input name="ckname" maxlength="160" value="${esc(this._chkStepText(g.rec.steps[0]).replace(/<[^>]+>/g, ''))}"></label>`
+        + `<h4>${T('chk_steps_h')}</h4><ol class="cksteps">${g.rec.steps.map((x) => `<li>${this._chkStepText(x)}</li>`).join('')}</ol>`
         + `<h4>${T('chk_expect_h')}</h4>${sug.length ? sug.map((s, i) => `<label class="chk"><input type="checkbox" name="ckx" value="${i}"${s.on ? ' checked' : ''}>${this._expText(s.x)}</label>`).join('') : `<p class="muted">${T('chk_expect_none')}</p>`}`
         + `<div class="dval"></div><div class="btns"><button data-act="modal-cancel">${T('cancel')}</button><button class="primary" data-act="chk-save-go">${T('chk_save_b')}</button></div></div>`;
       const n = m.querySelector('input[name="ckname"]'); if (n) { n.focus(); n.select(); }

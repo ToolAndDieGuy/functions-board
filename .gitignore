@@ -7,3 +7,4 @@ ha/
 ha-demo/
 venv314/
 venvtest/
+tests/.results/

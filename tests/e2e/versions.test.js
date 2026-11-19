@@ -2,6 +2,7 @@
 // version's tab, try it in the sandbox, restore it (Full manager) with what was added since turned off or deleted,
 // and a replaced device offered a replacement.  node tests/e2e/versions.test.js
 const { chromium, BASE, session, ws, svc, fbq, board, ready, until, suite, openFn, reset, importAll } = require('./lib');
+const { test } = require('./fixtures');
 const { check, done } = suite('versions');
 const el = (page, fn, arg) => board(page).evaluate(fn, arg);
 const api = (page, method, p, body) => page.evaluate(([m, p, b]) => document.querySelector('home-assistant').hass.callApi(m, p, b), [method, p, body]);
@@ -16,8 +17,7 @@ async function setMode(page, mode) {
 const vlist = (page) => el(page, (b) => [...b._$.drawer.querySelectorAll('.vlist .vrow:not(.cur)')].map((r) => ({ id: r.dataset.id, name: r.querySelector('.vh b').textContent, on: r.classList.contains('on'), restore: !r.querySelector('[data-act="ver-restore"]').disabled })));
 const settled = (page) => until(() => el(page, (b) => (b._model && !b._$.loading.hidden === false) || null), 15000);
 
-(async () => {
-  const browser = await chromium.launch();
+test('versions', async ({ browser }) => {
   const { ctx, page } = await session(browser, 'owner', { viewport: { width: 1500, height: 900 } });
   // a deleted test item's config is asked for once on purpose (the restore plan), and the YAML helpers' editor routes
   page.allowFail = [/^(automation|script)\/config$/];
@@ -174,6 +174,21 @@ const settled = (page) => until(() => el(page, (b) => (b._model && !b._$.loading
   check('0.8.1 when what\'s there now is already a saved version, the dialog names it', /already saved as "Original"/.test(hint2), hint2);
   await fbq(page, '.modal [data-act="modal-cancel"]').click();
 
+  // 0.9.1: what was deleted since the version was saved is made again when it's restored (a mutant in
+  // tests/mutants.json found this unchecked)
+  await api(page, 'DELETE', `config/automation/config/${LEFT_ID}`);
+  await until(async () => (await api(page, 'GET', `config/automation/config/${LEFT_ID}`).then(() => null, () => true)), 10000);
+  // the board reloads its registries a moment after Home Assistant says something changed
+  await until(() => el(page, (b, k) => !b._entMap.has(k) || null, LEFT), 10000);
+  await el(page, (b) => b._renderVersions());
+  await until(async () => (await vlist(page)).some((x) => x.id === vid && x.restore) || null, 10000);
+  await fbq(page, `.drawer [data-act="ver-restore"][data-id="${vid}"]`).click();
+  await fbq(page, '.modal [data-act="ver-restore-go"]').waitFor({ timeout: 15000 });
+  await fbq(page, '.modal [data-act="ver-restore-go"]').click();
+  await until(() => el(page, (b) => b._$.modal.hidden || null), 30000);
+  const made = await until(async () => (await api(page, 'GET', `config/automation/config/${LEFT_ID}`).then((c) => c, () => null)), 10000);
+  check('0.9.1 an automation deleted since the version was saved is made again by restoring it', !!made && made.alias === original.alias, made);
+
   // rename and delete
   await fbq(page, `.drawer [data-act="ver-edit"][data-id="${dv.id}"]`).click();
   await fbq(page, '.modal input[name="vname"]').fill('Old opener');
@@ -192,6 +207,5 @@ const settled = (page) => until(() => el(page, (b) => (b._model && !b._$.loading
   await setMode(page, 'organise');
   check('no errors', page.logs.length === 0, page.logs);
   await ctx.close();
-  await browser.close();
-  done();
-})().catch((e) => { console.error(e); process.exit(1); });
+});
+test.afterAll(() => done());

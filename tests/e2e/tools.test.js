@@ -2,8 +2,11 @@
 // (9.3), the function debugger (9.4, with 4.5) and notifications (9.5). Run apitest.py first (tokens).
 // node tools.test.js [filter]   (filter: run only cases whose name matches)
 const { chromium, BASE, session, ws, svc, states, ready, fbq, board, until, suite, reset, importAll, openFn, sleep } = require('./lib');
+const { test: pwTest } = require('./fixtures');
+const test = (name, fn) => (only && !only.test(name) ? pwTest.skip(name, () => {}) : pwTest(name, fn));
 const { check, done } = suite('tools');
-const only = process.argv[2] ? new RegExp(process.argv[2], 'i') : null;
+// FB_ONLY=<pattern> runs only the parts whose names match (Playwright's --grep picks whole tests)
+const only = process.env.FB_ONLY ? new RegExp(process.env.FB_ONLY, 'i') : null;
 
 const DOOR = 'cover.garage_door', TIMER = 'timer.garage_open', AUTO = 'input_boolean.garage_auto_close';
 const START = 'automation.garage_start_open_timer', LEFT = 'automation.garage_left_open', CLOSED = 'automation.garage_closed_stop_timer';
@@ -43,12 +46,10 @@ async function rest(page) {
   await until(async () => (await states(page, [DOOR]))[DOOR] === 'closed', 15000);
   await page.waitForTimeout(400);
 }
-const cases = [];
-const test = (name, fn) => cases.push([name, fn]);
 // what a case made in Home Assistant (config API paths) goes again after it, also when a check failed half-way
 const cleanup = [];
 
-test('9.2 Organise only: Test is shown, switched off', async (browser) => {
+test('9.2 Organise only: Test is shown, switched off', async ({ browser }) => {
   const { ctx, page } = await imported(browser);
   await setMode(page, 'organise');
   await openFn(page, /garage/i);
@@ -60,7 +61,7 @@ test('9.2 Organise only: Test is shown, switched off', async (browser) => {
   await ctx.close();
 });
 
-test('9.2 a helper changes through its own action; the first test asks; each is logged', async (browser) => {
+test('9.2 a helper changes through its own action; the first test asks; each is logged', async ({ browser }) => {
   const { ctx, page } = await imported(browser);
   await setMode(page, 'full');
   await rest(page);
@@ -99,7 +100,7 @@ test('9.2 a helper changes through its own action; the first test asks; each is 
   await ctx.close();
 });
 
-test('9.2 a simulated state sets off the function and stays marked until the device reports', async (browser) => {
+test('9.2 a simulated state sets off the function and stays marked until the device reports', async ({ browser }) => {
   const { ctx, page } = await imported(browser);
   await setMode(page, 'full');
   await rest(page);
@@ -115,8 +116,12 @@ test('9.2 a simulated state sets off the function and stays marked until the dev
   await fbq(page, '.modal [data-act="test-run"]').click();
   check('9.2 the state is set', await until(async () => (await st(page, DOOR)).state === 'open', 5000));
   check('9.2 and the automation it triggers ran', await until(async () => (await st(page, START)).lt !== before.lt, 5000));
+  const mark = () => el(page, (b, k) => { const n = b._els.get(k); return { sim: n.classList.contains('sim'), tip: n.title }; }, DOOR);
+  await until(async () => (await mark()).sim || null, 5000);
+  // ... and stays marked: nothing has come from the device (0.9.1: the mark could go at once, when Home
+  // Assistant's state event came after its answer to the simulation)
   await page.waitForTimeout(1200);
-  const box = await el(page, (b, k) => { const n = b._els.get(k); return { sim: n.classList.contains('sim'), tip: n.title }; }, DOOR);
+  const box = await mark();
   check('9.2 the box is marked simulated', box.sim && /simulated/.test(box.tip), box);
   // the device reports again (here: a real close)
   await svc(page, 'cover', 'close_cover', {}, { entity_id: DOOR });
@@ -127,7 +132,7 @@ test('9.2 a simulated state sets off the function and stays marked until the dev
   await ctx.close();
 });
 
-test('9.2 an event is fired with the data its trigger expects; kept as a button; undo and redo', async (browser) => {
+test('9.2 an event is fired with the data its trigger expects; kept as a button; undo and redo', async ({ browser }) => {
   const { ctx, page } = await imported(browser);
   await setMode(page, 'full');
   await rest(page);
@@ -165,7 +170,7 @@ test('9.2 an event is fired with the data its trigger expects; kept as a button;
   await ctx.close();
 });
 
-test('9.2 run an automation with and without its conditions; a script with its fields', async (browser) => {
+test('9.2 run an automation with and without its conditions; a script with its fields', async ({ browser }) => {
   const { ctx, page } = await imported(browser);
   await setMode(page, 'full');
   await rest(page);
@@ -212,7 +217,7 @@ test('9.2 run an automation with and without its conditions; a script with its f
   await ctx.close();
 });
 
-test('9.3 each check arrow shows whether it passes right now', async (browser) => {
+test('9.3 each check arrow shows whether it passes right now', async ({ browser }) => {
   const { ctx, page } = await imported(browser);
   await rest(page);
   await openFn(page, /garage/i);
@@ -235,7 +240,7 @@ test('9.3 each check arrow shows whether it passes right now', async (browser) =
   await ctx.close();
 });
 
-test('9.3 hovering an arrow from a template shows its value now', async (browser) => {
+test('9.3 hovering an arrow from a template shows its value now', async ({ browser }) => {
   const { ctx, page } = await imported(browser);
   await rest(page);
   const lid = await openFn(page, /garage/i);
@@ -267,7 +272,7 @@ test('9.3 hovering an arrow from a template shows its value now', async (browser
   await ctx.close();
 });
 
-test('9.3 Watch triggers pulses the trigger arrow while the automation is off; nothing runs', async (browser) => {
+test('9.3 Watch triggers pulses the trigger arrow while the automation is off; nothing runs', async ({ browser }) => {
   const { ctx, page } = await imported(browser);
   await rest(page);
   await openFn(page, /garage/i);
@@ -291,7 +296,7 @@ test('9.3 Watch triggers pulses the trigger arrow while the automation is off; n
   await ctx.close();
 });
 
-test('9.3 a monitor box lists the latest events of one type', async (browser) => {
+test('9.3 a monitor box lists the latest events of one type', async ({ browser }) => {
   const { ctx, page } = await imported(browser);
   const lid = await openFn(page, /garage/i);
   await fbq(page, '[data-act="debug"]').click();
@@ -322,7 +327,7 @@ test('9.3 a monitor box lists the latest events of one type', async (browser) =>
   await ctx.close();
 });
 
-test('9.4 the debugger: a change, the run it set off, what that run changed; the chain lights step by step', async (browser) => {
+test('9.4 the debugger: a change, the run it set off, what that run changed; the chain lights step by step', async ({ browser }) => {
   const { ctx, page } = await imported(browser);
   await rest(page);
   await openFn(page, /garage/i);
@@ -354,7 +359,7 @@ test('9.4 the debugger: a change, the run it set off, what that run changed; the
   await ctx.close();
 });
 
-test('9.4 why didn\'t it run: the condition that stopped it, named', async (browser) => {
+test('9.4 why didn\'t it run: the condition that stopped it, named', async ({ browser }) => {
   const { ctx, page } = await imported(browser);
   await rest(page);
   await openFn(page, /garage/i);
@@ -370,7 +375,7 @@ test('9.4 why didn\'t it run: the condition that stopped it, named', async (brow
   await ctx.close();
 });
 
-test('4.5 a run from the Runs list lights its path, with its trace a click away', async (browser) => {
+test('4.5 a run from the Runs list lights its path, with its trace a click away', async ({ browser }) => {
   const { ctx, page } = await imported(browser);
   await rest(page);
   await svc(page, 'cover', 'open_cover', {}, { entity_id: DOOR });
@@ -399,7 +404,7 @@ test('4.5 a run from the Runs list lights its path, with its trace a click away'
   await ctx.close();
 });
 
-test('9.5 a notification: test it, and what it sent lately', async (browser) => {
+test('9.5 a notification: test it, and what it sent lately', async ({ browser }) => {
   const { ctx, page } = await imported(browser);
   await setMode(page, 'full');
   await rest(page);
@@ -435,7 +440,7 @@ test('9.5 a notification: test it, and what it sent lately', async (browser) => 
   await ctx.close();
 });
 
-test('7.5 draw an arrow and remove it: the config ends as it started, and both steps undo', async (browser) => {
+test('7.5 draw an arrow and remove it: the config ends as it started, and both steps undo', async ({ browser }) => {
   const { ctx, page } = await imported(browser);
   await setMode(page, 'full');
   await rest(page);
@@ -500,7 +505,7 @@ test('7.5 draw an arrow and remove it: the config ends as it started, and both s
   await ctx.close();
 });
 
-test('7.5 arrows that can\'t be changed from the board say why; Organise only draws nothing', async (browser) => {
+test('7.5 arrows that can\'t be changed from the board say why; Organise only draws nothing', async ({ browser }) => {
   const { ctx, page } = await imported(browser);
   await setMode(page, 'full');
   await openFn(page, /garage/i);
@@ -525,7 +530,7 @@ test('7.5 arrows that can\'t be changed from the board say why; Organise only dr
   await ctx.close();
 });
 
-test('2.7 Node-RED flows: off means no request; on, its groups are wired to the pieces they use', async (browser) => {
+test('2.7 Node-RED flows: off means no request; on, its groups are wired to the pieces they use', async ({ browser }) => {
   const { ctx, page } = await imported(browser);
   page.allowFail.push(/^supervisor\/api$/);  // the test Home Assistant has no apps
   await ws(page, { type: 'frontend/set_user_data', key: 'functions_board_ui', value: null });
@@ -560,7 +565,7 @@ test('2.7 Node-RED flows: off means no request; on, its groups are wired to the 
   await ctx.close();
 });
 
-test('2.7 Node-RED flows: not let in yet, the board asks to open Node-RED and never makes a session itself', async (browser) => {
+test('2.7 Node-RED flows: not let in yet, the board asks to open Node-RED and never makes a session itself', async ({ browser }) => {
   const { ctx, page } = await imported(browser);
   await openFn(page, /garage/i);
   const SLUG = 'a0d7b954_nodered_' + Date.now().toString(36);  // a fresh app each run: nothing kept for it yet
@@ -615,7 +620,7 @@ test('2.7 Node-RED flows: not let in yet, the board asks to open Node-RED and ne
   await ctx.close();
 });
 
-test('4.8 keyboard and screen readers: boxes are named buttons, arrow keys follow the arrows, dialogs keep focus', async (browser) => {
+test('4.8 keyboard and screen readers: boxes are named buttons, arrow keys follow the arrows, dialogs keep focus', async ({ browser }) => {
   const { ctx, page } = await imported(browser);
   await openFn(page, /garage/i);
   check('4.8 one box is in the tab order', (await fbq(page, '.nodes .node[tabindex="0"]').count()) === 1);
@@ -652,20 +657,16 @@ test('4.8 keyboard and screen readers: boxes are named buttons, arrow keys follo
   await ctx.close();
 });
 
-(async () => {
-  const browser = await chromium.launch();
-  for (const [name, fn] of cases) {
-    if (only && !only.test(name)) continue;
-    console.log('-- ' + name);
-    try { await fn(browser); } catch (e) { check(name + ' (ran to the end)', false, e.message.split('\n')[0]); }
-    if (cleanup.length) {
-      const c = await session(browser, 'owner');
-      await c.page.goto(BASE + '/'); await ready(c.page);
-      for (const path of cleanup.splice(0)) await api(c.page, 'DELETE', path).catch(() => {});
-      await c.ctx.close();
-    }
-  }
-  // leave the test Home Assistant in Organise only, as the other suites expect
+
+pwTest.afterEach(async ({ browser }) => {
+  if (!cleanup.length) return;
+  const c = await session(browser, 'owner');
+  await c.page.goto(BASE + '/'); await ready(c.page);
+  for (const path of cleanup.splice(0)) await api(c.page, 'DELETE', path).catch(() => {});
+  await c.ctx.close();
+});
+// leave the test Home Assistant in Organise only, as the other suites expect
+pwTest.afterAll(async ({ browser }) => {
   try {
     const s = await session(browser, 'owner');
     await s.page.goto(BASE + '/'); await ready(s.page);
@@ -674,6 +675,5 @@ test('4.8 keyboard and screen readers: boxes are named buttons, arrow keys follo
     await s.page.evaluate((id) => document.querySelector('home-assistant').hass.callApi('POST', 'config/config_entries/options/flow/' + id, { mode: 'organise', card: false }), flow.flow_id);
     await s.ctx.close();
   } catch (e) { /* best effort */ }
-  await browser.close();
   done();
-})().catch((e) => { console.error(e); process.exit(1); });
+});

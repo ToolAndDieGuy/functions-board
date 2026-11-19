@@ -2,12 +2,12 @@
 // rendered by the real Home Assistant, and nothing sent to it that changes anything.  node tests/e2e/sandbox.test.js
 const path = require('path');
 const { chromium, BASE, STATE, session, ws, fbq, board, ready, until, suite, openFn, reset, importAll } = require('./lib');
+const { test } = require('./fixtures');
 const { check, done } = suite('sandbox');
 const el = (page, fn, arg) => board(page).evaluate(fn, arg);
 const DOOR = 'cover.garage_door', TIMER = 'timer.garage_open', AUTO = 'input_boolean.garage_auto_close';
 
-(async () => {
-  const browser = await chromium.launch();
+test('sandbox', async ({ browser }) => {
   const { ctx, page } = await session(browser, 'owner', { viewport: { width: 1500, height: 900 } });
   await page.goto(BASE + '/');
   await ready(page);
@@ -225,6 +225,5 @@ const DOOR = 'cover.garage_door', TIMER = 'timer.garage_open', AUTO = 'input_boo
   check('closed: the board shows your home\'s states again', await el(page, (b, k) => !b._sbx && !b._$.board.classList.contains('sbx') && !b._els.get(k).dataset.sbx && !b._els.get(k).classList.contains('sbch'), DOOR));
   check('no errors', page.logs.length === 0, page.logs);
   await ctx.close();
-  await browser.close();
-  done();
-})().catch((e) => { console.error(e); process.exit(1); });
+});
+test.afterAll(() => done());
