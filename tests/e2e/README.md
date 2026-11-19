@@ -51,8 +51,12 @@ from Home Assistant's own frontend, not the board; the tests ignore them.
 `sh tests/shots.sh` starts a fresh test Home Assistant, takes the README's images again into
 `tests/.results/shots/` with `tests/e2e/screens.js` (1440×820 at 2×), and compares each with the one in `docs/images/`
 (`tests/e2e/shotcompare.js`; a picture of the difference for each that changed). It runs weekly in CI, so pictures
-that no longer show the board as it is are noticed. After a visible change, run it, copy the new pictures into
-`docs/images/`, and look at each one. By hand, `node tests/e2e/screens.js [name]` on a running test Home Assistant
+that no longer show the board as it is are noticed. The README's pictures are the ones CI takes: fonts are drawn a
+little differently on every machine, so pictures taken anywhere else never match CI's exactly. When they differ, the
+weekly job pushes the new ones to the branch `readme-pictures` and links the comparison (GitHub shows each picture
+before and after); open a pull request from it to take them. After a visible change, run the job by hand (Actions →
+Weekly → Run workflow → pictures) rather than committing pictures taken locally; locally, `tests/shots.sh` is for
+looking at them. By hand, `node tests/e2e/screens.js [name]` on a running test Home Assistant
 (after `node tests/e2e/hasetup.js`) writes them straight to `docs/images/`; `FB_SHOTS_OUT` changes the folder, and
 `FB_SHOTS_RAW=1` keeps the browser's PNGs instead of palette ones. The demo instance (`FB_SHOTS_ON=demo`) adds the
 "Away mode" function, for the demo video.

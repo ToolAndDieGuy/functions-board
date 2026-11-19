@@ -71,5 +71,15 @@ const save = (who, t) => fs.writeFileSync(path.join(STATE, who + '_token.json'),
     await post('/api/config/config_entries/flow/' + f.flow_id, {}, owner.access_token);
     console.log('added the Functions Board integration');
   }
+  // Home Assistant answers its API before every integration is set up; the frontend (and get_services) only
+  // settle once it says it is running, so wait for that (a slow CI runner showed only the loading screen)
+  let state = null, svc = null;
+  for (let i = 0; i < 120; i++) {
+    state = (await fetch(BASE + '/api/config', { headers: { Authorization: 'Bearer ' + owner.access_token } }).then(json).catch(() => ({}))).state;
+    svc = state === 'RUNNING' ? await wsCall(owner.access_token, { type: 'get_services' }).then(() => 'ok', (e) => String(e).slice(0, 200)) : null;
+    if (svc === 'ok') break;
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  if (svc !== 'ok') throw new Error(`Home Assistant did not finish starting (state ${state}; get_services: ${svc})`);
   console.log('ready: owner and user logged in (' + instance + ')');
 })().catch((e) => { console.error(String(e && e.stack || e)); process.exit(1); });

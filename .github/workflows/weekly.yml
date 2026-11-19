@@ -16,6 +16,12 @@ on:
   schedule:
     - cron: "41 7 * * 3"
   workflow_dispatch:
+    inputs:
+      only:
+        description: "Which job to run by hand"
+        type: choice
+        options: [all, beta, mutants, strict, pictures]
+        default: all
 
 permissions:
   contents: read
@@ -23,6 +29,7 @@ permissions:
 
 jobs:
   beta:
+    if: github.event_name == 'schedule' || inputs.only == 'all' || inputs.only == 'beta'
     name: Against Home Assistant's beta
     runs-on: ubuntu-latest
     timeout-minutes: 75
@@ -41,7 +48,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libturbojpeg0 || sudo apt-get install -y libturbojpeg
       - name: Set up the newest Home Assistant and Playwright
         run: |
-          sh tests/setup.sh
+          sh tests/setup.sh && sh tests/setup.sh backend
           npx playwright install --with-deps chromium
           echo "HA_VERSION=$(venv314/bin/python -c 'from homeassistant.const import __version__ as v; print(v)')" >> "$GITHUB_ENV"
       - name: Quick tests
@@ -83,6 +90,7 @@ jobs:
           fi
 
   mutants:
+    if: github.event_name == 'schedule' || inputs.only == 'all' || inputs.only == 'mutants'
     name: Mutants
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -118,6 +126,7 @@ jobs:
           sh .github/issue.sh test-gap "A test gap: a mutant went uncaught" "The weekly mutants run found a break no check caught, or a mutant whose text is no longer in the code (tests/mutants.json must follow it): $run"
 
   strict:
+    if: github.event_name == 'schedule' || inputs.only == 'all' || inputs.only == 'strict'
     name: Strict (no flaky tests)
     runs-on: ubuntu-latest
     timeout-minutes: 75
@@ -155,8 +164,12 @@ jobs:
           sh .github/issue.sh test-gap "A flaky test, or an old quarantine" "The weekly strict run failed: a test passed only on its second try, or a check has been quarantined for more than 30 days (tests/quarantine.json). The run's summary lists which: $run"
 
   pictures:
+    if: github.event_name == 'schedule' || inputs.only == 'all' || inputs.only == 'pictures'
     name: README pictures
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -176,17 +189,40 @@ jobs:
           sh tests/setup.sh
           npx playwright install --with-deps chromium
       - name: Take them again and compare
+        id: shots
         run: sh tests/shots.sh
-      - name: The new pictures and their differences
+      # The README's pictures are the ones taken here: fonts are drawn a little differently on every machine, so
+      # pictures taken anywhere else never match exactly. When the board has changed what they show, the new ones go
+      # to the branch readme-pictures, and the issue links to the comparison: GitHub shows each picture before and
+      # after; open a pull request from it to take them.
+      - name: New pictures to the readme-pictures branch
+        id: branch
+        if: failure() && steps.shots.outcome == 'failure' && hashFiles('tests/.results/shots/board.png') != ''
+        run: |
+          for f in docs/images/*.png; do n=$(basename "$f"); [ -f "tests/.results/shots/$n" ] && cp "tests/.results/shots/$n" "$f"; done
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B readme-pictures
+          git add docs/images
+          git commit -m "README pictures, taken again by the weekly run" -m "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          git push -f origin readme-pictures
+          echo "compare=${{ github.server_url }}/${{ github.repository }}/compare/main...readme-pictures?expand=1" >> "$GITHUB_OUTPUT"
+          echo "New pictures: ${{ github.server_url }}/${{ github.repository }}/compare/main...readme-pictures?expand=1" >> "$GITHUB_STEP_SUMMARY"
+      - name: The new pictures, their differences and the logs
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: pictures
-          path: tests/.results/shots/
+          path: |
+            tests/.results/
+            ha/hass.log
       - name: Open an issue, or add to the open one
         if: failure() && github.event_name == 'schedule'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           run="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          sh .github/issue.sh docs "The README's pictures are out of date" "The weekly run took the README's screenshots again and some no longer match docs/images. The run's artifact has the new pictures and a picture of each difference: $run"
+          link="${{ steps.branch.outputs.compare }}"
+          if [ -n "$link" ]; then body="The weekly run took the README's screenshots again and some no longer match docs/images. The new ones are on the branch readme-pictures; see each before and after, and open a pull request to take them: $link (run: $run)"
+          else body="The weekly run couldn't take the README's screenshots: $run"; fi
+          sh .github/issue.sh docs "The README's pictures are out of date" "$body"
