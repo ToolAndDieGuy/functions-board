@@ -6,5 +6,5 @@ const path = require('path');
 module.exports = async () => {
   const dir = process.env.FB_RESULTS || path.join(__dirname, '..', '.results');
   if (!fs.existsSync(dir)) return;
-  for (const f of fs.readdirSync(dir)) if (f.endsWith('.jsonl')) fs.rmSync(path.join(dir, f), { force: true });
+  for (const f of fs.readdirSync(dir)) if (f.endsWith('.jsonl') || f.endsWith('.flaky.json')) fs.rmSync(path.join(dir, f), { force: true });
 };

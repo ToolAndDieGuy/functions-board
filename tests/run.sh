@@ -22,7 +22,8 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
-R="$PWD/tests/.results"
+# FB_OUT: another results folder (the mutants runner gives each mutant its own)
+R="${FB_OUT:-$PWD/tests/.results}"
 rm -rf "$R"; mkdir -p "$R"
 export FB_RESULTS="$R"
 WANT=""

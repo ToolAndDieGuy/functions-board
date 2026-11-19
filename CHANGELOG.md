@@ -2,9 +2,20 @@
 
 ## Unreleased
 
+Fixed: the sandbox got **and**, **or** and **not** conditions wrong (since 0.7.0). An "and" passed as soon as its
+first condition was true, an "or" passed even when none was, and a "not" let the run go on when what it held was
+true. So in the sandbox, and in saved checks, an automation could run when it wouldn't in Home Assistant, or stop
+when it would run. Plain lists of conditions, and choose and if blocks, were right. If a saved check passed only
+because of this, it now fails, and shows on the board as a problem.
+
 Fixed: closing a dialog or the side drawer could leave the keyboard focus on a box instead of the button that
 opened it, when the board had redrawn that button in the meantime (the function list redraws whenever a count
-changes). Focus now goes back to that button.
+changes). Focus now goes back to that button. And a box that has focus keeps it when the board is drawn again
+around it.
+
+Fixed: a state set with Test → Simulate a state could lose its "simulated" mark on the box at once, when Home
+Assistant's word of the new state reached the board after its answer to setting it (more likely on a busy Home
+Assistant). The mark now stays until the device or its integration really reports again.
 
 For contributors: the test system was rebuilt as a whole (`tests/README.md`).
 

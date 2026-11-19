@@ -9,11 +9,13 @@ const results = process.env.FB_RESULTS || path.join(__dirname, '.results');
 const suite = process.env.FB_SUITE || 'all';
 module.exports = defineConfig({
   globalSetup: require.resolve('./lib/pw-setup'),
+  globalTeardown: require.resolve('./lib/pw-teardown'),
   testDir: path.join(__dirname, 'e2e'),
   testMatch: process.env.FB_SUITE ? new RegExp(`(^|/)${process.env.FB_SUITE}\\.test\\.js$`) : /(^|\/)(isolation|contract|ui|regress|tools|sync|sandbox|versions|privacy)\.test\.js$/,
   workers: 1,
   fullyParallel: false,
-  retries: 0,
+  // a test that fails is run once more in CI, and one that passes then is reported as flaky (tests/lib/checks.js)
+  retries: +(process.env.FB_RETRIES || (process.env.CI ? 1 : 0)),
   // the older suites are one long test each; the fixture's snapshot and restore are part of every test
   timeout: 30 * 60 * 1000,
   expect: { timeout: 10000 },

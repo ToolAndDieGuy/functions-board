@@ -91,7 +91,9 @@ function suite(name) {
   let last = Date.now();
   const check = (n, ok, detail) => {
     const d = !ok && detail !== undefined ? (typeof detail === 'string' ? detail : JSON.stringify(detail)).slice(0, 500) : '';
-    const r = { name: n, ok: !!ok, detail: d, ms: Date.now() - last };
+    const r = { name: n, ok: !!ok, detail: d, ms: Date.now() - last, suite: name };
+    // which test and which try of it (Playwright runs a failed test once more in CI): see tests/lib/checks.js
+    if (hooks.attempt) Object.assign(r, hooks.attempt);
     results.push(r);
     // kept as it happens: Playwright starts a new worker after a failed test, and that worker's done() must still
     // report the checks made before it
@@ -101,12 +103,12 @@ function suite(name) {
     if (hooks.soft) { try { hooks.soft(!!ok, n + (d ? '  -- ' + d : '')); } catch (e) { /* outside a test */ } }
     return !!ok;
   };
+  // the report so far (the Playwright configs' global teardown writes it again once every worker is done)
   const done = () => {
-    let all = results;
-    try { all = fs.readFileSync(path.join(RESULTS, file(name) + '.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)); } catch (e) { /* only this process's */ }
-    const bad = all.filter((r) => !r.ok).map((r) => r.name);
-    console.log(`\n${name}: ${all.length - bad.length}/${all.length} passed` + (bad.length ? ': failed ' + bad.join(', ') : ''));
-    require('../lib/junit').write(path.join(RESULTS, file(name) + '.xml'), name, all);
+    let out = require('../lib/checks').writeSuite(RESULTS, file(name));
+    if (!out) { out = { cases: results, flaky: [] }; require('../lib/junit').write(path.join(RESULTS, file(name) + '.xml'), name, results); }
+    const bad = out.cases.filter((r) => !r.ok).map((r) => r.name);
+    console.log(`\n${name}: ${out.cases.length - bad.length}/${out.cases.length} passed` + (bad.length ? ': failed ' + bad.join(', ') : '') + (out.flaky.length ? ` (flaky: ${out.flaky.map((f) => f.test).join(', ')})` : ''));
     process.exitCode = bad.length ? 1 : 0;
   };
   const me = { check, done, results };

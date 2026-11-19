@@ -174,6 +174,21 @@ test('versions', async ({ browser }) => {
   check('0.8.1 when what\'s there now is already a saved version, the dialog names it', /already saved as "Original"/.test(hint2), hint2);
   await fbq(page, '.modal [data-act="modal-cancel"]').click();
 
+  // 0.9.1: what was deleted since the version was saved is made again when it's restored (a mutant in
+  // tests/mutants.json found this unchecked)
+  await api(page, 'DELETE', `config/automation/config/${LEFT_ID}`);
+  await until(async () => (await api(page, 'GET', `config/automation/config/${LEFT_ID}`).then(() => null, () => true)), 10000);
+  // the board reloads its registries a moment after Home Assistant says something changed
+  await until(() => el(page, (b, k) => !b._entMap.has(k) || null, LEFT), 10000);
+  await el(page, (b) => b._renderVersions());
+  await until(async () => (await vlist(page)).some((x) => x.id === vid && x.restore) || null, 10000);
+  await fbq(page, `.drawer [data-act="ver-restore"][data-id="${vid}"]`).click();
+  await fbq(page, '.modal [data-act="ver-restore-go"]').waitFor({ timeout: 15000 });
+  await fbq(page, '.modal [data-act="ver-restore-go"]').click();
+  await until(() => el(page, (b) => b._$.modal.hidden || null), 30000);
+  const made = await until(async () => (await api(page, 'GET', `config/automation/config/${LEFT_ID}`).then((c) => c, () => null)), 10000);
+  check('0.9.1 an automation deleted since the version was saved is made again by restoring it', !!made && made.alias === original.alias, made);
+
   // rename and delete
   await fbq(page, `.drawer [data-act="ver-edit"][data-id="${dv.id}"]`).click();
   await fbq(page, '.modal input[name="vname"]').fill('Old opener');

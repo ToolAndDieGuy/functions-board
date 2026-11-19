@@ -658,4 +658,53 @@ test('0.9.1 focus goes back to what opened a dialog or the drawer, even when the
   check('0.9.1 focus back: no errors', page.logs.length === 0, page.logs);
 });
 
+test('0.9.1 a layout another board saved meanwhile, unheard of: the save meets the conflict and takes that layout', async ({ browser, fake }) => {
+  const { page } = await imported(browser);
+  await openFn(page, /garage/i);
+  const label = await el(page, (b) => b._model.label);
+  // this board's first save, so the store has its layout at a revision this board knows
+  await el(page, (b) => { const L = b._data.layouts[b._model.label]; L.notes = (L.notes || []).concat([{ id: 'n1', text: 'mine', x: 0, y: 0 }]); b._save(); });
+  await until(() => ((fake.store.data.layouts || {})[label] || { notes: [] }).notes.some((n) => n.text === 'mine') || null, 8000);
+  // another board saves it, and word of that doesn't reach this one (lost, or still on its way)
+  const other = JSON.parse(JSON.stringify(fake.store.data.layouts[label]));
+  other.notes = [{ id: 'n2', text: 'from the other board', x: 40, y: 40 }];
+  fake.store.data = Object.assign({}, fake.store.data, { layouts: Object.assign({}, fake.store.data.layouts, { [label]: other }) });
+  fake.store.revs = Object.assign({}, fake.store.revs, { [label]: (fake.store.revs[label] || 0) + 1 });
+  // this board then changes it too: its save carries the old revision
+  await el(page, (b) => { const L = b._data.layouts[b._model.label]; L.notes = (L.notes || []).concat([{ id: 'n3', text: 'mine too', x: 80, y: 0 }]); b._save(); });
+  const took = await until(() => el(page, (b, l) => ((b._data.layouts[l] || {}).notes || []).some((n) => n.text === 'from the other board') || null, label), 8000);
+  const kept = (fake.store.data.layouts[label].notes || []).map((n) => n.text);
+  check('0.9.1 a save at a stale revision is refused, and this board takes the other board\'s layout', !!took && kept.join() === 'from the other board', { kept, mine: await el(page, (b, l) => (b._data.layouts[l].notes || []).map((n) => n.text), label) });
+  check('0.9.1 ... and says it was rearranged on another board', /another board/.test(await fbq(page, '.toast').textContent().catch(() => '')));
+  check('0.9.1 conflict: no errors', page.logs.length === 0, page.logs);
+});
+
+test('0.9.1 a simulated state stays marked when Home Assistant\'s word of it comes after its answer', async ({ browser, fake }) => {
+  const { page } = await imported(browser);
+  await openFn(page, /garage/i);
+  const DOOR = 'cover.garage_door';
+  // the answer to setting the state comes first, the state event 300 ms later (on a busy Home Assistant)
+  fake.stateLag = 300;
+  await el(page, (b, k) => b._execTest({ kind: 'state', target: k, state: 'open' }), DOOR);
+  const mark = () => el(page, (b, k) => { const n = b._els.get(k); return !!n && n.classList.contains('sim'); }, DOOR);
+  const shown = await until(async () => (await mark()) || null, 3000);
+  await sleep(800);
+  check('0.9.1 a simulated state is marked, though Home Assistant\'s state event came after its answer', !!shown && await mark());
+  await fake.setState(DOOR, 'closed');
+  check('0.9.1 ... and the mark goes when the device reports', await until(async () => !(await mark()) || null, 3000));
+  check('0.9.1 simulated: no errors', page.logs.length === 0, page.logs);
+});
+
+test('0.9.1 a focused box keeps focus when the board is drawn again around it', async ({ browser }) => {
+  const { page } = await imported(browser);
+  await openFn(page, /garage/i);
+  // a box, focused from the keyboard (as roving focus does), then the board drawn anew (a state or a config
+  // changed): every box is a new element, and focus must land on the same box again, not on the page
+  const key = await el(page, (b) => { const n = [...b._els.values()][1]; n.focus(); return n.dataset.key; });
+  await el(page, (b) => b._render());
+  const now = await el(page, (b) => { const a = b.shadowRoot.activeElement; return a && a.classList.contains('node') ? a.dataset.key : (a ? a.tagName : null); });
+  check('0.9.1 a focused box keeps focus when the board is drawn again', !!key && now === key, { key, now });
+  check('0.9.1 redraw focus: no errors', page.logs.length === 0, page.logs);
+});
+
 pwTest.afterAll(() => done());

@@ -122,12 +122,13 @@ class FakeHA {
   }
 
   /* ---------- changes a test makes, as Home Assistant would show them ---------- */
-  async setState(id, state, attributes) {
+  // lag (ms): the page hears of it that much later (as when Home Assistant's state event comes after its answer)
+  async setState(id, state, attributes, lag) {
     const old = this.states.get(id), t = nowIso();
     const s = { entity_id: id, state: String(state), attributes: Object.assign({}, old ? old.attributes : {}, attributes || {}), last_changed: old && old.state === String(state) ? old.last_changed : t, last_reported: t, last_updated: t, context: { id: crypto.randomBytes(13).toString('hex'), parent_id: null, user_id: null } };
     this.states.set(id, s);
-    await this.push();
-    await this.emit('state_changed', { entity_id: id, old_state: old || null, new_state: s });
+    const tell = async () => { await this.push(); await this.emit('state_changed', { entity_id: id, old_state: old || null, new_state: s }); };
+    if (lag) setTimeout(() => tell().catch(() => {}), lag); else await tell();
   }
   async removeState(id) { this.states.delete(id); await this.push(); }
 
@@ -304,7 +305,7 @@ class FakeHA {
     let m;
     if (method === 'GET' && p === 'events') return [...new Set(['state_changed', 'call_service', 'automation_triggered', 'script_started', 'timer.finished'])].map((e) => ({ event: e, listener_count: 1 }));
     if (method === 'GET' && /^config\/config_entries\/flow_handlers/.test(p)) return [];
-    if ((m = p.match(/^states\/(.+)$/)) && method === 'POST') { await this.setState(decodeURIComponent(m[1]), body.state, body.attributes); return this.states.get(decodeURIComponent(m[1])); }
+    if ((m = p.match(/^states\/(.+)$/)) && method === 'POST') { await this.setState(decodeURIComponent(m[1]), body.state, body.attributes, this.stateLag); return clone(this.states.get(decodeURIComponent(m[1]))); }
     if ((m = p.match(/^config\/automation\/config\/(.+)$/))) {
       const id = decodeURIComponent(m[1]);
       if (method === 'GET') { if (!this.autos[id]) throw new HAError('not_found', 'Resource not found'); return clone(this.autos[id]); }

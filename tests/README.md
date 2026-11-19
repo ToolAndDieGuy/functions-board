@@ -21,7 +21,7 @@ The tests are layers. Each one tests what the layer below can't, and is as fast 
 | 2. Units | `wiring`, `problems`, `sandbox` `.test.js`; `backend/` | Node; pytest | the board's library (pure functions) and the Python side, case by case |
 | 3. The board | `board/` | Chromium, a fake Home Assistant | everything the board draws and does, in parallel, in seconds per test |
 | 4. Home Assistant | `e2e/` | Chromium, a real Home Assistant | what only the real thing can show: its API, its frontend, templates, isolation, privacy |
-| 5. Weekly | `.github/workflows/beta.yml` | a real Home Assistant, newest beta | Home Assistant changing under us |
+| 5. Weekly | `.github/workflows/weekly.yml` | a real Home Assistant (pinned, and the newest beta) | Home Assistant changing under us; checks that went blind (mutants); flaky tests |
 
 A check belongs in the lowest layer that can make it fail. A layout rule is a board test, not a Home Assistant
 test; how `analyze()` reads one automation shape is a unit test, not a board test.
@@ -74,6 +74,30 @@ Assistant. `tests/e2e/fixtures.js` takes a snapshot of everything a test may cha
 back afterwards, even when the test fails (`snapshot()` and `restore()` in `tests/e2e/ha-api.js`;
 `isolation.test.js` plants a failing test half way through a change and proves nothing is left). So no test may
 count on what an earlier one left. Setup details, screenshots and the size test are in `tests/e2e/README.md`.
+
+### Mutants: proof that each check can fail
+
+A check that can't fail is worse than none: it says "tested". `tests/mutants.json` lists breaks, each in one exact
+place in the code (or in the test system itself), with the check that must catch it; `node tests/mutants.js
+[--ha] [pattern]` makes each break in turn, runs only that suite (only the cases named), puts the code back, and
+fails any mutant its check didn't catch. A mutant whose text is no longer in the code fails too, so the list
+follows the code. They run weekly; run the ones near your change before you push it (`node tests/mutants.js
+sandbox`). The first run of the list found an untested `not`/`and`/`or` in the sandbox, which turned out to be
+wrong since 0.7.0.
+
+When you make a check fail on purpose to see that it can, write that break down as a mutant.
+
+### Flaky tests and quarantine
+
+In CI, Playwright runs a failed browser test once more (`retries`, and `FB_RETRIES` by hand). Each check is
+logged with its test and try (`tests/lib/checks.js`): only a test's last try counts, and a test that failed and
+then passed is **flaky**: the run passes and its summary (`tests/.results/summary.md`, and the CI job's summary)
+lists it. The weekly strict run (`FB_STRICT=1`) fails on any flaky test.
+
+A check that fails for a reason that can't be fixed at once can be put in `tests/quarantine.json`
+(`{ "suite": "e2e-tools", "check": "part of its name", "why": "…", "since": "YYYY-MM-DD" }`). It still runs and
+shows in the summary, but its failure doesn't fail the run. The weekly strict run fails on an entry more than 30
+days old, or one whose check isn't there any more.
 
 ### Failures
 

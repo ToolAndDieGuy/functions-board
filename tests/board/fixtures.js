@@ -16,6 +16,7 @@ const test = base.test.extend({
     helpers.current.fake = fake;
     helpers.current.all = [fake];
     lib.hooks.traces = [];
+    lib.hooks.attempt = { test: testInfo.titlePath.slice(1).join(' › '), retry: testInfo.retry };
     lib.hooks.mark = lib.hooks.suite ? lib.hooks.suite.results.length : 0;
     await use(fake);
     for (const c of lib.hooks.open.splice(0)) await lib.stopTrace(c).catch(() => {});

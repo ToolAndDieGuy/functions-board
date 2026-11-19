@@ -9,7 +9,7 @@
 #
 # FB_FRESH=1 rebuilds the Home Assistant config folders (their stored data and onboarding go with them).
 # FB_HA=beta installs Home Assistant's newest release, betas included, instead of the pinned one (the weekly
-# beta run in .github/workflows/beta.yml); FB_HA=2026.12.0 installs that version.
+# beta run in .github/workflows/weekly.yml); FB_HA=2026.12.0 installs that version.
 # Needs: uv (https://docs.astral.sh/uv/; installed with pip if missing), Node 22, and the system TurboJPEG library
 # (libturbojpeg on Debian and Ubuntu) for the demo integration's camera entities.
 set -e

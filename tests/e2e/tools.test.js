@@ -116,8 +116,12 @@ test('9.2 a simulated state sets off the function and stays marked until the dev
   await fbq(page, '.modal [data-act="test-run"]').click();
   check('9.2 the state is set', await until(async () => (await st(page, DOOR)).state === 'open', 5000));
   check('9.2 and the automation it triggers ran', await until(async () => (await st(page, START)).lt !== before.lt, 5000));
+  const mark = () => el(page, (b, k) => { const n = b._els.get(k); return { sim: n.classList.contains('sim'), tip: n.title }; }, DOOR);
+  await until(async () => (await mark()).sim || null, 5000);
+  // ... and stays marked: nothing has come from the device (0.9.1: the mark could go at once, when Home
+  // Assistant's state event came after its answer to the simulation)
   await page.waitForTimeout(1200);
-  const box = await el(page, (b, k) => { const n = b._els.get(k); return { sim: n.classList.contains('sim'), tip: n.title }; }, DOOR);
+  const box = await mark();
   check('9.2 the box is marked simulated', box.sim && /simulated/.test(box.tip), box);
   // the device reports again (here: a real close)
   await svc(page, 'cover', 'close_cover', {}, { entity_id: DOOR });

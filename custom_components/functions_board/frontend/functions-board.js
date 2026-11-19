@@ -4309,7 +4309,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         for (const x of subs()) {
           const r = await this._cond(x, run);
           if (r.partly) partly = (partly || []).concat(r.partly);
-          if (r.ok !== want) return { hit: true, r, partly };
+          if (r.ok === want) return { hit: true, r, partly };
         }
         return { hit: false, partly };
       };
@@ -4768,7 +4768,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._undoStack = []; this._redoStack = [];
       this._tgt = new Map(); this._src = new Map();
       // developer tools (Phase 9): simulated states, trigger watches, check results, monitors, the debugger
-      this._sim = new Map(); this._tw = new Map(); this._cond = new Map(); this._liveE = new Map();
+      this._sim = new Map(); this._simAt = new Map(); this._tw = new Map(); this._cond = new Map(); this._liveE = new Map();
       this._monSubs = new Map(); this._monData = new Map(); this._monCount = new Map();
       this._testLog = []; this._testOk = false; this._dbg = null; this._dbgSeq = 0; this._lit = null;
     }
@@ -5967,7 +5967,12 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       // a simulated state stays marked until the device or its integration reports again (9.2)
       if (this._sim.has(n.key)) {
         const st = this._hass.states[n.key];
-        if (st && st.context && st.context.id === this._sim.get(n.key)) { r.text += T('simulated_2'); r.sim = true; } else this._sim.delete(n.key);
+        const at = this._simAt.get(n.key);
+        if (st && st.context && st.context.id === this._sim.get(n.key)) { r.text += T('simulated_2'); r.sim = true; }
+        // Home Assistant's word of the simulated state may come after its answer to setting it: until then the
+        // state here is the one from before, which is no report from the device (0.9.1: this cleared the mark)
+        else if (st && at && Date.parse(st.last_updated) < at) { /* not yet */ }
+        else { this._sim.delete(n.key); this._simAt.delete(n.key); }
       }
       return r;
     }
@@ -7742,7 +7747,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           // Home Assistant's copy only: the next update from the device or its integration puts the real state back
           const st = this._hass.states[id];
           const r = await this._hass.callApi('POST', 'states/' + id, { state: t.state, attributes: st ? st.attributes : {} });
-          if (r && r.context && r.context.id) this._sim.set(id, r.context.id);
+          if (r && r.context && r.context.id) { this._sim.set(id, r.context.id); this._simAt.set(id, Date.parse(r.last_updated) || Date.now()); }
           this._refreshStates();
           return r;
         }

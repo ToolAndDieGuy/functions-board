@@ -18,6 +18,7 @@ const test = base.test.extend({
     const snap = await ha.snapshot();
     lib.hooks.mark = lib.hooks.suite ? lib.hooks.suite.results.length : 0;
     lib.hooks.traces = [];
+    lib.hooks.attempt = { test: testInfo.titlePath.slice(1).join(' › '), retry: testInfo.retry };
     await use();
     // the traces of the contexts still open, then keep them only if the test failed
     for (const c of lib.hooks.open.splice(0)) await lib.stopTrace(c).catch(() => {});

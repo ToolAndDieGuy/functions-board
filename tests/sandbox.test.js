@@ -187,6 +187,24 @@ const st = (sb, id) => (sb.get(id) || {}).state;
     check('wait for trigger: timed out with continue_on_timeout false, it stops', st(sb2, 'light.l') === 'off' && kinds(sb2, 'run')[0].outcome === 'stopped', kinds(sb2, 'run'));
   }
 
+  // ---- and, or, not (0.9.1; a mutant in tests/mutants.json found these untested)
+  {
+    const on = { condition: 'state', entity_id: 'input_boolean.a', state: 'on' }, off = { condition: 'state', entity_id: 'input_boolean.b', state: 'on' };
+    const go = async (cond) => {
+      const sb = make({ 'input_boolean.a': S('on'), 'input_boolean.b': S('off'), 'light.l': S('off') }, { 'automation.t': { triggers: [{ trigger: 'event', event_type: 'go' }], conditions: [cond], actions: [{ action: 'light.turn_on', target: { entity_id: 'light.l' } }] } });
+      await sb.start();
+      await sb.userEvent('go');
+      return st(sb, 'light.l') === 'on';
+    };
+    const r = {
+      notTrue: await go({ condition: 'not', conditions: [on] }), notFalse: await go({ condition: 'not', conditions: [off] }),
+      andMixed: await go({ condition: 'and', conditions: [on, off] }), andTrue: await go({ condition: 'and', conditions: [on, on] }),
+      orMixed: await go({ condition: 'or', conditions: [off, on] }), orFalse: await go({ condition: 'or', conditions: [off, off] }),
+    };
+    check('not: stops the run when what it holds is true, and lets it go when false', !r.notTrue && r.notFalse, r);
+    check('and: needs every condition; or: any one', !r.andMixed && r.andTrue && r.orMixed && !r.orFalse, r);
+  }
+
   // ---- a template it can't render: asked
   {
     const sb = make({ 'light.l': S('off') }, { 'automation.t': { triggers: [{ trigger: 'event', event_type: 'go' }], conditions: ["{{ (expand('group.x') | list | count) > 2 }}"], actions: [{ action: 'light.turn_on', target: { entity_id: 'light.l' } }] } }, { answer: false });

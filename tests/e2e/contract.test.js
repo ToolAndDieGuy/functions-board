@@ -50,7 +50,9 @@ test('the fake answers like the real Home Assistant', async () => {
   const ids = (xs) => xs.map((s) => s.entity_id).filter((id) => !/^(sun|update|weather|geo_location|sensor\.(date|time)|automation\.bulk_|event)\b/.test(id)).sort();
   const missing = ids(real).filter((x) => !ids(snap.states).includes(x)), extra = ids(snap.states).filter((x) => !ids(real).includes(x));
   check('contract: the fake\'s snapshot has this test config\'s entities (else: node tests/board/capture.js)', !missing.length && !extra.length, { missing, extra });
-  check('contract: ... and is of this Home Assistant version', snap.ha === (await ha.ws({ type: 'get_config' })).version, snap.ha);
+  // (the weekly beta run, FB_HA=beta, is on a newer one by design: there the answers' shapes are what count)
+  const haNow = (await ha.ws({ type: 'get_config' })).version;
+  check('contract: ... and is of this Home Assistant version (any, on the weekly beta run)', snap.ha === haNow || process.env.FB_HA === 'beta', { snapshot: snap.ha, running: haNow });
 
   // reads: the same shapes
   for (const msg of [

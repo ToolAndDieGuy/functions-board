@@ -12,14 +12,16 @@ function write(file, suite, cases) {
     + '\n</testsuite></testsuites>\n';
   fs.writeFileSync(file, xml);
 }
-// { tests, failures, names of failed cases }: <failure> and <error> both count; a skipped case doesn't count as run
+// { tests, failures, failed: names of failed cases, all: names of every case run, skipped }: <failure> and <error> both count; a skipped case doesn't count as run
 function read(file) {
-  const xml = fs.readFileSync(file, 'utf8'), out = { tests: 0, failures: 0, failed: [], skipped: 0 };
+  const xml = fs.readFileSync(file, 'utf8'), out = { tests: 0, failures: 0, failed: [], skipped: 0, all: [] };
+  const un = (n) => n.replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
   for (const m of xml.matchAll(/<testcase\b([^>]*?)(\/>|>([\s\S]*?)<\/testcase>)/g)) {
     const attrs = m[1], inner = m[3] || '', name = (attrs.match(/\bname="([^"]*)"/) || [])[1] || '?';
     if (/<skipped\b/.test(inner)) { out.skipped++; continue; }
     out.tests++;
-    if (/<(failure|error)\b/.test(inner)) { out.failures++; out.failed.push(name.replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')); }
+    out.all.push(un(name));
+    if (/<(failure|error)\b/.test(inner)) { out.failures++; out.failed.push(un(name)); }
   }
   return out;
 }
