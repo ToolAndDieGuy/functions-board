@@ -16,6 +16,10 @@ trace: the Diagnostics file lists what failed since the board opened (anonymised
 error code). When the board asks the same question twice and the answers come back out of order, the older one no
 longer wins.
 
+The board now keeps the time it asked each thing it knows from Home Assistant. A configuration read just before
+you saved can no longer be shown for a minute as if it were the saved one, and a restore planned right after
+something was deleted in Home Assistant sees the deletion.
+
 ## 0.9.2 (2026-11-19)
 
 Fixed: a function another admin made could be deleted from the shared store. If you left the board and came back to

@@ -14,7 +14,7 @@ function out in a sandbox. Published through HACS. Read this before changing any
 - `custom_components/functions_board/frontend/functions-board.js`: the whole board, one plain-JS web component
   (~10,000 lines, no build step, no dependencies). Top to bottom:
   - the **library section** (pure functions, testable in Node without a browser): the clock (`class Clock`), the link
-    to Home Assistant (`class Link`), config analysis (`analyze`,
+    to Home Assistant (`class Link`), the store (`class Store`), config analysis (`analyze`,
     `condText`), layout (`layeredOnce`, `layered`), arrow routing (`arrowGeo`, `orthoAll`, `laneSpread`,
     `untangle`, `busDots`, `hopsOf`), the **sandbox engine** (`class Sandbox`, `sbxEffect`, `sbxRewrite`,
     `SBX_PRELUDE`, `SBX_ETRIG`), the English text table (`T()`, `P()` for plurals);
@@ -74,6 +74,7 @@ returns everything the library section defines.
 | `tests/sandbox.test.js` | the sandbox engine with a stand-in template renderer: triggers, conditions, actions, modes, waits, MQTT, per-entity triggers, `sbxRewrite` |
 | `tests/clock.test.js` | `class Clock` on a pretend clock: `after` (the last call wins), `once` (the first wins), `every`, `frame`, `deadline`, `sleep`, `pause`, and `stop()` leaving nothing set |
 | `tests/link.test.js` | `class Link` against a pretend Home Assistant: the newest answer wins, time limits, failures reported unless optional, lists in a fixed order, what the Diagnostics file carries |
+| `tests/store.test.js` | `class Store` on a pretend clock: an older answer never replaces a newer one, questions in flight shared, a change makes a fact stale, as of now, how old a fact may be, the rule for deleting |
 | `tests/backend/` (pytest) | the Python side: setup, store, websocket commands, diagnostics; `test_privacy.py`: canary data through the anonymiser and the log, no network modules, the manifest (sockets are blocked in all of it) |
 | `tests/board/smoke.test.js` | the board starts, imports and draws the garage, on the fake |
 | `tests/board/a11y.test.js` | axe-core (WCAG 2.2 AA) on every view in dark and light mode, with a problem on the board; the keyboard (roving box focus, arrows, Space, Enter, Escape, dialog and drawer focus in and back); spoken names; less motion |
@@ -203,5 +204,14 @@ returns everything the library section defines.
   it). Unsubscribing is `this._ha.drop(p)`; a task of the board's own is `_ha.soft(p, what, fallback)` (reported) or
   `_ha.quiet(p, '<why>', fallback)`. Static rules: no `.catch(() => …)` in the board's class, every `optional` and
   `quiet` gives its reason, no empty `catch` block, no property with a method's name.
+- **The store** (0.10.0, `class Store` in the library section, `this._store`): what the board knows of Home Assistant,
+  each fact with the time its question was asked: the registries (`'reg'`), configs (`'cfg:<entity id>'`, kept a
+  minute) and the time of the shared board data (`'data'`). An older answer never replaces a newer one;
+  `changed(prefix)` (a registry event, a config saved or reloaded) makes what's held stale; `asOfNow(key)` answers
+  what's held only if it's fresh; `load(key)` asks now, sharing a question in flight asked late enough. The maps
+  the board reads (`_labelMap`, `_entMap`, `_devMap` …) are made from the registries in one place, `_index()`, which
+  also drops functions and layouts whose label is gone, but only on registries asked after the board data
+  (`newer('reg', 'data')`): that rule replaced 0.9.2's check. A restore plan reads the registries asked when it's
+  made (`_regNow()`). The board's own data (`this._data`) and its sync with the shared store are as they were.
 - Debug hooks for tests: `board._ortho` (routes, owners, hops, `vert`), `board._sbx.eng` (the sandbox engine and
   its log), `window.__fbStyle` (overrides `PROTO()` layout switches).

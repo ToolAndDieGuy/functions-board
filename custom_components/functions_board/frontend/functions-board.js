@@ -4948,6 +4948,73 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     }
   }
 
+  /* ---------- the store (0.10.0): what the board knows of Home Assistant, each fact with the time it was asked ----------
+     A fact is kept under a key ('reg' for the registries, 'cfg:<entity id>' for a config, 'data' for the shared board
+     data's time). Its time is when the question was asked, not when the answer came.
+     - An older answer never replaces a newer one (put() with an earlier time is refused).
+     - changed(prefix) records that Home Assistant said something under that prefix changed ('cfg:' for every config):
+       a fact asked before that is stale, though still held.
+     - load(key) asks again, sharing a question already in flight that was asked late enough; asOfNow(key) answers
+       what's held if it's fresh, and otherwise waits for an answer asked after the last change.
+     - newer(a, b): whether a's fact was asked after b's. The board deletes nothing on the strength of a fact older
+       than what it would delete (a function and its layout go only on registries asked after the board data).
+     load(key) → a promise of the fact; now(): the time (for tests). */
+  class Store {
+    constructor(load, opt = {}) {
+      this._load = load;
+      this._now = opt.now || (() => Date.now());
+      this._held = new Map();     // key → { value, asked }
+      this._changes = new Map();  // prefix → when Home Assistant last said it changed
+      this._flight = new Map();   // key → { asked, p } the question in flight
+      this._last = 0;
+    }
+    // the time, never the same twice: of a change and a question in the same millisecond, the later call is later
+    _tick() { let t = this._now(); if (t <= this._last) t = this._last + 0.001; this._last = t; return t; }
+    // the time to give a question about to be asked elsewhere (put() it with the answer)
+    stamp() { return this._tick(); }
+    has(key) { return this._held.has(key); }
+    get(key) { const h = this._held.get(key); return h ? h.value : undefined; }
+    at(key) { const h = this._held.get(key); return h ? h.asked : 0; }
+    put(key, value, asked) {
+      const t = asked == null ? this._tick() : asked, h = this._held.get(key);
+      if (h && h.asked > t) return false;
+      this._held.set(key, { value, asked: t });
+      return true;
+    }
+    changed(prefix, t) { const at = t == null ? this._tick() : t; this._changes.set(prefix, Math.max(this._changes.get(prefix) || 0, at)); }
+    changedAt(key) { let t = 0; for (const [p, at] of this._changes) if (key.startsWith(p) && at > t) t = at; return t; }
+    stale(key, maxAge) {
+      const h = this._held.get(key);
+      return !h || h.asked < this.changedAt(key) || (maxAge != null && this._now() - h.asked > maxAge);
+    }
+    newer(a, b) { return this.at(a) >= this.at(b); }
+    // asks now (or shares a question in flight asked at or after `since`); answers the newest fact held after it
+    load(key, since) {
+      const f = this._flight.get(key);
+      if (f && f.asked >= (since == null ? this._tick() : since)) return f.p;
+      const asked = this._tick();
+      let q;
+      try { q = Promise.resolve(this._load(key)); } catch (e) { q = Promise.reject(e); }
+      // (a question asked after this one, still in flight, has the newer answer: wait for it)
+      const p = q.then(async (v) => {
+        this.put(key, v, asked);
+        const f = this._flight.get(key);
+        if (f && f.asked > asked) { try { await f.p; } catch (e) { /* this answer is the newest there is, then */ } }
+        return this.get(key);
+      });
+      const mine = { asked, p };
+      this._flight.set(key, mine);
+      const done = () => { if (this._flight.get(key) === mine) this._flight.delete(key); };
+      p.then(done, done);
+      return p;
+    }
+    asOfNow(key, maxAge) {
+      if (!this.stale(key, maxAge)) return Promise.resolve(this.get(key));
+      return this.load(key, Math.max(this.changedAt(key), maxAge != null ? this._now() - maxAge : 0));
+    }
+    forget(prefix) { for (const k of [...this._held.keys()]) if (k.startsWith(prefix)) this._held.delete(k); }
+  }
+
   class FunctionsBoard extends HTMLElement {
     constructor() {
       super();
@@ -4979,7 +5046,10 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         subscribeMessage: (cb, m, o) => this._ha.sub(m, cb, o),
         subscribeEvents: (cb, type, o) => this._ha.sub({ type: 'subscribe_events', event_type: type }, cb, o),
       }; this._booting = false;
-      this._watch = new Map(); this._cfgCache = new Map(); this._toastActs = [];
+      this._watch = new Map(); this._toastActs = [];
+      // what the board knows of Home Assistant, each fact with the time it was asked (0.10.0): the registries ('reg'),
+      // configs ('cfg:<entity id>'), and the time of the shared board data ('data')
+      this._store = new Store((key) => (key === 'reg' ? this._fetchRegistries() : key.startsWith('cfg:') ? this._readConfig(key.slice(4)) : Promise.reject(new Error('the store has no way to read ' + key))));
       this._undoStack = []; this._redoStack = [];
       this._tgt = new Map(); this._src = new Map();
       // developer tools (Phase 9): simulated states, trigger watches, check results, monitors, the debugger
@@ -5081,6 +5151,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     async _loadData() {
       // The integration stores functions and layouts for everyone; without it they live in this user's data.
       let r = null;
+      const asked = this._store.stamp();
+      this._store.put('data', true, asked);
       try { r = await this._ws({ type: 'functions_board/get' }, { optional: 'without the integration, the board keeps its data in this user\u2019s own data' }); } catch (e) { r = null; }
       const ud = await this._ws({ type: 'frontend/get_user_data', key: STORE }, { fallback: null });
       const legacy = (ud && ud.value) || {};
@@ -5201,7 +5273,10 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         return;
       }
       try {
+        const asked = this._store.stamp();
         const r = await this._ws({ type: 'functions_board/get' });
+        // the board data is as new as this question: registries asked before it delete nothing it names
+        this._store.put('data', true, asked);
         const s2 = (r && r.data) || {}, revs = (r && r.revs) || {};
         if (r && r.mode) this._fbMode = r.mode === 'full' ? 'full' : 'organise';
         const fns = Array.isArray(s2.functions) ? s2.functions.filter((f) => typeof f === 'string') : [];
@@ -5386,7 +5461,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           ui: Object.assign({ current: null, list: true, outside: true, suggest: true, legend: true }, d.ui || {}),
         };
         this._markSaved();
-        await Promise.all([this._loadRegistries(true), this._loadDescriptions()]);
+        await Promise.all([this._loadRegistries('warm'), this._loadDescriptions()]);
         // the problem counts on the list, soon after the page is up (then as states and configs change)
         this._clock.once('probscan0', 2000, () => this._scanProblems());
         this._subscribe();
@@ -5413,31 +5488,37 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         this._ws({ type: 'config/area_registry/list' }, { fallback: [] }),
         this._ws({ type: 'config/floor_registry/list' }, { fallback: [] }),
       ]);
-      REG = { data: d, at: Date.now(), user: this._hass.user && this._hass.user.id };
       return d;
     }
-    // warm: the last board's registries will do for now (see WARM_MS); given: ones just fetched
-    async _loadRegistries(warm, given) {
-      let keep = warm && REG && REG.user === (this._hass.user && this._hass.user.id) && Date.now() - REG.at < WARM_MS ? REG.data : null;
-      // the last board's registries are only good if they know every function the shared store names: a label
-      // missing from them may be one another board made since (0.9.2: this board then deleted its layout)
-      if (keep && this._data) {
-        const known = new Set((keep[0] || []).map((l) => l.label_id));
-        if (this._data.functions.concat(Object.keys(this._data.layouts)).some((l) => !known.has(l))) keep = null;
-      }
-      this._regWarm = !!keep;
-      const [labels, ents, devs, areas, floors] = given || keep || await this._fetchRegistries();
+    // the registries, through the store: asked now (how: undefined), as held ('held': just loaded), or, at start-up,
+    // the last board's if they're recent ('warm', see WARM_MS: then asked again in the background)
+    async _loadRegistries(how) {
+      const user = this._hass.user && this._hass.user.id;
+      this._regWarm = false;
+      if (how === 'warm' && !this._store.has('reg') && REG && REG.user === user && Date.now() - REG.at < WARM_MS) { this._store.put('reg', REG.data, REG.asked); this._regWarm = true; }
+      else if (how !== 'held') await this._store.load('reg');
+      if (!this._regWarm) REG = { data: this._store.get('reg'), asked: this._store.at('reg'), at: Date.now(), user };
+      this._index();
+    }
+    // registries asked now, for a plan the person is about to carry out (a change Home Assistant hasn't told of yet,
+    // as an automation just deleted, is in them); a reload in flight asked after the click is shared
+    async _regNow() { await this._store.load('reg'); this._index(); }
+    // the maps the board reads, made from the registries in one place; and what the registries say is gone
+    _index() {
+      const [labels, ents, devs, areas, floors] = this._store.get('reg');
       this._areaMap = new Map((areas || []).map((a) => [a.area_id, a]));
       this._floorMap = new Map((floors || []).map((f) => [f.floor_id, f]));
       this._tgt = new Map(); this._src = new Map();  // what areas and helpers contain changes with the registries
-      setDomains(new Set(Object.keys(this._hass.states).map((id) => id.split('.')[0]).concat(ents.map((e) => e.entity_id.split('.')[0]))));
-      this._regAt = Date.now();
+      setDomains(new Set(Object.keys(this._hass.states).map((id) => id.split('.')[0]).concat((ents || []).map((e) => e.entity_id.split('.')[0]))));
+      this._regAt = this._store.at('reg');
       this._labels = labels || []; this._ents = ents || []; this._devs = devs || [];
       this._labelMap = new Map(this._labels.map((l) => [l.label_id, l]));
       this._entMap = new Map(this._ents.map((e) => [e.entity_id, e]));
       this._regIdMap = new Map(this._ents.map((e) => [e.id, e.entity_id]));
       this._devMap = new Map(this._devs.map((d) => [d.id, d]));
-      if (this._data) {
+      // nothing is deleted on the strength of registries older than the board data: a label missing from them may
+      // be one made since (0.9.2: the last board's registries, reused, deleted a function another board had made)
+      if (this._data && this._store.newer('reg', 'data')) {
         this._data.functions = this._data.functions.filter((l) => this._labelMap.has(l));
         // a label deleted in Home Assistant takes its layout with it; hidden functions keep theirs
         const gone = Object.keys(this._data.layouts).filter((k) => !this._labelMap.has(k));
@@ -5453,7 +5534,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     _subscribe() {
       if (this._unsubs.length || !this._hass) return;
       const c = this._haConn;
-      const reload = () => this._clock.after('reg', 1200, () => this._reload());
+      const reload = () => { this._store.changed('reg'); this._clock.after('reg', 1200, () => this._reload()); };
       this._unsubs = [
         c.subscribeEvents((ev) => this._onRegistry(ev), 'entity_registry_updated'),
         // devices: only creation, removal, and labels, names or areas changing matter to the board (5.5)
@@ -5474,7 +5555,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     }
     // configs changed: forget the cached ones and redraw the open function, at most once a second
     _configChanged() {
-      this._cfgCache.clear(); this._src = new Map(); this._grefs = null; this._cfgGen = (this._cfgGen || 0) + 1;
+      this._store.changed('cfg:'); this._src = new Map(); this._grefs = null; this._cfgGen = (this._cfgGen || 0) + 1;
       this._clock.once('probscan2', 3000, () => this._scanProblems());
       this._clock.once('cfg', 1000, () => {
         if (this._drag) { this._configChanged(); return; }
@@ -5490,8 +5571,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._clock.cancel('conds-tick');
     }
 
-    async _reload(given) {
-      try { await this._loadRegistries(false, given); } catch (e) { return; }
+    // held: the store has just loaded them
+    async _reload(held) {
+      try { await this._loadRegistries(held ? 'held' : undefined); } catch (e) { return; }
       this._renderList();
       const cur = this._data.ui.current;
       if (cur && this._data.functions.includes(cur)) await this._open(cur, true);
@@ -5505,7 +5587,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         const c = this._capture;
         if (await this._captureMatch(id, c)) await this._captured(id, c);
       } else if (d.action === 'update' && id && this._watch.has(id)) await this._rewatch(id);
-      if (id && /^(automation|script)\./.test(id)) this._cfgCache.delete(id);
+      if (id && /^(automation|script)\./.test(id)) this._store.changed('cfg:' + id);
+      // every change to the registry makes what's held older than it (as of now waits for the reload)
+      this._store.changed('reg');
       const relevant = d.action !== 'update' || (this._model && this._model.nodes.has(id)) || (d.changes && 'labels' in d.changes);
       if (relevant) this._clock.after('reg', 1200, () => this._reload());
     }
@@ -5633,12 +5717,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       // a saved version's own configs, while its tab is open
       const V = this._ver, it = V && V.snap.items[entityId];
       if (it && it.cfg && /^(automation|script)\./.test(entityId)) return this._verCfg(entityId, it);
-      // configs are cached for a minute; saving, reloading or closing the editor drawer clears the cache
-      const hit = this._cfgCache.get(entityId);
-      if (hit && Date.now() - hit.at < 60000) return hit.cfg;
-      const cfg = await this._readConfig(entityId);
-      this._cfgCache.set(entityId, { at: Date.now(), cfg });
-      return cfg;
+      // configs are kept for a minute; saving, reloading or closing the editor drawer makes them stale, and one read
+      // before that is never taken as current (the store)
+      return this._store.asOfNow('cfg:' + entityId, 60000);
     }
     async _readConfig(entityId) {
       const d = entityId.split('.')[0];
@@ -5828,11 +5909,14 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     // after a warm start: fetch the registries again, and redraw only if something changed while the board was away
     async _refreshWarm() {
       if (!this._regWarm || !this.isConnected) return;
-      const old = REG && REG.data;
-      const d = await this._ha.quiet(this._fetchRegistries(), 'its calls to Home Assistant report their own failures', null);
+      const old = this._store.get('reg');
+      const d = await this._ha.quiet(this._store.load('reg'), 'its calls to Home Assistant report their own failures', null);
       this._regWarm = false;
-      if (!d || !this.isConnected || (old && regSig(d) === regSig(old))) return;
-      await this._reload(d);
+      if (!d || !this.isConnected) return;
+      REG = { data: d, asked: this._store.at('reg'), at: Date.now(), user: this._hass.user && this._hass.user.id };
+      // the same as the warm ones: only what deletion waited for (they're newer than the board data now)
+      if (old && regSig(d) === regSig(old)) { this._index(); return; }
+      await this._reload(true);
     }
     async _resolveTargets(keys) {
       const todo = [...new Set(keys)].filter((k) => !this._tgt.has(k));
@@ -8790,6 +8874,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._verRestoreDlg();
     }
     async _verPlan(label, snap) {
+      // the registries asked now (0.10.0: a plan made from registries 1.2 s out of date missed an automation deleted
+      // just before)
+      await this._regNow();
       const diff = await this._verDiff(label, snap), cur = new Set(this._verMembers(label));
       const plan = { write: [], recreate: [], same: [], yaml: [], rejoin: [], added: [], missing: [] };
       Object.entries(snap.items).forEach(([k, it]) => {
@@ -8885,7 +8972,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (snap.layout) { this._data.layouts[label] = Object.assign(cleanLayout(JSON.parse(JSON.stringify(snap.layout))) || {}, { view: (this._data.layouts[label] || {}).view || null }); this._save(); }
       this._verPending = null;
       this._closeModal();
-      this._cfgCache.clear();
+      this._store.changed('cfg:');
       this._ver = null;
       this._$.board.classList.remove('vview');
       try { history.replaceState(history.state, '', location.pathname); } catch (e) { /* fine */ }
@@ -9981,7 +10068,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._configChanged();
     }
     _saveCfg(dom, id, cfg) {
-      return this._api('POST', `config/${dom}/config/${encodeURIComponent(id)}`, cfg).then((r) => { this._cfgCache.clear(); return r; });
+      return this._api('POST', `config/${dom}/config/${encodeURIComponent(id)}`, cfg).then((r) => { this._store.changed('cfg:'); return r; });
     }
 
     /* ---------- Node-RED flows (2.7, decision D1): read in the browser through the Node-RED app's own page, only
@@ -11022,7 +11109,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           if (again.can) { const r = await this._deleteItems([again]); done.splice(0, done.length, ...r.done); }
         },
       });
-      this._cfgCache.clear();
+      this._store.changed('cfg:');
       this._toast(T('deleted_2', { name: p.name }), p.undo ? [{ text: T('undo'), fn: () => this._undo() }] : []);
     }
     async _runFnDelete(d) {

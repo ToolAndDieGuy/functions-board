@@ -49,12 +49,12 @@ test('size', async ({ browser }) => {
     await page.waitForTimeout(1500);
     const t = await board(page).evaluate(async (b, l) => {
       const times = {};
-      b._cfgCache.clear(); b._grefs = null;
+      b._store.forget('cfg:'); b._grefs = null;
       let t0 = performance.now(); await b._open(l); times.openCold = performance.now() - t0;
       t0 = performance.now(); await b._open(l); times.openWarm = performance.now() - t0;
       b._openManager('detect');
       await new Promise((r) => { const w = () => (b._mgr.scanning ? setTimeout(w, 50) : r()); w(); });
-      b._cfgCache.clear();
+      b._store.forget('cfg:');
       t0 = performance.now(); await b._scanFunctions(); times.scan = performance.now() - t0;
       times.groups = b._mgr.cands.length; times.automations = b._mgr.stats.automations;
       return times;
