@@ -334,6 +334,71 @@
   "expect": "every test file in tests/board is a board suite"
  },
  {
+  "name": "board: sets a timer of its own, not through its clock",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "this._clock.after('frames', 0, () => this._renderFrames());",
+  "replace": "setTimeout(() => this._renderFrames(), 0);",
+  "suite": "static",
+  "expect": "the board sets no timer of its own"
+ },
+ {
+  "name": "board: taken off the page, its clock goes on",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      // and nothing it set runs while it's away (0.10.0): the clock starts again when it's back\n      this._clock.stop();\n",
+  "replace": "",
+  "suite": "board-leak",
+  "expect": "L2 taken off for good, no timer of the board's fires"
+ },
+ {
+  "name": "clock: after() for a name doesn't replace the wait already set",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      name = this._name(name);\n      this.cancel(name);\n      if (!this.running) return name;\n      return this._set(name, 't',",
+  "replace": "      name = this._name(name);\n      if (!this.running) return name;\n      return this._set(name, 't',",
+  "suite": "clock",
+  "expect": "C1 after\\(\\)"
+ },
+ {
+  "name": "clock: stop() leaves deadlines waiting for ever",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      due.forEach((fn) => fn());\n",
+  "replace": "",
+  "suite": "clock",
+  "expect": "C7 stop\\(\\) runs every deadline"
+ },
+ {
+  "name": "clock: a sleep isn't ended when the clock stops",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      for (const done of [...this._sleeps]) done(false);\n",
+  "replace": "",
+  "suite": "clock",
+  "expect": "C6 a sleep still waiting"
+ },
+ {
+  "name": "rules: a quick node suite left out of CI",
+  "file": ".github/workflows/validate.yml",
+  "find": "--only 'selftest|static|wiring|problems|sandbox|clock'",
+  "replace": "--only 'selftest|static|wiring|problems|sandbox'",
+  "suite": "static",
+  "expect": "every quick node suite runs in CI"
+ },
+ {
+  "name": "board: put back on the page, its clock doesn't start again",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "    connectedCallback() {\n      this._clock.start();\n",
+  "replace": "    connectedCallback() {\n",
+  "suite": "board-regress",
+  "only": "0.10.0 the same board",
+  "expect": "0.10.0 put back, the board still shows"
+ },
+ {
+  "name": "clock: frame() drops the frame's time",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "this._env.raf((t) => { this._w.delete(name); fn(t); })",
+  "replace": "this._env.raf(() => { this._w.delete(name); fn(); })",
+  "suite": "clock",
+  "expect": "C3 frame\\(\\) hands on"
+ },
+ {
   "name": "isolation: an automation a test added is left behind",
   "file": "tests/e2e/ha-api.js",
   "find": "if (!(id in snap.autos)) { await rest('DELETE'",

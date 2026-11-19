@@ -7,6 +7,10 @@ is now kept as a snapshot, taken from 0.9.1, so a rebuilt part that draws anythi
 Home Assistant can answer late and out of turn, as a busy one does, and a weekly run tries every board test that
 way. And a new test opens and closes the board 50 times and checks it leaves nothing running behind.
 
+Fixed: a board taken off the page (another sidebar entry opened, a dashboard view left) went on counting problems
+in the background, and could show a message, for up to a minute afterwards. Now everything the board waits on
+stops when it leaves the page, and starts again when it's back.
+
 ## 0.9.1 (2026-11-18)
 
 Fixed: the sandbox got **and**, **or** and **not** conditions wrong (since 0.7.0). An "and" passed as soon as its

@@ -4,7 +4,8 @@
 // Instruments in the page count timers and the listeners on window and document.
 //
 //   L1  taken off for good, the board has no subscription left with Home Assistant
-//   L2  taken off for good, nothing of the board's runs any more: no interval left, no timer firing
+//   L2  taken off for good, nothing of the board's runs any more: no interval left, no timer firing in the ten
+//       minutes after (on the page's clock)
 //   L3  taken off for good, it leaves no listener on window or document
 //   L4  the 50 boards taken off are all let go (garbage collected): nothing holds on to them
 //   L5  the 50th board asks Home Assistant no more than the 2nd did (nothing piles up from one to the next)
@@ -49,7 +50,8 @@ const INSTRUMENTS = `(() => {
 const drawn = (page) => page.evaluate(() => { const b = document.querySelector('functions-board'); return b && b.shadowRoot && b.shadowRoot.querySelectorAll('.nodes .node').length; });
 
 test('the board opened and closed 50 times', async ({ browser }) => {
-  const { page, ctx } = await freshBoard(browser, { viewport: { width: 1400, height: 880 }, init: INSTRUMENTS });
+  // on the page's own clock, so the wait after the last board is taken off can be ten minutes long
+  const { page, ctx } = await freshBoard(browser, { viewport: { width: 1400, height: 880 }, init: INSTRUMENTS, clock: '2026-11-19T00:00:00Z' });
   page.allowFail = [/^trace\/get$/, /^supervisor\/api$/];
   await importAll(page);
   await openFn(page, /garage/i);
@@ -68,9 +70,11 @@ test('the board opened and closed 50 times', async ({ browser }) => {
   const last = await drawn(page);
   // taken off for good
   await page.evaluate(() => { const b = document.querySelector('functions-board'); window.__fbRefs.push(new WeakRef(b)); b.remove(); });
-  await page.waitForTimeout(3000);
+  await page.waitForTimeout(500);
   await page.evaluate(() => { window.__fbT.on = true; window.__fbT.fired = []; });
-  await page.waitForTimeout(5000);
+  // ten minutes, on the page's clock: the longest of the board's waits is a minute
+  await page.clock.runFor(10 * 60 * 1000);
+  await page.waitForTimeout(300);
   // only what the board's own code set (the fake's page side and Playwright set some of their own)
   const after = await page.evaluate(() => {
     const T = window.__fbT, mine = (w) => /functions-board\.js/.test(w);
@@ -83,7 +87,7 @@ test('the board opened and closed 50 times', async ({ browser }) => {
   const subs = [...fake.subs.values()].map((v) => v.msg.type + (v.msg.event_type ? ' ' + v.msg.event_type : ''));
   check('L1 taken off for good, the board has no subscription left with Home Assistant', subs.length === 0, { left: subs.length, kinds: [...new Set(subs)] });
   check('L2 taken off for good, no interval of the board\'s is left', after.intervals.length === 0, { left: after.intervals.length, kinds: [...new Set(after.intervals)] });
-  check('L2 taken off for good, no timer of the board\'s fires (5 s watched)', after.fired.length === 0, after.fired);
+  check('L2 taken off for good, no timer of the board\'s fires (10 minutes watched)', after.fired.length === 0, after.fired);
   check('L3 taken off for good, the board leaves no listener on window or document', after.listeners.length === 0, { left: after.listeners.length, kinds: [...new Set(after.listeners)] });
   // the garbage collector, twice (a WeakRef is let go only at a collection after the turn it was read in)
   const cdp = await ctx.newCDPSession(page);
