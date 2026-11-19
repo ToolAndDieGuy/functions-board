@@ -12,7 +12,6 @@ const BOARD = path.join(__dirname, '..', '..', 'custom_components', 'functions_b
 const SNAP = path.join(__dirname, 'garage.json');
 const clone = (x) => (x === undefined ? x : JSON.parse(JSON.stringify(x)));
 const slug = (s) => String(s || '').toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'unnamed';
-const nowIso = () => new Date().toISOString();
 class HAError extends Error { constructor(code, message) { super(message); this.code = code; } }
 
 let SNAPSHOT = null;
@@ -50,7 +49,32 @@ class FakeHA {
     this.subs = new Map();  // key `${pageId}:${sid}` → { page, sid, msg }
     this.pageIds = new WeakMap();
     this.nextPage = 0;
+    this.shift = 0;  // ms: the fake's clock is the pages' clock, set by open(..., { clock })
+    // jitter (FB_JITTER=<seed>, through fixtures.js): every answer comes 0–JITTER_MS later, and every message to a
+    // page (an event, a store change, a new hass) waits its turn in that page's queue for 0–JITTER_MS, so an event
+    // can reach the board before or after the answer it goes with, as on a busy Home Assistant. Messages to one
+    // page keep their order, as one websocket keeps them; answers to different calls don't. Seeded, so a failure
+    // can be run again exactly (the seed is FB_JITTER and the test's name).
+    const seed = opts.jitter != null ? opts.jitter : FakeHA.defaults.jitter;
+    this.jitter = seed == null || seed === '' ? null : rng(String(seed));
+    this.queues = new WeakMap();  // page → { last: when its last message is due, tail: that message's delivery }
+    this.pending = 0;             // messages queued and not yet delivered
   }
+  _lag() { return this.jitter ? new Promise((r) => setTimeout(r, Math.floor(this.jitter() * JITTER_MS))) : null; }
+  // to one page, in order: at once without jitter; with it, each message is due 0–JITTER_MS from now, but never
+  // before the one sent ahead of it (so messages don't pile up behind each other, and keep their order)
+  _toPage(page, fn) {
+    if (!this.jitter) return fn().catch(() => {});
+    this.pending++;
+    const q = this.queues.get(page) || { last: 0, tail: Promise.resolve() };
+    const at = Math.max(q.last, Date.now() + Math.floor(this.jitter() * JITTER_MS));
+    q.last = at;
+    q.tail = q.tail.then(() => new Promise((r) => setTimeout(r, Math.max(0, at - Date.now())))).then(fn).catch(() => {}).finally(() => { this.pending--; });
+    this.queues.set(page, q);
+    return Promise.resolve();
+  }
+  _now() { return Date.now() + this.shift; }
+  _iso() { return new Date(this._now()).toISOString(); }
 
   /* ---------- what the board sees ---------- */
   owner() { const u = this.users.find((x) => x.is_owner) || this.users[0] || { id: 'u1', name: 'Test Owner' }; return { id: u.id, name: u.name, is_admin: this.admin, is_owner: this.admin, credentials: [], mfa_modules: [] }; }
@@ -59,7 +83,8 @@ class FakeHA {
   }
 
   // Open the board in a new browser context. opts: { light, viewport, clock (a Date or ISO time to install the
-  // page clock at), route ('/functions' path), reducedMotion }. Returns { ctx, page }.
+  // page clock at), route ('/functions' path), reducedMotion, init (a script run in the page before anything
+  // else, as a test's own instruments) }. Returns { ctx, page }.
   async open(browser, opts = {}) {
     const ctx = await browser.newContext({ viewport: opts.viewport || { width: 1400, height: 860 }, colorScheme: opts.light ? 'light' : 'dark', reducedMotion: opts.reducedMotion || 'no-preference' });
     const page = await ctx.newPage();
@@ -82,9 +107,14 @@ class FakeHA {
     this.dark = this.dark || new WeakMap();
     this.dark.set(page, !opts.light);
     await page.exposeBinding('__fbHA', async (src, req) => {
-      try { return { ok: true, result: await this._handle(page, req) }; } catch (e) { return { ok: false, error: { code: e.code || 'unknown_error', message: e.message } }; }
+      let r;
+      try { r = { ok: true, result: await this._handle(page, req) }; } catch (e) { r = { ok: false, error: { code: e.code || 'unknown_error', message: e.message } }; }
+      if (this.jitter && req.kind !== 'view') await this._lag();
+      return r;
     });
-    if (opts.clock) await page.clock.install({ time: opts.clock });
+    // the page's clock starts at that time and runs on; the fake's own times (state changes, events) keep to it
+    if (opts.clock) { await page.clock.install({ time: opts.clock }); this.shift = new Date(opts.clock).getTime() - Date.now(); }
+    if (opts.init) await page.addInitScript(opts.init);
     await page.addInitScript(PAGE_SIDE);
     await page.goto('http://fake.ha/functions' + (opts.route || ''));
     await page.waitForFunction(() => window.__fbReady === true, null, { timeout: 15000 });
@@ -93,14 +123,14 @@ class FakeHA {
   _html() { return '<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0"><home-assistant></home-assistant></body></html>'; }
 
   // a new hass on every open page, as Home Assistant hands its frontend a new object on every change
-  async push() { const v = this.view(); await Promise.all([...this.pages].map((p) => p.evaluate((x) => window.__fbPush && window.__fbPush(x), { states: v.states, config: v.config, services: v.services }).catch(() => {}))); }
+  async push() { const v = this.view(), x = { states: v.states, config: v.config, services: v.services }; await Promise.all([...this.pages].map((p) => this._toPage(p, () => p.evaluate((y) => window.__fbPush && window.__fbPush(y), x)))); }
   async _deliver(filter, payload) {
     const jobs = [];
-    for (const v of this.subs.values()) if (filter(v.msg)) jobs.push(v.page.evaluate(([sid, m]) => window.__fbDeliver(sid, m), [v.sid, payload]).catch(() => {}));
+    for (const v of this.subs.values()) if (filter(v.msg)) jobs.push(this._toPage(v.page, () => v.page.evaluate(([sid, m]) => window.__fbDeliver(sid, m), [v.sid, payload])));
     await Promise.all(jobs);
   }
   async emit(eventType, data) {
-    const ev = { event_type: eventType, data: data || {}, origin: 'LOCAL', time_fired: nowIso(), context: { id: crypto.randomBytes(13).toString('hex'), parent_id: null, user_id: null } };
+    const ev = { event_type: eventType, data: data || {}, origin: 'LOCAL', time_fired: this._iso(), context: { id: crypto.randomBytes(13).toString('hex'), parent_id: null, user_id: null } };
     await this._deliver((m) => m.type === 'subscribe_events' && (!m.event_type || m.event_type === eventType), ev);
     // a trigger watched with subscribe_trigger (the board's script reload watch, Watch triggers)
     await this._deliver((m) => m.type === 'subscribe_trigger' && m.trigger && m.trigger.trigger === 'event' && m.trigger.event_type === eventType
@@ -116,7 +146,7 @@ class FakeHA {
     let n = this.calls.length, since = Date.now();
     while (Date.now() < end) {
       await new Promise((r) => setTimeout(r, 50));
-      if (this.calls.length !== n) { n = this.calls.length; since = Date.now(); } else if (Date.now() - since >= quiet) return true;
+      if (this.calls.length !== n || this.pending) { n = this.calls.length; since = Date.now(); } else if (Date.now() - since >= quiet) return true;
     }
     return false;
   }
@@ -124,7 +154,7 @@ class FakeHA {
   /* ---------- changes a test makes, as Home Assistant would show them ---------- */
   // lag (ms): the page hears of it that much later (as when Home Assistant's state event comes after its answer)
   async setState(id, state, attributes, lag) {
-    const old = this.states.get(id), t = nowIso();
+    const old = this.states.get(id), t = this._iso();
     const s = { entity_id: id, state: String(state), attributes: Object.assign({}, old ? old.attributes : {}, attributes || {}), last_changed: old && old.state === String(state) ? old.last_changed : t, last_reported: t, last_updated: t, context: { id: crypto.randomBytes(13).toString('hex'), parent_id: null, user_id: null } };
     this.states.set(id, s);
     const tell = async () => { await this.push(); await this.emit('state_changed', { entity_id: id, old_state: old || null, new_state: s }); };
@@ -148,7 +178,7 @@ class FakeHA {
       this.subs.set(key, { page, sid: m.sid, msg: m.msg });
       this.calls.push({ kind: 'sub', type: m.msg.type, msg: m.msg });
       const r = await this._subscribed(m.msg), firstMsg = this._firstMessage(m.msg);
-      if (firstMsg !== undefined) setTimeout(() => page.evaluate(([sid, x]) => window.__fbDeliver(sid, x), [m.sid, firstMsg]).catch(() => {}), 0);
+      if (firstMsg !== undefined) setTimeout(() => this._toPage(page, () => page.evaluate(([sid, x]) => window.__fbDeliver(sid, x), [m.sid, firstMsg])), 0);
       return r;
     }
     if (kind === 'view') return this.view(this.dark.get(page) !== false);
@@ -187,7 +217,7 @@ class FakeHA {
         const changes = {};
         for (const k of ['labels', 'categories', 'name', 'icon', 'area_id', 'disabled_by', 'hidden_by', 'aliases']) if (k in m) { e[k] = clone(m[k]); changes[k] = true; }
         if (m.categories) e.categories = Object.assign({}, e.categories || {}, m.categories);
-        e.modified_at = Date.now() / 1000;
+        e.modified_at = this._now() / 1000;
         await this.emit('entity_registry_updated', { action: 'update', entity_id: e.entity_id, changes });
         return { entity_entry: e };
       }
@@ -200,10 +230,10 @@ class FakeHA {
       case 'config/label_registry/list': return this.labels;
       case 'config/label_registry/create': {
         let id = slug(m.name), n = 2; while (this.labels.some((l) => l.label_id === id)) id = slug(m.name) + '_' + n++;
-        const l = { label_id: id, name: m.name, icon: m.icon || null, color: m.color || null, description: m.description || null, created_at: Date.now() / 1000, modified_at: Date.now() / 1000 };
+        const l = { label_id: id, name: m.name, icon: m.icon || null, color: m.color || null, description: m.description || null, created_at: this._now() / 1000, modified_at: this._now() / 1000 };
         this.labels.push(l); await this.emit('label_registry_updated', { action: 'create', label_id: id }); return l;
       }
-      case 'config/label_registry/update': { const l = this.labels.find((x) => x.label_id === m.label_id); if (!l) throw new HAError('not_found', 'Label not found'); for (const k of ['name', 'icon', 'color', 'description']) if (k in m) l[k] = m[k]; l.modified_at = Date.now() / 1000; await this.emit('label_registry_updated', { action: 'update', label_id: l.label_id }); return l; }
+      case 'config/label_registry/update': { const l = this.labels.find((x) => x.label_id === m.label_id); if (!l) throw new HAError('not_found', 'Label not found'); for (const k of ['name', 'icon', 'color', 'description']) if (k in m) l[k] = m[k]; l.modified_at = this._now() / 1000; await this.emit('label_registry_updated', { action: 'update', label_id: l.label_id }); return l; }
       case 'config/label_registry/delete': {
         this.labels = this.labels.filter((x) => x.label_id !== m.label_id);
         for (const e of this.entities.values()) if ((e.labels || []).includes(m.label_id)) e.labels = e.labels.filter((x) => x !== m.label_id);
@@ -211,7 +241,7 @@ class FakeHA {
         await this.emit('label_registry_updated', { action: 'remove', label_id: m.label_id }); return null;
       }
       case 'config/category_registry/list': return this.categories[m.scope] || [];
-      case 'config/category_registry/create': { const c = { category_id: crypto.randomBytes(13).toString('hex').toUpperCase(), name: m.name, icon: m.icon || null, created_at: Date.now() / 1000, modified_at: Date.now() / 1000 }; (this.categories[m.scope] = this.categories[m.scope] || []).push(c); return c; }
+      case 'config/category_registry/create': { const c = { category_id: crypto.randomBytes(13).toString('hex').toUpperCase(), name: m.name, icon: m.icon || null, created_at: this._now() / 1000, modified_at: this._now() / 1000 }; (this.categories[m.scope] = this.categories[m.scope] || []).push(c); return c; }
       case 'config/category_registry/delete': this.categories[m.scope] = (this.categories[m.scope] || []).filter((c) => c.category_id !== m.category_id); return null;
       case 'config/auth/list': return this.users;
       case 'config_entries/get': return m.domain === 'functions_board' ? this.entries : [];
@@ -267,7 +297,7 @@ class FakeHA {
       }
       case 'functions_board/sources': this._admin(); return { sources: {} };
       case 'functions_board/nodered': this._admin(); return { kept: clone(this.nodered) };
-      case 'functions_board/nodered_keep': this._admin(); this.nodered = { at: Date.now(), slug: m.slug, groups: clone(m.groups) }; await this.notifyStore({ what: 'nodered', client: m.client || '' }); return null;
+      case 'functions_board/nodered_keep': this._admin(); this.nodered = { at: this._now(), slug: m.slug, groups: clone(m.groups) }; await this.notifyStore({ what: 'nodered', client: m.client || '' }); return null;
       case 'functions_board/versions': this._admin(); return { versions: (this.versions[m.label] || []).map(meta) };
       case 'functions_board/version_get': { this._admin(); const v = (this.versions[m.label] || []).find((x) => x.id === m.version_id); if (!v) throw new HAError('not_found', 'No such version'); return clone(v); }
       case 'functions_board/version_save': {
@@ -277,7 +307,7 @@ class FakeHA {
         if (size > 1000000) throw new HAError('too_large', 'A snapshot can be at most 1 MB');
         while (m.auto && vs.length >= 50 && vs.some((v) => v.auto)) vs.splice(vs.findIndex((v) => v.auto), 1);
         if (vs.length >= 50) throw new HAError('too_many', 'A function can keep at most 50 versions');
-        const v = { id: crypto.randomBytes(16).toString('hex'), name: m.name, desc: m.desc || '', at: Date.now(), by: this.owner().name, size, auto: !!m.auto, print: m.print || '', snapshot: clone(m.snapshot) };
+        const v = { id: crypto.randomBytes(16).toString('hex'), name: m.name, desc: m.desc || '', at: this._now(), by: this.owner().name, size, auto: !!m.auto, print: m.print || '', snapshot: clone(m.snapshot) };
         vs.push(v);
         await this.notifyStore({ what: 'versions', label: m.label, client: m.client || '' });
         return meta(v);
@@ -337,7 +367,7 @@ class FakeHA {
       list.push(item);
       const eid = domain + '.' + oid;
       const initial = { input_boolean: f.initial ? 'on' : 'off', counter: String(f.initial || 0), timer: 'idle', input_number: String(f.initial != null ? f.initial : f.min || 0), input_text: f.initial || '', input_select: (f.options || [])[0] || 'unknown', input_button: 'unknown', input_datetime: 'unknown', schedule: 'off' }[domain];
-      this.entities.set(eid, { entity_id: eid, unique_id: oid, platform: domain, name: null, original_name: f.name, labels: [], categories: {}, area_id: null, device_id: null, disabled_by: null, hidden_by: null, entity_category: null, icon: f.icon || null, id: crypto.randomBytes(16).toString('hex'), has_entity_name: false, options: {}, config_entry_id: null, translation_key: null, created_at: Date.now() / 1000, modified_at: Date.now() / 1000 });
+      this.entities.set(eid, { entity_id: eid, unique_id: oid, platform: domain, name: null, original_name: f.name, labels: [], categories: {}, area_id: null, device_id: null, disabled_by: null, hidden_by: null, entity_category: null, icon: f.icon || null, id: crypto.randomBytes(16).toString('hex'), has_entity_name: false, options: {}, config_entry_id: null, translation_key: null, created_at: this._now() / 1000, modified_at: this._now() / 1000 });
       await this.emit('entity_registry_updated', { action: 'create', entity_id: eid });
       await this.setState(eid, initial, { friendly_name: f.name, editable: true });
       return item;
@@ -354,8 +384,8 @@ class FakeHA {
     let eid = [...this.states.values()].find((s) => s.entity_id.startsWith('automation.') && s.attributes.id === id);
     eid = eid ? eid.entity_id : 'automation.' + slug(cfg.alias || id);
     const old = this.states.get(eid);
-    this.states.set(eid, { entity_id: eid, state: old ? old.state : 'on', attributes: { id, last_triggered: old ? old.attributes.last_triggered : null, mode: cfg.mode || 'single', current: 0, friendly_name: cfg.alias || id }, last_changed: nowIso(), last_reported: nowIso(), last_updated: nowIso(), context: { id: 'x', parent_id: null, user_id: null } });
-    if (!this.entities.has(eid)) this.entities.set(eid, { entity_id: eid, unique_id: id, platform: 'automation', name: null, original_name: cfg.alias || id, labels: [], categories: {}, area_id: null, device_id: null, disabled_by: null, hidden_by: null, entity_category: null, icon: null, id: crypto.randomBytes(16).toString('hex'), has_entity_name: false, options: {}, config_entry_id: null, translation_key: null, created_at: Date.now() / 1000, modified_at: Date.now() / 1000 });
+    this.states.set(eid, { entity_id: eid, state: old ? old.state : 'on', attributes: { id, last_triggered: old ? old.attributes.last_triggered : null, mode: cfg.mode || 'single', current: 0, friendly_name: cfg.alias || id }, last_changed: this._iso(), last_reported: this._iso(), last_updated: this._iso(), context: { id: 'x', parent_id: null, user_id: null } });
+    if (!this.entities.has(eid)) this.entities.set(eid, { entity_id: eid, unique_id: id, platform: 'automation', name: null, original_name: cfg.alias || id, labels: [], categories: {}, area_id: null, device_id: null, disabled_by: null, hidden_by: null, entity_category: null, icon: null, id: crypto.randomBytes(16).toString('hex'), has_entity_name: false, options: {}, config_entry_id: null, translation_key: null, created_at: this._now() / 1000, modified_at: this._now() / 1000 });
     delete this.autoByEntity[eid];
     await this.push();
     await this.emit('automation_reloaded', {});
@@ -368,8 +398,8 @@ class FakeHA {
   }
   async _scriptSaved(oid) {
     const cfg = this.scripts[oid], eid = 'script.' + oid, old = this.states.get(eid);
-    this.states.set(eid, { entity_id: eid, state: old ? old.state : 'off', attributes: { last_triggered: old ? old.attributes.last_triggered : null, mode: cfg.mode || 'single', current: 0, friendly_name: cfg.alias || oid }, last_changed: nowIso(), last_reported: nowIso(), last_updated: nowIso(), context: { id: 'x', parent_id: null, user_id: null } });
-    if (!this.entities.has(eid)) this.entities.set(eid, { entity_id: eid, unique_id: oid, platform: 'script', name: null, original_name: cfg.alias || oid, labels: [], categories: {}, area_id: null, device_id: null, disabled_by: null, hidden_by: null, entity_category: null, icon: null, id: crypto.randomBytes(16).toString('hex'), has_entity_name: false, options: {}, config_entry_id: null, translation_key: null, created_at: Date.now() / 1000, modified_at: Date.now() / 1000 });
+    this.states.set(eid, { entity_id: eid, state: old ? old.state : 'off', attributes: { last_triggered: old ? old.attributes.last_triggered : null, mode: cfg.mode || 'single', current: 0, friendly_name: cfg.alias || oid }, last_changed: this._iso(), last_reported: this._iso(), last_updated: this._iso(), context: { id: 'x', parent_id: null, user_id: null } });
+    if (!this.entities.has(eid)) this.entities.set(eid, { entity_id: eid, unique_id: oid, platform: 'script', name: null, original_name: cfg.alias || oid, labels: [], categories: {}, area_id: null, device_id: null, disabled_by: null, hidden_by: null, entity_category: null, icon: null, id: crypto.randomBytes(16).toString('hex'), has_entity_name: false, options: {}, config_entry_id: null, translation_key: null, created_at: this._now() / 1000, modified_at: this._now() / 1000 });
     await this.push();
     await this.emit('call_service', { domain: 'script', service: 'reload', service_data: {} });
   }
@@ -389,10 +419,19 @@ class FakeHA {
   }
 }
 const meta = (v) => { const o = clone(v); delete o.snapshot; return o; };
+FakeHA.defaults = { jitter: null };
+const JITTER_MS = +(process.env.FB_JITTER_MS || 120);
+// a small seeded random number generator (mulberry32 on a hash of the seed): the same seed, the same delays
+function rng(seed) {
+  let h = 1779033703 ^ seed.length;
+  for (let i = 0; i < seed.length; i++) { h = Math.imul(h ^ seed.charCodeAt(i), 3432918353); h = (h << 13) | (h >>> 19); }
+  let a = h >>> 0;
+  return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
 
 // Runs in the page: the hass object the board is given, its connection, and the way the fake reaches it.
 const PAGE_SIDE = `(() => {
-  const subs = new Map(); let sid = 0, view = null, el = null;
+  const subs = new Map(); let sid = 0, view = null;
   const call = (kind, m) => window.__fbHA({ kind, m }).then((r) => (r.ok ? r.result : Promise.reject(r.error)));
   const conn = {
     subscribeMessage: async (cb, msg) => { const id = ++sid; subs.set(id, cb); await call('sub', { sid: id, msg }); return async () => { subs.delete(id); await call('unsub', { sid: id }).catch(() => {}); }; },
@@ -425,7 +464,7 @@ const PAGE_SIDE = `(() => {
     const ha = document.querySelector('home-assistant'); if (ha) ha.hass = make();
   };
   window.__fbAttach = () => {
-    el = document.createElement('functions-board');
+    const el = document.createElement('functions-board');
     el.panel = view.panel; el.narrow = false; el.route = { prefix: '/functions', path: '' };
     el.hass = make();
     document.body.appendChild(el);
@@ -441,7 +480,8 @@ const PAGE_SIDE = `(() => {
   };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true }); else start();
   // (a change can come while a page is still loading: there's no element to hand it to yet)
-  window.__fbPush = (x) => { if (!view) return; view = Object.assign({}, view, x); const h = make(); const ha = document.querySelector('home-assistant'); if (ha) ha.hass = h; if (el) el.hass = h; };
+  // (to the board on the page: one taken off isn't held here, so a test can see it let go)
+  window.__fbPush = (x) => { if (!view) return; view = Object.assign({}, view, x); const h = make(); const ha = document.querySelector('home-assistant'); if (ha) ha.hass = h; const el = document.querySelector('functions-board'); if (el) el.hass = h; };
   window.__fbDeliver = (id, m) => { const cb = subs.get(id); if (cb) cb(m); };
 })();`;
 

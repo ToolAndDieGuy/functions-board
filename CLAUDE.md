@@ -48,6 +48,8 @@ layer that can make it fail.
 The fake (`tests/board/fake-ha.js`) answers the board's calls from `tests/board/garage.json`, recorded from a
 fresh test Home Assistant by `node tests/board/capture.js` (re-record after changing `tests/e2e/config` or moving
 Home Assistant); a call it doesn't know fails the test (`fake.unknown`), so teach it anything new the board asks.
+`FB_JITTER=<seed>` makes it answer late and out of turn (events before or after their answers; the weekly jitter
+job runs every board suite so).
 `tests/e2e/contract.test.js` compares the fake's answers with the real Home Assistant's, so the fake can't drift.
 `tests/board/helpers.js` has the same API as `tests/e2e/lib.js`.
 
@@ -74,6 +76,8 @@ returns everything the library section defines.
 | `tests/board/a11y.test.js` | axe-core (WCAG 2.2 AA) on every view in dark and light mode, with a problem on the board; the keyboard (roving box focus, arrows, Space, Enter, Escape, dialog and drawer focus in and back); spoken names; less motion |
 | `tests/board/layout.test.js` | large synthetic functions in both directions: no overlap, arrows 16 px apart, none through a box, every crossing hops, rows wrap |
 | `tests/board/regress.test.js [FB_ONLY]` | the regress cases the fake can show, named by version |
+| `tests/board/snapshots.test.js` | every view's shadow DOM as text against `tests/board/snapshots/` (from 0.9.1): what the rebuild must keep; `FB_SNAP_UPDATE=1` records a change on purpose |
+| `tests/board/leak.test.js` | the board taken off and put back 50 times: nothing left subscribed, running or listening, every board let go |
 | `tests/e2e/apitest.py` | backend over the real API (setup, websocket commands, store, non-admin, config flow) |
 | `tests/e2e/isolation.test.js` | a test that changes Home Assistant and fails half way leaves nothing behind for the next |
 | `tests/e2e/contract.test.js` | the fake answers as the real Home Assistant does (read commands, changes, the snapshot) |
@@ -139,8 +143,8 @@ returns everything the library section defines.
   them all. `.github/workflows/weekly.yml` runs weekly: against Home Assistant's newest
   release, betas included (`FB_HA=beta sh tests/setup.sh` does the same locally; it also checks the sandbox has
   every per-entity trigger it has, `gen_sandbox_triggers.py --check`, and integrations it can't import keep their
-  entries; issues labelled `ha-beta`), every mutant (`node tests/mutants.js --ha`), and everything with
-  `FB_STRICT=1` (no flaky test, no check quarantined for more than 30 days; issues labelled `test-gap`).
+  entries; issues labelled `ha-beta`), every mutant (`node tests/mutants.js --ha`), the board suites under jitter,
+  and everything with `FB_STRICT=1` (no flaky test, no check quarantined for more than 30 days; issues labelled `test-gap`).
 - **Mutants** (`tests/mutants.json`, `node tests/mutants.js [--ha] [pattern]`): each entry breaks the code in one
   exact place and names the check that must catch it. When you fix a bug or add a check, add a mutant for it (the
   break you made by hand to see the check fail, written down). When code a mutant breaks changes, the mutant goes

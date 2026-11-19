@@ -1,0 +1,601 @@
+style {57719 chars, #783270f4}
+div.board.m-panel.pc.sbx
+  aside.list
+    div.lhead
+      span | Functions
+      span
+        button data-act="import" title="Import: find the functions already in your setup, or add labels and items"
+          ha-icon icon="mdi:import"
+        button data-act="newfn" title="New empty function"
+          ha-icon icon="mdi:plus"
+    div.lfind
+      ha-icon icon="mdi:magnify"
+      input.find aria-label="Find anything" placeholder="Find an automation, helper, device…" value ·value=""
+    div.fns
+      div.fnrow
+        button.cur.fn data-fn="garage"
+          ha-icon icon="mdi:garage-lock" style="color:var(--indigo-color, indigo)"
+          span.fnt
+            span.fnn | Garage
+            span.fnc | 3 automations · 1 script · 2 helpers
+        button.fnmore.ib data-act="fn-menu" data-label="garage" title="Edit, hide or delete Garage"
+          ha-icon icon="mdi:dots-vertical"
+      div.fnrow
+        button.fn data-fn="furnace_filter"
+          ha-icon icon="mdi:calendar-clock" style="color:var(--teal-color, teal)"
+          span.fnt
+            span.fnn | Furnace filter
+            span.fnc | 2 automations · 1 script · 2 helpers
+        button.fnmore.ib data-act="fn-menu" data-label="furnace_filter" title="Edit, hide or delete Furnace filter"
+          ha-icon icon="mdi:dots-vertical"
+      div.fnrow
+        button.fn data-fn="morning"
+          ha-icon icon="mdi:airplane" style="color:var(--purple-color, purple)"
+          span.fnt
+            span.fnn | Morning
+            span.fnc | 1 automation · 1 script · 2 helpers
+        button.fnmore.ib data-act="fn-menu" data-label="morning" title="Edit, hide or delete Morning"
+          ha-icon icon="mdi:dots-vertical"
+    div.lfoot
+      button.lbtn data-act="import" | Import manager
+        ha-icon icon="mdi:import"
+      div.ver
+        span | Functions board v<version> · prototype
+        button.ib data-act="about" title="About, and what the board changes"
+          ha-icon icon="mdi:help-circle-outline"
+  div.scrim data-act="togglelist"
+  section.main
+    header.bar
+      button.hamenu.ib data-act="hamenu" title="Home Assistant menu"
+        ha-icon icon="mdi:menu"
+      button.ib data-act="togglelist" title="Show or hide the list of functions"
+        ha-icon icon="mdi:format-list-bulleted"
+      div.title
+        ha-icon icon="mdi:garage-lock" style="color:var(--indigo-color, indigo)"
+        div.tt
+          div.ttl | Garage
+        button.ib data-act="fn-edit" title="Edit name, icon, colour and description"
+          ha-icon icon="mdi:pencil-outline"
+        button.ib data-act="fn-menu" data-label="garage" title="Hide or delete this function"
+          ha-icon icon="mdi:dots-vertical"
+      div.tools aria-label="Function tools" role="toolbar"
+        button data-act="new-automation" title="New automation in this function"
+          ha-icon icon="mdi:robot-outline"
+          span | Automation
+        button data-act="new-script" title="New script in this function"
+          ha-icon icon="mdi:script-text-outline"
+          span | Script
+        button data-act="new-helper" title="New helper in this function"
+          ha-icon icon="mdi:tune-variant"
+          span | Helper
+        button data-act="add-existing" title="Bring automations, scripts, helpers or entities you already have into this function"
+          ha-icon icon="mdi:link-variant-plus"
+          span | Existing
+        span.sep
+        button.ib data-act="undo" title="Undo: Import Morning (Ctrl+Z)"
+          ha-icon icon="mdi:undo"
+        button.ib data-act="redo" disabled title="Nothing to redo"
+          ha-icon icon="mdi:redo"
+        button.sec data-act="frame" title="Draw a frame to group part of the system"
+          ha-icon icon="mdi:selection"
+          span | Frame
+        button.sec data-act="note" title="Add a note"
+          ha-icon icon="mdi:note-plus-outline"
+          span | Note
+        button.sec data-act="arrange" title="Lay this function out automatically, boxes you moved too. Boxes you keep in place (in their bar) stay where they are. Undo puts your own arrangement back."
+          ha-icon icon="mdi:auto-fix"
+          span | Auto-arrange
+        button.sec data-act="hl" title="Arrows: what lights up around a selected box, and which arrows show"
+          ha-icon icon="mdi:vector-polyline"
+          span | Arrows
+        span.sep
+        button.sec data-act="runs" title="Every run of every automation and script in this function, newest first"
+          ha-icon icon="mdi:timeline-clock-outline"
+          span | Runs
+        button.sec data-act="debug" title="Debugger: what happens in this function, live, what caused each step, and why something did or didn't run"
+          ha-icon icon="mdi:bug-outline"
+          span | Debug
+        button.sec data-act="sandbox" title="Sandbox: try the function on a copy of its states. Nothing is sent to your devices."
+          ha-icon icon="mdi:flask-outline"
+          span | Sandbox
+        button.sec.vonly data-act="versions" title="Versions: save this function as it is, compare, try a saved version in the sandbox, and restore one"
+          ha-icon icon="mdi:history"
+          span | Versions
+        button.pause.sec data-act="pause" data-sig="3/3/-" title="Turn off the 3 automations that are on now and stop their runs; Resume turns only those back on"
+          ha-icon icon="mdi:pause-circle-outline"
+          span | Pause
+    div.stage
+      div.vp style="background-size: # #; background-position: # #;"
+        div.world style="transform: translate(#, #) scale(#);"
+          div.frames
+          svg.edges aria-hidden="true"
+            defs
+              marker viewBox="0 0 10 10"
+                path d="M0,0 L10,5 L0,10 z" style="fill:var(--fb-edge)"
+              marker viewBox="0 0 10 10"
+                path d="M0,0 L10,5 L0,10 z" style="fill:var(--primary-text-color)"
+              marker viewBox="0 0 10 10"
+                path d="M0,0 L10,5 L0,10 z" style="fill:#fab219"
+              marker viewBox="0 0 10 10"
+                path d="M0,0 L10,5 L0,10 z" style="fill:#5598e7"
+              marker viewBox="0 0 10 10"
+                path d="M0,0 L10,5 L0,10 z" style="fill:var(--fb-trig)"
+              marker viewBox="0 0 10 10"
+                path d="M0,0 L10,5 L0,10 z" style="fill:var(--fb-act)"
+              marker viewBox="0 0 10 10"
+                path d="M0,0 L10,5 L0,10 z" style="fill:var(--fb-call)"
+              marker viewBox="0 0 10 10"
+                circle cx="5" cy="5" r="4" style="fill:var(--fb-edge)"
+              marker viewBox="0 0 10 10"
+                circle cx="5" cy="5" r="4" style="fill:var(--fb-trig)"
+              marker viewBox="0 0 10 10"
+                circle cx="5" cy="5" r="4" style="fill:var(--primary-text-color)"
+            path.dim.e.role-action d="M1588,81 L1616,81 Q1630,81 1630,67 L1630,-26 Q1630,-40 1616,-40 L-6,-40 Q-20,-40 -20,-26 L-20,92 Q-20,101 -11,101 L-2,101" data-edge="script.close_garage>cover.garage_door" marker-end="url(#fb-act)"
+            path.dim.e.role-action d="M1588,45 L1625,45 A5,5 0 0 1 1635,45 L1636,45 Q1646,45 1646,55 L1646,68 Q1646,82 1660,82 L1686,82" data-edge="script.close_garage>svc:persistent_notification.create" marker-end="url(#fb-act)"
+            path.e.hi.role-trigger d="M204,113 L224,113 Q238,113 238,127 L238,206 Q238,220 252,220 L302,220" data-edge="cover.garage_door>automation.garage_start_open_timer" marker-end="url(#fb-trig)" marker-start="url(#fb-dottrig)"
+            path.e.hi.role-action d="M544,220 L572.5,220 Q586,220 586,233.5 L586,237 Q586,247 596,247 L597,247 A5,5 0 0 1 607,247 L642,247" data-edge="automation.garage_start_open_timer>timer.garage_open" marker-end="url(#fb-act)"
+            path.dim.e.role-trigger d="M866,154 L924,154 Q938,154 938,140 L938,140 Q938,126 952,126 L1006,126" data-edge="event:timer.finished>automation.garage_left_open" marker-end="url(#fb-trig)" marker-start="url(#fb-dottrig)"
+            path.dim.e.role-trigger d="M884,211 L924,211 Q938,211 938,197 L938,140 Q938,126 952,126 L1006,126" data-edge="timer.garage_open>automation.garage_left_open" marker-end="url(#fb-trig)" marker-start="url(#fb-dottrig)"
+            path.dim.e.role-condition d="M204,89 L584.5,89 Q594,89 594,98.5 L594,98.5 Q594,108 603.5,108 L1006,108" data-edge="cover.garage_door>automation.garage_left_open" marker-end="url(#fb-n)"
+            path.dim.e.role-action d="M1248,126 L1288,126 Q1298,126 1298,116 L1298,116 Q1298,106 1308,106 L1686,106" data-edge="automation.garage_left_open>svc:persistent_notification.create" marker-end="url(#fb-act)"
+            path.dim.e.role-condition d="M884,31 L940,31 Q954,31 954,45 L954,76 Q954,90 968,90 L1006,90" data-edge="input_boolean.garage_auto_close>automation.garage_left_open" marker-end="url(#fb-n)"
+            path.dim.e.role-call d="M1248,90 L1283.5,90 Q1297,90 1297,76.5 L1297,76.5 Q1297,63 1310.5,63 L1346,63" data-edge="automation.garage_left_open>script.close_garage" marker-end="url(#fb-call)"
+            path.dim.e.role-trigger d="M204,101 L240,101 Q254,101 254,115 L254,120 Q254,134 268,134 L302,134" data-edge="cover.garage_door>automation.garage_closed_stop_timer" marker-end="url(#fb-trig)" marker-start="url(#fb-dottrig)"
+            path.dim.e.role-action d="M544,134 L588,134 Q602,134 602,148 L602,197 Q602,211 616,211 L642,211" data-edge="automation.garage_closed_stop_timer>timer.garage_open" marker-end="url(#fb-act)"
+            path.e.hi.role-condition d="M884,247 L940,247 Q954,247 954,233 L954,230 Q954,216 968,216 L1006,216" data-edge="timer.garage_open>automation.garage_restart_timer_when_reopened" marker-end="url(#fb-hi)"
+            path.dim.e.role-action d="M1248,216 L1257,216 Q1266,216 1266,225 L1266,286 Q1266,300 1252,300 L616,300 Q602,300 602,286 L602,243 Q602,229 616,229 L642,229" data-edge="automation.garage_restart_timer_when_reopened>timer.garage_open" marker-end="url(#fb-act)"
+            path.chev.dim.role-action d="M1351,-40 L1359,-44.5 L1359,-35.5 z"
+            path.chev.dim.role-action d="M1076,-40 L1084,-44.5 L1084,-35.5 z"
+            path.chev.dim.role-action d="M801,-40 L809,-44.5 L809,-35.5 z"
+            path.chev.dim.role-action d="M526,-40 L534,-44.5 L534,-35.5 z"
+            path.chev.dim.role-action d="M251,-40 L259,-44.5 L259,-35.5 z"
+            path.chev.dim.role-action d="M1040.6666666666667,300 L1048.6666666666667,295.5 L1048.6666666666667,304.5 z"
+            path.chev.dim.role-action d="M819.3333333333333,300 L827.3333333333333,295.5 L827.3333333333333,304.5 z"
+            circle.dim.jd.role-trigger.split cx="938" cy="154" r="3.2"
+            path.hit d="M1588,81 L1616,81 Q1630,81 1630,67 L1630,-26 Q1630,-40 1616,-40 L-6,-40 Q-20,-40 -20,-26 L-20,92 Q-20,101 -11,101 L-2,101" data-act="edge" data-e="script.close_garage>cover.garage_door"
+              title | Close garage changes Garage Door (close_cover)
+            path.hit d="M1588,45 L1625,45 A5,5 0 0 1 1635,45 L1636,45 Q1646,45 1646,55 L1646,68 Q1646,82 1660,82 L1686,82" data-act="edge" data-e="script.close_garage>svc:persistent_notification.create"
+              title | Close garage changes persistent_notification.create (create)
+            path.hit d="M204,113 L224,113 Q238,113 238,127 L238,206 Q238,220 252,220 L302,220" data-act="edge" data-e="cover.garage_door>automation.garage_start_open_timer"
+              title | Garage Door triggers Garage: start open timer
+            path.hit d="M544,220 L572.5,220 Q586,220 586,233.5 L586,237 Q586,247 596,247 L597,247 A5,5 0 0 1 607,247 L642,247" data-act="edge" data-e="automation.garage_start_open_timer>timer.garage_open"
+              title | Garage: start open timer changes Garage open timer (start)
+            path.hit d="M866,154 L924,154 Q938,154 938,140 L938,140 Q938,126 952,126 L1006,126" data-act="edge" data-e="event:timer.finished>automation.garage_left_open"
+              title | timer.finished triggers Garage: left open
+            path.hit d="M884,211 L924,211 Q938,211 938,197 L938,140 Q938,126 952,126 L1006,126" data-act="edge" data-e="timer.garage_open>automation.garage_left_open"
+              title | Garage open timer triggers Garage: left open
+            path.hit d="M204,89 L584.5,89 Q594,89 594,98.5 L594,98.5 Q594,108 603.5,108 L1006,108" data-act="edge" data-e="cover.garage_door>automation.garage_left_open"
+              title | Garage Door is checked by Garage: left open
+            path.hit d="M1248,126 L1288,126 Q1298,126 1298,116 L1298,116 Q1298,106 1308,106 L1686,106" data-act="edge" data-e="automation.garage_left_open>svc:persistent_notification.create"
+              title | Garage: left open changes persistent_notification.create (create)
+            path.hit d="M884,31 L940,31 Q954,31 954,45 L954,76 Q954,90 968,90 L1006,90" data-act="edge" data-e="input_boolean.garage_auto_close>automation.garage_left_open"
+              title | Garage auto-close is checked by Garage: left open
+            path.hit d="M1248,90 L1283.5,90 Q1297,90 1297,76.5 L1297,76.5 Q1297,63 1310.5,63 L1346,63" data-act="edge" data-e="automation.garage_left_open>script.close_garage"
+              title | Garage: left open runs Close garage (run)
+            path.hit d="M204,101 L240,101 Q254,101 254,115 L254,120 Q254,134 268,134 L302,134" data-act="edge" data-e="cover.garage_door>automation.garage_closed_stop_timer"
+              title | Garage Door triggers Garage: closed, stop timer
+            path.hit d="M544,134 L588,134 Q602,134 602,148 L602,197 Q602,211 616,211 L642,211" data-act="edge" data-e="automation.garage_closed_stop_timer>timer.garage_open"
+              title | Garage: closed, stop timer changes Garage open timer (cancel)
+            path.hit d="M884,247 L940,247 Q954,247 954,233 L954,230 Q954,216 968,216 L1006,216" data-act="edge" data-e="timer.garage_open>automation.garage_restart_timer_when_reopened"
+              title | Garage open timer is checked by Garage: restart timer when reopened
+            path.hit d="M1248,216 L1257,216 Q1266,216 1266,225 L1266,286 Q1266,300 1252,300 L616,300 Q602,300 602,286 L602,243 Q602,229 616,229 L642,229" data-act="edge" data-e="automation.garage_restart_timer_when_reopened>timer.garage_open"
+              title | Garage: restart timer when reopened changes Garage open timer (start)
+            text x="586" y="234.5" | start
+            g.bad.cres.sbxc data-edge="timer.garage_open>automation.garage_restart_timer_when_reopened" transform="translate(954,240.5)"
+              circle r="8"
+              path d="M-3,-3 L3,3 M3,-3 L-3,3"
+              title | In the sandbox: Garage open timer is active was false Garage open timer: idle
+          svg.flowx aria-hidden="true"
+            path.fx d="M204,101 L606,101 L606,216 L1008,216" marker-end="url(#fb-amber)"
+          div.nodes aria-label="Boxes: arrow keys follow the arrows, Enter opens, Space shows the actions" role="group"
+            div.d-script.dim.member.node aria-label="Script Close garage not run in the sandbox yet. Run by Garage: left open. Changes Garage Door, persistent_notification.create" aria-pressed="false" data-key="script.close_garage" role="button" style="left:1348px;top:32px;width:240px;height:62px" tabindex="0" title="Close garage — not run in the sandbox yet"
+              span.tag | Script
+              ha-icon.ic icon="mdi:garage"
+              div.txt
+                div.name | Close garage
+                div.sub | not run in the sandbox yet
+              span.pl.port data-y="9" style="top:9px"
+              span.port.pr data-y="9" style="top:9px"
+              span.pl.port data-y="27" style="top:27px"
+              span.port.pr data-y="27" style="top:27px"
+              span.pl.port data-y="45" style="top:45px"
+              span.port.pr data-y="45" style="top:45px"
+            div.d-timer.member.node.sbch aria-label="Helper Garage open timer Timer · active ✎3. Changed by Garage: start open timer, Garage: closed, stop timer, Garage: restart timer when reopened. Sets off Garage: left open. Is checked by Garage: restart timer when reopened" aria-pressed="false" data-key="timer.garage_open" role="button" style="left:644px;top:198px;width:240px;height:62px" tabindex="-1" title="Garage open timer — Timer · active"
+              span.tag | Helper
+              ha-icon.ic icon="mdi:timer-outline"
+              div.txt
+                div.name | Garage open timer
+                div.sub | Timer · active
+              div.badges
+                span.wr title="Changed by 3 automations or scripts" | ✎3
+              span.pl.port data-y="9" style="top:9px"
+              span.port.pr data-y="9" style="top:9px"
+              span.pl.port data-y="27" style="top:27px"
+              span.port.pr data-y="27" style="top:27px"
+              span.pl.port data-y="45" style="top:45px"
+              span.port.pr data-y="45" style="top:45px"
+            div.d-input_boolean.dim.member.node aria-label="Helper Garage auto-close Toggle · off. Is checked by Garage: left open" aria-pressed="false" data-key="input_boolean.garage_auto_close" role="button" style="left:644px;top:0px;width:240px;height:62px" tabindex="-1" title="Garage auto-close — Toggle · off"
+              span.tag | Helper
+              ha-icon.ic icon="mdi:garage-lock"
+              div.txt
+                div.name | Garage auto-close
+                div.sub | Toggle · off
+              span.pl.port data-y="9" style="top:9px"
+              span.port.pr data-y="9" style="top:9px"
+              span.pl.port data-y="27" style="top:27px"
+              span.port.pr data-y="27" style="top:27px"
+              span.pl.port data-y="45" style="top:45px"
+              span.port.pr data-y="45" style="top:45px"
+            div.d-automation.member.node.now aria-label="Automation Garage: start open timer On · ran once in the sandbox. Set off by Garage Door. Changes Garage open timer" aria-pressed="false" data-key="automation.garage_start_open_timer" role="button" style="left:304px;top:189px;width:240px;height:62px" tabindex="-1" title="Garage: start open timer — On · ran once in the sandbox"
+              span.tag | Automation
+              ha-icon.ic icon="mdi:robot-outline"
+              div.txt
+                div.name | Garage: start open timer
+                div.sub | On · ran once in the sandbox
+              span.pl.port data-y="9" style="top:9px"
+              span.port.pr data-y="9" style="top:9px"
+              span.pl.port data-y="27" style="top:27px"
+              span.port.pr data-y="27" style="top:27px"
+              span.pl.port data-y="45" style="top:45px"
+              span.port.pr data-y="45" style="top:45px"
+            div.d-automation.dim.member.node aria-label="Automation Garage: left open On · not run in the sandbox yet. Set off by timer.finished, Garage open timer. Checks Garage Door, Garage auto-close. Changes persistent_notification.create. Runs Close garage" aria-pressed="false" data-key="automation.garage_left_open" role="button" style="left:1008px;top:77px;width:240px;height:62px" tabindex="-1" title="Garage: left open — On · not run in the sandbox yet"
+              span.tag | Automation
+              ha-icon.ic icon="mdi:robot-outline"
+              div.txt
+                div.name | Garage: left open
+                div.sub | On · not run in the sandbox yet
+              span.pl.port data-y="9" style="top:9px"
+              span.port.pr data-y="9" style="top:9px"
+              span.pl.port data-y="27" style="top:27px"
+              span.port.pr data-y="27" style="top:27px"
+              span.pl.port data-y="45" style="top:45px"
+              span.port.pr data-y="45" style="top:45px"
+            div.d-automation.dim.member.node aria-label="Automation Garage: closed, stop timer On · not run in the sandbox yet. Set off by Garage Door. Changes Garage open timer" aria-pressed="false" data-key="automation.garage_closed_stop_timer" role="button" style="left:304px;top:103px;width:240px;height:62px" tabindex="-1" title="Garage: closed, stop timer — On · not run in the sandbox yet"
+              span.tag | Automation
+              ha-icon.ic icon="mdi:robot-outline"
+              div.txt
+                div.name | Garage: closed, stop timer
+                div.sub | On · not run in the sandbox yet
+              span.pl.port data-y="9" style="top:9px"
+              span.port.pr data-y="9" style="top:9px"
+              span.pl.port data-y="27" style="top:27px"
+              span.port.pr data-y="27" style="top:27px"
+              span.pl.port data-y="45" style="top:45px"
+              span.port.pr data-y="45" style="top:45px"
+            div.d-cover.node.outside.sbch aria-label="Cover Garage Door. Outside this function. Changed by Close garage. Sets off Garage: start open timer, Garage: closed, stop timer. Is checked by Garage: left open" aria-pressed="false" data-key="cover.garage_door" data-sbx="open" role="button" style="left:0px;top:81px;width:204px;height:40px" tabindex="-1" title="Garage Door — Cover · open
+Outside this function"
+              span.tag | Cover
+              ha-icon.ic icon="mdi:window-shutter"
+              div.txt
+                div.name | Garage Door
+              span.pl.port data-y="4" style="top:4px"
+              span.port.pr data-y="4" style="top:4px"
+              span.pl.port data-y="16" style="top:16px"
+              span.port.pr data-y="16" style="top:16px"
+              span.pl.port data-y="28" style="top:28px"
+              span.port.pr data-y="28" style="top:28px"
+            div.d-service.dim.node.outside aria-label="Action persistent_notification.create ✎2. Outside this function. Changed by Close garage, Garage: left open" aria-pressed="false" data-key="svc:persistent_notification.create" data-sbx role="button" style="left:1688px;top:74px;width:204px;height:40px" tabindex="-1" title="persistent_notification.create — Action · persistent_notification
+Outside this function"
+              span.tag | Action
+              ha-icon.ic icon="mdi:cog-play-outline"
+              div.txt
+                div.name | persistent_notification.create
+              div.badges
+                span.wr title="Changed by 2 automations or scripts" | ✎2
+              span.pl.port data-y="4" style="top:4px"
+              span.port.pr data-y="4" style="top:4px"
+              span.pl.port data-y="16" style="top:16px"
+              span.port.pr data-y="16" style="top:16px"
+              span.pl.port data-y="28" style="top:28px"
+              span.port.pr data-y="28" style="top:28px"
+            div.d-event.dim.node.outside aria-label="Event timer.finished. Outside this function. Sets off Garage: left open" aria-pressed="false" data-key="event:timer.finished" data-sbx role="button" style="left:662px;top:134px;width:204px;height:40px" tabindex="-1" title="timer.finished — Event
+Outside this function"
+              span.tag | Event
+              ha-icon.ic icon="mdi:broadcast"
+              div.txt
+                div.name | timer.finished
+              span.pl.port data-y="4" style="top:4px"
+              span.port.pr data-y="4" style="top:4px"
+              span.pl.port data-y="16" style="top:16px"
+              span.port.pr data-y="16" style="top:16px"
+              span.pl.port data-y="28" style="top:28px"
+              span.port.pr data-y="28" style="top:28px"
+            div.d-automation.node.suggest aria-label="Automation Garage: restart timer when reopened On · ran once in the sandbox. Related, not in this function. Checks Garage open timer. Changes Garage open timer" aria-pressed="false" data-key="automation.garage_restart_timer_when_reopened" role="button" style="left:1008px;top:185px;width:240px;height:62px" tabindex="-1" title="Garage: restart timer when reopened — On · ran once in the sandbox
+Related, not in this function. Select it to add it."
+              span.tag | Automation
+              ha-icon.ic icon="mdi:robot-outline"
+              div.txt
+                div.name | Garage: restart timer when reopened
+                div.sub | On · ran once in the sandbox
+              span.pl.port data-y="9" style="top:9px"
+              span.port.pr data-y="9" style="top:9px"
+              span.pl.port data-y="27" style="top:27px"
+              span.port.pr data-y="27" style="top:27px"
+              span.pl.port data-y="45" style="top:45px"
+              span.port.pr data-y="45" style="top:45px"
+          div.flow
+            div.fwait style="left:878px;top:198px" title="Garage open timer finishes" | <time>
+              ha-icon icon="mdi:timer-sand"
+            div.fnum data-act="flow-go" data-i="0" style="left:0px;top:81px" | 1
+            div.fnum data-act="flow-go" data-i="1" style="left:253px;top:196.5px" | 2
+            div.fnum data-act="flow-go" data-i="2" style="left:621px;top:173.5px" | 3
+            div.fnum data-act="flow-go" data-i="3" style="left:969px;top:255.5px" | 4
+            div.fnum data-act="flow-go" data-i="4" style="left:1008px;top:185px" | 5
+            div.fnum data-act="flow-go" data-i="5" style="left:601px;top:255.5px" | 6
+            div.fnum data-act="flow-go" data-i="6" style="left:644px;top:198px" | 7
+            div.cur.fnum data-act="flow-go" data-i="7" style="left:304px;top:189px" | 8
+          div.notes
+          svg.links aria-hidden="true"
+        div.empty hidden
+          div.welcome
+            ha-icon icon="mdi:sitemap-outline"
+            h2 | Welcome to Functions
+            p | A function is everything that makes one job work: its automations, scripts, helpers and devices, on one board and wired together from their own configs.
+            ol
+              li | finds the functions already in your setup: automations, scripts and helpers that trigger, change or call each other, plus your categories and labels.
+                b | Import
+              li | Or start a and build it with Home Assistant's own editors.
+                b | new function
+              li | Open a function to see what drives what. Click a box to light up its chain; double-click it to edit.
+            div.wbtns
+              button.primary data-act="import" | Import from my setup
+              button data-act="newfn" | New function
+            p.safe
+              ha-icon icon="mdi:shield-check-outline"
+              span | A function is a Home Assistant label; the board adds and removes labels and categories, and Pause turns a function's automations off until you resume them. It doesn't edit or delete your automations, scripts or helpers.
+        div.cardhint hidden
+          ha-icon icon="mdi:information-outline"
+          span | This card works best in a panel view. For a full page in the sidebar, install the Functions Board integration.
+          button data-act="hint-x" title="Dismiss" | ×
+        div.nodebar hidden role="toolbar"
+        div.lh hidden title="Drag onto another box to connect them, or click and then click the other box"
+        div.edgebar hidden
+        div.zoom
+          button data-act="zoomout" title="Zoom out" | −
+          button data-act="fit" title="Zoom out to show everything"
+            ha-icon icon="mdi:fit-to-screen-outline"
+          button data-act="zoomin" title="Zoom in" | +
+        div.legend
+          button.lgt data-act="legend" | Hide key
+            ha-icon icon="mdi:map-legend"
+          div.lg
+            svg height="10" width="38"
+              path.role-trigger d="M4,5 L30,5"
+              path.ah.role-trigger d="M30,1 L37,5 L30,9 z"
+              circle.ah.trig cx="4" cy="5" r="3.5"
+            span | triggers
+            svg height="10" width="38"
+              path.role-condition d="M4,5 L30,5"
+              path.ah.role-condition d="M30,1 L37,5 L30,9 z"
+            span | is checked or read by
+            svg height="10" width="38"
+              path.role-action d="M4,5 L30,5"
+              path.ah.role-action d="M30,1 L37,5 L30,9 z"
+            span | changes
+            svg height="10" width="38"
+              path.role-call d="M4,5 L30,5"
+              path.ah.role-call d="M30,1 L37,5 L30,9 z"
+            span | runs (script call)
+            svg height="10" width="38"
+              path.role-source d="M4,5 L30,5"
+              path.ah.role-source d="M30,1 L37,5 L30,9 z"
+            span | is read by (a helper's inputs)
+            svg height="10" width="38"
+              path.loop d="M4,5 L30,5"
+              path.ah.loop d="M30,1 L37,5 L30,9 z"
+            span | loop: can retrigger itself
+            svg height="10" width="38"
+              path.role-tool d="M4,5 L30,5"
+              path.ah.role-tool d="M30,1 L37,5 L30,9 z"
+            span | a test button or a monitor
+            svg height="14" width="38"
+              path d="M4,3 L16,3 L16,11 L30,11"
+              path d="M16,3 L30,3"
+              circle cx="16" cy="3" r="2.6" style="fill:var(--fb-edge)"
+            span | a shared line: a dot where an arrow branches off; point at a box, or select it, to trace its arrows
+            svg height="14" width="38"
+              path d="M19,1 L19,13"
+              path d="M4,8 L15,8 A4,4 0 0 1 23,8 L34,8"
+            span | crosses another without meeting it
+            svg height="14" width="38"
+              path d="M4,7 L34,7"
+              path.ah d="M15,7 L23,2.5 L23,11.5 z"
+            span | an arrow running back, right to left
+          div.lgn | related, not in this functionoutside item it touchesunavailable last run failed running a check passes or fails right nowsimulated statechanged in the sandboxnot on this board, shown for a sandbox run
+            span.dashed.sw
+            br
+            span.pill.sw
+            br
+            span.amber.st.sw
+            span.red.st.sw
+            span.blue.st.sw
+            br
+            span.cres-k.ok | ✓
+            span.bad.cres-k | ✕
+            br
+            span.dashed2.sw
+            br
+            span.sbk.sw
+            br
+            span.sbg.sw
+          label.tg | Show outside items
+            input checked data-tog="outside" type="checkbox" ·value="on" ·checked=true
+          label.tg | Show related suggestions
+            input checked data-tog="suggest" type="checkbox" ·value="on" ·checked=true
+          label.tg title="Reads your Node-RED app's flows in your browser, through the Node-RED page Home Assistant opens for you, to draw what they trigger on, read and change. The flows last read are kept by the integration, so every board shows them until the next read." | Show Node-RED flows
+            input data-nr type="checkbox" ·value="on" ·checked=false
+        div.loading hidden | Reading configs…
+        div.vtabs hidden style="right: #;"
+        div.sbxpill | Sandbox: nothing here changes your home
+          ha-icon icon="mdi:flask-outline"
+        div.flowbar.litbar style="right: #;"
+          div.fhead
+            button data-act="flow-prev" title="Previous step"
+              ha-icon icon="mdi:chevron-left"
+            button data-act="flow-next" disabled title="Next step"
+              ha-icon icon="mdi:chevron-right"
+            span.fpos | Step 8 of 8
+            span.fcur title="Garage: start open timer · finished" | Garage: start open timer · finished
+            button data-act="flow-play" | Replay
+            button data-act="lit-clear" | Clear
+          div.fsteps
+            button.fstep.lstep.on data-act="flow-go" data-i="0" title="Garage Door → open" | Garage Door → open
+              i.fsn | 1
+            span.larr | →
+            button.fstep.lstep.on data-act="flow-go" data-i="1" title="Garage: start open timer triggered" | Garage: start open timer triggered
+              i.fsn | 2
+            span.larr | →
+            button.fstep.lstep.on data-act="flow-go" data-i="2" title="Garage: restart timer when reopened triggered" | Garage: restart timer when reopen…
+              i.fsn | 3
+            span.larr | →
+            button.fstep.lstep.on data-act="flow-go" data-i="3" title="Garage: restart timer when reopened checks Garage open timer is active: false" | Garage: restart timer when reopen…
+              i.fsn | 4
+            span.larr | →
+            button.fstep.lstep.on data-act="flow-go" data-i="4" title="Garage: restart timer when reopened · stopped" | Garage: restart timer when reopen…
+              i.fsn | 5
+            span.larr | →
+            button.fstep.lstep.on data-act="flow-go" data-i="5" title="Garage: start open timer: timer.start → Garage open timer" | Garage: start open timer: timer.s…
+              i.fsn | 6
+            span.larr | →
+            button.fstep.lstep.on data-act="flow-go" data-i="6" title="Garage open timer → active" | Garage open timer → active
+              i.fsn | 7
+            span.larr | →
+            button.cur.fstep.lstep.on data-act="flow-go" data-i="7" title="Garage: start open timer · finished" | Garage: start open timer · finish…
+              i.fsn | 8
+        div.ttip hidden
+        div.toast aria-live="polite" hidden role="status"
+          span | Imported 3 functions
+          button data-act="toast-act" data-i="0" | Undo
+      div.drawer aria-label="Sandbox · Garage" role="complementary"
+        div.dhead
+          span.dtitle tabindex="-1" | Sandbox · Garage
+          span.sbclock | <day> <time>
+          button data-act="sbx-about" title="What the sandbox is for, and what it can't show you"
+            ha-icon icon="mdi:information-outline"
+          button data-act="sbx-reset" title="Start over from your home's current states"
+            ha-icon icon="mdi:restore"
+          button data-act="close" title="Close the sandbox: the board shows your home again"
+            ha-icon icon="mdi:close"
+        div.dbg.sbx
+          div.sbnote | A copy of this function's states, with its own clock. Only the automations and scripts on this board run. Templates are read by Home Assistant from the sandbox's states. Nothing is sent to your devices.
+          div.sbask
+          div.sbctl
+            div.sbrow
+              span.sbl | Set
+              select.sbent aria-label="Entity" ·value="cover.garage_door"
+                option value="script.close_garage" | Close garage
+                option value="input_boolean.garage_auto_close" | Garage auto-close
+                option value="cover.garage_door" | Garage Door
+                option value="timer.garage_open" | Garage open timer
+                option value="automation.garage_closed_stop_timer" | Garage: closed, stop timer
+                option value="automation.garage_left_open" | Garage: left open
+                option value="automation.garage_restart_timer_when_reopened" | Garage: restart timer when reopened
+                option value="automation.garage_start_open_timer" | Garage: start open timer
+              span.sbf
+                select.sbsel.sbval-sel aria-label="state" data-f="sbval" ·value="open"
+                  option value="open" | open (now)
+                  option value="closed" | closed
+                  option value="opening" | opening
+                  option value="closing" | closing
+                  option value="unavailable" | unavailable
+                  option value="unknown" | unknown
+                  option value="other" | Other…
+                input.sbval aria-label="state" hidden placeholder="now open" ·value=""
+              button.chip data-act="sbx-set" | Set
+            div.sbrow
+              span.sbl | Event
+              span.sbf
+                select.sbev-sel.sbsel aria-label="event type" data-f="sbev" ·value="timer.finished"
+                  option value="timer.finished" | timer.finished
+                  option value="timer.cancelled" | timer.cancelled
+                  option value="other" | Other…
+                input.sbev aria-label="event type" hidden placeholder="event type" ·value=""
+              span.sbf
+                select.sbevd-sel.sbsel aria-label="data, e.g. {"entity_id": "timer.hall"}" data-f="sbevd" ·value="{"entity_id":"timer.garage_open"}"
+                  option value="{"entity_id":"timer.garage_open"}" | entity_id: timer.garage_open (what Garage: left open looks for)
+                  option value | no data
+                  option value="other" | Other…
+                input.sbevd aria-label="data, e.g. {"entity_id": "timer.hall"}" hidden placeholder="data, e.g. {"entity_id": "timer.hall"}" ·value=""
+              button.chip data-act="sbx-fire" | Fire
+            div.sbrow
+              span.sbl | Run
+              select.sbrun aria-label="Automation or script to run" ·value="script.close_garage"
+                option value="script.close_garage" | Close garage
+                option value="automation.garage_closed_stop_timer" | Garage: closed, stop timer
+                option value="automation.garage_left_open" | Garage: left open
+                option value="automation.garage_restart_timer_when_reopened" | Garage: restart timer when reopened
+                option value="automation.garage_start_open_timer" | Garage: start open timer
+              select.sbtrig aria-label="As if this trigger fired" hidden ·value=""
+                option value | with no trigger
+              label.sbcb | check its conditions
+                input.sbconds checked type="checkbox" ·value="on" ·checked=true
+              button.chip data-act="sbx-run" | Run
+            div.sbrow
+              span.sbl | Clock
+              button.chip data-act="sbx-adv" data-ms="60000" | +<dur>
+              button.chip data-act="sbx-adv" data-ms="600000" | +<dur>
+              button.chip data-act="sbx-adv" data-ms="3600000" | +<dur>
+              button.chip.sbnext data-act="sbx-next" | Next: Garage open timer finishes in <time>
+          div.sbchk data-sig="0|true|0"
+            div.ckhead
+              span | 0 saved checks
+              button.chip data-act="chk-save" title="Keep what you did in this sandbox, and what came of it, as a check that runs after every change" | Save as a check
+                ha-icon icon="mdi:content-save-check-outline"
+          div.sbdue
+          div.dtl.sbtl
+            button.dbrow.fin.k-state data-act="sbx-pick" data-id="1"
+              span.rt | <time>
+                i.fsn | 1
+              ha-icon icon="mdi:swap-horizontal"
+              span.dm
+                b | Garage Door → open
+                span | was closed · by you
+            button.blue.dbrow.fin.k-trigger data-act="sbx-pick" data-id="2"
+              span.rt | <time>
+                i.fsn | 2
+              ha-icon icon="mdi:play-circle-outline"
+              span.dm
+                b | Garage: start open timer triggered
+                span | Garage Door → open
+            button.blue.dbrow.fin.k-trigger data-act="sbx-pick" data-id="3"
+              span.rt | <time>
+                i.fsn | 3
+              ha-icon icon="mdi:play-circle-outline"
+              span.dm
+                b | Garage: restart timer when reopened triggered
+                span | Garage Door → open
+            button.dbrow.fin.k-cond.red data-act="sbx-pick" data-id="4"
+              span.rt | <time>
+                i.fsn | 4
+              ha-icon icon="mdi:close-circle-outline"
+              span.dm
+                b | Garage open timer is active: false
+                span | Garage open timer: idle
+            button.dbrow.fin.k-run.muted data-act="sbx-pick" data-id="5"
+              span.rt | <time>
+                i.fsn | 5
+              ha-icon icon="mdi:flag-checkered"
+              span.dm
+                b | Garage: restart timer when reopened · stopped
+                span | a condition was false
+            button.dbrow.fin.k-call data-act="sbx-pick" data-id="6"
+              span.rt | <time>
+                i.fsn | 6
+              ha-icon icon="mdi:arrow-right-bold-outline"
+              span.dm
+                b | timer.start → Garage open timer
+                span | Garage: start open timer
+            button.dbrow.fin.k-state data-act="sbx-pick" data-id="7"
+              span.rt | <time>
+                i.fsn | 7
+              ha-icon icon="mdi:swap-horizontal"
+              span.dm
+                b | Garage open timer → active
+                span | was idle · by Garage: start open timer
+            button.dbrow.fin.k-run.on data-act="sbx-pick" data-id="8"
+              span.rt | <time>
+                i.fsn | 8
+              ha-icon icon="mdi:flag-checkered"
+              span.dm
+                b | Garage: start open timer · finished
+  div.modal hidden

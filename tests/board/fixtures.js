@@ -12,6 +12,8 @@ lib.hooks.trace = true;
 
 const test = base.test.extend({
   fake: [async ({}, use, testInfo) => {
+    // FB_JITTER=<seed>: this test's fakes answer late and out of turn (fake-ha.js), the same way for the same seed
+    FakeHA.defaults.jitter = process.env.FB_JITTER ? `${process.env.FB_JITTER}:${testInfo.titlePath.slice(1).join(' › ')}` : null;
     const fake = new FakeHA();
     helpers.current.fake = fake;
     helpers.current.all = [fake];

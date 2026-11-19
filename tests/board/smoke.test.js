@@ -15,4 +15,31 @@ test('the board starts, imports and draws the garage', async ({ browser, fake })
   check('smoke: the garage is drawn', n >= 6, n);
   check('smoke: no errors', page.logs.length === 0, page.logs);
 });
+
+// The fake's jitter mode (FB_JITTER, fake-ha.js) does what it says: with it, an event sent while answering a call
+// reaches the page sometimes before the answer and sometimes after, and events keep their order; without it, the
+// event always comes first (as the fake has always done). A jitter that changed nothing would let every board test
+// pass under it without having tried anything.
+test('the fake\'s jitter puts events before and after answers', async ({ browser }) => {
+  const { FakeHA } = require('./fake-ha');
+  const probe = async (jitter) => {
+    const f = new FakeHA({ jitter });
+    const { ctx, page } = await f.open(browser, {});
+    const r = await page.evaluate(async () => {
+      const conn = document.querySelector('home-assistant').hass.connection, got = [], order = [];
+      await conn.subscribeMessage((ev) => got.push(ev.data.n), { type: 'subscribe_events', event_type: 'fb_probe' });
+      for (let n = 0; n < 40; n++) {
+        await conn.sendMessagePromise({ type: 'fire_event', event_type: 'fb_probe', event_data: { n } });
+        order.push(got.includes(n) ? 'before' : 'after');
+      }
+      for (let i = 0; i < 50 && got.length < 40; i++) await new Promise((x) => setTimeout(x, 100));
+      return { order, got };
+    });
+    await ctx.close();
+    return { before: r.order.filter((x) => x === 'before').length, after: r.order.filter((x) => x === 'after').length, inOrder: r.got.join() === [...Array(40).keys()].join() };
+  };
+  const plain = await probe(''), shaken = await probe('smoke');
+  check('J1 without jitter, an event always comes before the answer it goes with', plain.before === 40 && plain.inOrder, plain);
+  check('J2 with jitter, events come both before and after their answers, and in order', shaken.before >= 3 && shaken.after >= 3 && shaken.inOrder, shaken);
+});
 test.afterAll(() => done());

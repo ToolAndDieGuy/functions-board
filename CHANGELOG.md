@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+Tests (nothing changes in the board yet): the groundwork for rebuilding the board's insides in 0.10.0. Every view
+is now kept as a snapshot, taken from 0.9.1, so a rebuilt part that draws anything differently is caught. The test
+Home Assistant can answer late and out of turn, as a busy one does, and a weekly run tries every board test that
+way. And a new test opens and closes the board 50 times and checks it leaves nothing running behind.
+
 ## 0.9.1 (2026-11-18)
 
 Fixed: the sandbox got **and**, **or** and **not** conditions wrong (since 0.7.0). An "and" passed as soon as its

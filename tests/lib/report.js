@@ -17,7 +17,7 @@ const qfile = process.env.FB_QUARANTINE || path.join(__dirname, '..', 'quarantin
 let bad = 0;
 const md = ['| Suite | Result |', '|---|---|'], notes = [];
 const secs = (n) => { try { return +fs.readFileSync(path.join(dir, n + '.secs'), 'utf8'); } catch (e) { return null; } };
-const out = (n, s) => { const t = secs(n); if (t != null) s += ` (${t} s)`; console.log(n.padEnd(14) + ' ' + s); md.push(`| ${n} | ${s.replace(/\|/g, '\\|')} |`); };
+const out = (n, s) => { const t = secs(n); if (t != null) s += ` (${t} s)`; console.log(n.padEnd(15) + ' ' + s); md.push(`| ${n} | ${s.replace(/\|/g, '\\|')} |`); };
 const note = (s) => { console.log('    ' + s); notes.push('- ' + s); };
 
 let quarantine = [];

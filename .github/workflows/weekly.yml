@@ -9,6 +9,9 @@ name: Weekly
 #  - strict: everything on the pinned Home Assistant with FB_STRICT=1: no flaky test, and nothing quarantined for
 #    more than 30 days; with the size test (1,000 automations: import and open within their time budgets)
 #    (issues labelled test-gap).
+#  - jitter: the board suites on fakes that answer late and out of turn (FB_JITTER, tests/board/fake-ha.js), with a
+#    new seed every week and no retries, so a race between an answer and an event shows (issues labelled test-gap,
+#    with the seed to run it again).
 #  - pictures: the README's screenshots taken again and compared with docs/images (tests/shots.sh), so pictures
 #    that no longer show the board as it is are noticed (issues labelled docs).
 
@@ -20,7 +23,7 @@ on:
       only:
         description: "Which job to run by hand"
         type: choice
-        options: [all, beta, mutants, strict, pictures]
+        options: [all, beta, mutants, strict, jitter, pictures]
         default: all
 
 permissions:
@@ -162,6 +165,40 @@ jobs:
         run: |
           run="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           sh .github/issue.sh test-gap "A flaky test, or an old quarantine" "The weekly strict run failed: a test passed only on its second try, or a check has been quarantined for more than 30 days (tests/quarantine.json). The run's summary lists which: $run"
+
+  jitter:
+    if: github.event_name == 'schedule' || inputs.only == 'all' || inputs.only == 'jitter'
+    name: The board under jitter
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      FB_JITTER: ${{ github.run_id }}
+      FB_RETRIES: "0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Playwright
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+      - name: Every board suite, answers and events shaken (seed ${{ github.run_id }})
+        run: sh tests/run.sh --only 'board-'
+      - name: Reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jitter
+          path: tests/.results/
+      - name: Open an issue, or add to the open one
+        if: failure() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          sh .github/issue.sh test-gap "The board fails under jitter" "A board suite failed on fakes that answer late and out of turn: $run. Run it again exactly with FB_JITTER=${{ github.run_id }} FB_RETRIES=0 sh tests/run.sh --only 'board-<suite>'."
 
   pictures:
     if: github.event_name == 'schedule' || inputs.only == 'all' || inputs.only == 'pictures'

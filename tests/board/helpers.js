@@ -11,7 +11,7 @@ async function session(browser, who = 'owner', opts = {}) {
   if (!current.fake) throw new Error('board helpers: no fake Home Assistant (use the test from tests/board/fixtures.js)');
   if (who === 'user') current.fake.admin = false;
   const viewport = opts.mobile ? { width: 390, height: 844 } : opts.viewport || { width: 1400, height: 860 };
-  const r = await current.fake.open(browser, { light: opts.light, viewport, reducedMotion: opts.reducedMotion, clock: opts.clock });
+  const r = await current.fake.open(browser, { light: opts.light, viewport, reducedMotion: opts.reducedMotion, clock: opts.clock, init: opts.init });
   return { ctx: r.ctx, page: r.page };
 }
 // reset(): the board's data back to none, as on the real Home Assistant; freshBoard(): a new fake Home Assistant,
