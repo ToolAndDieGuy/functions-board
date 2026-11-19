@@ -12,6 +12,7 @@ let sharp = null;
 try { if (!process.env.FB_SHOTS_RAW) sharp = require('sharp'); } catch (e) { /* PNGs stay as the browser writes them */ }
 const OUT = process.env.FB_SHOTS_OUT || path.join(__dirname, '..', '..', 'docs', 'images');
 const only = process.argv[2] ? new RegExp(process.argv[2]) : null;
+let failPage = null;
 // GitHub shows a README image at most about 880 pixels wide: pages of about 1100 by 700 stay readable there
 const W = 1440, H = 820;
 const DOOR = 'cover.garage_door', TIMER = 'timer.garage_open', AUTO = 'input_boolean.garage_auto_close';
@@ -76,6 +77,8 @@ const drawerWidth = (page, w) => el(page, (b, w) => { b._$.drawer.style.width = 
   fs.mkdirSync(OUT, { recursive: true });
   const browser = await chromium.launch();
   const { ctx, page } = await session(browser, 'owner', { viewport: { width: W, height: H }, scale: 2 });
+  // on a failure, what the page showed: a screenshot and its text, next to the pictures
+  failPage = page;
   page.allowFail = [/^trace\/get$/, /^automation\/config$/];
   await page.goto(BASE + '/');
   await ready(page);
@@ -319,4 +322,15 @@ const drawerWidth = (page, w) => el(page, (b, w) => { b._$.drawer.style.width = 
   if (page.logs.length) console.log('logs', JSON.stringify(page.logs));
   await ctx.close();
   await browser.close();
-})().catch((e) => { console.error(e); process.exit(1); });
+})().catch(async (e) => {
+  console.error(e);
+  if (failPage) {
+    try {
+      await failPage.screenshot({ path: path.join(OUT, 'failed-here.png') });
+      console.error('--- the page then (failed-here.png):\n' + (await failPage.evaluate(() => { const b = document.querySelector('home-assistant'); const fb = b && b.shadowRoot && b.shadowRoot.querySelector('home-assistant-main'); return location.href + '\n' + document.body.innerText.slice(0, 600) + '\nlogs: ' + JSON.stringify((window.__fbLogs || []).slice(-5)); })).slice(0, 1500));
+      console.error('board: ' + (await failPage.locator('functions-board').first().evaluate((b) => (b.shadowRoot ? b.shadowRoot.textContent : '(no shadow)').replace(/\s+/g, ' ').slice(0, 800), null, { timeout: 3000 }).catch((x) => '(no board element: ' + x.message.split('\n')[0] + ')')));
+      if (failPage.logs && failPage.logs.length) console.error('page logs: ' + JSON.stringify(failPage.logs.slice(-10)));
+    } catch (e2) { console.error('(no screenshot: ' + e2.message + ')'); }
+  }
+  process.exit(1);
+});
