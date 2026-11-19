@@ -31,11 +31,14 @@ from homeassistant.loader import async_get_integration
 from homeassistant.util.hass_dict import HassKey
 
 from . import websocket
-from .nodered import NodeRedKept
+from .nodered import NodeRedKept, NodeRedReader
 from .const import (
     BOARD_FILE,
     CONF_CARD,
     CONF_MODE,
+    CONF_NR_PASS,
+    CONF_NR_URL,
+    CONF_NR_USER,
     DOMAIN,
     MODE_ORGANISE,
     PANEL_ICON,
@@ -88,6 +91,7 @@ class BoardData:
     module_url: str | None = None
     extra_js: str | None = None
     nodered: NodeRedKept | None = None
+    reader: NodeRedReader | None = None
 
     def stored(self) -> dict[str, Any]:
         """The store's contents."""
@@ -138,6 +142,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Serve the page and add it to the sidebar."""
     board = hass.data[DATA_KEY]
     board.mode = entry.options.get(CONF_MODE, MODE_ORGANISE)
+    _apply_reader(hass, board, entry)
     if not board.static:
         # the file name carries the content hash, so browsers may keep it as long as they like
         await hass.http.async_register_static_paths(
@@ -162,6 +167,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
+def _apply_reader(hass: HomeAssistant, board: BoardData, entry: ConfigEntry) -> None:
+    """Read Node-RED from Home Assistant when an address is set in the options; otherwise only boards read it."""
+    o = entry.options
+    url = o.get(CONF_NR_URL)
+    board.reader = (
+        NodeRedReader(hass, url, o.get(CONF_NR_USER, ""), o.get(CONF_NR_PASS, "")) if url else None
+    )
+
+
 def _apply_card(hass: HomeAssistant, board: BoardData, on: bool) -> None:
     """Load the board on dashboard pages (custom:functions-board) without a manual resource, or stop."""
     if on and not board.extra_js and board.module_url:
@@ -177,6 +191,7 @@ async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> Non
     board = hass.data[DATA_KEY]
     board.mode = entry.options.get(CONF_MODE, MODE_ORGANISE)
     _apply_card(hass, board, bool(entry.options.get(CONF_CARD)))
+    _apply_reader(hass, board, entry)
     board.notify(hass, {"what": "mode", "mode": board.mode, "client": ""})
 
 
@@ -185,4 +200,5 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     board = hass.data[DATA_KEY]
     frontend.async_remove_panel(hass, PANEL_URL, warn_if_unknown=False)
     _apply_card(hass, board, False)
+    board.reader = None
     return True

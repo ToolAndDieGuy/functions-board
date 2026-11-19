@@ -2407,6 +2407,10 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       node_red_flows_as_of: 'Node-RED flows as of {when}. Open Node-RED to read them again.',
       open_node_red_once_so_the: 'Open Node-RED once, so the board can read its flows.',
       open_node_red: 'Open Node-RED',
+      node_red_server_cannot_connect: 'Home Assistant couldn\'t reach Node-RED at the address in the integration\'s options.',
+      node_red_server_invalid_auth: 'Node-RED refused the login in the integration\'s options.',
+      node_red_server_unexpected: 'Node-RED answered Home Assistant, but not with its flows.',
+      showing_the_flows_read: 'Showing the flows read {when}.',
       show_node_red_flows: 'Show Node-RED flows',
       zoom_out_to_show_everything: 'Zoom out to show everything',
       back_to_a_readable_size: 'Back to a readable size',
@@ -6648,15 +6652,36 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
        while the switch in the Key is on. That page answers only once Home Assistant has let this browser in, which
        it does when Node-RED is opened from its sidebar (the board never asks for that itself). Until then, the
        flows last read by any board, kept by the integration (functions_board/nodered), stand in, marked with when
-       they were read. What's kept is the summary nrGroups makes: names and entity ids, no flow code. ---------- */
+       they were read. What's kept is the summary nrGroups makes: names and entity ids, no flow code.
+       With a Node-RED address and login set in the integration's options, Home Assistant reads the flows itself
+       (functions_board/nodered with read), still only when a board with the switch on asks. ---------- */
     async _nodered() {
       if (this._data.ui.nodered !== true) return null;
       const c = this._nrCache;
       if (c && Date.now() - c.at < (c.need ? 5000 : 60000)) return c;
       if (this._nrLoading) return this._nrLoading;
       const done = (x) => { this._nrCache = Object.assign({ at: Date.now(), groups: [] }, x); return this._nrCache; };
+      const asOf = (kept) => new Date(kept.at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
       this._nrLoading = (async () => {
         try {
+          const srv = await this._ws({ type: 'functions_board/nodered', read: true }).catch(() => null);
+          const keptFor = (slug) => { const k = srv && srv.kept; return k && k.slug === slug && Array.isArray(k.groups) ? k : null; };
+          if (srv && srv.server) {
+            // read by Home Assistant itself; the app, if there is one, only for opening Node-RED
+            const apps = await this._ws({ type: 'supervisor/api', endpoint: '/addons', method: 'get' }).catch(() => null);
+            const app = apps && toList(apps.addons).find((a) => a && /nodered/i.test(String(a.slug)));
+            const slug = app ? app.slug : '', key = slug || 'server';
+            if (Array.isArray(srv.server.flows)) {
+              const groups = nrGroups(srv.server.flows, (x) => this._known(x));
+              this._ws({ type: 'functions_board/nodered_keep', slug: key, groups, client: this._client() }).catch(() => { /* shown, not kept */ });
+              return done({ slug, server: true, groups });
+            }
+            const e = srv.server.error;
+            const why = e === 'cannot_connect' ? T('node_red_server_cannot_connect') : e === 'invalid_auth' ? T('node_red_server_invalid_auth') : T('node_red_server_unexpected');
+            const ok = keptFor(key);
+            return done({ slug, server: true, groups: ok ? ok.groups : [], asOf: ok ? ok.at : null,
+              err: ok ? why + ' ' + T('showing_the_flows_read', { when: asOf(ok) }) : why });
+          }
           const r = await this._ws({ type: 'supervisor/api', endpoint: '/addons', method: 'get' }).catch(() => null);
           if (!r) return done({ err: T('this_home_assistant_has_no') });
           const app = toList(r.addons).find((a) => a && /nodered/i.test(String(a.slug)));
@@ -6669,9 +6694,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           const res = await fetch(base + 'flows', { credentials: 'same-origin', headers: { 'Node-RED-API-Version': 'v2' } }).catch(() => null);
           if (!res || res.status === 401 || res.status === 403) {
             // not let in (yet, or any more): the flows last read here, if any, until Node-RED is opened
-            const kept = await this._ws({ type: 'functions_board/nodered' }).then((x) => x && x.kept).catch(() => null);
-            const ok = kept && kept.slug === app.slug && Array.isArray(kept.groups) ? kept : null;
-            const when = ok ? new Date(ok.at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+            const ok = keptFor(app.slug), when = ok ? asOf(ok) : '';
             return done({ base, slug: app.slug, need: true, groups: ok ? ok.groups : [], asOf: ok ? ok.at : null,
               err: ok ? T('node_red_flows_as_of', { when }) : T('open_node_red_once_so_the') });
           }

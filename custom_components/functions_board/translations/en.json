@@ -16,13 +16,25 @@
         "title": "Functions Board",
         "data": {
           "mode": "What the board may change",
-          "card": "Make the Functions card available on dashboards"
+          "card": "Make the Functions card available on dashboards",
+          "nodered_url": "Node-RED address (optional)",
+          "nodered_username": "Node-RED login: username",
+          "nodered_password": "Node-RED login: password"
         },
         "data_description": {
           "mode": "Organise only: labels, categories, and Pause and Resume. Full manager adds: creating and deleting automations, scripts, helpers and functions; editing the wiring in automation and script configs, which rewrites automations.yaml and scripts.yaml the way Home Assistant's own editors do (YAML comments are lost); and test changes such as simulated states, fired events and test runs. Every change is shown before it happens; all but test changes can be undone.",
-          "card": "Loads the board on dashboard pages so you can add a custom:functions-board card without adding a resource by hand."
+          "card": "Loads the board on dashboard pages so you can add a custom:functions-board card without adding a resource by hand.",
+          "nodered_url": "Lets Home Assistant read your Node-RED flows itself, so the board shows them on every device without opening Node-RED first. For the Node-RED app, turn on its direct access port (Network, 1880 by default) and enter http://127.0.0.1:1880 (https:// if the app has SSL on). Leave empty to read the flows only through the Node-RED page Home Assistant opens for you. Flows are still read only while Node-RED flows is switched on in a board's Key.",
+          "nodered_username": "For the Node-RED app: a Home Assistant user's username (a separate, non-administrator user just for this is best). For another Node-RED: a user from its adminAuth; read permission is enough.",
+          "nodered_password": "Kept in the integration's settings. Leave empty to keep the one already set."
         }
       }
+    },
+    "error": {
+      "invalid_url": "Enter an address starting with http:// or https://.",
+      "nodered_cannot_connect": "Couldn't reach Node-RED at that address. For the Node-RED app, check that its direct access port is set in its Network settings.",
+      "nodered_invalid_auth": "Node-RED refused the username or password.",
+      "nodered_unexpected": "Node-RED answered, but not with its flows. Check the address."
     }
   },
   "selector": {
