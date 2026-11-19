@@ -278,6 +278,15 @@
   "expect": "manifest/list answers in the same shape"
  },
  {
+  "name": "board: starts on another board's registries without checking they know every function",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "if (this._data.functions.concat(Object.keys(this._data.layouts)).some((l) => !known.has(l))) keep = null;",
+  "replace": "",
+  "suite": "board-regress",
+  "only": "0.9.2 a board started",
+  "expect": "function and its layout are still in the store"
+ },
+ {
   "name": "isolation: an automation a test added is left behind",
   "file": "tests/e2e/ha-api.js",
   "find": "if (!(id in snap.autos)) { await rest('DELETE'",

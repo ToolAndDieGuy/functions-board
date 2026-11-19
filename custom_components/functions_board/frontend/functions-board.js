@@ -1,5 +1,5 @@
 /*!
- * Functions board v0.9.1 (prototype) for Home Assistant
+ * Functions board v0.9.2 (prototype) for Home Assistant
  *
  * One page per "function": every automation, script, helper and device that makes one job work,
  * grouped by a Home Assistant label and wired together from their own configs.
@@ -13,7 +13,7 @@
  */
 (() => {
   'use strict';
-  const VERSION = '0.9.1';
+  const VERSION = '0.9.2';
   const loaded = customElements.get('functions-board');
   if (loaded) {
     if (loaded.VERSION !== VERSION) {
@@ -5204,7 +5204,13 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     }
     // warm: the last board's registries will do for now (see WARM_MS); given: ones just fetched
     async _loadRegistries(warm, given) {
-      const keep = warm && REG && REG.user === (this._hass.user && this._hass.user.id) && Date.now() - REG.at < WARM_MS ? REG.data : null;
+      let keep = warm && REG && REG.user === (this._hass.user && this._hass.user.id) && Date.now() - REG.at < WARM_MS ? REG.data : null;
+      // the last board's registries are only good if they know every function the shared store names: a label
+      // missing from them may be one another board made since (0.9.2: this board then deleted its layout)
+      if (keep && this._data) {
+        const known = new Set((keep[0] || []).map((l) => l.label_id));
+        if (this._data.functions.concat(Object.keys(this._data.layouts)).some((l) => !known.has(l))) keep = null;
+      }
       this._regWarm = !!keep;
       const [labels, ents, devs, areas, floors] = given || keep || await this._fetchRegistries();
       this._areaMap = new Map((areas || []).map((a) => [a.area_id, a]));
