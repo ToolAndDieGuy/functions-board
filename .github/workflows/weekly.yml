@@ -16,6 +16,12 @@ on:
   schedule:
     - cron: "41 7 * * 3"
   workflow_dispatch:
+    inputs:
+      only:
+        description: "Which job to run by hand"
+        type: choice
+        options: [all, beta, mutants, strict, pictures]
+        default: all
 
 permissions:
   contents: read
@@ -23,6 +29,7 @@ permissions:
 
 jobs:
   beta:
+    if: github.event_name == 'schedule' || inputs.only == 'all' || inputs.only == 'beta'
     name: Against Home Assistant's beta
     runs-on: ubuntu-latest
     timeout-minutes: 75
@@ -41,7 +48,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libturbojpeg0 || sudo apt-get install -y libturbojpeg
       - name: Set up the newest Home Assistant and Playwright
         run: |
-          sh tests/setup.sh
+          sh tests/setup.sh && sh tests/setup.sh backend
           npx playwright install --with-deps chromium
           echo "HA_VERSION=$(venv314/bin/python -c 'from homeassistant.const import __version__ as v; print(v)')" >> "$GITHUB_ENV"
       - name: Quick tests
@@ -83,6 +90,7 @@ jobs:
           fi
 
   mutants:
+    if: github.event_name == 'schedule' || inputs.only == 'all' || inputs.only == 'mutants'
     name: Mutants
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -118,6 +126,7 @@ jobs:
           sh .github/issue.sh test-gap "A test gap: a mutant went uncaught" "The weekly mutants run found a break no check caught, or a mutant whose text is no longer in the code (tests/mutants.json must follow it): $run"
 
   strict:
+    if: github.event_name == 'schedule' || inputs.only == 'all' || inputs.only == 'strict'
     name: Strict (no flaky tests)
     runs-on: ubuntu-latest
     timeout-minutes: 75
@@ -155,6 +164,7 @@ jobs:
           sh .github/issue.sh test-gap "A flaky test, or an old quarantine" "The weekly strict run failed: a test passed only on its second try, or a check has been quarantined for more than 30 days (tests/quarantine.json). The run's summary lists which: $run"
 
   pictures:
+    if: github.event_name == 'schedule' || inputs.only == 'all' || inputs.only == 'pictures'
     name: README pictures
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -177,12 +187,14 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Take them again and compare
         run: sh tests/shots.sh
-      - name: The new pictures and their differences
+      - name: The new pictures, their differences and the logs
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: pictures
-          path: tests/.results/shots/
+          path: |
+            tests/.results/
+            ha/hass.log
       - name: Open an issue, or add to the open one
         if: failure() && github.event_name == 'schedule'
         env:
