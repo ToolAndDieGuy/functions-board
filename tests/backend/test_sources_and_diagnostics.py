@@ -55,7 +55,7 @@ async def test_min_max_helper_inputs(hass: HomeAssistant, hass_ws_client) -> Non
 
 
 async def test_diagnostics_have_sizes_not_names(hass: HomeAssistant, hass_ws_client) -> None:
-    """Version, mode, function and layout sizes; no labels or entity IDs."""
+    """Home Assistant's own download: anonymised; the layout's shape, no labels or entity IDs (more in test_privacy)."""
     assert await async_setup_component(hass, "http", {})
     entry = MockConfigEntry(domain="functions_board", title="Functions Board", data={}, options={"mode": "full"})
     entry.add_to_hass(hass)
@@ -68,6 +68,7 @@ async def test_diagnostics_have_sizes_not_names(hass: HomeAssistant, hass_ws_cli
     from custom_components.functions_board.diagnostics import async_get_config_entry_diagnostics  # noqa: PLC0415
 
     diag = await async_get_config_entry_diagnostics(hass, entry)
-    assert diag["mode"] == "full" and diag["functions"] == 1
-    assert diag["layouts"] == [{"on_board": True, "boxes": 1, "frames": 1, "notes": 0, "paused": False, "revision": 1}]
+    assert diag["about"]["mode"] == "full" and diag["about"]["anonymised"] is True
+    assert diag["board"]["functions"] == ["label_1"]
+    assert diag["board"]["layouts"] == {"label_1": {"nodes": {"light.e1": {"x": 0, "y": 0}}, "frames": [{"id": "f"}]}}
     assert "secret" not in str(diag)

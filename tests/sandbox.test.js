@@ -6,8 +6,8 @@ const path = require('path');
 
 const src = fs.readFileSync(path.join(__dirname, '..', 'custom_components', 'functions_board', 'frontend', 'functions-board.js'), 'utf8');
 const start = src.indexOf("'use strict';"), end = src.indexOf('  class FunctionsBoard extends HTMLElement');
-const lib = new Function('customElements', 'window', src.slice(start, end) + '\nreturn { Sandbox, sbxRewrite, SBX_PRELUDE, durMs, asBool, localAt, tzParts, sbxEffect, sbxReads, flowPath, flowCrossings, verPrint, devIdsIn, swapDevs };')({ get: () => undefined }, {});
-const { Sandbox, sbxRewrite, durMs, localAt, sbxEffect, sbxReads, flowPath, flowCrossings, verPrint, devIdsIn, swapDevs } = lib;
+const lib = new Function('customElements', 'window', src.slice(start, end) + '\nreturn { cleanCheck, runCheck, Sandbox, sbxRewrite, SBX_PRELUDE, durMs, asBool, localAt, tzParts, sbxEffect, sbxReads, flowPath, flowCrossings, verPrint, devIdsIn, swapDevs };')({ get: () => undefined }, {});
+const { cleanCheck, runCheck, Sandbox, sbxRewrite, durMs, localAt, sbxEffect, sbxReads, flowPath, flowCrossings, verPrint, devIdsIn, swapDevs } = lib;
 
 let failed = 0, total = 0;
 const check = (name, ok, detail) => {
@@ -347,6 +347,55 @@ const st = (sb, id) => (sb.get(id) || {}).state;
     && R('{{ states | count }} {{ states[x] }}').leftovers.length === 0, [R("{{ states[repeat.item].state }} {{ states[trigger.entity_id ~ ''].attributes['x'] }} {% for s in states %}{% endfor %}").text]);
   check('rewrite: locations are still reported as read from your home', R("{{ closest('zone.home') }}").leftovers.includes('closest') && R("{{ distance('zone.home') }}").leftovers.includes('distance'));
   check('rewrite: names ending in states or now aren\'t touched', R('{{ my_states(1) }} {{ x.now() }} {{ snow(2) }}').text === '{{ my_states(1) }} {{ x.now() }} {{ snow(2) }}');
+
+  // ---- saved checks (0.9.0): replayed on the current configs, from the states they were saved with
+  {
+    const GARAGE = {
+      'automation.left_open': { triggers: [{ trigger: 'state', entity_id: 'cover.garage_door', to: 'open', for: '00:10:00' }],
+        conditions: [{ condition: 'state', entity_id: 'input_boolean.auto_close', state: 'on' }], actions: [{ action: 'script.close_garage' }] },
+      'script.close_garage': { sequence: [{ action: 'cover.close_cover', target: { entity_id: 'cover.garage_door' } }] },
+    };
+    // today the door is open and auto-close is off: the check starts from what it was saved with, not this
+    const live = { 'cover.garage_door': S('open'), 'input_boolean.auto_close': S('off'), 'automation.left_open': S('on'), 'script.close_garage': S('off') };
+    const o = (cfgs) => ({ states: live, items: Object.entries(cfgs).map(([id, cfg]) => ({ id, cfg })), tz: TZ, tpl: (t, v, e) => stubTpl(e)(t, v), name: (id) => id, condText: () => 'condition' });
+    const chk = cleanCheck({ id: 'c1', name: 'Closes after 10 minutes', at: at('20:00'),
+      start: { 'cover.garage_door': { state: 'closed' }, 'input_boolean.auto_close': { state: 'on' } },
+      steps: [{ op: 'set', id: 'cover.garage_door', state: 'open' }, { op: 'advance', ms: 11 * MIN }],
+      expect: [{ k: 'state', id: 'cover.garage_door', state: 'closed' }, { k: 'ran', id: 'automation.left_open' }, { k: 'ran', id: 'script.close_garage' }] });
+    check('checks: a saved check is cleaned to what it may hold', !!chk && chk.steps.length === 2 && chk.expect.length === 3 && chk.start['cover.garage_door'].state === 'closed');
+    const r1 = await runCheck(chk, o(GARAGE));
+    check('checks: it passes on the configs it was made with, from its own starting states (not today\'s)', r1.ok && r1.res.every((x) => x.ok), r1.res);
+    // someone edits the automation: 30 minutes now, so 11 minutes in nothing has happened
+    const edited = JSON.parse(JSON.stringify(GARAGE)); edited['automation.left_open'].triggers[0].for = '00:30:00';
+    const r2 = await runCheck(chk, o(edited));
+    check('checks: after an edit that changes what happens, it fails, and says what it got', !r2.ok && r2.res[0].got === 'open' && !r2.res[1].ok && r2.res[1].got === 'none', r2.res);
+    // the script loses its step
+    const broken = JSON.parse(JSON.stringify(GARAGE)); broken['script.close_garage'].sequence = [];
+    const r3 = await runCheck(chk, o(broken));
+    check('checks: a script that ran but no longer closes the door fails on the state, not on "ran"', !r3.ok && !r3.res[0].ok && r3.res[1].ok && r3.res[2].ok, r3.res);
+    // stopped and didn't run
+    const stop = cleanCheck({ id: 'c2', name: 'Auto-close off: reminder only', at: at('20:00'), start: { 'cover.garage_door': { state: 'closed' }, 'input_boolean.auto_close': { state: 'off' } },
+      steps: [{ op: 'set', id: 'cover.garage_door', state: 'open' }, { op: 'next' }],
+      expect: [{ k: 'stopped', id: 'automation.left_open' }, { k: 'notran', id: 'script.close_garage' }, { k: 'state', id: 'cover.garage_door', state: 'open' }] });
+    const r4 = await runCheck(stop, o(GARAGE));
+    check('checks: "stopped by its conditions" and "didn\'t run" hold, and Next runs the clock to what\'s due', r4.ok, r4.res);
+    // a question it was answered once is answered the same; a new one makes it unsure, not a pass
+    const ASK = { 'automation.sunset': { triggers: [{ trigger: 'state', entity_id: 'input_boolean.go', to: 'on' }], conditions: [{ condition: 'sun', after: 'sunset' }], actions: [{ action: 'light.turn_on', target: { entity_id: 'light.porch' } }] } };
+    const live2 = { 'input_boolean.go': S('off'), 'light.porch': S('off'), 'automation.sunset': S('on') };
+    const o2 = { states: live2, items: [{ id: 'automation.sunset', cfg: ASK['automation.sunset'] }], tz: TZ, tpl: (t, v, e) => stubTpl(e)(t, v), name: (id) => id, condText: (c) => (typeof c === 'string' ? c : c.condition || 'condition') };
+    const sb = make(live2, ASK);
+    await sb.start(); await sb.userSet('input_boolean.go', 'on');
+    const askText = sb.asks[0];
+    const withAns = cleanCheck({ id: 'c3', name: 'Porch at sunset', at: at('20:00'), start: {}, steps: [{ op: 'set', id: 'input_boolean.go', state: 'on' }],
+      answers: [{ key: 'automation.sunset', text: askText, value: true }], expect: [{ k: 'state', id: 'light.porch', state: 'on' }] });
+    const r5 = await runCheck(withAns, o2);
+    check('checks: the answers given when it was saved are given again', !!askText && r5.ok && !r5.unsure, { askText, r5: r5.res, unsure: r5.unsure });
+    const r6 = await runCheck(Object.assign({}, withAns, { answers: [] }), o2);
+    check('checks: a question it has no answer for makes it unsure, never a pass', !r6.ok && !!r6.unsure, r6);
+    check('checks: nothing to replay or nothing expected isn\'t a check', cleanCheck({ id: 'x', steps: [], expect: [{ k: 'ran', id: 'a.b' }] }) === null && cleanCheck({ id: 'x', steps: [{ op: 'next' }], expect: [] }) === null);
+    check('checks: it keeps which automations and scripts took part, and nothing else in that list', JSON.stringify(cleanCheck({ id: 'x', items: ['automation.a', 'script.b', 'light.c', 5, 'automation.BAD id'], steps: [{ op: 'next' }], expect: [{ k: 'ran', id: 'automation.a' }] }).items) === '["automation.a","script.b"]');
+    check('checks: steps and expectations it doesn\'t know are dropped', cleanCheck({ id: 'x', steps: [{ op: 'next' }, { op: 'shell', cmd: 'rm' }], expect: [{ k: 'ran', id: 'a.b' }, { k: 'eval', id: 'x' }] }).steps.length === 1);
+  }
 
   console.log(`\n${total - failed}/${total} passed`);
   process.exit(failed ? 1 : 0);

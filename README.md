@@ -26,7 +26,9 @@ Home Assistant files things by type: automations in one list, scripts in another
   - **Watch triggers** pulses an automation's trigger arrows whenever one would fire, without running it. With Pause, that's a dry run.
   - **Monitor boxes** list the last events of one type, or MQTT messages on a topic, while the function is open.
   - The **sandbox** runs the function on a copy of its states, with its own clock: set a state, fire an event or run an automation, and watch what the function would do played on the board step by step, without anything changing in your home. Works in either mode.
+  - **Saved checks:** keep a sandbox run, with what should come of it, as a check that's replayed after every change to the function. If it stops passing, it shows up as a problem.
   - **Tests** (Full manager only) change a helper, simulate a state, fire an event, send a notification, or run an automation or script. A test can be kept on the board as a button.
+- **Problems:** the board finds what each function's automations and scripts point at that isn't there or can't work (an entity renamed or removed, a device or area that's gone, an action whose integration isn't set up), counts them on the list and marks them on the board. Home Assistant itself doesn't warn about these.
 - **Versions:** save a function as it is, with a name and a description, open a saved version in a tab beside what's there now, try it in the sandbox, and restore it (Full manager).
 - **Arrow editor** (Full manager only): drag from a box's dots (or from one box) onto another to add a trigger, a check, an action or a script call, chosen from Home Assistant's own lists. The YAML is shown and checked before it's saved. Click an arrow to remove what it stands for.
 - **Node-RED flows** (off until you switch them on in the board's Key): each wired group in a flow is a box, with arrows to what it triggers on, reads, changes and runs.
@@ -61,6 +63,17 @@ The screenshots come from the demo setup the tests run on: a garage door that st
 
 ![The Debug panel answering "Garage: left open: why did or didn't it run?": conditions not met, Garage Door is open (it was closed, needs open)](https://raw.githubusercontent.com/ToolAndDieGuy/functions-board/main/docs/images/why.png)
 
+### Problems
+
+Rename or remove an entity, and Home Assistant leaves every automation that used it pointing at nothing. Nothing warns you; the automation just stops doing its job. The board checks what each function's automations and scripts point at:
+
+- **Red** stops something working: an entity that doesn't exist (renamed or removed?), one no integration provides any more, a device, area, floor or label that's gone, an action whose integration isn't set up, an automation that couldn't be set up.
+- **Amber** may be on purpose: something unavailable or disabled, an automation that's turned off (not while the function is paused).
+
+Each function in the list shows how many it has, the header's **problems** chip opens the list (what each one is in, **Show** it on the board, **Edit** the automation), and the boxes and arrows involved are marked. It only reads, and it keeps up as states and configs change.
+
+A problem you know about (a device that's unplugged for the winter) can be **dismissed**: it leaves the count, the list's badge and the marks on the board, and goes under **Dismissed** in the header, where **Bring back** returns it. Dismissals are kept with the function and shared between administrators. One is forgotten once its problem has been gone for a day, so if the problem comes back later, it shows again.
+
 ### Testing
 
 <table>
@@ -93,6 +106,8 @@ The **Auto-arrange** button's menu sets which way a function flows: **left to ri
 - **Triggers it can't follow** (zone, sun, Home Assistant starting, webhooks, device triggers) are named when it opens. **Run** an automation as if any one of its triggers fired, so `trigger.id` conditions and `trigger.` templates work. An **MQTT** row sends a message on a topic the function listens to.
 - Only the automations and scripts on the board run in the sandbox. Test buttons and the Test dialog act on the sandbox while it's open.
 - **Follow it on the board.** Whatever you do is played on the board step by step: each step's arrow lights with a dot running along it and a number beside it, conditions show ✓ or ✕ on their arrows, and what isn't on the board (the event a run stood in for, a sensor it checked, the MQTT topic a script publishes to) gets a temporary dashed box beside what it touches. A box with a delay running shows how long is left. Step with ◀ ▶ in the bar under the board, or click a row in the drawer.
+
+**Saved checks.** After doing something in the sandbox, **Save as a check** keeps the steps, the states and the time they started from, and what came of it (you tick which: the door ends closed, "Close garage" runs to the end, an automation is stopped by its conditions or doesn't run). The board replays every check on the function's current configs when they change and when you open it; a check that stops passing is a red problem saying what happened instead, and **Replay** plays it in the sandbox, step by step. It's a regression test for a part of your home, and like the sandbox it never touches your devices.
 
 ### Versions
 
@@ -133,14 +148,41 @@ Every change is shown before it happens, and **Undo** takes it back, except test
 
 In either mode:
 
-- The debugger, Watch triggers, monitor boxes and the live checks on arrows only read. Watching a trigger never runs the automation.
+- The debugger, Watch triggers, monitor boxes, the live checks on arrows and the problems check only read. Watching a trigger never runs the automation.
 - The sandbox only reads: your states once when it opens, and templates it asks Home Assistant to render. It never calls a service, fires an event or sets a state.
 - **Versions:** saving one reads the function through Home Assistant's own APIs (configs, helper settings, members, the devices its steps use, its layout) and keeps the copy in `.storage/functions_board.versions` (at most 50 per function, 1 MB each). Saving, renaming, deleting, opening a version in a tab and trying it in the sandbox change nothing in Home Assistant.
 - **Show Node-RED flows** reads your Node-RED app's flows in your browser, through the app's page in Home Assistant, only while it's switched on. That page opens to the board once you've opened Node-RED from the sidebar (or with the board's **Open Node-RED** button); until then the board shows the flows last read on any device, marked with when. The integration keeps that summary (group and tab names and the entity IDs they use, no flow code) so every board shares it. The board never signs itself in to the app.
 - The board's own data (which labels are functions, box positions, frames, notes and test buttons) is kept in `.storage/functions_board` and shared between administrators. The Node-RED flow summary, when you use Node-RED flows, is kept in `.storage/functions_board.nodered`, and saved versions in `.storage/functions_board.versions`. Your view (zoom, whether the list is open) is kept per user.
-- Nothing leaves your Home Assistant: no network calls, no external libraries, no telemetry.
+- Nothing leaves your Home Assistant: no network calls, no external libraries, no telemetry. See [Privacy](#privacy) for how that's tested.
 
 Removing the integration takes the page out of the sidebar. Labels and categories stay; they are ordinary Home Assistant labels you can delete under **Settings → Areas, labels & zones → Labels**.
+
+## Privacy
+
+The board talks to your Home Assistant and nothing else, and what it keeps stays in Home Assistant's own storage (`.storage/functions_board*`). It has no network code of its own, installs no Python packages and sends no telemetry. What other integrations do with data is up to them: if a test step or a restore calls a cloud service, that's the service you chose.
+
+**Diagnostics** are a file you download and decide what to do with. In the board's **About** dialog, **Diagnostics…** makes you choose every time, with nothing ticked to start with:
+
+- **Anonymised:** names, IDs, addresses, keys and free text are replaced with stand-ins, the same one wherever a thing appears (`light.kitchen` is `light.e3` in the layout, the triggers and the templates alike), so the shape of the problem is still there.
+- **With real names and IDs**, as they are in Home Assistant, with a reminder to look through the file before posting it anywhere public.
+
+You can add a snapshot of the open function as it is now and any of its saved versions (each version in the Versions drawer has its own download button). Home Assistant's own **Download diagnostics** (Settings → Devices & services) can't ask, so it's always anonymised.
+
+**How it's held to this.** Every push runs these checks, and each one has been shown to fail when its rule is broken:
+
+- *The board's code:* no way to reach another computer (no WebSocket, XHR, beacons, workers or outside images, fonts or scripts); its one `fetch` (Node-RED's flows) must be a path on your Home Assistant; the only outside address is the project page, as a plain link; every message it sends Home Assistant is on a list, and the ones that act (pausing automations, a logbook note, your own test steps, the Supervisor only asked) are tied to their places.
+- *The integration's Python:* no HTTP client, socket, mail, DNS or cloud module, and none of Home Assistant's web sessions; no packages to install.
+- *With marker data* in every field: anonymised diagnostics hold none of it; the log never holds the board's notes, layouts or snapshots; the backend tests run with the network blocked.
+- *On a real Home Assistant:* every request the board's page makes during a tour of everything it does goes to that Home Assistant; no connection or name lookup comes from the integration (each one is logged with the code behind it); the marker data is stored only in the integration's own files, never in `www/` (served without a login), the database or the log; nothing of it can be read without logging in, or by someone who isn't an administrator.
+
+## Accessibility
+
+The board works with the keyboard alone: **Tab** reaches the board, the arrow keys move from box to box, **Space**
+selects, **Enter** opens, **Escape** goes back a step. Each box has a spoken name with what it shows, what it's
+connected to and any problems. Dialogs and the side drawer take focus when they open and give it back when they
+close. Colours pass WCAG AA contrast in dark and light mode, and if your system asks for less motion the board's
+animations stop. A test suite (axe-core plus keyboard checks) holds it to that on every change; if something
+doesn't work with your screen reader or setup, please open an issue.
 
 ## Requirements
 
@@ -209,7 +251,7 @@ To try a table without editing the file, add it from the browser console on the 
 
 ## Feedback
 
-This is a prototype (v0.8.1). Please open an [issue](https://github.com/ToolAndDieGuy/functions-board/issues) for bugs, wrong or missing arrows, or ideas. A screenshot of the board and the automation's YAML help a lot.
+This is a prototype (v0.9.0). Please open an [issue](https://github.com/ToolAndDieGuy/functions-board/issues) for bugs, wrong or missing arrows, or ideas. A screenshot of the board and the automation's YAML help a lot, and so does a diagnostics file (anonymised is fine; see [Privacy](#privacy)).
 
 ## Credits
 

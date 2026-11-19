@@ -1,5 +1,70 @@
 # Changelog
 
+## 0.9.0 (2026-11-18)
+
+Improved: **accessibility.** The board was checked with the axe-core accessibility rules (WCAG 2.2 AA) in every
+view, in dark and light mode, and with the keyboard alone, and what turned up is fixed:
+- Text is readable in light mode: red, amber and blue labels, links, white text on coloured buttons and badges,
+  and the boxes the sandbox fades are darker or reworked where they were too faint (4.5:1 or better).
+- A box's spoken name now says everything it shows, including its problems; the list's count is read as
+  "2 problems", not just "2".
+- The side drawer (debugger, runs, sandbox, an editor) is a named region: focus moves into it when it opens and
+  goes back to the box or button you came from when it closes.
+- The find box and notes show where the focus is.
+- If your system asks for less motion, flows on the board show their last step at once instead of playing, the
+  dots along the arrows and the pulses stop, and the view jumps rather than glides.
+
+New: **saved checks.** Do something in the sandbox (open the garage door, let the clock run), then **Save as a
+check**: the board keeps the steps, the states and the time they started from, and what came of it, which you
+tick (the door ends closed, "Close garage" runs to the end, an automation is stopped by its conditions or doesn't
+run at all). The check is replayed on the function's current configs every time they change, and when you open
+the function. If it stops passing, the function shows it as a problem, saying what happened instead ("Garage Door
+ends closed (got open)"). **Replay** plays it in the sandbox, step by step on the board. Answers you gave the
+sandbox (is it after sunset?) are given again; a question it hasn't been asked before makes the check unsure
+rather than passing. Checks are kept with the function's layout and shared like everything else on the board.
+
+Fixed: anonymised diagnostics now also replace the IDs of areas, floors, labels and devices that Home Assistant no
+longer knows (an automation still pointing at a deleted area), which were left as they were.
+
+Fixed: anonymised diagnostics now also replace the names inside MQTT topics (`home/kitchen/light` keeps its
+shape and protocol words like `zigbee2mqtt` and `set`, not the names).
+
+New: **problems.** Home Assistant doesn't warn when something an automation uses is renamed or removed; the
+automation just stops doing its job. The board now finds what each function's automations and scripts point at
+that isn't there or can't work: an entity that doesn't exist (renamed or removed), one no integration provides,
+a device, area, floor or label that's gone, an action whose integration isn't set up, an automation that couldn't
+be set up. Those are red. Unavailable or disabled things and automations that are off are amber, since they may
+be on purpose (not while the function is paused). Each function in the list shows how many; the header has a
+**problems** chip that opens the list, with what each one is in, **Show** and **Edit**; and the boxes and arrows
+involved are marked on the board. It replaces the list's old "something is unavailable" dot.
+
+New: **dismiss a problem** you know about (a device unplugged for the winter). It leaves the count, the list's
+badge and the marks on the board; when it was the only one, the problems chip goes too. A **Dismissed** button in
+the header lists what you've dismissed, with **Bring back**, and the toast after dismissing has Undo. Dismissals are
+kept with the function and shared between administrators, and one is forgotten once its problem has been gone for
+a day, so a problem that comes back later shows again.
+
+## 0.8.2 (2026-11-18)
+
+New: **Diagnostics… in the About dialog.** It makes a file for an issue or a forum post, and you choose every time,
+with nothing ticked to start with: **anonymised** (names, IDs, addresses, keys and free text replaced with
+stand-ins, the same one wherever a thing appears, so the problem's shape is still there) or **with real names**.
+You can add a snapshot of the open function as it is now and any of its saved versions; each version in the
+Versions drawer has its own download button. The file is made in your browser and saved on your device; nothing
+is sent anywhere. Home Assistant's own Download diagnostics is now anonymised too, with the board's layouts and
+settings in it instead of only sizes.
+
+New: **privacy checks** on every push, each shown to fail when its rule is broken: the board's code can reach
+nothing but your Home Assistant; the integration's Python has no network code; anonymised diagnostics hold none
+of the test data put in every field, and the log never holds the board's notes, layouts or snapshots; on a real
+Home Assistant, every request the board makes goes to that Home Assistant, no connection comes from the
+integration, and its data is stored only in its own files and can't be read without logging in as an
+administrator. The README's new **Privacy** section has the details.
+
+Changed: the board now refuses to open, or fetch from, anything but a path on your Home Assistant (the drawer's
+pages and Node-RED's flows), so a bad address from elsewhere can't send it somewhere else.
+
+
 ## 0.8.1 (2026-11-18)
 
 Changed: **restoring a version no longer saves a backup copy every time.** The restore dialog has a box, unticked

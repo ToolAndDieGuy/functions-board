@@ -620,7 +620,7 @@ test('4.8 keyboard and screen readers: boxes are named buttons, arrow keys follo
   await openFn(page, /garage/i);
   check('4.8 one box is in the tab order', (await fbq(page, '.nodes .node[tabindex="0"]').count()) === 1);
   const label = await el(page, (b) => b._els.get('automation.garage_left_open').getAttribute('aria-label'));
-  check('4.8 a box says what it is, its state and what it is wired to', /^Garage: left open, Automation\. On/.test(label) && /Runs Close garage/.test(label) && /Set off by/.test(label), label);
+  check('4.8 a box says what it shows (what it is, its name, its state) and what it is wired to', /^Automation Garage: left open On\b/.test(label) && /Runs Close garage/.test(label) && /Set off by/.test(label), label);
   check('4.8 boxes are buttons', await el(page, (b) => b._els.get('automation.garage_left_open').getAttribute('role') === 'button'));
   await el(page, (b) => { b._centerOn('automation.garage_left_open'); b._els.get('automation.garage_left_open').focus(); });
   await page.keyboard.press('ArrowRight');

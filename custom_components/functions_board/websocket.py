@@ -19,9 +19,11 @@ from .const import (
     MAX_LABEL_LEN,
     MAX_LAYOUT_BYTES,
     MAX_SOURCES,
+    MAX_VERSION_BYTES,
     MAX_VERSION_TEXT,
     SIGNAL_UPDATED,
 )
+from .diagnostics import async_build as async_build_diagnostics
 from .nodered import clean_groups
 from .sources import async_sources
 from .versions import meta as version_meta
@@ -50,6 +52,7 @@ def async_register(hass: HomeAssistant) -> None:
         ws_version_save,
         ws_version_edit,
         ws_version_delete,
+        ws_diagnostics,
     ):
         websocket_api.async_register_command(hass, handler)
 
@@ -403,3 +406,35 @@ def ws_version_delete(hass: HomeAssistant, connection: websocket_api.ActiveConne
         return
     _board(hass).notify(hass, {"what": "versions", "label": msg["label"], "client": msg.get("client", "")})
     connection.send_result(msg["id"])
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "functions_board/diagnostics",
+        # no default: the person chooses anonymised or real names every time
+        vol.Required("anonymise"): bool,
+        vol.Optional("label"): LABEL,
+        vol.Optional("snapshot"): dict,
+        vol.Optional("version_ids"): vol.All([VID], vol.Length(max=50)),
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_diagnostics(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """The diagnostics file the board's dialog downloads; it goes to the person, nowhere else."""
+    if ("snapshot" in msg or "version_ids" in msg) and "label" not in msg:
+        connection.send_error(msg["id"], "invalid_format", "A snapshot or versions need the function's label")
+        return
+    if "snapshot" in msg and len(json_bytes(msg["snapshot"])) > MAX_VERSION_BYTES:
+        connection.send_error(msg["id"], "too_large", "A snapshot can be at most 1 MB")
+        return
+    connection.send_result(
+        msg["id"],
+        await async_build_diagnostics(
+            hass,
+            anonymise=msg["anonymise"],
+            label=msg.get("label"),
+            snapshot=msg.get("snapshot"),
+            version_ids=msg.get("version_ids"),
+        ),
+    )

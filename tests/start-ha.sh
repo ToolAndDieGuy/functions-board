@@ -13,7 +13,10 @@ dir=ha/config
 [ -d "$dir" ] || { echo "$dir is missing: run sh tests/setup.sh${1:+ $1} first"; exit 1; }
 # which one is running, for apitest.py (each keeps its own login)
 mkdir -p tests/e2e/.state && { [ "$1" = "demo" ] && echo demo || echo test; } > tests/e2e/.state/instance
-nohup venv314/bin/hass -c "$dir" > "$(dirname "$dir")/hass.log" 2>&1 &
+# every outgoing connection and name lookup is logged with the code behind it (tests/netguard; test-only)
+: > "$(dirname "$dir")/netguard.log"
+FB_NETGUARD_LOG="$PWD/$(dirname "$dir")/netguard.log" PYTHONPATH="$PWD/tests/netguard${PYTHONPATH:+:$PYTHONPATH}" \
+  nohup venv314/bin/hass -c "$dir" > "$(dirname "$dir")/hass.log" 2>&1 &
 for i in $(seq 1 90); do
   sleep 2
   code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8123/api/ 2>/dev/null)

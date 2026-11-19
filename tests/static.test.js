@@ -134,5 +134,58 @@ check('counts have one and other, and other shows {n}', noN.length === 0, noN.ma
 const ingress = (src.match(/ingress\/session|ingress_session/g) || []);
 check('no ingress session is made, and no ingress cookie written', ingress.length === 0, ingress);
 
+// ---------- privacy: the board talks to this Home Assistant and nothing else ----------
+// (comments are left out, so a note about a rule doesn't trip it)
+const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`\\])\/\/[^\n]*/g, '$1');
+
+// A1: no way to reach another computer but Home Assistant's own connection; one fetch, guarded to a path here
+const netApis = code.match(/\bnew\s+(WebSocket|EventSource|Worker|SharedWorker|XMLHttpRequest|Image|Audio)\b|sendBeacon|importScripts|\bimport\s*\(|\bsrc="(?!\$\{esc\(url\)\}")|setAttribute\(\s*'src'|navigator\.share|RTCPeerConnection|WebTransport/g) || [];
+check('A1 no network APIs (WebSocket, EventSource, workers, XHR, beacons, dynamic import, image or iframe loads)', netApis.length === 0, netApis);
+const fetches = code.match(/(?<![\w.])fetch\s*\([^)]*\)/g) || [];
+check('A1 exactly one fetch: Node-RED\'s flows, through its page in Home Assistant', fetches.length === 1 && /^fetch\(base \+ 'flows'/.test(fetches[0]), fetches);
+check('A1 ... and its address must be a path on this Home Assistant before it\'s used', /if \(!base \|\| !SAME_ORIGIN\.test\(base\)\) return/.test(code) && code.indexOf('SAME_ORIGIN.test(base)') < code.indexOf("fetch(base + 'flows'") && /const SAME_ORIGIN = \/\^\\\/\(\?!\[\\\/\\\\\]\)\/;/.test(code), null);
+
+// A2: one outside address, the project page, only ever a plain link; windows open only pages here
+const urls = (code.match(/\b(?:https?|wss?|ftp):\/\/[^\s'"`<>)]+/g) || []);
+check('A2 the only outside address is the project page', urls.length === 1 && urls[0] === 'https://github.com/ToolAndDieGuy/functions-board', urls);
+const repoUses = code.match(/REPO_URL[^\n]{0,24}/g) || [];
+check('A2 ... used only as a plain link, with nothing added to it', repoUses.length >= 2 && repoUses.slice(1).every((u) => /^REPO_URL(\s*\?|\}" target="_blank")/.test(u)), repoUses);
+const opens = code.match(/window\.open\(([^,)]+)/g) || [];
+check('A2 window.open only opens the board\'s or Home Assistant\'s own pages', opens.length > 0 && opens.every((o) => /window\.open\((this\._drawer\.url|location\.pathname \+)/.test(o)), opens);
+check('A2 ... and the drawer only takes paths here', /_openDrawer\(url, title, opt = \{\}\) \{\s*if \(!SAME_ORIGIN\.test\(String\(url\)\)\) return;/.test(code), null);
+const hrefs = (code.match(/\bhref\s*=\s*["'`]?\$?\{?[^\s>]{0,40}|\.href\s*=\s*[^;]{0,50}/g) || []).filter((h) => !/REPO_URL|URL\.createObjectURL|href="#"/.test(h));
+check('A2 no other links or downloads but the file the person saves (diagnostics)', hrefs.length === 0, hrefs);
+
+// A3: nothing loaded from elsewhere
+const assets = code.match(/url\(\s*['"]?(?:https?:)?\/\/|@import|<link\b|<script\b|<img\b[^>]*src=|font-face/g) || [];
+check('A3 no outside fonts, images, styles or scripts', assets.length === 0, assets);
+
+// A4: the messages it sends Home Assistant are on a list; the ones that act are pinned to their places
+const WS_OK = new Set(('automation/config blueprint/substitute config/area_registry/list config/area_registry/update config/auth/list '
+  + 'config/category_registry/create config/category_registry/delete config/category_registry/list config/device_registry/list '
+  + 'config/device_registry/update config/entity_registry/get config/entity_registry/list config/entity_registry/update '
+  + 'config/floor_registry/list config/label_registry/create config/label_registry/delete config/label_registry/list '
+  + 'config/label_registry/update config_entries/get extract_from_target fire_event frontend/get_translations frontend/get_user_data '
+  + 'frontend/set_user_data functions_board/diagnostics functions_board/get functions_board/nodered functions_board/nodered_keep '
+  + 'functions_board/set functions_board/set_functions functions_board/set_layout functions_board/sources functions_board/subscribe '
+  + 'functions_board/version_delete functions_board/version_edit functions_board/version_get functions_board/version_save '
+  + 'functions_board/versions logbook/event_stream logbook/get_action_calls manifest/list mqtt/subscribe render_template '
+  + 'subscribe_trigger supervisor/api test_condition trace/get trace/list validate_config').split(' '));
+// Home Assistant's websocket commands without a slash, so a new one is noticed even though it looks like a word
+const WS_PLAIN = /^(render_template|subscribe_trigger|fire_event|call_service|test_condition|validate_config|extract_from_target|execute_script|subscribe_events|get_states|get_config|get_services|get_panels|subscribe_entities|ping)$/;
+const types = [...code.matchAll(/(?<![\w])type:\s*'([^']+)'/g)].map((m) => m[1]).filter((t) => t.includes('/') && !/^(application|text|image)\//.test(t) || WS_PLAIN.test(t));
+const unlisted = [...new Set(types)].filter((t) => !WS_OK.has(t));
+check('A4 every message the board sends Home Assistant is on the list', unlisted.length === 0, unlisted);
+const svcCalls = code.match(/callService\(\s*[^,]+/g) || [];
+check('A4 services: pausing automations, a logbook note, and the person\'s own test steps only', svcCalls.length > 0 && svcCalls.every((c) => /callService\(\s*('automation'|'logbook'|svc\.slice\(0)/.test(c)), svcCalls);
+const testCall = code.match(/const call = \(svc, data, target\) => \{[^\n]*callService\(svc\.slice\(0, i\)/g) || [];
+check('A4 ... a test step\'s service is called in one place: running the person\'s test', testCall.length === 1 && code.indexOf(testCall[0]) > code.indexOf('async _execTest(t) {') && code.indexOf(testCall[0]) - code.indexOf('async _execTest(t) {') < 200, null);
+const fires = code.match(/type: 'fire_event'[^\n]{0,0}/g) || [];
+check('A4 events are fired only by the person\'s test steps', fires.length === 1 && /case 'event': return this\._ws\(\{ type: 'fire_event'/.test(code), fires.length);
+const sup = [...code.matchAll(/type: 'supervisor\/api'[^\n]{0,120}/g)].map((m) => m[0]);
+check('A4 the Supervisor is only asked (method get), never told', sup.length > 0 && sup.every((x) => /method: 'get'/.test(x)), sup);
+const pubs = code.match(/[^\n]{0,40}'mqtt\.publish'[^\n]{0,20}/g) || [];
+check('A4 MQTT: the board listens; a message is published only by the person\'s own MQTT test step (the sandbox only simulates one)', !/mqtt\/publish|callService\(\s*'mqtt'/.test(code) && pubs.length === 2 && pubs.some((p) => /if \(svc === 'mqtt\.publish'\) \{ await this\.mqtt\(/.test(p)) && pubs.some((p) => /case 'mqtt': return call\('mqtt\.publish'/.test(p)), pubs);
+
 console.log(`\n${total - failed}/${total} passed`);
 process.exit(failed ? 1 : 0);

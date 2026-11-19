@@ -22,6 +22,7 @@ run() {
 
 run static node tests/static.test.js
 run wiring node tests/wiring.test.js
+run problems node tests/problems.test.js
 run sandbox node tests/sandbox.test.js
 [ -x venvtest/bin/python ] && run backend venvtest/bin/python -m pytest tests/backend -q
 
@@ -29,7 +30,7 @@ if [ -n "$E2E" ]; then
   export FB_HA_CONFIG="${FB_HA_CONFIG:-$PWD/ha/config}"
   curl -s -o /dev/null http://127.0.0.1:8123/api/ || sh tests/start-ha.sh || exit 1
   run apitest venv314/bin/python tests/e2e/apitest.py
-  SUITES="ui regress tools sync sandbox versions layout"
+  SUITES="ui regress tools sync sandbox versions privacy a11y layout"
   [ -n "$SIZE" ] && SUITES="$SUITES size"
   for s in $SUITES; do
     [ -n "$PAT" ] && ! echo "$s" | grep -qE "$PAT" && continue

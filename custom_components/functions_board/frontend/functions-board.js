@@ -1,5 +1,5 @@
 /*!
- * Functions board v0.8.1 (prototype) for Home Assistant
+ * Functions board v0.9.0 (prototype) for Home Assistant
  *
  * One page per "function": every automation, script, helper and device that makes one job work,
  * grouped by a Home Assistant label and wired together from their own configs.
@@ -13,7 +13,7 @@
  */
 (() => {
   'use strict';
-  const VERSION = '0.8.1';
+  const VERSION = '0.9.0';
   const loaded = customElements.get('functions-board');
   if (loaded) {
     if (loaded.VERSION !== VERSION) {
@@ -167,6 +167,13 @@
     if (src.keep != null) out.keep = Array.isArray(src.keep) ? src.keep.filter((k) => typeof k === 'string' && k.length < 300).slice(0, 2000) : [];
     if (out.paused != null) out.paused = Array.isArray(out.paused) ? out.paused.filter((x) => typeof x === 'string') : null;
     if (out.categories != null && typeof out.categories !== 'object') out.categories = null;
+    // dismissed problems (0.9.0): what, when, and since when it's been gone
+    if (src.dismissed != null) {
+      out.dismissed = (Array.isArray(src.dismissed) ? src.dismissed : []).filter((d) => d && typeof d.k === 'string' && d.k.length < 400).slice(0, 500)
+        .map((d) => Object.assign({ k: d.k, at: num(d.at, 0) }, d.gone ? { gone: num(d.gone, 0) } : {}));
+    }
+    // saved sandbox checks (0.9.0)
+    if (src.checks != null) out.checks = (Array.isArray(src.checks) ? src.checks : []).slice(0, 50).map(cleanCheck).filter(Boolean);
     // test buttons and monitor boxes (Phase 9): only what they can be
     if (src.tools != null) {
       out.tools = [];
@@ -947,6 +954,94 @@
     return { refs, badges };
   }
 
+  /* ---------- problems (0.9.0): what a function's automations and scripts point at that isn't there or can't work.
+     Home Assistant doesn't say when an entity is renamed or removed under an automation, a device is gone, or a
+     service no longer exists; the automation just stops doing its job. This reads what analyze() found.
+       items: [{ key, refs }] the function's automations and scripts, with analyze()'s refs
+       members: the keys of everything in the function
+       ctx: { state(id), ent(id), dev(id), area(id), floor(id), label(id), service(domain, service), paused }
+     Returns [{ sev: 'error'|'warn', kind, ref, by: [item keys] }], errors first, one per thing. ---------- */
+  // dismissed problems (0.9.0). A problem is known by what's wrong and with what (not by which automations use it).
+  // A dismissal lasts while its problem is there, and is forgotten once the problem has been gone for a day, so a
+  // problem that comes back later shows again. covers(key): which problems this list is complete for (the rest
+  // are left as they are).
+  const PROB_FORGET_MS = 24 * 3600 * 1000;
+  const probKey = (p) => p.kind + '|' + p.ref;
+  function splitDismissed(problems, dismissed, now, covers) {
+    const list = Array.isArray(dismissed) ? dismissed : [], have = new Set(problems.map(probKey)), out = [];
+    let changed = false;
+    list.forEach((d) => {
+      if (!covers || covers(d.k)) {
+        if (have.has(d.k)) { if (d.gone) { d = { k: d.k, at: d.at }; changed = true; } }
+        else if (!d.gone) { d = { k: d.k, at: d.at, gone: now }; changed = true; }
+        else if (now - d.gone > PROB_FORGET_MS) { changed = true; return; }
+      }
+      out.push(d);
+    });
+    const off = new Set(out.map((d) => d.k));
+    return { shown: problems.filter((p) => !off.has(probKey(p))), hidden: problems.filter((p) => off.has(probKey(p))), dismissed: out, changed };
+  }
+  // the boxes and arrows a function's problems are about: a box takes its worst one; an arrow is marked when an end
+  // of it is gone
+  function markProblems(nodes, edges, problems) {
+    const worst = new Map(), mark = (k, sev) => { if (worst.get(k) !== 'error') worst.set(k, sev); };
+    problems.forEach((pr) => { mark(pr.ref, pr.sev); pr.by.forEach((b) => mark(b, pr.sev)); });
+    nodes.forEach((n, k) => { n.prob = worst.get(k) || null; });
+    const gone = new Set(problems.filter((pr) => pr.sev === 'error' && !/^(m_|s_)/.test(pr.kind)).map((pr) => pr.ref));
+    edges.forEach((e) => { e.prob = gone.has(e.from) || gone.has(e.to); });
+  }
+  function findProblems(items, members, ctx) {
+    const out = new Map();
+    const add = (sev, kind, ref, by) => {
+      const k = kind + '|' + ref, p = out.get(k) || { sev, kind, ref, by: [] };
+      if (by && !p.by.includes(by)) p.by.push(by);
+      out.set(k, p);
+    };
+    const entity = (id, by) => {
+      const st = ctx.state(id), reg = ctx.ent(id);
+      if (reg && reg.disabled_by) add('warn', 'e_disabled', id, by);
+      else if (!st && !reg) add('error', 'e_missing', id, by);
+      else if (!st) add('error', 'e_notloaded', id, by);
+      else if (st.state === 'unavailable') add('warn', 'e_unavail', id, by);
+    };
+    for (const it of items) {
+      for (const r of it.refs || []) {
+        const ref = r.ref;
+        if (ref === it.key) continue;
+        if (ref.startsWith('device:')) {
+          const d = ctx.dev(ref.slice(7));
+          if (!d) add('error', 'd_missing', ref, it.key);
+          else if (d.disabled_by) add('warn', 'd_disabled', ref, it.key);
+        } else if (TGT_RE.test(ref)) {
+          const i = ref.indexOf(':'), kind = ref.slice(0, i), id = ref.slice(i + 1);
+          if (!ctx[kind](id)) add('error', 't_missing', ref, it.key);
+        } else if (ref.startsWith('svc:')) {
+          const svc = ref.slice(4), i = svc.indexOf('.');
+          if (i > 0 && !ctx.service(svc.slice(0, i), svc.slice(i + 1))) add('error', 's_missing', svc, it.key);
+        } else if (EXACT_RE.test(ref)) {
+          entity(ref, it.key);
+        }
+        // the service an action calls (targets checked above): it must exist for the step to run
+        const a = r.act, svc = a && typeof (a.action || a.service) === 'string' ? a.action || a.service : null;
+        if (svc && !TPL_RE.test(svc) && svc.includes('.') && (r.role === 'action' || r.role === 'call')) {
+          const i = svc.indexOf('.');
+          if (!ctx.service(svc.slice(0, i), svc.slice(i + 1))) add('error', 's_missing', svc, it.key);
+        }
+      }
+    }
+    // the function's own pieces
+    for (const k of members) {
+      if (k.startsWith('device:')) { const d = ctx.dev(k.slice(7)); if (d && d.disabled_by) add('warn', 'd_disabled', k, null); continue; }
+      const st = ctx.state(k), reg = ctx.ent(k);
+      if (reg && reg.disabled_by) { add('warn', 'e_disabled', k, null); continue; }
+      if (!st) continue;
+      if ((k.startsWith('automation.') || k.startsWith('script.')) && st.state === 'unavailable') add('error', 'm_broken', k, null);
+      else if (k.startsWith('automation.') && st.state === 'off' && !ctx.paused) add('warn', 'm_off', k, null);
+      else if (st.state === 'unavailable') add('warn', 'e_unavail', k, null);
+    }
+    return [...out.values()].sort((x, y) => (x.sev === y.sev ? 0 : x.sev === 'error' ? -1 : 1));
+  }
+
   /* ---------- layered layout (left to right): inputs -> logic -> outputs ---------- */
   // wrap (top to bottom only): the most a row may span, in px. Boxes stand side by side there, so a script that
   // drives thirty things would make one row thirty boxes wide; its end points (nothing comes after them) move down
@@ -1561,11 +1656,15 @@
   const getPath = (o, path) => path.reduce((x, k) => (x == null ? x : x[k]), o);
   // JSON with its keys sorted: two configs compare equal whatever order Home Assistant stored their keys in
   // the UI helpers whose settings a version keeps (their <domain>/list, update, create and delete commands)
+  // a path on this Home Assistant ("/config/…"), not an address elsewhere ("//host", "https://…")
+  const SAME_ORIGIN = /^\/(?![\/\\])/;
+  // the person asked their system for less motion: flows show their last step, views jump instead of gliding
+  const lessMotion = () => !!(typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches);
   // the "Other…" entry of the sandbox's dropdowns
   const SBX_OTHER = '\u0001other';
   const VER_HELPERS = new Set(['input_boolean', 'input_number', 'input_text', 'input_select', 'input_datetime', 'input_button', 'counter', 'timer', 'schedule']);
   // what may be clicked on a saved version's board: looking, the sandbox, and the versions themselves
-  const VER_OK_ACTS = /^(zoomin|zoomout|fit|togglelist|legend|hl|hl-.+|sandbox|sbx-.+|flow-.+|lit-.+|edge|close|back|newtab|modal-.+|ver-.+|vtab.*|versions|about|hint-x|find-x|nr-open)$/;
+  const VER_OK_ACTS = /^(zoomin|zoomout|fit|togglelist|legend|hl|hl-.+|sandbox|sbx-.+|flow-.+|lit-.+|edge|close|back|newtab|modal-.+|ver-.+|vtab.*|versions|about|diag|diag-.+|problems|prob-.+|chk-run|chk-replay|hint-x|find-x|nr-open)$/;
   // a short fingerprint of a snapshot's items and members: equal when the function is the same as that version
   const verPrint = (snap) => {
     const body = JSON.stringify([[...(snap.members || [])].sort(), Object.keys(snap.items || {}).sort().map((k) => [k, (snap.items[k] || {}).cfg || null])]);
@@ -1693,7 +1792,11 @@
     + '</defs>';
 
   const STYLE = `
-:host{display:block;--fb-amber:#fab219;--fb-red:#d03b3b;--fb-blue:#5598e7;
+:host{display:block;--fb-amber:#fab219;--fb-red:#f06a6a;--fb-blue:#5598e7;
+  /* text in those colours: the same on a dark background, darker on a light one (4.5:1 on white) */
+  --fb-amber-ink:var(--fb-amber);--fb-red-ink:var(--fb-red);--fb-blue-ink:var(--fb-blue);--fb-primary-ink:var(--primary-color);
+  /* white text on these passes 4.5:1 whatever the theme's own primary and success colours */
+  --fb-primary-fill:color-mix(in srgb,var(--primary-color) 72%,#000);--fb-success-fill:color-mix(in srgb,var(--success-color,#43a047) 70%,#000);
   --fb-edge:color-mix(in srgb,var(--secondary-text-color) 75%,transparent);
   --fb-dot:color-mix(in srgb,var(--secondary-text-color) 22%,transparent)}
 *{box-sizing:border-box}
@@ -1745,7 +1848,7 @@ button{font:inherit;color:inherit}
 .tools ha-icon,.lhead ha-icon,.ib ha-icon,.dhead ha-icon,.nodebar ha-icon{--mdc-icon-size:18px}
 .ib{padding:6px}
 .sep{width:1px;height:22px;background:var(--divider-color);margin:0 4px}
-[data-confirm]{border-color:var(--fb-amber)!important;color:var(--fb-amber)!important}
+[data-confirm]{border-color:var(--fb-amber)!important;color:var(--fb-amber-ink)!important}
 .vp{position:relative;flex:1;min-width:0;overflow:hidden;touch-action:none;-webkit-touch-callout:none;background-color:var(--primary-background-color);
   background-image:radial-gradient(var(--fb-dot) 1px,transparent 1px);background-size:22px 22px}
 .world{position:absolute;left:0;top:0;transform-origin:0 0}
@@ -1762,6 +1865,7 @@ button{font:inherit;color:inherit}
 /* arrows coloured by what they mean (prototype): sets off, changes, runs a script; checks and reads stay grey */
 .board{--fb-trig:#d95926;--fb-act:#3987e5;--fb-call:#199e70}
 .board.light{--fb-trig:#eb6834;--fb-act:#2a78d6;--fb-call:#1baf7a}
+.board.light,.modal.light{--fb-amber-ink:#8a5a00;--fb-red-ink:#c0392b;--fb-blue-ink:#1f62b5;--fb-primary-ink:color-mix(in srgb,var(--primary-color) 72%,#000)}
 .board.pc .edges path.role-trigger{stroke:var(--fb-trig);stroke-width:2.2}
 .board.pc .edges path.role-action{stroke:var(--fb-act);stroke-width:1.8}
 .board.pc .edges path.role-call{stroke:var(--fb-call);stroke-width:2.4;stroke-dasharray:none}
@@ -1821,13 +1925,16 @@ button{font:inherit;color:inherit}
 .node.outside .ic{--mdc-icon-size:16px}
 .node.outside .name{font-weight:400;font-size:12px;color:var(--secondary-text-color)}
 .node.suggest{border-style:dashed;box-shadow:none;background:var(--primary-background-color)}
-.node.off .ic,.node.off .name{opacity:.55}
+.node.off .ic{opacity:.55}.node.off .name{color:var(--secondary-text-color)}
 .node.warn{border-left:4px solid var(--fb-amber)}
 .node.err{border-left:4px solid var(--fb-red)}
 .node.running{box-shadow:0 0 0 2px var(--fb-blue)}
 .node.sel{box-shadow:0 0 0 2px var(--primary-text-color)}
 .node.hov{box-shadow:0 0 0 3px var(--fb-blue)}
-.node.dim{opacity:.2}
+.node.dim{border-color:color-mix(in srgb,var(--divider-color) 60%,transparent);box-shadow:none;background:var(--primary-background-color)}
+.node.dim>.ic,.node.dim .badges ha-icon,.node.dim .port{opacity:.25}
+.node.dim .name{color:var(--secondary-text-color);font-weight:400}
+.node.dim>.tag{color:var(--secondary-text-color)}
 .node.pulse{animation:pulse 1.8s ease-out}
 @keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--fb-blue) 85%,transparent)}100%{box-shadow:0 0 0 16px transparent}}
 .node.lifted,.frame.lifted,.note.lifted{outline:2px solid var(--primary-color);outline-offset:2px;box-shadow:0 8px 24px rgba(0,0,0,.45)}
@@ -1859,16 +1966,17 @@ button{font:inherit;color:inherit}
 .sw.dashed{border-style:dashed}.sw.pill{border-radius:6px;border-style:dashed}
 .sw.st{border:0;width:4px;height:12px;border-radius:2px;margin-right:4px}
 .sw.amber{background:var(--fb-amber)}.sw.red{background:var(--fb-red)}.sw.blue{background:var(--fb-blue)}
-.tg{display:flex;align-items:center;gap:6px;margin-top:4px;cursor:pointer}
+.tg{display:flex;align-items:center;gap:6px;margin-top:4px;cursor:pointer;min-height:26px}
+.tg input{width:18px;height:18px;margin:0 2px;flex:none}
 .empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;color:var(--secondary-text-color);padding:24px;pointer-events:none;line-height:1.6}
 .empty b{color:var(--primary-text-color)}
 .loading{position:absolute;top:12px;left:50%;transform:translateX(-50%);background:var(--card-background-color);border:1px solid var(--divider-color);border-radius:14px;padding:4px 12px;font-size:12px;color:var(--secondary-text-color);z-index:4}
 .toast{position:absolute;bottom:64px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:6px 12px;flex-wrap:wrap;background:var(--primary-text-color);color:var(--primary-background-color);border-radius:10px;padding:8px 14px;font-size:13px;z-index:20;max-width:80%}
-.toast button{border:0;background:none;cursor:pointer;padding:2px 4px;font-size:12.5px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;color:var(--primary-color)}
+.toast button{border:0;background:none;cursor:pointer;padding:2px 4px;font-size:12.5px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;color:color-mix(in srgb,var(--primary-color) 60%,var(--primary-background-color))}
 .drawer{position:absolute;top:0;right:0;bottom:0;width:min(780px,62%);display:flex;flex-direction:column;background:var(--card-background-color);border-left:1px solid var(--divider-color);box-shadow:-6px 0 18px rgba(0,0,0,.25);z-index:7}
 .dhead{display:flex;align-items:center;gap:4px;padding:6px 8px;border-bottom:1px solid var(--divider-color)}
 .dtitle{flex:1;font-weight:500;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-left:6px}
-.dcap{font-size:12px;color:var(--fb-blue);white-space:nowrap}
+.dcap{font-size:12px;color:var(--fb-blue-ink);white-space:nowrap}
 .drawer iframe{flex:1;border:0;width:100%;background:var(--primary-background-color)}
 .runs{flex:1;overflow:auto}
 .runs .run{display:grid;grid-template-columns:124px 1fr auto;gap:10px;align-items:center;width:100%;text-align:left;padding:8px 12px;border:0;border-bottom:1px solid var(--divider-color);background:none;cursor:pointer}
@@ -1877,7 +1985,7 @@ button{font:inherit;color:inherit}
 .rn{display:flex;flex-direction:column;min-width:0}.rn b{font-weight:500;font-size:13px}
 .rn span{font-size:12px;color:var(--secondary-text-color);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ro{font-size:12px;color:var(--secondary-text-color);max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.runs .run.red .ro{color:var(--fb-red)}.runs .run.blue .ro{color:var(--fb-blue)}.runs .run.amber .ro{color:var(--fb-amber)}
+.runs .run.red .ro{color:var(--fb-red-ink)}.runs .run.blue .ro{color:var(--fb-blue-ink)}.runs .run.amber .ro{color:var(--fb-amber-ink)}
 .modal{position:absolute;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:30}
 .dlg{width:min(460px,92%);max-height:88%;display:flex;flex-direction:column;gap:12px;background:var(--card-background-color);border-radius:16px;padding:20px;box-shadow:0 10px 40px rgba(0,0,0,.4)}
 .dlg.wide{width:min(640px,94%)}
@@ -1886,11 +1994,48 @@ button{font:inherit;color:inherit}
 .dlg input:not([type=checkbox]),.dlg select{padding:8px 10px;border-radius:8px;border:1px solid var(--divider-color);background:var(--primary-background-color);color:var(--primary-text-color);font:inherit;font-size:14px}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .dlg label.chk{flex-direction:row;align-items:center;gap:8px;font-size:13px;color:var(--primary-text-color)}
+.dlg.diag .dwarn{color:var(--warning-color,#b26a00)}
+.node .badges ha-icon.prob{--mdc-icon-size:15px}
+.node .badges ha-icon.prob.p-error,.prow.p-error>ha-icon{color:var(--error-color,#db4437)}
+.node .badges ha-icon.prob.p-warn,.prow.p-warn>ha-icon{color:var(--warning-color,#b26a00)}
+svg path.e.prob{stroke:var(--error-color,#db4437);stroke-dasharray:5 4}
+.pbadge{min-width:18px;height:18px;padding:0 5px;border-radius:9px;font-size:11px;font-weight:600;line-height:18px;text-align:center;color:#fff;flex:none}
+.pbadge.p-error{background:color-mix(in srgb,var(--error-color,#db4437) 75%,#000)}
+.pbadge.p-warn{background:color-mix(in srgb,var(--warning-color,#ffa600) 60%,#000)}
+.pdchip{display:inline-flex;align-items:center;gap:4px;height:26px;padding:0 10px;border-radius:13px;border:1px solid var(--divider-color);background:none;font:inherit;font-size:12px;cursor:pointer;margin-left:6px;white-space:nowrap;color:var(--secondary-text-color)}
+.pdchip ha-icon{--mdc-icon-size:16px}
+.probs .pother{padding:8px 14px 14px}
+.pchip{display:inline-flex;align-items:center;gap:4px;height:26px;padding:0 10px;border-radius:13px;border:1px solid currentColor;background:none;font:inherit;font-size:12px;cursor:pointer;margin-left:6px;white-space:nowrap}
+.pchip ha-icon{--mdc-icon-size:16px}
+.pchip.p-error{color:var(--fb-red-ink)}
+.pchip.p-warn{color:var(--fb-amber-ink)}
+.sbchk{padding:6px 12px 2px;display:flex;flex-direction:column;gap:3px}
+.sbchk .ckhead{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--secondary-text-color)}
+.sbchk .ckhead span{flex:1}
+.sbchk .ckhead .chip ha-icon{--mdc-icon-size:16px;margin-right:3px}
+.sbchk .ckrow{display:flex;align-items:center;gap:6px;font-size:13px}
+.sbchk .ckname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sbchk .ckst{width:16px;text-align:center;font-weight:700}
+.sbchk .ckst.ok{color:var(--success-color,#43a047)}
+.sbchk .ckst.bad{color:var(--error-color,#db4437)}
+.sbchk .ckst.unsure{color:var(--warning-color,#b26a00)}
+.dlg.ckdlg .cksteps{margin:0;padding-left:20px;font-size:13px}
+.probs{padding:10px 14px;overflow:auto;display:flex;flex-direction:column;gap:8px}
+.prow{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border-radius:8px;background:var(--secondary-background-color)}
+.prow>ha-icon{--mdc-icon-size:20px;flex:none;margin-top:1px}
+.prow .pbody{display:flex;flex-direction:column;gap:4px;min-width:0}
+.prow .pby{font-size:12px;color:var(--secondary-text-color)}
+.prow .pby button.lnk,.probs .pother button.lnk{background:none;border:0;padding:0;margin:0;font:inherit;color:var(--fb-primary-ink);text-decoration:underline;cursor:pointer}
+.prow .pact{display:flex;gap:6px;flex-wrap:wrap}
+.prow .pact button{display:inline-flex;align-items:center;gap:4px;font:inherit;font-size:12px;padding:3px 8px;border-radius:6px;border:1px solid var(--divider-color);background:none;color:var(--primary-text-color);cursor:pointer}
+.prow .pact ha-icon{--mdc-icon-size:14px}
+.dlg.diag h4+p{margin-top:0}
+.dlg.diag .dvers{display:flex;flex-direction:column;gap:4px;margin-top:6px;max-height:180px;overflow:auto}
 .hint{font-size:12px;color:var(--secondary-text-color);line-height:1.5}
 .btns{display:flex;justify-content:flex-end;gap:8px;align-items:center}
 .btns .cnt{margin-right:auto}
 .btns button{padding:8px 16px;border-radius:10px;border:1px solid var(--divider-color);background:none;cursor:pointer}
-.btns button.primary{background:var(--primary-color);border-color:var(--primary-color);color:var(--text-primary-color,#fff)}
+.btns button.primary{background:var(--fb-primary-fill);border-color:var(--fb-primary-fill);color:#fff}
 .picks{overflow:auto;min-height:200px;max-height:50vh;border:1px solid var(--divider-color);border-radius:10px}
 .dlg label.pick{flex-direction:row;align-items:center;gap:10px;padding:6px 10px;border-bottom:1px solid var(--divider-color);cursor:pointer;color:var(--primary-text-color)}
 .pick ha-icon{--mdc-icon-size:20px;color:var(--secondary-text-color)}
@@ -1898,7 +2043,7 @@ button{font:inherit;color:inherit}
 .muted{color:var(--secondary-text-color);font-size:13px}.pad{padding:12px}.small{font-size:12px}
 /* v0.2: type tags, list buttons, pickers, import manager */
 .tag{display:inline-block;font-size:9.5px;line-height:14px;letter-spacing:.06em;text-transform:uppercase;padding:0 5px;border-radius:4px;border:1px solid var(--divider-color);color:var(--secondary-text-color);background:var(--primary-background-color);white-space:nowrap;flex:none}
-.node>.tag{position:absolute;top:-8px;left:12px;pointer-events:none}
+.node>.tag{position:absolute;top:-8px;left:12px;pointer-events:none;color:var(--primary-text-color)}
 .node.outside>.tag{left:16px}
 .lhead>span:last-child{display:flex;gap:2px}
 .lbtn{display:flex;align-items:center;gap:8px;width:100%;padding:8px 10px;border:1px solid var(--divider-color);border-radius:10px;background:none;cursor:pointer;font-size:13px;color:var(--primary-text-color)}
@@ -1916,11 +2061,12 @@ button{font:inherit;color:inherit}
 .mfoot{display:flex;align-items:center;gap:8px;padding:12px 20px;flex-wrap:wrap}
 .mfoot .cnt{margin-left:auto;font-size:13px;color:var(--secondary-text-color)}
 .mfoot button,.crow button.go{padding:8px 16px;border-radius:10px;border:1px solid var(--divider-color);background:none;cursor:pointer;font-size:13px;white-space:nowrap}
-.mfoot button.primary,.crow button.go{background:var(--primary-color);border-color:var(--primary-color);color:var(--text-primary-color,#fff)}
+.mfoot button.primary,.crow button.go{background:var(--fb-primary-fill);border-color:var(--fb-primary-fill);color:#fff}
 .mfoot button[disabled],.crow button[disabled]{opacity:.45;cursor:default}
 .dlg label.mcats{flex-direction:row;align-items:center;gap:8px;font-size:12px;max-width:520px}
 .cand{border:1px solid var(--divider-color);border-radius:12px;background:var(--card-background-color);flex:none}
-.cand.done{opacity:.55}
+.cand.done{filter:saturate(.3)}
+.cand.done .crow>*:not(.ccount):not(.csrc):not(.onb){opacity:.7}
 .cand.left{border-style:dashed}
 .cname.static{flex:1;font-size:14px;font-weight:500;padding:6px 8px}
 .lrow2{display:flex;align-items:center;gap:10px;padding:5px 0;font-size:13px}
@@ -1974,19 +2120,19 @@ button{font:inherit;color:inherit}
 .board.full .node .port{pointer-events:auto;cursor:crosshair}
 .board.full .node .port:hover{border-color:var(--primary-color);background:var(--primary-color);transform:scale(1.5)}
 .dtext{margin:0;font-size:13.5px;line-height:1.5}
-.dtext.dno{color:var(--fb-amber)}
-.dwarn{display:flex;align-items:flex-start;gap:6px;font-size:12.5px;color:var(--fb-amber);margin-top:2px}
+.dtext.dno{color:var(--fb-amber-ink)}
+.dwarn{display:flex;align-items:flex-start;gap:6px;font-size:12.5px;color:var(--fb-amber-ink);margin-top:2px}
 .dwarn ha-icon{--mdc-icon-size:16px;flex:none}
 .dlist{overflow:auto;max-height:42vh;border:1px solid var(--divider-color);border-radius:10px}
 .dlg label.drow{display:flex;flex-direction:row;align-items:flex-start;gap:10px;padding:7px 10px;border-bottom:1px solid var(--divider-color);font-size:13px;color:var(--primary-text-color);cursor:pointer}
 .dlg label.drow.dcant{opacity:.6;cursor:default}
 .drow .tag{min-width:80px;text-align:center;margin-top:2px}
-.btns button.danger{background:var(--fb-red);border-color:var(--fb-red);color:#fff}
+.btns button.danger{background:color-mix(in srgb,var(--fb-red) 70%,#000);border-color:color-mix(in srgb,var(--fb-red) 70%,#000);color:#fff}
 .btns button[disabled]{opacity:.6;cursor:default}
 .clash{font-size:13px;line-height:1.5;padding:10px 12px;border-radius:10px;border:1px solid var(--fb-amber);background:color-mix(in srgb,var(--fb-amber) 10%,transparent)}
 .cbtns{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
 .cbtns button{padding:6px 12px;border-radius:8px;border:1px solid var(--divider-color);background:none;cursor:pointer;font-size:13px}
-.cbtns button.primary{background:var(--primary-color);border-color:var(--primary-color);color:var(--text-primary-color,#fff)}
+.cbtns button.primary{background:var(--fb-primary-fill);border-color:var(--fb-primary-fill);color:#fff}
 .more{display:block;margin:10px auto;padding:8px 16px;border-radius:10px;border:1px solid var(--divider-color);background:none;cursor:pointer;font-size:13px;color:var(--primary-text-color)}
 /* v0.5: developer tools (Phase 9) */
 .edges path.hit{fill:none;stroke:transparent;stroke-width:12;pointer-events:stroke}
@@ -2002,7 +2148,7 @@ button{font:inherit;color:inherit}
 .edges g.cres.dim{opacity:.15}
 .lg svg path.role-tool{stroke-dasharray:2 4;stroke-linecap:round}
 .cres-k{display:inline-flex;width:15px;height:15px;border-radius:50%;align-items:center;justify-content:center;font-size:10px;font-weight:700;border:1.5px solid;margin-right:3px}
-.cres-k.ok{color:var(--success-color,#43a047)}.cres-k.bad{color:var(--fb-red)}
+.cres-k.ok{color:var(--success-color,#43a047)}.cres-k.bad{color:var(--fb-red-ink)}
 .sw.dashed2{border:2px dashed var(--fb-blue)}
 .sw.sbk{border:2px dashed var(--fb-amber)}
 .sw.sbg{border:2px dashed var(--fb-amber);border-radius:5px;background:color-mix(in srgb,var(--card-background-color) 80%,var(--fb-amber))}
@@ -2010,19 +2156,19 @@ button{font:inherit;color:inherit}
 .board.sbx .vp{background-image:repeating-linear-gradient(45deg,color-mix(in srgb,var(--fb-amber) 6%,transparent) 0 14px,transparent 14px 28px)}
 .sbxpill{position:absolute;top:12px;left:12px;display:flex;align-items:center;gap:6px;white-space:nowrap;background:color-mix(in srgb,var(--fb-amber) 20%,var(--card-background-color));border:1px solid var(--fb-amber);color:var(--primary-text-color);border-radius:14px;padding:4px 12px;font-size:12px;z-index:5;pointer-events:none}
 .sbxdlg{width:min(620px,94%);overflow:auto}
-.sbxdlg h3{display:flex;align-items:center;gap:8px}.sbxdlg h3 ha-icon{color:var(--fb-amber)}
+.sbxdlg h3{display:flex;align-items:center;gap:8px}.sbxdlg h3 ha-icon{color:var(--fb-amber-ink)}
 .sbxdlg p{margin:0;font-size:13.5px;line-height:1.45}
 .sbxdlg h4{margin:4px 0 0;font-size:13.5px}
 .sbxl{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px;font-size:13px;line-height:1.4;color:var(--secondary-text-color)}
 .sbxl b{color:var(--primary-text-color);font-weight:500}
 .okbox{display:flex;gap:8px;align-items:flex-start;padding:8px 10px;border-radius:10px;background:color-mix(in srgb,var(--fb-green,#43a047) 14%,transparent);font-size:13px;line-height:1.4}
 .okbox ha-icon{--mdc-icon-size:20px;color:var(--fb-green,#43a047);flex:none}
-.sbxpill ha-icon{--mdc-icon-size:16px;color:var(--fb-amber)}
+.sbxpill ha-icon{--mdc-icon-size:16px;color:var(--fb-amber-ink)}
 .board.sbx .node.sbch{outline:2px dashed var(--fb-amber);outline-offset:2px}
 .board.sbx .node[data-sbx]::after{content:attr(data-sbx);position:absolute;right:8px;bottom:-9px;font-size:10px;line-height:14px;padding:0 6px;border-radius:7px;background:var(--secondary-background-color);border:1px solid var(--divider-color);color:var(--primary-text-color)}
 .board.sbx .node.sbch[data-sbx]::after{background:var(--fb-amber);border-color:var(--fb-amber);color:#000}
 .board.sbx .node.sbch::before{content:'';position:absolute;left:-5px;top:-5px;width:9px;height:9px;border-radius:50%;background:var(--fb-amber)}
-.board.sbx .node.dim{opacity:.42}
+.board.sbx .node.dim{border-style:dashed}.board.sbx .node.dim>.ic,.board.sbx .node.dim .badges ha-icon,.board.sbx .node.dim .port{opacity:.18}
 .sbctl .sbf{display:inline-flex;gap:4px;flex:1 1 140px;min-width:0}
 .sbctl .sbf select,.sbctl .sbf input{flex:1 1 auto;min-width:0;max-width:100%}
 .vtabs{position:absolute;left:12px;right:12px;top:10px;z-index:8;display:flex;flex-direction:column;gap:6px;pointer-events:none}
@@ -2035,23 +2181,24 @@ button{font:inherit;color:inherit}
 .vtabs .vtab ha-icon{--mdc-icon-size:15px}
 .vtabs .vtab.on{background:color-mix(in srgb,var(--primary-color) 16%,transparent);color:var(--primary-text-color);font-weight:500}
 .vtabs .vdot{width:8px;height:8px;border-radius:50%;background:var(--success-color,#43a047)}
-.vtabs .vact{font-size:10.5px;padding:0 6px;border-radius:7px;background:var(--success-color,#43a047);color:#fff;font-weight:600}
+.vtabs .vact{font-size:10.5px;padding:0 6px;border-radius:7px;background:var(--fb-success-fill);color:#fff;font-weight:600}
 .vtabs .vban{align-self:flex-start;max-width:min(860px,100%);display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;padding:7px 12px;border-radius:10px;background:color-mix(in srgb,var(--card-background-color) 85%,var(--primary-color));border:1px solid var(--primary-color);font-size:12.5px}
 .vtabs .vban button{border:1px solid var(--divider-color);background:var(--card-background-color);border-radius:8px;padding:4px 9px;cursor:pointer;display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--primary-text-color)}
 .vtabs .vban ha-icon{--mdc-icon-size:16px}
 .board.vview .vp{background-image:repeating-linear-gradient(-45deg,color-mix(in srgb,var(--primary-color) 5%,transparent) 0 14px,transparent 14px 28px)}
 .node .vdtag{position:absolute;left:10px;top:-9px;font-size:10px;line-height:14px;padding:0 6px;border-radius:7px;z-index:2;white-space:nowrap}
 .node.vd-chg{outline:2px dashed var(--primary-color);outline-offset:2px}.node.vd-chg .vdtag{background:var(--primary-color);color:#fff}
-.node.vd-only{outline:2px dashed var(--fb-red);outline-offset:2px}.node.vd-only .vdtag{background:var(--fb-red);color:#fff}
+.node.vd-only{outline:2px dashed var(--fb-red);outline-offset:2px}.node.vd-only .vdtag{background:color-mix(in srgb,var(--fb-red) 70%,#000);color:#fff}
 .vers{display:flex;flex-direction:column;min-height:0;flex:1;overflow:auto}
 .vers .vnote{padding:10px 14px;font-size:12.5px;color:var(--secondary-text-color);border-bottom:1px solid var(--divider-color)}
 .vers .vact{padding:10px 14px}
 .vers .vact button{display:inline-flex;align-items:center;gap:6px}
+.vers .vact button.primary{background:var(--fb-primary-fill);border-color:var(--fb-primary-fill);color:#fff}
 .vers .vrow{padding:10px 14px;border-top:1px solid var(--divider-color);font-size:13px}
 .vers .vrow.on{box-shadow:inset 3px 0 0 var(--success-color,#43a047)}
 .vers .vrow.view{background:color-mix(in srgb,var(--primary-color) 8%,transparent)}
 .vers .vh{display:flex;align-items:center;flex-wrap:wrap;gap:6px}
-.vers .vbadge{font-size:10.5px;padding:0 6px;border-radius:7px;background:var(--success-color,#43a047);color:#fff;font-weight:600}
+.vers .vbadge{font-size:10.5px;padding:0 6px;border-radius:7px;background:var(--fb-success-fill);color:#fff;font-weight:600}
 .vers .vauto{font-size:10.5px;padding:0 6px;border-radius:7px;border:1px solid var(--divider-color);color:var(--secondary-text-color)}
 .vers .vdesc{margin-top:3px;white-space:pre-wrap}
 .vers .vm{margin-top:2px;font-size:11.5px;color:var(--secondary-text-color)}
@@ -2077,13 +2224,13 @@ circle.fdot{fill:var(--fb-blue);stroke:var(--card-background-color);stroke-width
 .flow .ghost{position:absolute;box-sizing:border-box;display:flex;align-items:center;gap:8px;padding:4px 10px;border-radius:12px;border:2px dashed var(--fb-amber);background:color-mix(in srgb,var(--card-background-color) 88%,var(--fb-amber));color:var(--primary-text-color);pointer-events:auto;cursor:pointer;transition:opacity .2s}
 .flow .ghost.far{opacity:.35}
 .flow .ghost.now{box-shadow:0 0 0 3px var(--fb-blue)}
-.flow .ghost ha-icon{--mdc-icon-size:18px;color:var(--fb-amber);flex:none}
+.flow .ghost ha-icon{--mdc-icon-size:18px;color:var(--fb-amber-ink);flex:none}
 .flow .ghost .gt{display:flex;flex-direction:column;min-width:0;line-height:1.2}
 .flow .ghost .gt b{font-weight:500;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .flow .ghost .gt small{font-size:10.5px;color:var(--secondary-text-color)}
 .flow .ghost.pulse{animation:pulse 1.8s ease-out}
 .flow .fnum{position:absolute;transform:translate(-50%,-50%);min-width:20px;height:20px;padding:0 5px;box-sizing:border-box;border-radius:10px;background:var(--secondary-background-color,#eee);border:1.5px solid var(--fb-blue);color:var(--primary-text-color);font-size:11px;font-weight:700;line-height:17px;text-align:center;white-space:nowrap;pointer-events:auto;cursor:pointer;z-index:2}
-.flow .fnum.cur{background:var(--fb-blue);color:#fff}
+.flow .fnum.cur{background:color-mix(in srgb,var(--fb-blue) 70%,#000);color:#fff}
 .flow .fwait{position:absolute;transform:translate(-100%,-50%);display:flex;align-items:center;gap:3px;height:20px;padding:0 7px;border-radius:10px;background:var(--fb-amber);color:#000;font-size:11px;font-weight:600;white-space:nowrap;pointer-events:auto;z-index:2}
 .flow .fwait ha-icon{--mdc-icon-size:13px}
 .litbar.flowbar{flex-direction:column;flex-wrap:nowrap;align-items:stretch;gap:6px}
@@ -2098,7 +2245,7 @@ circle.fdot{fill:var(--fb-blue);stroke:var(--card-background-color);stroke-width
 .litbar button.fstep.cur{background:color-mix(in srgb,var(--fb-blue) 18%,transparent);font-weight:500}
 .litbar .lbtns button ha-icon{--mdc-icon-size:16px}
 .litbar .lbtns button:disabled{opacity:.4;cursor:default}
-i.fsn{font-style:normal;display:inline-block;min-width:16px;height:16px;padding:0 3px;box-sizing:border-box;border-radius:8px;background:var(--fb-blue);color:#fff;font-size:10px;font-weight:700;line-height:16px;text-align:center}
+i.fsn{font-style:normal;display:inline-block;min-width:16px;height:16px;padding:0 3px;box-sizing:border-box;border-radius:8px;background:color-mix(in srgb,var(--fb-blue) 70%,#000);color:#fff;font-size:10px;font-weight:700;line-height:16px;text-align:center}
 .dbrow .rt i.fsn{margin-right:4px}
 .dbrow.fin{box-shadow:inset 3px 0 0 color-mix(in srgb,var(--fb-blue) 55%,transparent)}
 .sbclock{font-variant-numeric:tabular-nums;font-size:12.5px;margin-right:4px;padding:2px 8px;border-radius:8px;background:var(--secondary-background-color);white-space:nowrap}
@@ -2113,12 +2260,12 @@ i.fsn{font-style:normal;display:inline-block;min-width:16px;height:16px;padding:
 .sbdue{display:flex;flex-wrap:wrap;gap:4px 10px;padding:6px 10px;font-size:11.5px;border-bottom:1px solid var(--divider-color)}.sbdue:empty{display:none}
 .sbask:empty{display:none}
 .sbq{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 10px;background:color-mix(in srgb,var(--fb-amber) 14%,transparent);border-bottom:1px solid var(--divider-color);font-size:12.5px}
-.sbq ha-icon{--mdc-icon-size:18px;color:var(--fb-amber)}.sbq span{flex:1 1 200px}
+.sbq ha-icon{--mdc-icon-size:18px;color:var(--fb-amber-ink)}.sbq span{flex:1 1 200px}
 .sbq input{font:inherit;font-size:12.5px;padding:4px 8px;border-radius:8px;border:1px solid var(--divider-color);background:var(--card-background-color);color:var(--primary-text-color)}
-.dbrow .dm .sbpart{color:var(--fb-amber)}
-.nbsbx{font-size:11.5px;color:var(--fb-amber);padding:0 6px;white-space:nowrap}
+.dbrow .dm .sbpart{color:var(--fb-amber-ink)}
+.nbsbx{font-size:11.5px;color:var(--fb-amber-ink);padding:0 6px;white-space:nowrap}
 .node.watching{box-shadow:0 0 0 2px color-mix(in srgb,var(--fb-blue) 55%,transparent)}
-.node.watching::after{content:attr(data-watch);position:absolute;right:8px;top:-9px;font-size:10px;line-height:14px;padding:0 6px;border-radius:7px;background:var(--fb-blue);color:#fff;letter-spacing:.02em}
+.node.watching::after{content:attr(data-watch);position:absolute;right:8px;top:-9px;font-size:10px;line-height:14px;padding:0 6px;border-radius:7px;background:color-mix(in srgb,var(--fb-blue) 70%,#000);color:#fff;letter-spacing:.02em}
 .node.wpulse{animation:pulse 1.4s ease-out}
 .node.now{box-shadow:0 0 0 3px var(--fb-blue)}
 .node.tool{border-style:dashed}
@@ -2134,7 +2281,7 @@ i.fsn{font-style:normal;display:inline-block;min-width:16px;height:16px;padding:
 .mrow{display:flex;gap:6px;white-space:nowrap;overflow:hidden}
 .mrow .mt{color:var(--secondary-text-color);flex:none;font-variant-numeric:tabular-nums}
 .mrow .mv{overflow:hidden;text-overflow:ellipsis;font-family:var(--ha-font-family-code,monospace)}
-.mrow.err .mv{color:var(--fb-red)}.mrow.muted{color:var(--secondary-text-color)}
+.mrow.err .mv{color:var(--fb-red-ink)}.mrow.muted{color:var(--secondary-text-color)}
 .nodebar .nbsep{width:1px;align-self:stretch;margin:2px 2px;background:var(--divider-color)}
 .nodebar button[disabled]{opacity:.45;cursor:default}
 .ttip{position:absolute;z-index:22;max-width:min(420px,80%);padding:8px 10px;border-radius:10px;background:var(--card-background-color);border:1px solid var(--divider-color);box-shadow:0 6px 18px rgba(0,0,0,.3);font-size:12px;pointer-events:none}
@@ -2158,7 +2305,7 @@ i.fsn{font-style:normal;display:inline-block;min-width:16px;height:16px;padding:
 .dflt .chip{padding:3px 9px;font-size:12px}
 .dwhy{padding:8px 10px;border-bottom:1px solid var(--divider-color);background:var(--secondary-background-color);max-height:40%;overflow:auto}
 .dwhy .wh{font-size:13px;margin-bottom:4px}
-.dwhy .wwarn{color:var(--fb-amber);font-size:12.5px;margin-bottom:4px}
+.dwhy .wwarn{color:var(--fb-amber-ink);font-size:12.5px;margin-bottom:4px}
 .dtl{flex:1;overflow:auto}
 .dbrow,.wrow{display:grid;grid-template-columns:76px 18px 1fr;gap:8px;align-items:start;width:100%;text-align:left;padding:6px 10px;border:0;border-bottom:1px solid var(--divider-color);background:none;cursor:pointer;font-size:12.5px;color:var(--primary-text-color)}
 .wrow{grid-template-columns:110px 1fr;border-bottom:0;padding:4px 0;background:none}
@@ -2170,9 +2317,9 @@ i.fsn{font-style:normal;display:inline-block;min-width:16px;height:16px;padding:
 .dbrow .dm b,.wrow .dm b{font-weight:500;overflow:hidden;text-overflow:ellipsis}
 .dbrow .dm span,.wrow .dm span{color:var(--secondary-text-color);font-size:11.5px}
 .dbrow.note{grid-template-columns:76px 1fr;cursor:default;color:var(--secondary-text-color);font-style:italic}
-.dbrow.red .dm b,.wrow.red .dm b{color:var(--fb-red)}.dbrow.muted .dm b,.wrow.muted .dm b{color:var(--secondary-text-color)}
-.dbrow.amber .dm b,.wrow.amber .dm b{color:var(--fb-amber)}.dbrow.blue .dm b{color:var(--fb-blue)}
-.dbrow.k-test ha-icon,.dbrow.k-watch ha-icon{color:var(--fb-blue)}
+.dbrow.red .dm b,.wrow.red .dm b{color:var(--fb-red-ink)}.dbrow.muted .dm b,.wrow.muted .dm b{color:var(--secondary-text-color)}
+.dbrow.amber .dm b,.wrow.amber .dm b{color:var(--fb-amber-ink)}.dbrow.blue .dm b{color:var(--fb-blue-ink)}
+.dbrow.k-test ha-icon,.dbrow.k-watch ha-icon{color:var(--fb-blue-ink)}
 .runs .run.on{background:color-mix(in srgb,var(--primary-color) 14%,transparent)}
 .runs .msg .rn span{white-space:normal}
 .runs .msg .mb{font-size:11.5px}
@@ -2182,8 +2329,8 @@ i.fsn{font-style:normal;display:inline-block;min-width:16px;height:16px;padding:
 .dlg .fh{font-size:11.5px;color:var(--secondary-text-color)}
 .dlg textarea{padding:8px 10px;border-radius:8px;border:1px solid var(--divider-color);background:var(--primary-background-color);color:var(--primary-text-color);font-family:var(--ha-font-family-code,monospace);font-size:13px;resize:vertical}
 .warnbox{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;line-height:1.5;padding:8px 10px;border-radius:10px;border:1px solid var(--fb-amber);background:color-mix(in srgb,var(--fb-amber) 10%,transparent)}
-.warnbox ha-icon{--mdc-icon-size:18px;color:var(--fb-amber);flex:none}
-@media (prefers-reduced-motion:reduce){.dhead .rec.on i,.node.pulse,.node.wpulse,.edges path.live{animation:none}}
+.warnbox ha-icon{--mdc-icon-size:18px;color:var(--fb-amber-ink);flex:none}
+@media (prefers-reduced-motion:reduce){.dhead .rec.on i,.node.pulse,.node.wpulse,.edges path.live,.flowx *{animation:none}.fdot{display:none}}
 /* v0.5: the arrow editor (7.5) */
 .links{position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;pointer-events:none}
 .links path.ltmp{fill:none;stroke:var(--primary-color);stroke-width:2.2;stroke-dasharray:7 5}
@@ -2200,14 +2347,18 @@ i.fsn{font-style:normal;display:inline-block;min-width:16px;height:16px;padding:
 .dlg label.aref{flex-direction:row;align-items:flex-start;gap:10px;padding:8px 10px;border:1px solid var(--divider-color);border-radius:10px;font-size:13px;color:var(--primary-text-color);cursor:pointer}
 .aref pre,.adlg pre.yprev{margin:6px 0 0;padding:8px 10px;border-radius:8px;background:var(--primary-background-color);font-family:var(--ha-font-family-code,monospace);font-size:12px;white-space:pre-wrap;word-break:break-word;color:var(--primary-text-color)}
 .adlg pre.yprev{margin:0}
-.adlg .aval b{color:var(--fb-red)}
+.adlg .aval b{color:var(--fb-red-ink)}
 /* v0.5: Node-RED flows (2.7) */
 .node.nodered{border-style:dashed;border-color:color-mix(in srgb,#8f0000 60%,var(--divider-color))}
 .node.nodered .ic{color:color-mix(in srgb,#c33 70%,var(--secondary-text-color))}
-.lgerr{font-size:11.5px;color:var(--fb-amber);margin:2px 0 0 22px}
-.lgbtn{font:inherit;font-size:11.5px;color:var(--primary-color);background:none;border:1px solid var(--primary-color);border-radius:6px;padding:1px 7px;margin-left:4px;cursor:pointer}
+.lgerr{font-size:11.5px;color:var(--fb-amber-ink);margin:2px 0 0 22px}
+.lgbtn{font:inherit;font-size:11.5px;color:var(--fb-primary-ink);background:none;border:1px solid var(--primary-color);border-radius:6px;padding:1px 7px;margin-left:4px;cursor:pointer}
 /* v0.5: keyboard (4.8) */
 .node:focus{outline:none}
+.lfind:focus-within{outline:2px solid var(--primary-color);outline-offset:1px}
+.nbody:focus-visible{outline:2px solid var(--primary-color);outline-offset:-2px}
+.drawer .dtitle:focus{outline:none}.drawer .dtitle:focus-visible{outline:2px solid var(--primary-color);outline-offset:2px}
+.srt{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
 .node:focus-visible{outline:2px solid var(--primary-color);outline-offset:3px}
 button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var(--primary-color);outline-offset:1px}
 /* v0.3: modes, welcome, about, hint, no-admin */
@@ -2223,7 +2374,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
 .welcome ol{padding-left:20px}.welcome li{margin:6px 0}
 .wbtns{display:flex;gap:8px;margin:16px 0 8px}
 .wbtns button{padding:9px 16px;border-radius:10px;border:1px solid var(--divider-color);background:none;cursor:pointer;font-size:14px}
-.wbtns button.primary{background:var(--primary-color);border-color:var(--primary-color);color:var(--text-primary-color,#fff)}
+.wbtns button.primary{background:var(--fb-primary-fill);border-color:var(--fb-primary-fill);color:#fff}
 .welcome .safe{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;color:var(--secondary-text-color)}
 .welcome .safe ha-icon{--mdc-icon-size:18px;flex:none}
 .ver{display:flex;align-items:center;justify-content:space-between;gap:6px}
@@ -2232,7 +2383,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
 .dlg.about h3 .muted{font-size:13px;font-weight:400}
 .dlg.about h4{margin:6px 0 0;font-size:13px;font-weight:500;color:var(--secondary-text-color);text-transform:uppercase;letter-spacing:.05em}
 .dlg.about ul{margin:0;padding-left:18px;font-size:13.5px;line-height:1.5}.dlg.about p{margin:0;font-size:13.5px;line-height:1.5}
-.lnk{margin-right:auto;font-size:13px;color:var(--primary-color)}
+.lnk{margin-right:auto;font-size:13px;color:var(--fb-primary-ink)}
 .cardhint{position:absolute;top:10px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:8px;max-width:90%;padding:6px 6px 6px 12px;border-radius:10px;background:var(--card-background-color);border:1px solid var(--divider-color);font-size:12.5px;color:var(--secondary-text-color);z-index:4}
 .cardhint ha-icon{--mdc-icon-size:18px;flex:none}
 .cardhint button{border:0;background:none;cursor:pointer;font-size:16px;color:var(--secondary-text-color);padding:2px 6px}
@@ -2723,6 +2874,27 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       ver_restore_lead: '{fnName} goes back to how it was saved ({when}), through Home Assistant\'s own config APIs, the way its editors save.',
       ver_now_saved_as: 'What\'s there now is already saved as "{name}", so you can go back to it either way.',
       ver_restore_unsaved: 'What\'s there now isn\'t saved as a version: without a backup, you can\'t come back to it.',
+      diag_about_h: 'Diagnostics',
+      diag_about_p: 'For an issue or a forum post: a file made here, anonymised or with real names, as you choose. Nothing is sent anywhere.',
+      diag_always: 'Always: the board\'s settings, layouts, notes and tests, the list of saved versions, and the Node-RED flow summary.',
+      diag_anon: 'Anonymised: names, IDs, addresses, keys and free text replaced with stand-ins (the same one wherever a thing appears)',
+      diag_btn: 'Diagnostics…',
+      diag_choose: 'Choose anonymised or real names first.',
+      diag_copied: 'Diagnostics copied',
+      diag_copy: 'Copy',
+      diag_download: 'Download',
+      diag_failed: 'Couldn\'t make the file: {e}',
+      diag_h: 'Download diagnostics',
+      diag_incl_h: 'What\'s in it',
+      diag_lead: 'A file to attach to an issue or a forum post. Nothing is sent anywhere: it\'s made here and saved on this device, and you decide where it goes.',
+      diag_making: 'Making the file…',
+      diag_names_h: 'Names (choose one)',
+      diag_real: 'With real names and IDs, as they are in Home Assistant',
+      diag_real_warn: 'Configs can hold addresses, phone names or keys typed into them. Look through the file before you post it anywhere public.',
+      diag_saved: 'Diagnostics saved to this device',
+      diag_snap: 'A snapshot of {fnName} as it is now: its automations\' and scripts\' configs, helpers and devices',
+      diag_ver_t: 'Download this version for debugging (anonymised or with real names)',
+      diag_vers: 'Saved versions of {fnName}, with their snapshots:',
       ver_restore_backup: 'Save what\'s there now as a version first ("Before restoring …")',
       ver_restore_t: 'Put this function back as it was in this version',
       ver_restored: 'Restored "{name}"',
@@ -3096,6 +3268,77 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this_install_is_set_to: 'This install is set to Organise only: the board doesn\'t edit or delete automations, scripts, helpers or devices, and doesn\'t run tests. Full manager, which adds deleting and tests, is in the Functions Board integration\'s options.',
       the_debugger_watch_triggers_monitor: 'The debugger, Watch triggers, monitor boxes and the live checks on arrows only read: watching a trigger never runs the automation.',
       show_node_red_flows_in: 'Show Node-RED flows (in the Key, off until you switch it on) reads your Node-RED app\'s flows in your browser to draw what they use. The flows last read (names and entity IDs, no flow code) are kept by the integration for every board.',
+      chk_cant: 'This run can\'t be kept as a check.',
+      chk_default: 'Check',
+      chk_del_t: 'Delete this check',
+      chk_deleted: 'Deleted the check "{name}"',
+      chk_expect_h: 'What should come of it',
+      chk_expect_none: 'Nothing changed and nothing ran in this run, so there\'s nothing to check yet.',
+      chk_fails: 'Fails on the current configs',
+      chk_got: '(got {got})',
+      chk_n: { one: '{n} saved check', other: '{n} saved checks' },
+      chk_name: 'Name',
+      chk_not_run: 'Not run yet',
+      chk_passes: 'Passes on the current configs',
+      chk_pick_one: 'Tick at least one thing it should check.',
+      chk_replay: 'Replay in the sandbox',
+      chk_replay_t: 'Play it in the sandbox, step by step on the board',
+      chk_replayed: 'Replayed "{name}"',
+      chk_run_all_t: 'Run every saved check on the current configs',
+      chk_run_t: 'Run this check on the current configs',
+      chk_s_advance: 'Clock +{dur}',
+      chk_s_event: 'Fire {type}',
+      chk_s_mqtt: 'MQTT {topic}: {payload}',
+      chk_s_next: 'Clock to what\'s due',
+      chk_s_run: 'Run {name}',
+      chk_s_set: 'Set {name} to {state}',
+      chk_save: 'Save as a check',
+      chk_save_b: 'Save check',
+      chk_save_h: 'Keep this run as a check',
+      chk_save_lead: 'The check replays these steps from the states and the time they started at, on the function\'s configs as they are then, after every change. If what you tick below stops coming of it, the function shows a problem. Nothing is sent to your home.',
+      chk_save_none: 'Do something in the sandbox first; the run is what gets kept',
+      chk_save_t: 'Keep what you did in this sandbox, and what came of it, as a check that runs after every change',
+      chk_saved: 'Saved the check "{name}"',
+      chk_steps_h: 'Steps',
+      chk_x_notran: '{name} doesn\'t run',
+      chk_x_ran: '{name} runs to the end',
+      chk_x_state: '{name} ends {state}',
+      chk_x_stopped: '{name} is stopped by its conditions',
+      prob_c_failed: 'The check "{name}" fails: {what}',
+      prob_c_unsure: 'The check "{name}" couldn\'t finish: it needs an answer to "{what}". Replay it to answer.',
+      prob_chip_t: 'What this function\'s automations and scripts point at that isn\'t there or can\'t work',
+      prob_back: 'Back to the problems',
+      prob_d_disabled: 'The device {what} is disabled',
+      prob_dismiss: 'Dismiss',
+      prob_dismiss_a: 'Dismiss: {what}',
+      prob_dismiss_t: 'Stop counting this one: it leaves the count, the list and the board, and goes under Dismissed',
+      prob_dismissed_n: { one: '{n} dismissed', other: '{n} dismissed' },
+      prob_dismissed_note: 'These don\'t count anywhere: not in the function\'s count, the list or the board. A dismissal is forgotten once its problem has been gone for a day, so if the problem comes back later it shows again.',
+      prob_dismissed_t: 'Problems you dismissed',
+      prob_dismissed_title: 'Dismissed: {fnName}',
+      prob_dismissed_toast: 'Dismissed. It\'s under Dismissed if you want it back.',
+      prob_d_missing: 'A device it uses is gone: {what}',
+      prob_e_disabled: '{what} is disabled',
+      prob_e_missing: '{what} doesn\'t exist: renamed or removed?',
+      prob_e_notloaded: '{what} isn\'t provided by any integration right now',
+      prob_e_unavail: '{what} is unavailable',
+      prob_edit: 'Edit {name}',
+      prob_in: 'In',
+      prob_m_broken: '{what} couldn\'t be set up: check its configuration',
+      prob_m_off: '{what} is turned off',
+      prob_n: { one: '{n} problem', other: '{n} problems' },
+      prob_n_errors: { one: '{n} problem that stops something working', other: '{n} problems that stop things working' },
+      prob_n_warnings: { one: '{n} warning', other: '{n} warnings' },
+      prob_none: 'Nothing wrong found.',
+      prob_none_dismissed: 'Nothing dismissed.',
+      prob_note: 'Home Assistant doesn\'t warn when something an automation uses is renamed or removed; the automation just stops doing its job. This lists what this function\'s automations and scripts point at that isn\'t there or can\'t work right now. Red stops something working; amber may be on purpose.',
+      prob_s_missing: 'The action {what} doesn\'t exist: is its integration set up?',
+      prob_show: 'Show',
+      prob_t_missing: 'The area, floor or label {what} is gone',
+      prob_title: 'Problems: {fnName}',
+      prob_undismiss: 'Bring back',
+      prob_undismiss_a: 'Bring back: {what}',
+      privacy_promise: 'Nothing leaves your Home Assistant: the board talks only to it, keeps its data in Home Assistant\'s own storage, and sends no telemetry. Diagnostics are a file you download, anonymised or not as you choose.',
       every_change_is_shown_before: 'Every change is shown before it happens, and Undo (Ctrl+Z) takes it back, except tests and deleting a helper that an integration set up.',
       shared_between_administrators_functions_board: 'shared between administrators (Functions Board integration)',
       stored_for_your_user_only: 'stored for your user only (install the Functions Board integration to share them)',
@@ -3563,7 +3806,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         for (let i = 0; i < ts.length; i++) {
           const t = ts[i];
           if (this._plat(t) === 'template' && t.enabled !== false) {
-            const r = await this.o.tpl(String(t.value_template), this._vars(null));
+            const r = await this.o.tpl(String(t.value_template), this._vars(null), this);
             this.tplLast.set(it.id + '#' + i, r.ok ? asBool(r.value) : null);
           }
         }
@@ -3650,7 +3893,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (!t.topic || !sbxTopic(t.topic, msg.topic)) return false;
       if (t.payload == null) return true;
       let v = msg.payload;
-      if (t.value_template) { const r = await this.o.tpl(String(t.value_template), { value: msg.payload, value_json: msg.payload_json }); v = r.ok ? r.value : undefined; }
+      if (t.value_template) { const r = await this.o.tpl(String(t.value_template), { value: msg.payload, value_json: msg.payload_json }, this); v = r.ok ? r.value : undefined; }
       return String(v) === String(t.payload);
     }
     async mqtt(topic, payload, cause, byYou) {
@@ -3690,7 +3933,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     async _numVal(t, id, s, run) {
       if (!s) return null;
       if (t.value_template) {
-        const r = await this.o.tpl(String(t.value_template), Object.assign(this._vars(run), { state: this.obj(id) }));
+        const r = await this.o.tpl(String(t.value_template), Object.assign(this._vars(run), { state: this.obj(id) }), this);
         const v = r.ok ? parseFloat(r.value) : NaN;
         return isFinite(v) ? v : null;
       }
@@ -3840,7 +4083,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (old) { this._drop(old.timer); this.pend.delete(key); }
       if (t.for == null) { this._fire(it, i, vars, lid); return; }
       let ms = durMs(t.for);
-      if (ms == null && TPL_RE.test(String(t.for))) { const r = await this.o.tpl(String(t.for), this._vars(null)); ms = r.ok ? durMs(r.value) : null; }
+      if (ms == null && TPL_RE.test(String(t.for))) { const r = await this.o.tpl(String(t.for), this._vars(null), this); ms = r.ok ? durMs(r.value) : null; }
       if (ms == null && typeof t.for === 'object') { const r = await this._render(t.for, null); ms = durMs(r); }
       if (ms == null) ms = 0;
       vars.for = fmtDur(ms);
@@ -3848,14 +4091,14 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this.pend.set(key, { id, timer, still });
     }
     async _tplTrig(it, i, t, lid) {
-      const k = it.id + '#' + i, r = await this.o.tpl(String(t.value_template), this._vars(null));
+      const k = it.id + '#' + i, r = await this.o.tpl(String(t.value_template), this._vars(null), this);
       const v = r.ok ? asBool(r.value) : null, was = this.tplLast.get(k), pk = 'tpl:' + k;
       this.tplLast.set(k, v);
       // with for:, it must stay true that long; false again lets the wait go
       if (v !== true) { const p = this.pend.get(pk); if (p) { this._drop(p.timer); this.pend.delete(pk); } return; }
       if (was !== false) return;
       const vars = { platform: 'template', entity_id: null };
-      let ms = t.for != null ? durMs(typeof t.for === 'object' ? t.for : TPL_RE.test(String(t.for)) ? (await this.o.tpl(String(t.for), {})).value : t.for) : null;
+      let ms = t.for != null ? durMs(typeof t.for === 'object' ? t.for : TPL_RE.test(String(t.for)) ? (await this.o.tpl(String(t.for), {}, this)).value : t.for) : null;
       if (ms == null || ms <= 0) { this._fire(it, i, vars, lid, r.partly); return; }
       vars.for = fmtDur(ms);
       const timer = this._at(this.now + ms, () => { this.pend.delete(pk); this._task(() => this._fire(it, i, vars, lid, r.partly)); }, null, T('sbx_for_label', { name: this._name(it.id), d: fmtDur(ms) }), it.id);
@@ -4014,7 +4257,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     }
     // ---- templates and conditions
     async _tpl(s, run) {
-      const r = await this.o.tpl(String(s), this._vars(run));
+      const r = await this.o.tpl(String(s), this._vars(run), this);
       return r;
     }
     async _render(v, run) {
@@ -4433,6 +4676,75 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     return { text: s, leftovers: [...left] };
   }
 
+  /* ---------- saved checks (0.9.0): a run in the sandbox kept with what should come of it, replayed on the
+     function's current configs, so "did I just break it?" has an answer. A check is
+       { id, name, at: the sandbox clock it started at, start: { entity: { state, attributes } } as they were,
+         items: the automations and scripts that took part (the function's own and the related ones on its board),
+         steps: [{ op: set|event|mqtt|run|advance|next, … }], answers: [{ key, text, value }] given to its questions,
+         expect: [{ k: state, id, state } | { k: ran|stopped|notran, id }] } ---------- */
+  const CHECK_OPS = new Set(['set', 'event', 'mqtt', 'run', 'advance', 'next']);
+  const CHECK_EXP = new Set(['state', 'ran', 'stopped', 'notran']);
+  // what a check may hold, and no more (it's kept in the layout, shared and synced)
+  function cleanCheck(c) {
+    if (!c || typeof c !== 'object' || !SAFE_ID.test(String(c.id))) return null;
+    const str = (v, n) => String(v == null ? '' : v).slice(0, n), id = (v) => (typeof v === 'string' && v.length < 300 ? v : null);
+    const plain = (v) => { try { const j = JSON.stringify(v == null ? {} : v); return j.length <= 4000 ? JSON.parse(j) : {}; } catch (e) { return {}; } };
+    const start = {};
+    Object.entries(c.start && typeof c.start === 'object' ? c.start : {}).slice(0, 300).forEach(([k, v]) => {
+      if (EXACT_RE.test(k) && v && typeof v === 'object') start[k] = { state: str(v.state, 255), attributes: plain(v.attributes) };
+    });
+    const steps = (Array.isArray(c.steps) ? c.steps : []).slice(0, 100).map((x) => {
+      if (!x || !CHECK_OPS.has(x.op)) return null;
+      if (x.op === 'set') return id(x.id) && { op: 'set', id: x.id, state: str(x.state, 255) };
+      if (x.op === 'event') return { op: 'event', type: str(x.type, 255), data: plain(x.data) };
+      if (x.op === 'mqtt') return { op: 'mqtt', topic: str(x.topic, 255), payload: str(x.payload, 4000) };
+      if (x.op === 'run') return id(x.id) && { op: 'run', id: x.id, conds: !!x.conds, ti: Number.isInteger(x.ti) ? x.ti : null };
+      if (x.op === 'advance') return { op: 'advance', ms: Math.max(0, Math.min(366 * 864e5, Math.round(+x.ms || 0))) };
+      return { op: 'next' };
+    }).filter(Boolean);
+    const answers = (Array.isArray(c.answers) ? c.answers : []).slice(0, 50).filter((a) => a && typeof a === 'object').map((a) => ({ key: str(a.key, 300), text: str(a.text, 500), value: typeof a.value === 'boolean' || typeof a.value === 'number' ? a.value : str(a.value, 500) }));
+    const expect = (Array.isArray(c.expect) ? c.expect : []).slice(0, 100).filter((x) => x && CHECK_EXP.has(x.k) && id(x.id)).map((x) => (x.k === 'state' ? { k: 'state', id: x.id, state: str(x.state, 255) } : { k: x.k, id: x.id }));
+    const items = (Array.isArray(c.items) ? c.items : []).filter((k) => typeof k === 'string' && /^(automation|script)\.[a-z0-9_]+$/.test(k)).slice(0, 300);
+    if (!steps.length || !expect.length) return null;
+    return { id: String(c.id), name: str(c.name, 160) || 'Check', at: Number.isFinite(+c.at) ? Math.round(+c.at) : Date.now(), start, items, steps, answers, expect };
+  }
+  // replay one: o is what the board's sandbox gets (states, items, tz, tpl, resolve, fetch, name, condText). Returns
+  // { ok, unsure (a question it had no answer for), res: [{ ok, got }] per expectation, log }
+  async function runCheck(c, o) {
+    const states = Object.assign({}, o.states);
+    Object.entries(c.start).forEach(([k, v]) => { states[k] = Object.assign({}, o.states[k] || {}, { state: v.state, attributes: Object.keys(v.attributes || {}).length ? v.attributes : (o.states[k] || {}).attributes || {} }); });
+    const answers = c.answers.slice();
+    let unsure = null;
+    const eng = new Sandbox(Object.assign({}, o, {
+      states, now: c.at, onLog: null,
+      ask: (q) => {
+        const key = q.run ? q.run.item.id || '' : '', i = answers.findIndex((a) => a.key === key && a.text === q.text);
+        if (i >= 0) return Promise.resolve(answers.splice(i, 1)[0].value);
+        unsure = unsure || q.text;
+        return Promise.resolve(false);
+      },
+    }));
+    await eng.start();
+    for (const s of c.steps) {
+      if (s.op === 'set') await eng.userSet(s.id, s.state);
+      else if (s.op === 'event') await eng.userEvent(s.type, s.data);
+      else if (s.op === 'mqtt') await eng.userMqtt(s.topic, s.payload);
+      else if (s.op === 'run') await eng.userRun(s.id, s.conds, s.ti);
+      else if (s.op === 'advance') await eng.advance(s.ms);
+      else if (s.op === 'next') await eng.toNext();
+    }
+    await eng.settle();
+    const runs = (k) => eng.log.filter((e) => e.kind === 'run' && e.key === k).map((e) => e.outcome);
+    const res = c.expect.map((x) => {
+      if (x.k === 'state') { const st = eng.get(x.id), got = st ? String(st.state) : null; return { ok: got === x.state, got }; }
+      const r = runs(x.id), got = r.length ? r.join(', ') : 'none';
+      if (x.k === 'ran') return { ok: r.includes('finished'), got };
+      if (x.k === 'stopped') return { ok: r.includes('stopped') && !r.includes('finished'), got };
+      return { ok: !r.includes('finished'), got };
+    });
+    return { ok: !unsure && res.every((r) => r.ok), unsure, res, log: eng.log };
+  }
+
   class FunctionsBoard extends HTMLElement {
     constructor() {
       super();
@@ -4445,6 +4757,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     _init() {
       this._data = null; this._model = null;
       this._labels = []; this._ents = []; this._devs = [];
+      this._probs = new Map(); this._checkRes = new Map();
       this._entMap = new Map(); this._devMap = new Map(); this._labelMap = new Map(); this._regIdMap = new Map();
       this._view = { x: 40, y: 40, k: 1 };
       this._sel = null; this._focus = null; this._focusEdges = new Set(); this._els = new Map();
@@ -4487,6 +4800,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (hass.user && !hass.user.is_admin) { this._renderNoAdmin(); return; }
       if (!this._data) { if (!this._booting) this._boot(); return; }
       this._throttle('states', 1000, () => this._refreshStates());
+      this._throttle('probscan', 60000, () => this._scanProblems());
     }
     get hass() { return this._hass; }
     // set by Home Assistant when this runs as the integration's sidebar page
@@ -4826,6 +5140,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._renderLegend();
       this._applyMode();
       this._watchModal();
+      this._watchDrawer();
       if (window.ResizeObserver) { this._ro = new ResizeObserver(() => this._checkCompact()); this._ro.observe(this._$.board); }
     }
     _checkCompact() {
@@ -4858,6 +5173,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         };
         this._markSaved();
         await Promise.all([this._loadRegistries(true), this._loadDescriptions()]);
+        // the problem counts on the list, soon after the page is up (then as states and configs change)
+        this._throttle('probscan0', 2000, () => this._scanProblems());
         this._subscribe();
         this._renderLegend();
         this._applyMode();
@@ -4937,7 +5254,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     }
     // configs changed: forget the cached ones and redraw the open function, at most once a second
     _configChanged() {
-      this._cfgCache.clear(); this._src = new Map(); this._grefs = null;
+      this._cfgCache.clear(); this._src = new Map(); this._grefs = null; this._cfgGen = (this._cfgGen || 0) + 1;
+      this._throttle('probscan2', 3000, () => this._scanProblems());
       this._throttle('cfg', 1000, () => {
         if (this._drag) { this._configChanged(); return; }
         const cur = this._data && this._data.ui.current;
@@ -5024,6 +5342,10 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._$.loading.hidden = true;
       if (!model || this._data.ui.current !== label) return;
       this._model = model;
+      this._applyCheckProblems(label);
+      this._renderHeader();
+      this._checksSoon(label);
+      if (this._drawer && this._drawer.mode === 'problems') this._openProblems();
       this._place();
       this._render();
       if (!keep && !this._viewFor(label)) this._fit();
@@ -5204,7 +5526,14 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       await this._nrNodes(nodes, list);
       // test buttons and monitor boxes kept in the layout (Phase 9), after the loop check: they are no part of it
       this._toolNodes(label, nodes, list);
-      return { label, nodes, edges: list };
+      // what its automations and scripts point at that isn't there or can't work (0.9.0); a saved version is
+      // judged against today's home too, since that's where it would be restored
+      const found = findProblems(logic.map((e, i) => ({ key: e, refs: an[i] ? an[i].refs : [] })), members.concat(devs), this._probCtx(label));
+      // what was dismissed counts nowhere: not on the board, not in the list (a version shows everything)
+      const sp = V ? { shown: found, hidden: [] } : this._splitProbs(label, found, (k) => !k.startsWith('c_'));
+      markProblems(nodes, list, sp.shown);
+      if (!V) this._noteProblems(label, sp.shown);
+      return { label, nodes, edges: list, problems: sp.shown, dismissed: sp.hidden };
     }
 
     // every entity, device and script that any automation or script refers to (cached with the configs)
@@ -5554,14 +5883,15 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (n.kind === 'tool') return this._toolHTML(n);
       const b = [...n.badges].filter((x) => BADGES[x]).map((x) => `<ha-icon icon="${BADGES[x][0]}" title="${BADGES[x][1]}"></ha-icon>`).join('')
         + (n.writers > 1 ? `<span class="wr" title="${T('changed_by_automations_or_scripts', { writers: n.writers })}">&#9998;${n.writers}</span>` : '')
+        + (n.prob ? `<ha-icon class="prob p-${n.prob}" icon="${n.prob === 'error' ? 'mdi:alert-circle' : 'mdi:alert'}" title="${esc(this._probTitle(n.key))}"></ha-icon>` : '')
         + (n.unref ? `<ha-icon class="unref" icon="mdi:link-variant-off" title="${T('it_may_be_used_by', { extra: n.domain === 'script' ? T('no_automation_or_script_runs') : T('no_automation_or_script_refers') })}"></ha-icon>` : '')
         + (n.hidden ? `<span class="wr hid" title="${T('its_arrows_are_hidden_by')}">${P('n_hidden', n.hidden)}</span>` : '')
         + ((this._layout(this._model.label).keep || []).includes(n.key) ? `<ha-icon class="kept" icon="mdi:pin" title="${T('kept_in_place_auto_arrange')}"></ha-icon>` : '');
       const vd = this._ver && this._ver.diff ? (this._ver.diff.changed.has(n.key) ? 'chg' : this._ver.diff.only.has(n.key) ? 'only' : '') : '';
       return `<div class="node ${n.kind} d-${esc(n.domain)}${vd ? ' vd-' + vd : ''}" data-key="${esc(n.key)}" role="button" tabindex="-1" style="left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${n.h}px">`
         + (vd ? `<span class="vdtag" title="${vd === 'chg' ? T('ver_changed_t') : T('ver_only_t')}">${vd === 'chg' ? T('ver_changed_tag') : T('ver_only_tag')}</span>` : '')
-        + `<span class="tag">${esc(this._tagOf(n.key))}</span><ha-icon class="ic" icon="${esc(n.icon)}"></ha-icon><div class="txt"><div class="name">${esc(n.name)}</div>`
-        + (n.kind === 'outside' ? '' : '<div class="sub"></div>') + '</div>'
+        + `<span class="tag">${esc(this._tagOf(n.key))}</span> <ha-icon class="ic" icon="${esc(n.icon)}"></ha-icon> <div class="txt"><div class="name">${esc(n.name)}</div> `
+        + (n.kind === 'outside' ? '' : '<div class="sub"></div>') + '</div> '
         + (b ? `<div class="badges">${b}</div>` : '')
         // the points arrows leave from (right) and enter by (left); in Full manager, drag from one to draw an arrow
         // (top to bottom: in by the top edge, out by the bottom one)
@@ -5650,8 +5980,10 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         if (sub && sub.textContent !== s.text) sub.textContent = s.text;
         const tip = n.name + (s.text ? ' — ' + s.text : '') + (n.kind === 'suggest' ? T('related_not_in_this_function_3') : n.kind === 'outside' ? T('outside_this_function_2') : '');
         if (el.title !== tip) el.title = tip;
-        // what a screen reader says: the box, its state, and what it is wired to (4.8)
-        const al = `${n.name}, ${this._tagOf(k)}. ${s.text || ''}${n.kind === 'suggest' ? T('related_not_in_this_function_2') : n.kind === 'outside' ? T('outside_this_function') : ''}${this._conn && this._conn.get(k) ? '. ' + this._conn.get(k) : ''}`;
+        // what a screen reader says: first exactly what the box shows (so a voice command naming it finds it), then
+        // what kind of box it is and what it's wired to (4.8)
+        const shown = [...el.querySelectorAll('.vdtag,.tag,.name,.sub,.badges .wr')].map((x) => x.textContent.trim()).filter(Boolean).join(' ');
+        const al = `${shown}${n.kind === 'suggest' ? T('related_not_in_this_function_2') : n.kind === 'outside' ? T('outside_this_function') : ''}${this._conn && this._conn.get(k) ? '. ' + this._conn.get(k) : ''}${n.prob ? '. ' + this._probTitle(k).replace(/\n/g, '. ') : ''}`;
         if (el.getAttribute('aria-label') !== al) el.setAttribute('aria-label', al);
         const pressed = String(k === this._sel);
         if (el.getAttribute('aria-pressed') !== pressed) el.setAttribute('aria-pressed', pressed);
@@ -5703,7 +6035,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const E = this._visEdges(), F = this._focus, out = [DEFS], labels = [], hits = [], now = Date.now(), PR = PROTO();
       this._$.board.classList.toggle('pc', !!PR.color);
       this._$.board.classList.toggle('full', !!this._full());
-      this._$.board.classList.toggle('light', !(this._hass && this._hass.themes && this._hass.themes.darkMode));
+      const light = !(this._hass && this._hass.themes && this._hass.themes.darkMode);
+      this._$.board.classList.toggle('light', light);
+      this._$.modal.classList.toggle('light', light);
       // top to bottom: the arrows are routed left to right between the boxes turned a quarter turn (proxies with x and
       // y, width and height swapped), then drawn in a group reflected across the diagonal, which turns them back.
       // Text and check marks are put outside it, at the turned-back point, so they aren't mirrored
@@ -5752,6 +6086,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         const hi = !!F && this._focusEdges.has(e.id), live = (this._live.get(e.from) || 0) > now || (this._liveE.get(e.id) || 0) > now;
         const cls = ['e', 'role-' + e.role];
         if (e.loop) cls.push('loop');
+        if (e.prob) cls.push('prob');
         if (F) cls.push(hi ? 'hi' : 'dim');
         if (live) cls.push('live');
         if (this._selEdge === e.id) cls.push('esel');
@@ -5781,7 +6116,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._$.edges.innerHTML = DEFS + (V ? `<g transform="matrix(0 1 1 0 0 0)">${drawn}</g>` : drawn) + labels.join('') + marks.join('');
       this._applyTrace();
       this._edgeMid = mids;
-      if (dot) this._$.edges.querySelectorAll('animateMotion').forEach((x) => { try { x.beginElement(); } catch (er) { /* no SMIL */ } });
+      if (dot && !lessMotion()) this._$.edges.querySelectorAll('animateMotion').forEach((x) => { try { x.beginElement(); } catch (er) { /* no SMIL */ } });
       this._paintFlow();
       if (fl) fl.anim = false;
     }
@@ -6007,7 +6342,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         const devs = this._devs.filter((d) => (d.labels || []).includes(lid)).length;
         const unav = mem.some((e) => this._hass.states[e.entity_id] && this._hass.states[e.entity_id].state === 'unavailable');
         const txt = [this._countText(mem.map((e) => e.entity_id)), devs ? P('n_devices', devs) : ''].filter(Boolean).join(' · ');
-        return `<div class="fnrow"><button class="fn ${lid === this._data.ui.current ? 'cur' : ''}" data-fn="${esc(lid)}"><ha-icon icon="${esc(l.icon || 'mdi:puzzle-outline')}" style="color:${cssColor(l.color)}"></ha-icon><span class="fnt"><span class="fnn">${esc(l.name)}</span><span class="fnc">${esc(txt) || 'empty'}</span></span>${unav ? `<span class="dot warn" title="${T('something_in_this_function_is')}"></span>` : ''}</button><button class="ib fnmore" data-act="fn-menu" data-label="${esc(lid)}" title="${T('edit_hide_or_delete', { name: esc(l.name) })}"><ha-icon icon="mdi:dots-vertical"></ha-icon></button></div>`;
+        return `<div class="fnrow"><button class="fn ${lid === this._data.ui.current ? 'cur' : ''}" data-fn="${esc(lid)}"><ha-icon icon="${esc(l.icon || 'mdi:puzzle-outline')}" style="color:${cssColor(l.color)}"></ha-icon><span class="fnt"><span class="fnn">${esc(l.name)}</span><span class="fnc">${esc(txt) || 'empty'}</span></span>${this._probs.has(lid) ? this._probBadge(this._probs.get(lid)) : unav ? `<span class="dot warn" title="${T('something_in_this_function_is')}"></span>` : ''}</button><button class="ib fnmore" data-act="fn-menu" data-label="${esc(lid)}" title="${T('edit_hide_or_delete', { name: esc(l.name) })}"><ha-icon icon="mdi:dots-vertical"></ha-icon></button></div>`;
       }).join('');
       const act = this.shadowRoot.activeElement, typing = act && act.classList && act.classList.contains('find'), caret = typing ? act.selectionStart : 0;
       this._$.list.innerHTML = `<div class="lhead"><span>${T('functions')}</span><span><button data-act="import" title="${T('import_find_the_functions_already')}"><ha-icon icon="mdi:import"></ha-icon></button><button data-act="newfn" title="${T('new_empty_function')}"><ha-icon icon="mdi:plus"></ha-icon></button></span></div><div class="lfind"><ha-icon icon="mdi:magnify"></ha-icon><input class="find" placeholder="${T('find_an_automation_helper_device')}" value="${esc(this._findQ || '')}" aria-label="${T('find_anything')}">${this._findQ ? `<button class="ib" data-act="find-x" title="${T('clear')}"><ha-icon icon="mdi:close"></ha-icon></button>` : ''}</div><div class="fns">${this._findQ ? this._findHTML() : items || `<div class="muted pad">${T('no_functions_yet_press_import')}</div>`}</div><div class="lfoot"><button class="lbtn" data-act="import"><ha-icon icon="mdi:import"></ha-icon>${T('import_manager')}</button><div class="ver"><span>${T('functions_board_v_prototype', { version: VERSION })}</span><button class="ib" data-act="about" title="${T('about_and_what_the_board')}"><ha-icon icon="mdi:help-circle-outline"></ha-icon></button></div></div>`;
@@ -6063,7 +6398,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const t = this._$.title;
       if (!l) { t.innerHTML = `<span class="muted">${T('functions')}</span>`; this._$.tools.hidden = true; return; }
       this._$.tools.hidden = false;
-      t.innerHTML = `<ha-icon icon="${esc(l.icon || 'mdi:puzzle-outline')}" style="color:${cssColor(l.color)}"></ha-icon><div class="tt"><div class="ttl">${esc(l.name)}</div>${l.description ? `<div class="desc">${esc(l.description)}</div>` : ''}</div><button class="ib" data-act="fn-edit" title="${T('edit_name_icon_colour_and')}"><ha-icon icon="mdi:pencil-outline"></ha-icon></button><button class="ib" data-act="fn-menu" data-label="${esc(l.label_id)}" title="${T('hide_or_delete_this_function')}"><ha-icon icon="mdi:dots-vertical"></ha-icon></button>`;
+      t.innerHTML = `<ha-icon icon="${esc(l.icon || 'mdi:puzzle-outline')}" style="color:${cssColor(l.color)}"></ha-icon><div class="tt"><div class="ttl">${esc(l.name)}</div>${l.description ? `<div class="desc">${esc(l.description)}</div>` : ''}</div><button class="ib" data-act="fn-edit" title="${T('edit_name_icon_colour_and')}"><ha-icon icon="mdi:pencil-outline"></ha-icon></button><button class="ib" data-act="fn-menu" data-label="${esc(l.label_id)}" title="${T('hide_or_delete_this_function')}"><ha-icon icon="mdi:dots-vertical"></ha-icon></button>${this._probChip()}`;
       this._renderPause();
     }
 
@@ -6478,6 +6813,20 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         case 'add-existing': this._openManager('pick', label || '__new'); break;
         case 'import': this._openManager('detect'); break;
         case 'about': this._aboutModal(); break;
+        case 'chk-save': this._checkSaveDlg(); break;
+        case 'chk-save-go': this._checkSaveGo(); break;
+        case 'chk-run': this._runChecks(this._data.ui.current, el.dataset.id ? [el.dataset.id] : null, true); break;
+        case 'chk-replay': this._checkReplay(el.dataset.id); break;
+        case 'chk-del': this._checkDel(el.dataset.id); break;
+        case 'problems': if (this._drawer && this._drawer.mode === 'problems' && !this._drawer.dismissed && !el.closest('.drawer')) this._closeDrawer(); else this._openProblems(); break;
+        case 'pdis-list': if (this._drawer && this._drawer.mode === 'problems' && this._drawer.dismissed && !el.closest('.drawer')) this._closeDrawer(); else this._openProblems(true); break;
+        case 'pdis': this._probDismiss(el.dataset.k); break;
+        case 'pdis-back': this._probDismiss(el.dataset.k, true); break;
+        case 'prob-go': { const k = el.dataset.key; if (this._model && this._model.nodes.has(k)) { this._select(k); this._centerOn(k); } break; }
+        case 'prob-open': { const n = this._model && this._model.nodes.get(el.dataset.key); if (n) this._openItem(n); break; }
+        case 'diag': this._diagModal(el.dataset.ver || null); break;
+        case 'diag-go': this._diagGo(false); break;
+        case 'diag-copy': this._diagGo(true); break;
         case 'hamenu': this.dispatchEvent(new Event('hass-toggle-menu', { bubbles: true, composed: true })); break;
         case 'hint-x': this._data.ui.hintOff = true; this._save(); this._applyMode(); break;
         case 'mgr-tab': {
@@ -6626,6 +6975,16 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     }
     _onChange(e) {
       const t = e.target, g = this._mgr;
+      // diagnostics: anonymised or real names, one of the two, never both and never neither
+      if (t.name === 'danon' || t.name === 'dreal') {
+        const m = this._$.modal, other = m.querySelector(`input[name="${t.name === 'danon' ? 'dreal' : 'danon'}"]`);
+        if (t.checked && other) other.checked = false;
+        const pick = m.querySelector('input[name="danon"]:checked, input[name="dreal"]:checked');
+        m.querySelectorAll('[data-act="diag-go"], [data-act="diag-copy"]').forEach((b) => { b.disabled = !pick; });
+        const w = m.querySelector('.dwarn');
+        if (w) w.hidden = !(pick && pick.name === 'dreal');
+        return;
+      }
       if (t.classList && t.classList.contains('sbent')) { this._sbxPick(t.value); return; }
       if (t.classList && t.classList.contains('sbrun')) { this._sbxTrigs(); return; }
       if (t.classList && t.classList.contains('sbsel')) {
@@ -6967,6 +7326,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     // screen instead; the app's Back returns to the board.
     _inApp() { return !!(this._hass && this._hass.auth && this._hass.auth.external); }
     _openDrawer(url, title, opt = {}) {
+      // only Home Assistant's own pages open in the drawer (or in a new tab from it), never another address
+      if (!SAME_ORIGIN.test(String(url))) return;
       if (this._inApp() && /^\/config\//.test(url)) { this._goTo(url, opt.capture); return; }
       this._leaveDrawerMode();
       if (!opt.capture) this._capture = null;
@@ -8056,7 +8417,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const row = (v) => `<div class="vrow${active && active.id === v.id ? ' on' : ''}${viewing === v.id ? ' view' : ''}" data-id="${esc(v.id)}"><div class="vh"><b>${esc(v.name)}</b>${active && active.id === v.id ? `<span class="vbadge">${T('ver_active')}</span>` : ''}${v.auto ? `<span class="vauto">${T('ver_auto')}</span>` : ''}</div>${v.desc ? `<div class="vdesc">${esc(v.desc)}</div>` : ''}<div class="vm">${esc(this._verWhen(v.at))}${v.by ? ' · ' + esc(v.by) : ''}</div>`
         + `<div class="vb"><button data-act="ver-open" data-id="${esc(v.id)}"><ha-icon icon="mdi:tab"></ha-icon>${T('ver_open')}</button><button data-act="ver-sbx" data-id="${esc(v.id)}"><ha-icon icon="mdi:flask-outline"></ha-icon>${T('ver_try')}</button>`
         + `<button data-act="ver-restore" data-id="${esc(v.id)}"${full && !(active && active.id === v.id) ? '' : ' disabled'} title="${full ? (active && active.id === v.id ? T('ver_is_active') : T('ver_restore_t')) : T('ver_restore_full')}"><ha-icon icon="mdi:backup-restore"></ha-icon>${T('ver_restore')}</button>`
-        + `<button class="ib" data-act="ver-edit" data-id="${esc(v.id)}" title="${T('ver_edit_t')}"><ha-icon icon="mdi:pencil-outline"></ha-icon></button><button class="ib" data-act="ver-del" data-id="${esc(v.id)}" title="${T('ver_del_t')}"><ha-icon icon="mdi:delete-outline"></ha-icon></button></div></div>`;
+        + `<button class="ib" data-act="diag" data-ver="${esc(v.id)}" title="${T('diag_ver_t')}"><ha-icon icon="mdi:file-download-outline"></ha-icon></button><button class="ib" data-act="ver-edit" data-id="${esc(v.id)}" title="${T('ver_edit_t')}"><ha-icon icon="mdi:pencil-outline"></ha-icon></button><button class="ib" data-act="ver-del" data-id="${esc(v.id)}" title="${T('ver_del_t')}"><ha-icon icon="mdi:delete-outline"></ha-icon></button></div></div>`;
       const now = `<div class="vrow cur${active ? '' : ' on'}"><div class="vh"><b>${T('ver_now')}</b>${active ? `<span class="muted">${T('ver_now_is', { name: esc(active.name) })}</span>` : `<span class="vbadge">${T('ver_active')}</span><span class="muted">${T('ver_now_unsaved')}</span>`}</div></div>`;
       box.innerHTML = now + (vs.length ? vs.slice().reverse().map(row).join('') : `<div class="muted pad">${T('ver_none')}</div>`);
     }
@@ -8330,7 +8691,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const b = m.querySelector('[data-act="sbx-start"]');
       if (b) b.focus();
     }
-    async _openSandbox() {
+    async _openSandbox(opt = {}) {
       const label = this._data.ui.current;
       if (!label || !this._model) return;
       this._leaveDrawerMode();
@@ -8339,23 +8700,28 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._drawer = { mode: 'sandbox' };
       const d = this._$.drawer;
       d.hidden = false;
-      d.innerHTML = `<div class="dhead"><span class="dtitle">${T('sbx_title', { fnName: esc(this._fnName(label) + (this._ver ? ' · ' + this._ver.name : '')) })}</span><span class="sbclock"></span><button data-act="sbx-about" title="${T('sbx_about_t')}"><ha-icon icon="mdi:information-outline"></ha-icon></button><button data-act="sbx-reset" title="${T('sbx_reset_t')}"><ha-icon icon="mdi:restore"></ha-icon></button><button data-act="close" title="${T('sbx_close_t')}"><ha-icon icon="mdi:close"></ha-icon></button></div><div class="dbg sbx"><div class="sbnote">${T('sbx_note')}</div><div class="sbask"></div><div class="sbctl"></div><div class="sbdue"></div><div class="dtl sbtl"><div class="muted pad">${T('reading_configs')}</div></div></div>`;
+      d.innerHTML = `<div class="dhead"><span class="dtitle">${T('sbx_title', { fnName: esc(this._fnName(label) + (this._ver ? ' · ' + this._ver.name : '')) })}</span><span class="sbclock"></span><button data-act="sbx-about" title="${T('sbx_about_t')}"><ha-icon icon="mdi:information-outline"></ha-icon></button><button data-act="sbx-reset" title="${T('sbx_reset_t')}"><ha-icon icon="mdi:restore"></ha-icon></button><button data-act="close" title="${T('sbx_close_t')}"><ha-icon icon="mdi:close"></ha-icon></button></div><div class="dbg sbx"><div class="sbnote">${T('sbx_note')}</div><div class="sbask"></div><div class="sbctl"></div><div class="sbchk"></div><div class="sbdue"></div><div class="dtl sbtl"><div class="muted pad">${T('reading_configs')}</div></div></div>`;
       this._$.board.classList.add('sbx');
       this._$.sbxpill.hidden = false;
       this._fitLitbar();
-      await this._sbxNew(label);
+      await this._sbxNew(label, opt.check);
       if (!this._sbxOn()) return;
       this._renderSbxCtl();
+      this._renderChecks();
       this._renderSbx();
       this._refreshStates();
       this._renderNodebar();
       this._renderLegend();
     }
-    async _sbxNew(label) {
+    async _sbxNew(label, check) {
       const m = this._model;
       const ids = [...m.nodes.keys()].filter((k) => /^(automation|script)\./.test(k));
       const cfgs = await Promise.all(ids.map((k) => this._fetchConfig(k)));
-      const g = { label, asks: [], fn: null, tplN: 0 };
+      const g = { label, asks: [], tplN: 0, pre: check ? check.answers.slice() : [] };
+      // what you do from here, so the run can be kept as a check: the states it starts from, the clock, the steps
+      const now = check ? check.at : Date.now(), states = Object.assign({}, this._hass.states);
+      if (check) Object.entries(check.start).forEach(([k, v]) => { states[k] = Object.assign({}, states[k] || {}, { state: v.state, attributes: Object.keys(v.attributes || {}).length ? v.attributes : (states[k] || {}).attributes || {} }); });
+      g.rec = { at: now, start: this._checkStart(states), items: ids.slice(), steps: [], answers: [] };
       this._sbx = g;
       const resolve = (ref) => {
         if (ref.startsWith('device:')) return this._ents.filter((e) => e.device_id === ref.slice(7)).map((e) => e.entity_id);
@@ -8363,8 +8729,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         return t ? t.entities : [];
       };
       g.eng = new Sandbox({
-        states: this._hass.states, items: ids.map((id, i) => ({ id, cfg: cfgs[i] })), now: Date.now(), tz: this._hass.config && this._hass.config.time_zone,
-        tpl: (t, v) => this._sbxTpl(t, v), ask: (q) => this._sbxAsk(q), resolve, fetch: (id) => this._fetchConfig(id),
+        states, items: ids.map((id, i) => ({ id, cfg: cfgs[i] })), now, tz: this._hass.config && this._hass.config.time_zone,
+        tpl: (t, v, e) => this._sbxTpl(t, v, e), ask: (q) => this._sbxAsk(q), resolve, fetch: (id) => this._fetchConfig(id),
         name: (id) => this._boxName(id), condText: (c) => condText(c, (x) => this._boxName(x)), onLog: () => this._sbxLogged(),
       });
       await g.eng.start();
@@ -8392,23 +8758,25 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._clearLit(true);
       await this._sbxNew(label);
       this._renderSbxCtl();
+      this._renderChecks();
       this._renderSbx();
       this._refreshStates();
     }
     // Home Assistant renders the template, pointed at the sandbox's states and clock (sbxRewrite)
-    async _sbxTpl(t, vars) {
-      const g = this._sbx;
-      if (!g) return { ok: false, err: 'closed' };
-      if (g.fn == null) g.fn = await this._renderRaw('{%- macro m(returns) -%}{%- do returns(1) -%}{%- endmacro -%}{{ (m | as_function)() }}', {}).then((v) => String(v) === '1', () => false);
-      if (!g.fn) return { ok: false, err: T('sbx_needs_newer') };
-      const rw = sbxRewrite(t), eng = g.eng, fb_s = {};
+    // the engine that asks (the open sandbox's, or a saved check's being replayed) is the one whose states are read
+    async _sbxTpl(t, vars, engine) {
+      const g = this._sbx, eng = engine || (g && g.eng);
+      if (!eng) return { ok: false, err: 'closed' };
+      if (this._asFn == null) this._asFn = await this._renderRaw('{%- macro m(returns) -%}{%- do returns(1) -%}{%- endmacro -%}{{ (m | as_function)() }}', {}).then((v) => String(v) === '1', () => false);
+      if (!this._asFn) return { ok: false, err: T('sbx_needs_newer') };
+      const rw = sbxRewrite(t), fb_s = {};
       const add = (id) => { const s = eng.get(id); if (s) fb_s[id] = { state: String(s.state), attributes: s.attributes || {}, last_changed: s.last_changed, last_updated: s.last_updated }; };
       eng.changed.forEach((v, id) => add(id));
       for (const x of String(t).matchAll(ENTITY_RE)) add(x[0]);
       let variables = {};
       try { variables = JSON.parse(JSON.stringify(vars || {})); } catch (e) { /* only what can be sent */ }
       Object.assign(variables, { fb_s, fb_t: new Date(eng.now).toISOString() });
-      g.tplN++;
+      if (g && eng === g.eng) g.tplN++;
       try { return { ok: true, value: await this._renderRaw(SBX_PRELUDE + rw.text, variables), partly: rw.leftovers }; }
       catch (e) { return { ok: false, err: (e && e.message) || String(e) }; }
     }
@@ -8427,8 +8795,11 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     _sbxAsk(q) {
       const g = this._sbx;
       if (!g) return Promise.resolve(false);
+      const key = q.run ? q.run.item.id || '' : '';
+      const pre = g.pre.findIndex((a) => a.key === key && a.text === q.text);
+      if (pre >= 0) { const v = g.pre.splice(pre, 1)[0].value; g.rec.answers.push({ key, text: q.text, value: v }); return Promise.resolve(v); }
       return new Promise((res) => {
-        g.asks.push({ q, res: (v) => { g.asks = g.asks.filter((a) => a.q !== q); res(v); this._renderSbx(); } });
+        g.asks.push({ q, res: (v) => { g.asks = g.asks.filter((a) => a.q !== q); g.rec.answers.push({ key, text: q.text, value: v }); res(v); this._renderSbx(); } });
         this._renderSbx();
         if (q.key) this._centerOn(q.key);
       });
@@ -8588,7 +8959,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           const id = q('.sbent').value, v = this._sbxVal('sbval');
           if (!id || !v) { this._toast(T('sbx_pick_state')); return; }
           if (q('input.sbval')) q('input.sbval').value = '';
-          this._sbxDo((e) => e.userSet(id, v)).then(() => this._sbxPick(id, true));
+          this._sbxDo((e) => { this._sbxRec({ op: 'set', id, state: v }); return e.userSet(id, v); }).then(() => this._sbxPick(id, true));
           break;
         }
         case 'sbx-fire': {
@@ -8596,22 +8967,24 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           if (!type) { this._toast(T('sbx_pick_event')); return; }
           let data = {};
           if (raw) { try { data = JSON.parse(raw); } catch (e) { const p = parseLoose(raw); if (p && typeof p === 'object') data = p; else { this._toast(T('sbx_bad_data')); return; } } }
-          this._sbxDo((e) => e.userEvent(type, data));
+          this._sbxDo((e) => { this._sbxRec({ op: 'event', type, data }); return e.userEvent(type, data); });
           break;
         }
         case 'sbx-run': {
           const id = q('.sbrun').value, tv = q('.sbtrig') && !q('.sbtrig').hidden ? q('.sbtrig').value : '';
-          if (id) this._sbxDo((e) => e.userRun(id, q('.sbconds').checked, tv === '' ? null : +tv));
+          const conds = q('.sbconds').checked, ti = tv === '' ? null : +tv;
+          if (id) this._sbxDo((e) => { this._sbxRec({ op: 'run', id, conds, ti }); return e.userRun(id, conds, ti); });
           break;
         }
         case 'sbx-mqtt': {
           const topic = this._sbxVal('sbtop');
           if (!topic) { this._toast(T('sbx_pick_topic')); return; }
-          this._sbxDo((e) => e.userMqtt(topic, this._sbxVal('sbpay')));
+          const payload = this._sbxVal('sbpay');
+          this._sbxDo((e) => { this._sbxRec({ op: 'mqtt', topic, payload }); return e.userMqtt(topic, payload); });
           break;
         }
-        case 'sbx-adv': this._sbxDo((e) => e.advance(+el.dataset.ms)); break;
-        case 'sbx-next': this._sbxDo((e) => e.toNext()); break;
+        case 'sbx-adv': { const ms = +el.dataset.ms; this._sbxDo((e) => { this._sbxRec({ op: 'advance', ms }); return e.advance(ms); }); break; }
+        case 'sbx-next': this._sbxDo((e) => { this._sbxRec({ op: 'next' }); return e.toNext(); }); break;
         case 'sbx-reset': this._sbxReset(); break;
         case 'sbx-ans': { const a = this._sbx && this._sbx.asks[+el.dataset.i]; if (!a) return; if (a.q.value) { const inp = d.querySelector(`.sbav[data-i="${el.dataset.i}"]`); a.res(parseLoose(inp ? inp.value : '')); } else a.res(el.dataset.v === '1'); break; }
         case 'sbx-pick': this._sbxLight(+el.dataset.id); break;
@@ -8727,6 +9100,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const f = this._flow;
       if (!f) return;
       clearTimeout(this._timers.lit);
+      if (lessMotion()) { this._flowGo(f.steps.length - 1, false); return; }
       let i = 0;
       const tick = () => {
         if (this._flow !== f) return;
@@ -8797,7 +9171,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const a = this._flowArea(), v = this._view;
       if (R.x0 * v.k + v.x >= a.pad / 2 && R.y0 * v.k + v.y >= a.pad / 2 && R.x1 * v.k + v.x <= a.W - a.pad / 2 && R.y1 * v.k + v.y <= a.H - a.pad / 2) return;
       const k = Math.max(0.35, Math.min(v.k, this._fitK(R)));
-      const to = { k, x: a.W / 2 - ((R.x0 + R.x1) / 2) * k, y: a.H / 2 - ((R.y0 + R.y1) / 2) * k }, from = { ...v }, t0 = performance.now(), ms = 380;
+      const to = { k, x: a.W / 2 - ((R.x0 + R.x1) / 2) * k, y: a.H / 2 - ((R.y0 + R.y1) / 2) * k }, from = { ...v }, t0 = performance.now(), ms = lessMotion() ? 0 : 380;
       cancelAnimationFrame(this._followRaf);
       const step = (now) => {
         const t = Math.min(1, (now - t0) / ms), e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
@@ -8889,6 +9263,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     }
     _renderSbxSoon() { this._throttle('sbxr', 120, () => this._renderSbx()); }
     _renderSbx() {
+      this._renderChecks(true);
       const g = this._sbx, d = this._$.drawer;
       if (!g || !this._sbxOn()) return;
       const eng = g.eng, box = d.querySelector('.sbtl');
@@ -9403,7 +9778,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           if (app.state !== 'started') return done({ err: T('the_node_red_app_isn') });
           const info = await this._ws({ type: 'supervisor/api', endpoint: `/addons/${app.slug}/info`, method: 'get' });
           const base = info && info.ingress_url;
-          if (!base) return done({ err: T('the_node_red_app_has') });
+          // a path on this Home Assistant (/api/hassio_ingress/…/), never another address: the only fetch the board makes
+          if (!base || !SAME_ORIGIN.test(base)) return done({ err: T('the_node_red_app_has') });
           // through the app's page in Home Assistant, as opening Node-RED from the sidebar does
           const res = await fetch(base + 'flows', { credentials: 'same-origin', headers: { 'Node-RED-API-Version': 'v2' } }).catch(() => null);
           if (!res || res.status === 401 || res.status === 403) {
@@ -9528,6 +9904,31 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         return true;
       }
       return false;
+    }
+    // the drawer: a labelled region beside the board; focus moves into it when it opens, back when it closes
+    _watchDrawer() {
+      const d = this._$.drawer;
+      d.setAttribute('role', 'complementary');
+      new MutationObserver(() => {
+        const open = !d.hidden && !!d.firstElementChild, t = d.querySelector('.dtitle');
+        if (t && d.getAttribute('aria-label') !== t.textContent) d.setAttribute('aria-label', t.textContent);
+        if (open && !this._drawerOpen) {
+          this._drawerOpen = true;
+          const a = this.shadowRoot.activeElement;
+          this._drawerBack = a && !d.contains(a) ? a : null;
+          setTimeout(() => {
+            if (d.hidden || !this._$.modal.hidden || d.contains(this.shadowRoot.activeElement)) return;
+            const h = d.querySelector('.dtitle');
+            if (h) { h.tabIndex = -1; h.focus({ preventScroll: true }); }
+          }, 0);
+        } else if (!open && this._drawerOpen) {
+          this._drawerOpen = false;
+          const back = this._drawerBack, box = this._roveKey && this._els && this._els.get(this._roveKey);
+          this._drawerBack = null;
+          const a = this.shadowRoot.activeElement;
+          if (!a || a === d || d.contains(a) || a === this.shadowRoot.host) { if (back && back.isConnected) back.focus({ preventScroll: true }); else if (box) box.focus({ preventScroll: true }); }
+        }
+      }).observe(d, { attributes: true, attributeFilter: ['hidden'], childList: true });
     }
     // dialogs: named, focus moves in and stays in, and goes back where it was when they close
     _watchModal() {
@@ -9827,13 +10228,361 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       li.push(T('show_node_red_flows_in'));
       li.push(T('ver_promise'));
       li.push(T('every_change_is_shown_before'));
+      li.push(T('privacy_promise'));
       return li;
+    }
+    /* ---------- diagnostics: a file for an issue or a forum post, made here and handed to the person ----------
+       Nothing is sent anywhere. The person chooses anonymised or real names every time (neither is ticked to
+       start with, and nothing can be made until one is), and may add a snapshot of the open function as it is
+       now and any of its saved versions. */
+    async _diagModal(verId) {
+      const m = this._$.modal, label = this._data && this._data.ui && this._data.ui.current;
+      m.hidden = false;
+      let vs = [];
+      if (label) { try { vs = await this._verList(label); } catch (e) { vs = []; } }
+      const fnName = label ? esc(this._fnName(label)) : '';
+      const vrow = (v) => `<label class="chk"><input type="checkbox" name="dver" value="${esc(v.id)}"${v.id === verId ? ' checked' : ''}>${esc(v.name)} <span class="muted">· ${esc(this._verWhen(v.at))}</span></label>`;
+      m.innerHTML = `<div class="dlg diag"><h3>${T('diag_h')}</h3><p class="dtext">${T('diag_lead')}</p>`
+        + `<h4>${T('diag_names_h')}</h4><label class="chk"><input type="checkbox" name="danon">${T('diag_anon')}</label><label class="chk"><input type="checkbox" name="dreal">${T('diag_real')}</label>`
+        + `<div class="hint dwarn" hidden>${T('diag_real_warn')}</div>`
+        + `<h4>${T('diag_incl_h')}</h4><p class="muted">${T('diag_always')}</p>`
+        + (label ? `<label class="chk"><input type="checkbox" name="dsnap">${T('diag_snap', { fnName })}</label>` : '')
+        + (vs.length ? `<div class="dvers"><div class="muted">${T('diag_vers', { fnName })}</div>${vs.slice().reverse().map(vrow).join('')}</div>` : '')
+        + `<div class="dval"></div><div class="btns"><button data-act="modal-cancel">${T('cancel')}</button><button data-act="diag-copy" disabled>${T('diag_copy')}</button><button class="primary" data-act="diag-go" disabled>${T('diag_download')}</button></div></div>`;
+    }
+    async _diagGo(copy) {
+      const m = this._$.modal, val = m.querySelector('.dval'), label = this._data && this._data.ui && this._data.ui.current;
+      const pick = m.querySelector('input[name="danon"]:checked, input[name="dreal"]:checked');
+      if (!pick) { val.textContent = T('diag_choose'); return; }
+      const anonymise = pick.name === 'danon', snap = !!(m.querySelector('input[name="dsnap"]') || {}).checked;
+      const vids = [...m.querySelectorAll('input[name="dver"]:checked')].map((x) => x.value);
+      const btns = m.querySelectorAll('[data-act="diag-go"], [data-act="diag-copy"]');
+      btns.forEach((b) => { b.disabled = true; });
+      val.textContent = T('diag_making');
+      try {
+        const msg = { type: 'functions_board/diagnostics', anonymise };
+        if (label && (snap || vids.length)) msg.label = label;
+        if (label && snap) msg.snapshot = await this._verSnapshot(label);
+        if (vids.length) msg.version_ids = vids;
+        const text = JSON.stringify(await this._ws(msg), null, 2);
+        if (copy) {
+          await navigator.clipboard.writeText(text);
+          this._toast(T('diag_copied'));
+        } else {
+          // saved on this device by the browser: a link to the file made here, clicked, then let go
+          const day = new Date().toISOString().slice(0, 10), a = document.createElement('a');
+          a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+          a.download = `functions_board_diagnostics_${day}${anonymise ? '_anonymised' : ''}.json`;
+          document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+          this._toast(T('diag_saved'));
+        }
+        this._closeModal();
+      } catch (e) {
+        val.textContent = T('diag_failed', { e: (e && (e.message || e.code)) || e });
+        btns.forEach((b) => { b.disabled = false; });
+      }
+    }
+    /* ---------- saved checks (0.9.0): keep a sandbox run with what should come of it; replayed on the current
+       configs after every change, a failing one is a problem ---------- */
+    // the states a check starts from: the function's own entities and what they point at (big attributes left out)
+    _checkStart(states) {
+      const out = {}, m = this._model;
+      if (!m) return out;
+      [...m.nodes.keys()].filter((k) => EXACT_RE.test(k) && states[k]).forEach((k) => {
+        const a = {};
+        Object.entries(states[k].attributes || {}).forEach(([n, v]) => { try { if (JSON.stringify(v).length <= 400) a[n] = v; } catch (e) { /* not kept */ } });
+        out[k] = { state: String(states[k].state), attributes: a };
+      });
+      return out;
+    }
+    _sbxRec(step) { const g = this._sbx; if (g && g.rec) g.rec.steps.push(step); }
+    _checkName(k) { return this._model && this._model.nodes.has(k) ? this._model.nodes.get(k).name : this._nameOf(k); }
+    _stepText(s) {
+      const nm = (k) => esc(this._checkName(k));
+      if (s.op === 'set') return T('chk_s_set', { name: nm(s.id), state: esc(s.state) });
+      if (s.op === 'event') return T('chk_s_event', { type: esc(s.type) });
+      if (s.op === 'mqtt') return T('chk_s_mqtt', { topic: esc(s.topic), payload: esc(shorten(s.payload, 40)) });
+      if (s.op === 'run') return T('chk_s_run', { name: nm(s.id) });
+      if (s.op === 'advance') return T('chk_s_advance', { dur: esc(clockShort(s.ms)) });
+      return T('chk_s_next');
+    }
+    _expText(x, got) {
+      const nm = esc(this._checkName(x.id)), g = got == null ? '' : ' ' + T('chk_got', { got: esc(got) });
+      if (x.k === 'state') return T('chk_x_state', { name: nm, state: esc(x.state) }) + g;
+      if (x.k === 'ran') return T('chk_x_ran', { name: nm }) + g;
+      if (x.k === 'stopped') return T('chk_x_stopped', { name: nm }) + g;
+      return T('chk_x_notran', { name: nm }) + g;
+    }
+    // what the run in the sandbox suggests checking: states that changed, and how each automation and script ended
+    _checkSuggest() {
+      const g = this._sbx, eng = g.eng, out = [];
+      // what the function changed (whatever you set yourself is a step, not an outcome), as it ended
+      const byFn = new Set(eng.log.filter((e) => e.kind === 'state' && e.by !== 'you' && EXACT_RE.test(e.key || '') && !/^(automation|script)\./.test(e.key)).map((e) => e.key));
+      byFn.forEach((k) => { const v = eng.get(k); if (v) out.push({ x: { k: 'state', id: k, state: String(v.state) }, on: true }); });
+      const runs = new Map();
+      eng.log.filter((e) => e.kind === 'run').forEach((e) => { const r = runs.get(e.key) || []; r.push(e.outcome); runs.set(e.key, r); });
+      runs.forEach((r, k) => { if (r.includes('finished')) out.push({ x: { k: 'ran', id: k }, on: true }); else if (r.includes('stopped')) out.push({ x: { k: 'stopped', id: k }, on: true }); });
+      [...this._model.nodes.values()].filter((n) => n.kind === 'member' && /^(automation|script)$/.test(n.domain) && !runs.has(n.key)).forEach((n) => out.push({ x: { k: 'notran', id: n.key }, on: false }));
+      return out;
+    }
+    _renderChecks(soft) {
+      const box = this._$.drawer.querySelector('.sbchk'), g = this._sbx;
+      if (!box || !g) return;
+      const label = g.label, list = this._ver ? [] : this._layout(label).checks || [], have = this._checkRes.get(label) || {}, res = have.res || new Map();
+      const can = !this._ver && !!g.rec && g.rec.steps.length > 0, sig = [list.length, can, have.at || 0].join('|');
+      if (soft && box.dataset.sig === sig) return;
+      box.dataset.sig = sig;
+      const mark = (c) => { const r = res.get(c.id); if (!r) return `<span class="ckst muted" title="${T('chk_not_run')}">·</span>`; if (r.unsure) return `<span class="ckst unsure" title="${esc(r.unsure)}">?</span>`; return r.ok ? `<span class="ckst ok" title="${T('chk_passes')}">&#10003;</span>` : `<span class="ckst bad" title="${T('chk_fails')}">&#10005;</span>`; };
+      const row = (c) => `<div class="ckrow" data-id="${esc(c.id)}">${mark(c)}<span class="ckname" title="${esc(c.steps.map((x) => this._stepText(x).replace(/<[^>]+>/g, '')).join(' → '))}">${esc(c.name)}</span><button class="ib" data-act="chk-run" data-id="${esc(c.id)}" title="${T('chk_run_t')}"><ha-icon icon="mdi:play-circle-outline"></ha-icon></button><button class="ib" data-act="chk-replay" data-id="${esc(c.id)}" title="${T('chk_replay_t')}"><ha-icon icon="mdi:movie-open-play-outline"></ha-icon></button><button class="ib" data-act="chk-del" data-id="${esc(c.id)}" title="${T('chk_del_t')}"><ha-icon icon="mdi:delete-outline"></ha-icon></button></div>`;
+      box.innerHTML = this._ver ? '' : `<div class="ckhead"><span>${P('chk_n', list.length)}</span>${list.length ? `<button class="ib" data-act="chk-run" title="${T('chk_run_all_t')}"><ha-icon icon="mdi:play-box-multiple-outline"></ha-icon></button>` : ''}<button class="chip" data-act="chk-save"${can ? '' : ' disabled'} title="${can ? T('chk_save_t') : T('chk_save_none')}"><ha-icon icon="mdi:content-save-check-outline"></ha-icon>${T('chk_save')}</button></div>${list.map(row).join('')}`;
+    }
+    _checkSaveDlg() {
+      const g = this._sbx;
+      if (!g || !g.rec || !g.rec.steps.length || this._ver) return;
+      const sug = this._checkSuggest(), m = this._$.modal;
+      this._chkDraft = { sug };
+      m.hidden = false;
+      m.innerHTML = `<div class="dlg ckdlg"><h3>${T('chk_save_h')}</h3><p class="dtext">${T('chk_save_lead')}</p>`
+        + `<label>${T('chk_name')}<input name="ckname" maxlength="160" value="${esc(this._stepText(g.rec.steps[0]).replace(/<[^>]+>/g, ''))}"></label>`
+        + `<h4>${T('chk_steps_h')}</h4><ol class="cksteps">${g.rec.steps.map((x) => `<li>${this._stepText(x)}</li>`).join('')}</ol>`
+        + `<h4>${T('chk_expect_h')}</h4>${sug.length ? sug.map((s, i) => `<label class="chk"><input type="checkbox" name="ckx" value="${i}"${s.on ? ' checked' : ''}>${this._expText(s.x)}</label>`).join('') : `<p class="muted">${T('chk_expect_none')}</p>`}`
+        + `<div class="dval"></div><div class="btns"><button data-act="modal-cancel">${T('cancel')}</button><button class="primary" data-act="chk-save-go">${T('chk_save_b')}</button></div></div>`;
+      const n = m.querySelector('input[name="ckname"]'); if (n) { n.focus(); n.select(); }
+    }
+    _checkSaveGo() {
+      const g = this._sbx, m = this._$.modal, d = this._chkDraft;
+      if (!g || !d) return;
+      const expect = [...m.querySelectorAll('input[name="ckx"]:checked')].map((x) => d.sug[+x.value].x);
+      if (!expect.length) { m.querySelector('.dval').textContent = T('chk_pick_one'); return; }
+      const c = cleanCheck({ id: uid(), name: m.querySelector('input[name="ckname"]').value.trim() || T('chk_default'), at: g.rec.at, start: g.rec.start, items: g.rec.items, steps: g.rec.steps, answers: g.rec.answers, expect });
+      if (!c) { m.querySelector('.dval').textContent = T('chk_cant'); return; }
+      const label = g.label, L = this._layout(label);
+      L.checks = (L.checks || []).concat([c]);
+      this._save();
+      this._closeModal();
+      this._toast(T('chk_saved', { name: c.name }));
+      this._renderChecks();
+      this._runChecks(label, [c.id], true);
+    }
+    _checkDel(id) {
+      const label = this._data.ui.current, L = this._layout(label), c = (L.checks || []).find((x) => x.id === id);
+      if (!c) return;
+      L.checks = L.checks.filter((x) => x.id !== id);
+      const r = this._checkRes.get(label); if (r) r.res.delete(id);
+      this._save();
+      this._renderChecks();
+      this._applyCheckProblems(label);
+      this._toast(T('chk_deleted', { name: c.name }));
+    }
+    _checksSoon(label) { clearTimeout(this._timers.chk); this._timers.chk = setTimeout(() => this._runChecks(label), 400); }
+    // replay checks on the function's current configs; results kept until the configs change. given: the configs
+    // the scan already read (another function's)
+    async _runChecks(label, ids, force, given) {
+      const L = this._layout(label), list = (L.checks || []).filter((c) => !ids || ids.includes(c.id));
+      if (!list.length || this._ver) return;
+      const gen = this._cfgGen || 0, have = this._checkRes.get(label);
+      if (!force && have && have.gen === gen && list.every((c) => have.res.has(c.id))) return;
+      const members = this._ents.filter((e) => (e.labels || []).includes(label)).map((e) => e.entity_id).filter((e) => /^(automation|script)\./.test(e));
+      const cfgOf = new Map((given || []).map((x) => [x.id, x.cfg]));
+      const itemsFor = async (c) => {
+        const ids = [...new Set(members.concat(c.items || []))];
+        const cfgs = await Promise.all(ids.map((e) => (cfgOf.has(e) ? cfgOf.get(e) : this._fetchConfig(e))));
+        return ids.map((e, i) => ({ id: e, cfg: cfgs[i] })).filter((x) => x.cfg);
+      };
+      const resolve = (ref) => { if (ref.startsWith('device:')) return this._ents.filter((e) => e.device_id === ref.slice(7)).map((e) => e.entity_id); const t = this._tgt.get(ref); return t ? t.entities : []; };
+      const o = { states: this._hass.states, tz: this._hass.config && this._hass.config.time_zone, tpl: (t, v, e) => this._sbxTpl(t, v, e), resolve,
+        fetch: (id) => this._fetchConfig(id), name: (id) => this._boxName(id), condText: (c) => condText(c, (x) => this._boxName(x)) };
+      const rec = have && have.gen === gen ? have : { gen, res: new Map() };
+      for (const c of list) {
+        try { const r = await runCheck(c, Object.assign({ items: await itemsFor(c) }, o)); rec.res.set(c.id, { ok: r.ok, unsure: r.unsure, res: r.res }); }
+        catch (e) { rec.res.set(c.id, { ok: false, unsure: (e && e.message) || String(e), res: [] }); }
+      }
+      rec.at = Date.now();
+      this._checkRes.set(label, rec);
+      this._applyCheckProblems(label);
+      if (this._sbx && this._sbx.label === label) this._renderChecks();
+    }
+    _checkProblems(label) {
+      const r = this._checkRes.get(label), out = [];
+      if (!r) return out;
+      (this._layout(label).checks || []).forEach((c) => {
+        const x = r.res.get(c.id);
+        if (!x || x.ok) return;
+        if (x.unsure) { out.push({ sev: 'warn', kind: 'c_unsure', ref: 'check:' + c.id, by: [], name: c.name, detail: x.unsure }); return; }
+        const i = x.res.findIndex((y) => !y.ok);
+        out.push({ sev: 'error', kind: 'c_failed', ref: 'check:' + c.id, by: [], name: c.name, detail: i >= 0 ? this._expText(c.expect[i], x.res[i].got).replace(/<[^>]+>/g, '') : '' });
+      });
+      return out;
+    }
+    _applyCheckProblems(label) {
+      const m = this._model;
+      if (!m || m.label !== label || this._ver) return;
+      const all = (m.problems || []).concat(m.dismissed || []).filter((p) => !/^c_/.test(p.kind)).concat(this._checkProblems(label))
+        .sort((x, y) => (x.sev === y.sev ? 0 : x.sev === 'error' ? -1 : 1));
+      // checks' results are only known once they've run
+      const sp = this._splitProbs(label, all, (k) => !k.startsWith('c_') || this._checkRes.has(label));
+      m.problems = sp.shown; m.dismissed = sp.hidden;
+      this._noteProblems(label, m.problems);
+      this._renderHeader();
+      if (this._drawer && this._drawer.mode === 'problems') this._openProblems();
+    }
+    // a check played in the sandbox, step by step on the board: its states, its clock, its steps, its answers
+    async _checkReplay(id) {
+      const label = this._data.ui.current, c = (this._layout(label).checks || []).find((x) => x.id === id);
+      if (!c || !this._model) return;
+      if (this._sbxOn()) this._closeDrawer();
+      await this._openSandbox({ check: c });
+      for (const s of c.steps) {
+        if (!this._sbxOn()) return;
+        const g = this._sbx;
+        await this._sbxDo((e) => {
+          this._sbxRec(s);
+          if (s.op === 'set') return e.userSet(s.id, s.state);
+          if (s.op === 'event') return e.userEvent(s.type, s.data);
+          if (s.op === 'mqtt') return e.userMqtt(s.topic, s.payload);
+          if (s.op === 'run') return e.userRun(s.id, s.conds, s.ti);
+          if (s.op === 'advance') return e.advance(s.ms);
+          return e.toNext();
+        });
+        if (this._sbx !== g) return;
+        await new Promise((r) => setTimeout(r, 300));
+      }
+      this._toast(T('chk_replayed', { name: c.name }));
+    }
+
+    /* ---------- problems (0.9.0) ---------- */
+    _probCtx(label) {
+      const L = this._layout(label), svcs = this._hass.services || {};
+      return {
+        state: (id) => this._hass.states[id], ent: (id) => this._entMap.get(id), dev: (id) => this._devMap.get(id),
+        area: (id) => this._areaMap && this._areaMap.get(id), floor: (id) => this._floorMap && this._floorMap.get(id), label: (id) => this._labelMap.get(id),
+        service: (d, s) => !!(svcs[d] && svcs[d][s]), paused: Array.isArray(L.paused) && L.paused.length > 0,
+      };
+    }
+    // the function's own layout, not a version's open in a tab
+    _liveLayout(label) { return this._data.layouts[label] || this._layout(label); }
+    // a function's problems, without the ones dismissed; keeps the dismissals' bookkeeping (and saves it)
+    _splitProbs(label, problems, covers) {
+      const L = this._liveLayout(label);
+      if (!(L.dismissed || []).length) return { shown: problems, hidden: [] };
+      const r = splitDismissed(problems, L.dismissed, Date.now(), covers);
+      if (r.changed) { L.dismissed = r.dismissed; this._save(); }
+      return r;
+    }
+    _probDismiss(k, back) {
+      const m = this._model, label = this._data.ui.current;
+      if (!m || m.label !== label || this._ver) return;
+      const L = this._liveLayout(label), all = (m.problems || []).concat(m.dismissed || []), p = all.find((x) => probKey(x) === k);
+      L.dismissed = (L.dismissed || []).filter((d) => d.k !== k);
+      if (!back) L.dismissed.push({ k, at: Date.now() });
+      this._save();
+      const sp = splitDismissed(all, L.dismissed, Date.now(), () => false);
+      m.problems = sp.shown; m.dismissed = sp.hidden;
+      markProblems(m.nodes, m.edges, m.problems);
+      this._noteProblems(label, m.problems);
+      this._renderHeader();
+      this._render();
+      this._drawEdges();
+      if (this._drawer && this._drawer.mode === 'problems') this._openProblems(this._drawer.dismissed && m.dismissed.length > 0);
+      if (!back && p) this._toast(T('prob_dismissed_toast'), [{ text: T('undo'), fn: () => this._probDismiss(k, true) }]);
+    }
+    _noteProblems(label, problems) {
+      const e = problems.filter((p) => p.sev === 'error').length, w = problems.length - e, was = this._probs.get(label);
+      this._probs.set(label, { e, w });
+      if (!was || was.e !== e || was.w !== w) this._renderList();
+    }
+    // every function on the board, in the background: the counts on the list (configs come from the cache)
+    async _scanProblems() {
+      if (!this._data || !this._hass || this._probScanning || !this._ents) return;
+      this._probScanning = true;
+      try {
+        const known = (x) => this._known(x);
+        for (const label of this._data.functions.slice()) {
+          if (this._model && this._model.label === label && !this._ver) { this._noteProblems(label, this._model.problems || []); continue; }
+          const members = this._ents.filter((e) => (e.labels || []).includes(label)).map((e) => e.entity_id);
+          const devs = this._devs.filter((d) => (d.labels || []).includes(label)).map((d) => 'device:' + d.id);
+          const logic = members.filter((e) => /^(automation|script)\./.test(e));
+          const cfgs = await Promise.all(logic.map((e) => this._fetchConfig(e)));
+          // the open function's own result is newer than anything read before it was built
+          if (this._model && this._model.label === label && !this._ver) { this._noteProblems(label, this._model.problems || []); continue; }
+          const items = logic.map((e, i) => ({ key: e, refs: cfgs[i] ? analyze(cfgs[i], e.startsWith('script.'), known).refs : [] }));
+          const base = findProblems(items, members.concat(devs), this._probCtx(label));
+          if ((this._layout(label).checks || []).length) await this._runChecks(label, null, false, logic.map((e, i) => ({ id: e, cfg: cfgs[i] })).filter((x) => x.cfg));
+          this._noteProblems(label, this._splitProbs(label, base.concat(this._checkProblems(label)), (k) => !k.startsWith('c_') || this._checkRes.has(label)).shown);
+          await new Promise((r) => setTimeout(r, 0));
+        }
+      } catch (e) { /* the counts stay as they were */ } finally { this._probScanning = false; }
+    }
+    _probBadge(c) {
+      if (!c.e && !c.w) return '';
+      const say = c.e ? P('prob_n_errors', c.e) + (c.w ? ' · ' + P('prob_n_warnings', c.w) : '') : P('prob_n_warnings', c.w);
+      return `<span class="pbadge p-${c.e ? 'error' : 'warn'}" title="${esc(say)}"><span aria-hidden="true">${c.e || c.w}</span><span class="srt">${esc(say)}</span></span>`;
+    }
+    _probChip() {
+      const m = this._model && this._model.label === (this._data && this._data.ui.current) ? this._model : null, ps = (m && m.problems) || [], ds = (m && m.dismissed) || [];
+      const e = ps.filter((p) => p.sev === 'error').length;
+      return (ps.length ? `<button class="pchip p-${e ? 'error' : 'warn'}" data-act="problems" title="${T('prob_chip_t')}"><ha-icon icon="${e ? 'mdi:alert-circle' : 'mdi:alert'}"></ha-icon>${P('prob_n', ps.length)}</button>` : '')
+        + (ds.length ? `<button class="pdchip" data-act="pdis-list" title="${T('prob_dismissed_t')}"><ha-icon icon="mdi:eye-off-outline"></ha-icon>${P('prob_dismissed_n', ds.length)}</button>` : '');
+    }
+    _probWhat(ref) {
+      if (ref.startsWith('device:')) { const d = this._devMap.get(ref.slice(7)); return d ? d.name_by_user || d.name || ref.slice(7) : ref.slice(7); }
+      if (TGT_RE.test(ref)) return ref.slice(ref.indexOf(':') + 1);
+      return EXACT_RE.test(ref) ? this._nameOf(ref) + (this._nameOf(ref) !== ref ? ` (${ref})` : '') : ref;
+    }
+    _probText(p) {
+      const what = esc(this._probWhat(p.ref));
+      switch (p.kind) {
+        case 'e_missing': return T('prob_e_missing', { what });
+        case 'e_notloaded': return T('prob_e_notloaded', { what });
+        case 'e_disabled': return T('prob_e_disabled', { what });
+        case 'e_unavail': return T('prob_e_unavail', { what });
+        case 'd_missing': return T('prob_d_missing', { what });
+        case 'd_disabled': return T('prob_d_disabled', { what });
+        case 't_missing': return T('prob_t_missing', { what });
+        case 's_missing': return T('prob_s_missing', { what });
+        case 'm_broken': return T('prob_m_broken', { what });
+        case 'm_off': return T('prob_m_off', { what });
+        case 'c_failed': return T('prob_c_failed', { name: esc(p.name), what: esc(p.detail) });
+        case 'c_unsure': return T('prob_c_unsure', { name: esc(p.name), what: esc(p.detail) });
+        default: return what;
+      }
+    }
+    _probTitle(key) {
+      const ps = ((this._model && this._model.problems) || []).filter((p) => p.ref === key || p.by.includes(key));
+      return ps.map((p) => this._probText(p).replace(/<[^>]+>/g, '')).join('\n');
+    }
+    // the problems drawer; dismissed: the ones dismissed instead
+    _openProblems(dismissed) {
+      const label = this._data.ui.current;
+      if (!label || !this._model) return;
+      this._leaveDrawerMode();
+      this._capture = null;
+      this._drawer = { mode: 'problems', dismissed: !!dismissed };
+      const d = this._$.drawer, ps = (dismissed ? this._model.dismissed : this._model.problems) || [], ds = this._model.dismissed || [];
+      d.hidden = false;
+      const nm = (k) => esc(this._model.nodes.has(k) ? this._model.nodes.get(k).name : this._nameOf(k));
+      const row = (p) => `<div class="prow p-${p.sev}"><ha-icon icon="${p.sev === 'error' ? 'mdi:alert-circle' : 'mdi:alert'}"></ha-icon><div class="pbody"><div class="ptxt">${this._probText(p)}</div>`
+        + (p.by.length ? `<div class="pby">${T('prob_in')} ${p.by.map((b) => `<button class="lnk" data-act="prob-go" data-key="${esc(b)}">${nm(b)}</button>`).join(', ')}</div>` : '')
+        + `<div class="pact">${this._model.nodes.has(p.ref) ? `<button data-act="prob-go" data-key="${esc(p.ref)}"><ha-icon icon="mdi:crosshairs-gps"></ha-icon>${T('prob_show')}</button>` : ''}`
+        + p.by.filter((b) => /^(automation|script)\./.test(b)).map((b) => `<button data-act="prob-open" data-key="${esc(b)}"><ha-icon icon="mdi:pencil-outline"></ha-icon>${T('prob_edit', { name: nm(b) })}</button>`).join('')
+        + (/^c_/.test(p.kind) ? `<button data-act="chk-replay" data-id="${esc(p.ref.slice(6))}"><ha-icon icon="mdi:flask-outline"></ha-icon>${T('chk_replay')}</button>` : '')
+        + (!p.by.length && /^(automation|script)\./.test(p.ref) ? `<button data-act="prob-open" data-key="${esc(p.ref)}"><ha-icon icon="mdi:pencil-outline"></ha-icon>${T('prob_edit', { name: nm(p.ref) })}</button>` : '')
+        + (this._ver ? '' : dismissed
+          ? `<button data-act="pdis-back" data-k="${esc(probKey(p))}" aria-label="${esc(T('prob_undismiss_a', { what: this._probText(p).replace(/<[^>]+>/g, '') }))}"><ha-icon icon="mdi:eye-outline"></ha-icon>${T('prob_undismiss')}</button>`
+          : `<button data-act="pdis" data-k="${esc(probKey(p))}" title="${T('prob_dismiss_t')}" aria-label="${esc(T('prob_dismiss_a', { what: this._probText(p).replace(/<[^>]+>/g, '') }))}"><ha-icon icon="mdi:eye-off-outline"></ha-icon>${T('prob_dismiss')}</button>`)
+        + `</div></div></div>`;
+      const other = dismissed ? `<button class="lnk" data-act="problems">${T('prob_back')}</button>`
+        : ds.length ? `<button class="lnk" data-act="pdis-list">${P('prob_dismissed_n', ds.length)}</button>` : '';
+      d.innerHTML = `<div class="dhead"><span class="dtitle">${dismissed ? T('prob_dismissed_title', { fnName: esc(this._fnName(label)) }) : T('prob_title', { fnName: esc(this._fnName(label)) })}</span><button data-act="close" title="${T('close')}"><ha-icon icon="mdi:close"></ha-icon></button></div>`
+        + `<div class="probs"><div class="vnote">${dismissed ? T('prob_dismissed_note') : T('prob_note')}</div>${ps.length ? ps.map(row).join('') : `<div class="muted pad">${dismissed ? T('prob_none_dismissed') : T('prob_none')}</div>`}${other ? `<div class="pother">${other}</div>` : ''}</div>`;
+      this._fitLitbar && this._fitLitbar();
     }
     _aboutModal() {
       const m = this._$.modal;
       m.hidden = false;
       const store = this._storeMode === 'shared' ? T('shared_between_administrators_functions_board') : T('stored_for_your_user_only');
-      m.innerHTML = `<div class="dlg about"><h3>${T('functions_board')} <span class="muted">${T('v_prototype', { version: VERSION })}</span></h3><h4>${T('what_it_changes', { extra: this._storeMode === 'shared' ? (this._full() ? T('full_manager') : T('organise_only')) : '' })}</h4><ul>${this._promise().map((x) => `<li>${esc(x)}</li>`).join('')}</ul><h4>${T('where_things_are_kept')}</h4><p>${T('frames_notes_and_positions_are', { store })}</p><h4>${T('how_the_arrows_are_drawn')}</h4><p>${T('from_each_automation_and_script')}</p><div class="btns">${REPO_URL ? `<a class="lnk" href="${REPO_URL}" target="_blank" rel="noopener">${T('project_page_and_issues')}</a>` : ''}<button data-act="modal-cancel">${T('close')}</button></div></div>`;
+      m.innerHTML = `<div class="dlg about"><h3>${T('functions_board')} <span class="muted">${T('v_prototype', { version: VERSION })}</span></h3><h4>${T('what_it_changes', { extra: this._storeMode === 'shared' ? (this._full() ? T('full_manager') : T('organise_only')) : '' })}</h4><ul>${this._promise().map((x) => `<li>${esc(x)}</li>`).join('')}</ul><h4>${T('where_things_are_kept')}</h4><p>${T('frames_notes_and_positions_are', { store })}</p><h4>${T('how_the_arrows_are_drawn')}</h4><p>${T('from_each_automation_and_script')}</p><h4>${T('diag_about_h')}</h4><p>${T('diag_about_p')}</p><div class="btns">${REPO_URL ? `<a class="lnk" href="${REPO_URL}" target="_blank" rel="noopener">${T('project_page_and_issues')}</a>` : ''}<button data-act="diag"><ha-icon icon="mdi:file-download-outline"></ha-icon>${T('diag_btn')}</button><button data-act="modal-cancel">${T('close')}</button></div></div>`;
     }
 
     /* ---------- hide and delete (8.2): kept visibly apart, each with its own words ---------- */
