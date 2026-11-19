@@ -231,6 +231,36 @@ check('A4 MQTT: the board listens; a message is published only by the person\'s 
   check('no empty catch block in the board: one that ignores an error says why in a comment', empty.length === 0, empty);
 }
 
+// 0.10.0: what every button does is in one table per view (_actionTables): every action a button, a menu item or the
+// box's bar names has a handler there, and every handler there is used. And an undo step is made in one place.
+{
+  const start = src.indexOf('  class FunctionsBoard extends HTMLElement'), cls = src.slice(start);
+  const t0 = cls.indexOf('    _actionTables() {'), t1 = cls.indexOf('\n    }\n', t0), tables = cls.slice(t0, t1);
+  const handled = [...tables.matchAll(/^ {10}'([a-z0-9-]+)': /gm)].map((m) => m[1]);
+  const views = [...tables.matchAll(/^ {8}([a-z]+): \{$/gm)].map((m) => m[1]);
+  check('found the action tables, one per view', t0 > 0 && views.length >= 8 && handled.length > 140, { views, handled: handled.length });
+  const named = new Set([
+    ...[...cls.matchAll(/data-act="([a-z0-9-]+)"/g)].map((m) => m[1]),
+    ...[...cls.matchAll(/\bact: '([a-z0-9-]+)'/g)].map((m) => m[1]),
+    ...[...cls.matchAll(/\['([a-z][a-z0-9-]*)', [^\]\n]*?'mdi:/g)].map((m) => m[1]),
+  ]);
+  const twice = handled.filter((h, i) => handled.indexOf(h) !== i);
+  check('no action is in two tables', twice.length === 0, twice);
+  const unhandled = [...named].filter((n) => !handled.includes(n));
+  check('every action a button names has a handler in the tables', unhandled.length === 0, unhandled);
+  const unused = handled.filter((h) => !named.has(h));
+  check('every handler in the tables is named by a button, a menu item or the box\'s bar', unused.length === 0, unused);
+  check('no action is dispatched outside the tables (no switch on data-act)', !/switch \(a\) \{/.test(cls) && (cls.match(/this\._acts\(\)\.get\(/g) || []).length === 1, null);
+  // and when the board joins the tables, a name in two of them is refused (the later one would silently win)
+  const { actionMap } = require('./lib/board-lib');
+  let refused = null;
+  try { actionMap({ list: { 'x-go': () => 1 }, canvas: { 'x-go': () => 2 } }); } catch (e) { refused = e.message; }
+  const joined = actionMap({ list: { 'a-go': () => 1 }, canvas: { 'b-go': () => 2 } });
+  check('actionMap joins the tables, and refuses a name in two of them', /x-go is in two tables \(list and canvas\)/.test(refused || '') && joined.get('b-go')() === 2 && joined.get('a-go').view === 'list', refused);
+  const pushes = (cls.match(/_undoStack\.push\(/g) || []).length;
+  check('an undo step is made in one place (_history)', pushes === 1 && /_history\(step\) \{[^}]*this\._undoStack\.push\(step\)/.test(cls), pushes);
+}
+
 // 0.10.0: every mutant's text is in its file exactly once, checked on every push (the mutants themselves run weekly,
 // and a change to the code they break would otherwise only show then)
 {

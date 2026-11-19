@@ -2975,7 +2975,6 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       resize_frame: 'Resize frame',
       move_note: 'Move note',
       create_or_pick_a_function: 'Create or pick a function first',
-      hide_from_board_2: 'Hide from board?',
       mqtt_topic_and_work: 'MQTT topic (+ and # work)',
       event_type: 'Event type',
       rename_frame: 'Rename frame',
@@ -5013,6 +5012,20 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       return this.load(key, Math.max(this.changedAt(key), maxAge != null ? this._now() - maxAge : 0));
     }
     forget(prefix) { for (const k of [...this._held.keys()]) if (k.startsWith(prefix)) this._held.delete(k); }
+  }
+
+  // the board's action tables (one per view) as one map from a data-act name to its handler; a name in two tables
+  // is a mistake (the later would silently win), so it throws
+  function actionMap(tables) {
+    const m = new Map();
+    for (const [view, t] of Object.entries(tables)) {
+      for (const [name, fn] of Object.entries(t)) {
+        if (m.has(name)) throw new Error(`the action ${name} is in two tables (${m.get(name).view} and ${view})`);
+        if (typeof fn !== 'function') throw new Error(`the action ${name} (${view}) has no handler`);
+        m.set(name, Object.assign(fn, { view }));
+      }
+    }
+    return m;
   }
 
   class FunctionsBoard extends HTMLElement {
@@ -7090,199 +7103,254 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const a = el.dataset.act, label = this._data && this._data.ui.current;
       const need = () => { if (!label) { this._toast(T('create_or_pick_a_function')); return false; } return true; };
       if (a && this._ver && !VER_OK_ACTS.test(a)) { this._toast(T('ver_readonly')); return; }
-      if (a && a.startsWith('sbx-') && a !== 'sbx-start' && a !== 'sbx-about' && this._sbxOn()) { this._sbxBox(a, el); return; }
-      switch (a) {
-        case 'sandbox': if (need()) { if (this._sbxOn()) this._closeDrawer(); else if (this._data.ui.sbxIntro === false) this._openSandbox(); else this._sbxIntro(); } break;
-        case 'sbx-start': {
-          // "don't show this again" is yours alone (saved with your display settings); the i in the drawer shows it again
-          const skip = this._$.modal.querySelector('input[name="sbxskip"]');
-          if (skip) { if (skip.checked) this._data.ui.sbxIntro = false; else delete this._data.ui.sbxIntro; this._save(); }
-          this._closeModal();
-          if (!this._sbxOn()) this._openSandbox();
-          break;
-        }
-        case 'sbx-about': this._sbxIntro(); break;
-        case 'togglelist':
-          if (this._compact) this._listOpen = !this._listOpen;
-          else if (this._data) { this._data.ui.list = !this._data.ui.list; this._save(); }
-          this._renderList(); break;
-        case 'newfn': this._fnModal(null); break;
-        case 'fn-edit': if (need()) this._fnModal(label); break;
-        case 'fn-hide': if (need()) this._twoStep(el, T('hide_from_board_2'), () => this._hideFunction(label)); break;
-        case 'fn-goto': this._closeModal(); this._open(el.dataset.label); break;
-        case 'fn-restore': this._restoreFn(el.dataset.label); break;
-        case 'fn-rename': { const i = this._$.modal.querySelector('input[name=name]'), c = this._$.modal.querySelector('.clash'); if (c) c.remove(); if (i) { i.focus(); i.select(); } break; }
-        case 'modal-cancel': this._closeModal(); break;
-        case 'modal-save': this._saveFn(); break;
-        case 'new-automation': if (need()) this._create('automation'); break;
-        case 'new-script': if (need()) this._create('script'); break;
-        case 'new-helper': if (need()) { if (this._menuEl && this._menuAnchor === el) this._closeMenu(); else this._helperMenu(el); } break;
-        case 'mk-helper': if (need()) this._create('helper', el.dataset.domain, el.dataset.name); break;
-        case 'mk-scene': if (need()) this._create('scene'); break;
-        case 'mk-more': this._helperMoreMenu(); break;
-        case 'mk-back': this._helperMenu(this._menuAnchor); break;
-        case 'add-existing': this._openManager('pick', label || '__new'); break;
-        case 'import': this._openManager('detect'); break;
-        case 'about': this._aboutModal(); break;
-        case 'chk-save': this._checkSaveDlg(); break;
-        case 'chk-save-go': this._checkSaveGo(); break;
-        case 'chk-run': this._runChecks(this._data.ui.current, el.dataset.id ? [el.dataset.id] : null, true); break;
-        case 'chk-replay': this._checkReplay(el.dataset.id); break;
-        case 'chk-del': this._checkDel(el.dataset.id); break;
-        case 'problems': if (this._drawer && this._drawer.mode === 'problems' && !this._drawer.dismissed && !el.closest('.drawer')) this._closeDrawer(); else this._openProblems(); break;
-        case 'pdis-list': if (this._drawer && this._drawer.mode === 'problems' && this._drawer.dismissed && !el.closest('.drawer')) this._closeDrawer(); else this._openProblems(true); break;
-        case 'pdis': this._probDismiss(el.dataset.k); break;
-        case 'pdis-back': this._probDismiss(el.dataset.k, true); break;
-        case 'prob-go': { const k = el.dataset.key; if (this._model && this._model.nodes.has(k)) { this._select(k); this._centerOn(k); } break; }
-        case 'prob-open': { const n = this._model && this._model.nodes.get(el.dataset.key); if (n) this._openItem(n); break; }
-        case 'diag': this._diagModal(el.dataset.ver || null); break;
-        case 'diag-go': this._diagGo(false); break;
-        case 'diag-copy': this._diagGo(true); break;
-        case 'hamenu': this.dispatchEvent(new Event('hass-toggle-menu', { bubbles: true, composed: true })); break;
-        case 'hint-x': this._data.ui.hintOff = true; this._save(); this._applyMode(); break;
-        case 'mgr-tab': {
-          const g = this._mgr;
-          g.tab = el.dataset.tab;
-          if (g.tab === 'detect' && !g.cands && !g.scanning) this._scanFunctions(); else this._renderManager();
-          break;
-        }
-        case 'mgr-left': this._mgr.leftOpen = !this._mgr.leftOpen; this._renderManager(); break;
-        case 'find-x': this._findQ = ''; this._renderList(); break;
-        case 'find-go': if (!this._findGo(el.dataset.key)) this._findAdd(el, el.dataset.key); break;
-        case 'find-in': this._findGo(el.dataset.key, el.dataset.label); break;
-        case 'find-add': this._findAdd(el, el.dataset.key); break;
-        case 'find-to': this._findTo(el.dataset.key, el.dataset.label); break;
-        case 'left-add': this._leftAddMenu(el, el.dataset.id); break;
-        case 'left-to': this._leftTo(el.dataset.id, el.dataset.label); break;
-        case 'left-new': this._leftNew(el.dataset.id); break;
-        case 'mgr-expand': { const x = this._mgr.expanded, i = +el.dataset.ci; if (x.has(i)) x.delete(i); else x.add(i); this._renderManager(); break; }
-        case 'mgr-import-one': this._mgrImport([+el.dataset.ci]); break;
-        case 'mgr-import-sel': this._mgrImport([...this._mgr.sel]); break;
-        case 'mgr-selall': {
-          const g = this._mgr, avail = (g.cands || []).map((c, i) => (c.fn && !c.missing.length ? -1 : i)).filter((i) => i >= 0);
-          g.sel = g.sel.size === avail.length ? new Set() : new Set(avail);
-          this._renderManager();
-          break;
-        }
-        case 'mgr-rescan': this._mgr.cands = null; this._scanFunctions(); break;
-        case 'mgr-labels-add': this._mgrLabelsAdd(); break;
-        case 'mgr-pick-add': this._mgrPickAdd(); break;
-        case 'mgr-ptype': this._mgr.ptype = el.dataset.ptype; this._mgr.pshow = 200; this._renderPicks(); break;
-        case 'mgr-more': this._mgr.pshow = (this._mgr.pshow || 200) + 200; this._renderPicks(); break;
-        case 'mgr-pickall': (this._mgr.pshownKeys || []).forEach((k) => this._pick.add(k)); this._renderPicks(); this._mgrFootRefresh(); break;
-        case 'frame': if (need() && this._model) this._addFrame(); break;
-        case 'note': if (need() && this._model) this._addNote(); break;
-        // undoable, so no second click to confirm it
-        case 'arrange': if (this._model) this._arrangeMenu(el); break;
-        case 'arr-go': this._closeMenu(); if (this._model) this._arrange(); break;
-        case 'arr-dir': this._closeMenu(); if (this._model) this._setDir(el.dataset.dir); break;
-        case 'runs': if (need()) this._openRuns(); break;
-        case 'pause': this._pause(el); break;
-        case 'zoomin': this._zoomCenter(1.2); break;
-        case 'zoomout': this._zoomCenter(1 / 1.2); break;
-        case 'fit': this._fitPress(); break;
-        case 'legend':
-          if (this._compact) this._legendOpen = !this._legendOpen;
-          else { this._data.ui.legend = !this._data.ui.legend; this._save(); }
-          this._renderLegend(); break;
-        case 'close': this._closeDrawer(); break;
-        case 'newtab': if (this._drawer && this._drawer.url) window.open(this._drawer.url, '_blank'); break;
-        case 'refresh': this._openRuns(); break;
-        case 'back': if (this._drawerBack === 'debug') this._openDebug(); else this._openRuns(); break;
-        case 'open': case 'edit': case 'trace': case 'toggle': case 'remove': case 'add': case 'delete': this._nodeAction(a, el); break;
-        case 'fn-menu': this._fnMenu(el, el.dataset.label); break;
-        case 'fnm-edit': this._closeMenu(); this._fnModal(el.dataset.label); break;
-        case 'fnm-hide': this._closeMenu(); this._hideFunction(el.dataset.label); break;
-        case 'fnm-del': this._closeMenu(); this._deleteFnDialog(el.dataset.label, false); break;
-        case 'fnm-delall': this._closeMenu(); this._deleteFnDialog(el.dataset.label, true); break;
-        case 'del-go': this._deleteGo(); break;
-        case 'hl': if (this._menuEl && this._menuAnchor === el) this._closeMenu(); else this._hlMenu(el); break;
-        case 'hl-mode': this._setHl({ mode: el.dataset.mode }); break;
-        case 'hl-depth': this._setHl({ depth: +el.dataset.depth, mode: ['chain', 'off'].includes((this._data.ui.hl || {}).mode || 'chain') ? 'both' : this._data.ui.hl.mode }); break;
-        case 'hl-flt': if (this._model) { const f = this._flt(this._model.label), k = el.dataset.key; this._setFlt(this._model.label, k, !f[k]); if (k === 'suggest') this._open(this._model.label, true); else { this._place(); this._render(); } this._renderLegend(); this._refreshHl(); } break;
-        case 'undo': this._undo(); break;
-        case 'redo': this._redo(); break;
-        case 'toast-act': {
-          const t = this._toastActs[+el.dataset.i];
-          this._$.toast.hidden = true; this._toastActs = [];
-          if (t) t.fn();
-          break;
-        }
-        case 'fdel': this._delFrame(el.dataset.fid); break;
-        case 'ndel': this._delNote(el.dataset.nid); break;
-        // developer tools (Phase 9)
-        case 'test': if (this._sel) this._testDialog(this._sel); break;
-        case 'test-pick': if (this._tst) { this._tst.pick = el.dataset.id; this._tst.bad = null; this._renderTestDlg(); } break;
-        case 'test-run': this._testRunDlg(false); break;
-        case 'test-save': this._testRunDlg(true); break;
-        case 'test-confirm': { const t = this._pendingTest; this._pendingTest = null; this._closeModal(); if (t) this._doTest(t); break; }
-        case 'tool-run': this._toolRun(el.dataset.tid); break;
-        case 'tool-edit': { const t = this._toolById(el.dataset.tid); if (t && t.type === 'inject') this._testDialog(t.test.target, t.id); break; }
-        case 'tool-del': this._delTool(el.dataset.tid); break;
-        case 'mon-clear': this._monData.delete(el.dataset.tid); this._monCount.delete(el.dataset.tid); this._renderMon(el.dataset.tid); break;
-        case 'watch': if (this._sel) this._toggleWatch(this._sel); break;
-        case 'keep': if (this._sel) this._toggleKeep(this._sel); break;
-        case 'monitor': if (this._sel) this._monitorFor(this._sel); break;
-        case 'messages': if (this._sel) this._openMessages(this._sel); break;
-        case 'msg-run': { const x = (this._msgs || [])[+el.dataset.i]; if (x) this._showRun({ kind: 'run', key: x.from, t: x.t, run: x.run }, null); break; }
-        case 'mon-kind': {
-          this._monKind = el.dataset.k === 'mqtt' ? 'mqtt' : 'event';
-          this._$.modal.querySelectorAll('[data-act="mon-kind"]').forEach((b) => b.classList.toggle('on', b === el));
-          const l = this._$.modal.querySelector('.mlab'), i = this._$.modal.querySelector('input[name=topic]');
-          if (l) l.textContent = this._monKind === 'mqtt' ? T('mqtt_topic_and_work') : T('event_type');
-          if (i) { i.placeholder = this._monKind === 'mqtt' ? 'zigbee2mqtt/hall_button/action' : 'mobile_app_notification_action'; i.setAttribute('list', this._monKind === 'mqtt' ? '' : 'fbevtypes'); i.focus(); }
-          break;
-        }
-        case 'mon-make': this._monitorMake(); break;
-        case 'debug': if (need()) { if (this._drawer && this._drawer.mode === 'debug') this._closeDrawer(); else this._openDebug(); } break;
-        case 'dbg-mon': this._monitorDlg(); break;
-        case 'dbg-clear': if (this._dbg) { this._dbg.entries = []; this._dbg.byId = new Map(); this._dbg.cleared = Date.now(); this._dbgSel = null; this._renderDbg(); } break;
-        case 'dbg-flt': this._dbgFlt = el.dataset.f; this._dbgScrolled = false; this._renderDbg(); break;
-        case 'dbg-pick': this._dbgPick(el.dataset.id); break;
-        case 'why-run': this._showRun({ kind: 'run', key: el.dataset.key, t: Date.now(), run: { domain: 'automation', item_id: el.dataset.item, run_id: el.dataset.rid } }, null); break;
-        case 'lit-clear': this._clearLit(); this._dbgSel = null; this._renderDbg(); break;
-        case 'lit-replay': if (this._litSteps) this._lightSteps(this._litSteps, this._litRun); break;
-        case 'versions': if (need()) { if (this._drawer && this._drawer.mode === 'versions') this._closeDrawer(); else this._openVersions(); } break;
-        case 'ver-new': this._verNewDlg(); break;
-        case 'ver-save': this._verSave(); break;
-        case 'ver-open': this._verOpenTab(el.dataset.id); break;
-        case 'ver-sbx': this._verOpenTab(el.dataset.id, true); break;
-        case 'ver-sbx-cur': this._verTrySandbox(); break;
-        case 'ver-restore': this._verRestore(el.dataset.id); break;
-        case 'ver-restore-go': this._verRestoreGo(); break;
-        case 'ver-edit': this._verEditDlg(el.dataset.id); break;
-        case 'ver-edit-save': this._verEditSave(); break;
-        case 'ver-del': this._verDelDlg(el.dataset.id); break;
-        case 'ver-del-go': this._verDel(); break;
-        case 'vtab': this._verView(el.dataset.id || null); break;
-        case 'vtab-x': this._verCloseTab(el.dataset.id); break;
-        case 'vtab-win': window.open(location.pathname + '?version=' + encodeURIComponent(el.dataset.id), '_blank', 'noopener'); break;
-        case 'flow-go': this._flowGo(+el.dataset.i, true); break;
-        case 'flow-prev': if (this._flow) this._flowGo(this._flow.at - 1, true); break;
-        case 'flow-next': if (this._flow) this._flowGo(this._flow.at + 1, true); break;
-        case 'flow-play': this._flowPlay(); break;
-        case 'flow-ghost': { const f = this._flow, i = f ? f.steps.findIndex((x) => x.box === el.dataset.g || x.links.some((l) => l.a === el.dataset.g || l.b === el.dataset.g)) : -1; if (i >= 0) this._flowGo(i, true); break; }
-        case 'lit-trace': this._openLitTrace(); break;
-        // the routes change with the style, and so does the automatic layout's spacing for them
-        case 'hl-curved': this._data.ui.curved = this._data.ui.curved !== true; this._save(); this._place(); this._render(); this._refreshHl(); break;
-        case 'hl-cond': this._data.ui.condres = this._data.ui.condres === false; this._save(); this._testConds(); this._refreshHl(); break;
+      const h = a && this._acts().get(a);
+      if (h) h(el, { a, label, need, ev });
+    }
+    _acts() { return this._actMap || (this._actMap = actionMap(this._actionTables())); }
+    /* ---------- actions (0.10.0): what every button does, one table per view ----------
+       A button names its action with data-act; _onClick finds it here (actionMap() joins the tables, and refuses a
+       name in two of them). A handler gets the button and { a, label, need, ev }: the action's name, the open
+       function's label, need() (false, with a toast, when no function is open) and the click. Static rules: every
+       data-act in the source has a handler here, and every handler here is used. */
+    _actionTables() {
+      return {
+        // the list of functions and its menus
+        list: {
+          'togglelist': () => {
+            if (this._compact) this._listOpen = !this._listOpen;
+            else if (this._data) { this._data.ui.list = !this._data.ui.list; this._save(); }
+            this._renderList();
+          },
+          'newfn': () => { this._fnModal(null); },
+          'fn-edit': (el, { label, need }) => { if (need()) this._fnModal(label); },
+          'fn-goto': (el) => { this._closeModal(); this._open(el.dataset.label); },
+          'fn-restore': (el) => { this._restoreFn(el.dataset.label); },
+          'hamenu': () => { this.dispatchEvent(new Event('hass-toggle-menu', { bubbles: true, composed: true })); },
+          'find-x': () => { this._findQ = ''; this._renderList(); },
+          'find-go': (el) => { if (!this._findGo(el.dataset.key)) this._findAdd(el, el.dataset.key); },
+          'find-in': (el) => { this._findGo(el.dataset.key, el.dataset.label); },
+          'find-add': (el) => { this._findAdd(el, el.dataset.key); },
+          'find-to': (el) => { this._findTo(el.dataset.key, el.dataset.label); },
+          'left-add': (el) => { this._leftAddMenu(el, el.dataset.id); },
+          'left-to': (el) => { this._leftTo(el.dataset.id, el.dataset.label); },
+          'left-new': (el) => { this._leftNew(el.dataset.id); },
+          'fn-menu': (el) => { this._fnMenu(el, el.dataset.label); },
+          'fnm-edit': (el) => { this._closeMenu(); this._fnModal(el.dataset.label); },
+          'fnm-hide': (el) => { this._closeMenu(); this._hideFunction(el.dataset.label); },
+          'fnm-del': (el) => { this._closeMenu(); this._deleteFnDialog(el.dataset.label, false); },
+          'fnm-delall': (el) => { this._closeMenu(); this._deleteFnDialog(el.dataset.label, true); },
+        },
+        // making new things for the open function
+        create: {
+          'new-automation': (el, { need }) => { if (need()) this._create('automation'); },
+          'new-script': (el, { need }) => { if (need()) this._create('script'); },
+          'new-helper': (el, { need }) => { if (need()) { if (this._menuEl && this._menuAnchor === el) this._closeMenu(); else this._helperMenu(el); } },
+          'mk-helper': (el, { need }) => { if (need()) this._create('helper', el.dataset.domain, el.dataset.name); },
+          'mk-scene': (el, { need }) => { if (need()) this._create('scene'); },
+          'mk-more': () => { this._helperMoreMenu(); },
+          'mk-back': () => { this._helperMenu(this._menuAnchor); },
+        },
+        // the import manager
+        manager: {
+          'add-existing': (el, { label }) => { this._openManager('pick', label || '__new'); },
+          'import': () => { this._openManager('detect'); },
+          'mgr-tab': (el) => {
+            const g = this._mgr;
+            g.tab = el.dataset.tab;
+            if (g.tab === 'detect' && !g.cands && !g.scanning) this._scanFunctions(); else this._renderManager();
+          },
+          'mgr-left': () => { this._mgr.leftOpen = !this._mgr.leftOpen; this._renderManager(); },
+          'mgr-expand': (el) => { const x = this._mgr.expanded, i = +el.dataset.ci; if (x.has(i)) x.delete(i); else x.add(i); this._renderManager(); },
+          'mgr-import-one': (el) => { this._mgrImport([+el.dataset.ci]); },
+          'mgr-import-sel': () => { this._mgrImport([...this._mgr.sel]); },
+          'mgr-selall': () => {
+            const g = this._mgr, avail = (g.cands || []).map((c, i) => (c.fn && !c.missing.length ? -1 : i)).filter((i) => i >= 0);
+            g.sel = g.sel.size === avail.length ? new Set() : new Set(avail);
+            this._renderManager();
+          },
+          'mgr-rescan': () => { this._mgr.cands = null; this._scanFunctions(); },
+          'mgr-labels-add': () => { this._mgrLabelsAdd(); },
+          'mgr-pick-add': () => { this._mgrPickAdd(); },
+          'mgr-ptype': (el) => { this._mgr.ptype = el.dataset.ptype; this._mgr.pshow = 200; this._renderPicks(); },
+          'mgr-more': () => { this._mgr.pshow = (this._mgr.pshow || 200) + 200; this._renderPicks(); },
+          'mgr-pickall': () => { (this._mgr.pshownKeys || []).forEach((k) => this._pick.add(k)); this._renderPicks(); this._mgrFootRefresh(); },
+        },
+        // the board: header tools, the boxes, the view
+        canvas: {
+          'hint-x': () => { this._data.ui.hintOff = true; this._save(); this._applyMode(); },
+          'frame': (el, { need }) => { if (need() && this._model) this._addFrame(); },
+          'note': (el, { need }) => { if (need() && this._model) this._addNote(); },
+          // undoable, so no second click to confirm it
+          'arrange': (el) => { if (this._model) this._arrangeMenu(el); },
+          'arr-go': () => { this._closeMenu(); if (this._model) this._arrange(); },
+          'arr-dir': (el) => { this._closeMenu(); if (this._model) this._setDir(el.dataset.dir); },
+          'pause': (el) => { this._pause(el); },
+          'zoomin': () => { this._zoomCenter(1.2); },
+          'zoomout': () => { this._zoomCenter(1 / 1.2); },
+          'fit': () => { this._fitPress(); },
+          'legend': () => {
+            if (this._compact) this._legendOpen = !this._legendOpen;
+            else { this._data.ui.legend = !this._data.ui.legend; this._save(); }
+            this._renderLegend();
+          },
+          'open': (el, { a }) => { this._nodeAction(a, el); },
+          'edit': (el, { a }) => { this._nodeAction(a, el); },
+          'trace': (el, { a }) => { this._nodeAction(a, el); },
+          'toggle': (el, { a }) => { this._nodeAction(a, el); },
+          'remove': (el, { a }) => { this._nodeAction(a, el); },
+          'add': (el, { a }) => { this._nodeAction(a, el); },
+          'delete': (el, { a }) => { this._nodeAction(a, el); },
+          'hl': (el) => { if (this._menuEl && this._menuAnchor === el) this._closeMenu(); else this._hlMenu(el); },
+          'hl-mode': (el) => { this._setHl({ mode: el.dataset.mode }); },
+          'hl-depth': (el) => { this._setHl({ depth: +el.dataset.depth, mode: ['chain', 'off'].includes((this._data.ui.hl || {}).mode || 'chain') ? 'both' : this._data.ui.hl.mode }); },
+          'hl-flt': (el) => { if (this._model) { const f = this._flt(this._model.label), k = el.dataset.key; this._setFlt(this._model.label, k, !f[k]); if (k === 'suggest') this._open(this._model.label, true); else { this._place(); this._render(); } this._renderLegend(); this._refreshHl(); } },
+          'fdel': (el) => { this._delFrame(el.dataset.fid); },
+          'ndel': (el) => { this._delNote(el.dataset.nid); },
+          // the routes change with the style, and so does the automatic layout's spacing for them
+          'hl-curved': () => { this._data.ui.curved = this._data.ui.curved !== true; this._save(); this._place(); this._render(); this._refreshHl(); },
+          'hl-cond': () => { this._data.ui.condres = this._data.ui.condres === false; this._save(); this._testConds(); this._refreshHl(); },
+        },
         // the arrow editor (7.5)
-        case 'edge': this._edgeClick(el.dataset.e, ev); break;
-        case 'connect': if (this._sel) this._startLink(this._sel, false); break;
-        case 'arw-remove': this._arrowRemoveDialog(this._selEdge); break;
-        case 'arw-open': {
-          const e = this._model && this._model.edges.find((x) => x.id === this._selEdge), ends = e && this._arrowEnds(e), n = ends && this._model.nodes.get(ends.owner);
-          this._clearEdgeSel();
-          if (n) this._openItem(n);
-          break;
-        }
-        case 'arw-edit': { const n = this._model && this._model.nodes.get(el.dataset.key); this._closeModal(); if (n) this._openItem(n); break; }
-        case 'arw-save': this._arwSave(); break;
-        case 'lnk-pick': if (this._arw) { this._arw.pick = +el.dataset.i; this._renderLinkDlg(); } break;
-        case 'nr-open': this._openNodeRed(); break;
-        case 'lnk-kind': if (this._arw) { this._arw.pick = Math.max(0, this._arw.choices.findIndex((c) => c.kind === el.dataset.k)); this._renderLinkDlg(); } break;
-        default: break;
-      }
+        arrows: {
+          'edge': (el, { ev }) => { this._edgeClick(el.dataset.e, ev); },
+          'connect': () => { if (this._sel) this._startLink(this._sel, false); },
+          'arw-remove': () => { this._arrowRemoveDialog(this._selEdge); },
+          'arw-open': () => {
+            const e = this._model && this._model.edges.find((x) => x.id === this._selEdge), ends = e && this._arrowEnds(e), n = ends && this._model.nodes.get(ends.owner);
+            this._clearEdgeSel();
+            if (n) this._openItem(n);
+          },
+          'arw-edit': (el) => { const n = this._model && this._model.nodes.get(el.dataset.key); this._closeModal(); if (n) this._openItem(n); },
+          'arw-save': () => { this._arwSave(); },
+          'lnk-pick': (el) => { if (this._arw) { this._arw.pick = +el.dataset.i; this._renderLinkDlg(); } },
+          'nr-open': () => { this._openNodeRed(); },
+          'lnk-kind': (el) => { if (this._arw) { this._arw.pick = Math.max(0, this._arw.choices.findIndex((c) => c.kind === el.dataset.k)); this._renderLinkDlg(); } },
+        },
+        // the developer tools (Phase 9)
+        tools: {
+          'test': () => { if (this._sel) this._testDialog(this._sel); },
+          'test-pick': (el) => { if (this._tst) { this._tst.pick = el.dataset.id; this._tst.bad = null; this._renderTestDlg(); } },
+          'test-run': () => { this._testRunDlg(false); },
+          'test-save': () => { this._testRunDlg(true); },
+          'test-confirm': () => { const t = this._pendingTest; this._pendingTest = null; this._closeModal(); if (t) this._doTest(t); },
+          'tool-run': (el) => { this._toolRun(el.dataset.tid); },
+          'tool-edit': (el) => { const t = this._toolById(el.dataset.tid); if (t && t.type === 'inject') this._testDialog(t.test.target, t.id); },
+          'tool-del': (el) => { this._delTool(el.dataset.tid); },
+          'mon-clear': (el) => { this._monData.delete(el.dataset.tid); this._monCount.delete(el.dataset.tid); this._renderMon(el.dataset.tid); },
+          'watch': () => { if (this._sel) this._toggleWatch(this._sel); },
+          'keep': () => { if (this._sel) this._toggleKeep(this._sel); },
+          'monitor': () => { if (this._sel) this._monitorFor(this._sel); },
+          'mon-kind': (el) => {
+            this._monKind = el.dataset.k === 'mqtt' ? 'mqtt' : 'event';
+            this._$.modal.querySelectorAll('[data-act="mon-kind"]').forEach((b) => b.classList.toggle('on', b === el));
+            const l = this._$.modal.querySelector('.mlab'), i = this._$.modal.querySelector('input[name=topic]');
+            if (l) l.textContent = this._monKind === 'mqtt' ? T('mqtt_topic_and_work') : T('event_type');
+            if (i) { i.placeholder = this._monKind === 'mqtt' ? 'zigbee2mqtt/hall_button/action' : 'mobile_app_notification_action'; i.setAttribute('list', this._monKind === 'mqtt' ? '' : 'fbevtypes'); i.focus(); }
+          },
+          'mon-make': () => { this._monitorMake(); },
+        },
+        // the side drawer
+        drawer: {
+          'runs': (el, { need }) => { if (need()) this._openRuns(); },
+          'close': () => { this._closeDrawer(); },
+          'newtab': () => { if (this._drawer && this._drawer.url) window.open(this._drawer.url, '_blank'); },
+          'refresh': () => { this._openRuns(); },
+          'back': () => { if (this._drawerBack === 'debug') this._openDebug(); else this._openRuns(); },
+        },
+        // problems and saved checks
+        problems: {
+          'chk-save': () => { this._checkSaveDlg(); },
+          'chk-save-go': () => { this._checkSaveGo(); },
+          'chk-run': (el) => { this._runChecks(this._data.ui.current, el.dataset.id ? [el.dataset.id] : null, true); },
+          'chk-replay': (el) => { this._checkReplay(el.dataset.id); },
+          'chk-del': (el) => { this._checkDel(el.dataset.id); },
+          'problems': (el) => { if (this._drawer && this._drawer.mode === 'problems' && !this._drawer.dismissed && !el.closest('.drawer')) this._closeDrawer(); else this._openProblems(); },
+          'pdis-list': (el) => { if (this._drawer && this._drawer.mode === 'problems' && this._drawer.dismissed && !el.closest('.drawer')) this._closeDrawer(); else this._openProblems(true); },
+          'pdis': (el) => { this._probDismiss(el.dataset.k); },
+          'pdis-back': (el) => { this._probDismiss(el.dataset.k, true); },
+          'prob-go': (el) => { const k = el.dataset.key; if (this._model && this._model.nodes.has(k)) { this._select(k); this._centerOn(k); } },
+          'prob-open': (el) => { const n = this._model && this._model.nodes.get(el.dataset.key); if (n) this._openItem(n); },
+        },
+        // the debugger and a run followed on the board
+        debug: {
+          'messages': () => { if (this._sel) this._openMessages(this._sel); },
+          'msg-run': (el) => { const x = (this._msgs || [])[+el.dataset.i]; if (x) this._showRun({ kind: 'run', key: x.from, t: x.t, run: x.run }, null); },
+          'debug': (el, { need }) => { if (need()) { if (this._drawer && this._drawer.mode === 'debug') this._closeDrawer(); else this._openDebug(); } },
+          'dbg-mon': () => { this._monitorDlg(); },
+          'dbg-clear': () => { if (this._dbg) { this._dbg.entries = []; this._dbg.byId = new Map(); this._dbg.cleared = Date.now(); this._dbgSel = null; this._renderDbg(); } },
+          'dbg-flt': (el) => { this._dbgFlt = el.dataset.f; this._dbgScrolled = false; this._renderDbg(); },
+          'dbg-pick': (el) => { this._dbgPick(el.dataset.id); },
+          'why-run': (el) => { this._showRun({ kind: 'run', key: el.dataset.key, t: Date.now(), run: { domain: 'automation', item_id: el.dataset.item, run_id: el.dataset.rid } }, null); },
+          'lit-clear': () => { this._clearLit(); this._dbgSel = null; this._renderDbg(); },
+          'lit-replay': () => { if (this._litSteps) this._lightSteps(this._litSteps, this._litRun); },
+          'flow-go': (el) => { this._flowGo(+el.dataset.i, true); },
+          'flow-prev': () => { if (this._flow) this._flowGo(this._flow.at - 1, true); },
+          'flow-next': () => { if (this._flow) this._flowGo(this._flow.at + 1, true); },
+          'flow-play': () => { this._flowPlay(); },
+          'flow-ghost': (el) => { const f = this._flow, i = f ? f.steps.findIndex((x) => x.box === el.dataset.g || x.links.some((l) => l.a === el.dataset.g || l.b === el.dataset.g)) : -1; if (i >= 0) this._flowGo(i, true); },
+          'lit-trace': () => { this._openLitTrace(); },
+        },
+        // versions
+        versions: {
+          'versions': (el, { need }) => { if (need()) { if (this._drawer && this._drawer.mode === 'versions') this._closeDrawer(); else this._openVersions(); } },
+          'ver-new': () => { this._verNewDlg(); },
+          'ver-save': () => { this._verSave(); },
+          'ver-open': (el) => { this._verOpenTab(el.dataset.id); },
+          'ver-sbx': (el) => { this._verOpenTab(el.dataset.id, true); },
+          'ver-sbx-cur': () => { this._verTrySandbox(); },
+          'ver-restore': (el) => { this._verRestore(el.dataset.id); },
+          'ver-restore-go': () => { this._verRestoreGo(); },
+          'ver-edit': (el) => { this._verEditDlg(el.dataset.id); },
+          'ver-edit-save': () => { this._verEditSave(); },
+          'ver-del': (el) => { this._verDelDlg(el.dataset.id); },
+          'ver-del-go': () => { this._verDel(); },
+          'vtab': (el) => { this._verView(el.dataset.id || null); },
+          'vtab-x': (el) => { this._verCloseTab(el.dataset.id); },
+          'vtab-win': (el) => { window.open(location.pathname + '?version=' + encodeURIComponent(el.dataset.id), '_blank', 'noopener'); },
+        },
+        // the sandbox (Phase 10): the drawer's own buttons work only while it's open
+        sandbox: {
+          'sandbox': (el, { need }) => { if (need()) { if (this._sbxOn()) this._closeDrawer(); else if (this._data.ui.sbxIntro === false) this._openSandbox(); else this._sbxIntro(); } },
+          'sbx-start': () => {
+            // "don't show this again" is yours alone (saved with your display settings); the i in the drawer shows it again
+            const skip = this._$.modal.querySelector('input[name="sbxskip"]');
+            if (skip) { if (skip.checked) this._data.ui.sbxIntro = false; else delete this._data.ui.sbxIntro; this._save(); }
+            this._closeModal();
+            if (!this._sbxOn()) this._openSandbox();
+          },
+          'sbx-about': () => { this._sbxIntro(); },
+          'sbx-set': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
+          'sbx-fire': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
+          'sbx-run': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
+          'sbx-mqtt': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
+          'sbx-adv': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
+          'sbx-next': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
+          'sbx-pick': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
+          'sbx-reset': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
+          'sbx-ans': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
+          'sbx-setbox': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
+          'sbx-runbox': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
+          'sbx-firebox': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
+        },
+        // dialogs, the toast, undo
+        dialogs: {
+          'fn-rename': () => { const i = this._$.modal.querySelector('input[name=name]'), c = this._$.modal.querySelector('.clash'); if (c) c.remove(); if (i) { i.focus(); i.select(); } },
+          'modal-cancel': () => { this._closeModal(); },
+          'modal-save': () => { this._saveFn(); },
+          'about': () => { this._aboutModal(); },
+          'diag': (el) => { this._diagModal(el.dataset.ver || null); },
+          'diag-go': () => { this._diagGo(false); },
+          'diag-copy': () => { this._diagGo(true); },
+          'del-go': () => { this._deleteGo(); },
+          'undo': () => { this._undo(); },
+          'redo': () => { this._redo(); },
+          'toast-act': (el) => {
+            const t = this._toastActs[+el.dataset.i];
+            this._$.toast.hidden = true; this._toastActs = [];
+            if (t) t.fn();
+          },
+        },
+      };
     }
     _onChange(e) {
       const t = e.target, g = this._mgr;
