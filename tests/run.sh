@@ -7,7 +7,7 @@
 #   --keep                           with --ha: use the test Home Assistant as it is (started if it isn't running)
 #   sh tests/run.sh --only PATTERN   only the suites whose names match (a grep -E pattern), e.g. 'static|e2e-ui'
 #   --size                           also the size test (1,000 automations; slow)
-# Suites: selftest static wiring problems sandbox clock backend | board-smoke board-a11y board-layout board-regress
+# Suites: selftest static wiring problems sandbox clock link backend | board-smoke board-a11y board-layout board-regress
 # (the board on the fake Home Assistant) | with --ha: apitest e2e-isolation e2e-contract e2e-ui e2e-regress
 # e2e-tools e2e-sync e2e-sandbox e2e-versions e2e-privacy (e2e-size). Exits 1 if anything failed.
 cd "$(dirname "$0")/.."
@@ -40,7 +40,7 @@ run() {
 nodetest() { run "$1" node --test --test-reporter=junit --test-reporter-destination="$R/$1.xml" --test-reporter=spec --test-reporter-destination=stdout "tests/$1.test.js"; }
 
 want selftest && run selftest node tests/selftest/run.js "$R"
-for s in static wiring problems sandbox clock; do want "$s" && nodetest "$s"; done
+for s in static wiring problems sandbox clock link; do want "$s" && nodetest "$s"; done
 if want backend; then
   if [ -x venvtest/bin/python ]; then run backend venvtest/bin/python -m pytest tests/backend -q -p no:cacheprovider --junitxml="$R/backend.xml"
   else WANT="$WANT backend"; echo "venvtest is missing: sh tests/setup.sh backend" > "$R/backend.log"; fi

@@ -49,6 +49,10 @@ const cases = planted.map((n) => {
   return { name: `a failure planted in ${what[n]} fails the run`, ok: rep.status === 1 && /FAILED/.test(l), detail: l || rep.stdout };
 });
 
+{
+  const f = path.join(self, 'self-node.xml'), r = fs.existsSync(f) ? require('../lib/junit').read(f) : { failed: [] };
+  cases.push({ name: 'a failed check whose name holds a > is read from its report by its name', ok: r.failed.includes('selftest: a failure named () => with a > in it'), detail: r.failed });
+}
 if (planted.includes('board-self-pw')) {
   const f = path.join(self, 'board-self-pw.xml'), r = fs.existsSync(f) ? require('../lib/junit').read(f) : { failed: [] };
   cases.push({ name: 'a Playwright test that stops part way, with no failed check, is named in the report', ok: r.failed.some((n) => /stops part way \(ran to the end\)/.test(n)) && r.failed.includes('planted'), detail: r.failed });

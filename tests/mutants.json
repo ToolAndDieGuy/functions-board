@@ -296,8 +296,8 @@
  {
   "name": "board: taken off the page, it keeps its subscriptions",
   "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "      const u = this._unsubs; this._unsubs = [];\n      u.forEach((p) => Promise.resolve(p).then((f) => f && f()).catch(() => {}));",
-  "replace": "      const u = this._unsubs; this._unsubs = [];\n      u.forEach((p) => Promise.resolve(p).then((f) => f).catch(() => {}));",
+  "find": "      u.forEach((p) => this._ha.drop(p));",
+  "replace": "      u.forEach((p) => p);",
   "suite": "board-leak",
   "expect": "L1 taken off for good"
  },
@@ -368,8 +368,8 @@
  {
   "name": "rules: a quick node suite left out of CI",
   "file": ".github/workflows/validate.yml",
-  "find": "--only 'selftest|static|wiring|problems|sandbox|clock'",
-  "replace": "--only 'selftest|static|wiring|problems|sandbox'",
+  "find": "--only 'selftest|static|wiring|problems|sandbox|clock|link'",
+  "replace": "--only 'selftest|static|wiring|problems|sandbox|clock'",
   "suite": "static",
   "expect": "every quick node suite runs in CI"
  },
@@ -406,6 +406,103 @@
   "replace": "      due.forEach((f) => f());\n",
   "suite": "static",
   "expect": "every mutant in tests/mutants.json still finds its text"
+ },
+ {
+  "name": "link: an older answer can land last",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      const newer = () => (e.n !== n ? e.p : null);",
+  "replace": "      const newer = () => null;",
+  "suite": "link",
+  "expect": "L1 an older answer arriving last"
+ },
+ {
+  "name": "link: a call has no time limit",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "const stop = this.clock.limit(ms || this.timeout,",
+  "replace": "const stop = this.clock.limit(1e12,",
+  "suite": "link",
+  "expect": "L2 past the limit"
+ },
+ {
+  "name": "link: a failure isn't reported",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "        if (!o.optional) this.report(kind, what, e);\n",
+  "replace": "",
+  "suite": "link",
+  "expect": "L3 a failure is thrown to the caller and reported"
+ },
+ {
+  "name": "link: an optional call's failure is reported anyway",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "        if (!o.optional) this.report(kind, what, e);\n",
+  "replace": "        this.report(kind, what, e);\n",
+  "suite": "link",
+  "expect": "L3 an optional call answers its fallback and isn't reported"
+ },
+ {
+  "name": "link: lists come in Home Assistant's order",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "    if (!k) return r;\n    return r.slice().sort(",
+  "replace": "    return r;\n    return r.slice().sort(",
+  "suite": "link",
+  "expect": "L4 a registry list comes in a fixed order"
+ },
+ {
+  "name": "link: the anonymised Diagnostics file carries a failure's message",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "(anonymise ? { at: new Date(x.at).toISOString(), kind: x.kind, type:",
+  "replace": "(anonymise ? { message: x.message, at: new Date(x.at).toISOString(), kind: x.kind, type:",
+  "suite": "link",
+  "expect": "L5 anonymised"
+ },
+ {
+  "name": "board: a failed call isn't in the Diagnostics file",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "Object.assign(await this._ws(msg), { board_errors: this._ha.exportErrors(anonymise) })",
+  "replace": "Object.assign(await this._ws(msg), {})",
+  "suite": "board-regress",
+  "only": "0.10.0 a call that fails",
+  "expect": "0.10.0 a failed call is in the Diagnostics file"
+ },
+ {
+  "name": "rules: the board drops an error without a reason",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "const types = await this._api('GET', 'events', undefined, { fallback: [] });",
+  "replace": "const types = await this._api('GET', 'events').catch(() => []);",
+  "suite": "static",
+  "expect": "the board drops no error without a reason"
+ },
+ {
+  "name": "rules: an optional call without its reason",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "{ optional: 'a Home Assistant before 2025.12 has no purpose-specific triggers or conditions', fallback: [] }",
+  "replace": "{ optional: true, fallback: [] }",
+  "suite": "static",
+  "expect": "every optional call gives its reason"
+ },
+ {
+  "name": "rules: the board calls Home Assistant around the link",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "    _ws(msg, o) { return this._ha.ask(msg, o); }",
+  "replace": "    _ws(msg, o) { return this._hass.callWS(msg); }",
+  "suite": "static",
+  "expect": "the board reaches Home Assistant's calls only through the link"
+ },
+ {
+  "name": "rules: a property hides a method of the same name",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      this._haConn = {\n",
+  "replace": "      this._link = this._ha;\n      this._haConn = {\n",
+  "suite": "static",
+  "expect": "no property of the board has a method's name"
+ },
+ {
+  "name": "report: a check named with a > is misread",
+  "file": "tests/lib/junit.js",
+  "find": "xml.matchAll(/<testcase\\b((?:[^>\"]|\"[^\"]*\")*?)(",
+  "replace": "xml.matchAll(/<testcase\\b([^>]*?)(",
+  "suite": "selftest",
+  "expect": "whose name holds a >"
  },
  {
   "name": "isolation: an automation a test added is left behind",

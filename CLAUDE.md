@@ -13,7 +13,8 @@ function out in a sandbox. Published through HACS. Read this before changing any
   anonymiser; also the `functions_board/diagnostics` command's), `config_flow.py`.
 - `custom_components/functions_board/frontend/functions-board.js`: the whole board, one plain-JS web component
   (~10,000 lines, no build step, no dependencies). Top to bottom:
-  - the **library section** (pure functions, testable in Node without a browser): the clock (`class Clock`), config analysis (`analyze`,
+  - the **library section** (pure functions, testable in Node without a browser): the clock (`class Clock`), the link
+    to Home Assistant (`class Link`), config analysis (`analyze`,
     `condText`), layout (`layeredOnce`, `layered`), arrow routing (`arrowGeo`, `orthoAll`, `laneSpread`,
     `untangle`, `busDots`, `hopsOf`), the **sandbox engine** (`class Sandbox`, `sbxEffect`, `sbxRewrite`,
     `SBX_PRELUDE`, `SBX_ETRIG`), the English text table (`T()`, `P()` for plurals);
@@ -72,6 +73,7 @@ returns everything the library section defines.
 | `tests/problems.test.js` | `findProblems()`: missing, not-loaded, disabled and unavailable entities, devices, areas, actions that don't exist, the function's own pieces |
 | `tests/sandbox.test.js` | the sandbox engine with a stand-in template renderer: triggers, conditions, actions, modes, waits, MQTT, per-entity triggers, `sbxRewrite` |
 | `tests/clock.test.js` | `class Clock` on a pretend clock: `after` (the last call wins), `once` (the first wins), `every`, `frame`, `deadline`, `sleep`, `pause`, and `stop()` leaving nothing set |
+| `tests/link.test.js` | `class Link` against a pretend Home Assistant: the newest answer wins, time limits, failures reported unless optional, lists in a fixed order, what the Diagnostics file carries |
 | `tests/backend/` (pytest) | the Python side: setup, store, websocket commands, diagnostics; `test_privacy.py`: canary data through the anonymiser and the log, no network modules, the manifest (sockets are blocked in all of it) |
 | `tests/board/smoke.test.js` | the board starts, imports and draws the garage, on the fake |
 | `tests/board/a11y.test.js` | axe-core (WCAG 2.2 AA) on every view in dark and light mode, with a problem on the board; the keyboard (roving box focus, arrows, Space, Enter, Escape, dialog and drawer focus in and back); spoken names; less motion |
@@ -190,5 +192,16 @@ returns everything the library section defines.
   in a background task (false when the clock stops: give up), `pause` is a pause inside a write (never stopped).
   `disconnectedCallback` stops it, `connectedCallback` starts it again; no raw `setTimeout` in the board's class
   (a static rule).
+- **The link** (0.10.0, `class Link` in the library section, `this._ha`): every call to Home Assistant. The board
+  calls `this._ws(msg, o)`, `this._api(method, path, body, o)`, `this._svc(domain, service, data, target, o)` and
+  subscribes through `this._haConn` (`subscribeMessage`/`subscribeEvents`, as Home Assistant's connection, plus `o`);
+  only the link's wiring in `_init` touches `this._hass.callWS`/`callApi`/`callService`/`connection`. A read asked
+  again hands every caller the newest answer; every call has a time limit (60 s); a failure is reported (`_ha.errors`,
+  a console warning, `board_errors` in the Diagnostics file: anonymised, only the kind, type and code) unless
+  `o.optional` says why it's expected; `o.fallback` answers instead of throwing. Label, floor, category, user and
+  manifest lists come sorted; the entity, device and area registries keep Home Assistant's order (the layout follows
+  it). Unsubscribing is `this._ha.drop(p)`; a task of the board's own is `_ha.soft(p, what, fallback)` (reported) or
+  `_ha.quiet(p, '<why>', fallback)`. Static rules: no `.catch(() => …)` in the board's class, every `optional` and
+  `quiet` gives its reason, no empty `catch` block, no property with a method's name.
 - Debug hooks for tests: `board._ortho` (routes, owners, hops, `vert`), `board._sbx.eng` (the sandbox engine and
   its log), `window.__fbStyle` (overrides `PROTO()` layout switches).

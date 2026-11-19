@@ -142,6 +142,10 @@ check('no ingress session is made, and no ingress cookie written', ingress.lengt
   check('found the board\'s methods', seen.size > 300, seen.size);
   const twice = [...seen].filter(([, n]) => n > 1).map(([k]) => k);
   check('no method of the board is defined twice (the later one would replace the first)', twice.length === 0, twice);
+  // 0.10.0: nor is a method hidden by a property of the same name (this._link = … made every _link() call fail)
+  const methods = new Set([...seen.keys()].filter((k) => !/^(get|set) /.test(k)));
+  const hidden = [...new Set([...cls.matchAll(/this\.([_a-zA-Z$][\w$]*)\s*=(?![=>])/g)].map((m) => m[1]).filter((k) => methods.has(k)))];
+  check('no property of the board has a method\'s name (it would hide the method)', hidden.length === 0, hidden);
 }
 
 // ---------- privacy: the board talks to this Home Assistant and nothing else ----------
@@ -180,22 +184,25 @@ const WS_OK = new Set(('automation/config blueprint/substitute config/area_regis
   + 'functions_board/set functions_board/set_functions functions_board/set_layout functions_board/sources functions_board/subscribe '
   + 'functions_board/version_delete functions_board/version_edit functions_board/version_get functions_board/version_save '
   + 'functions_board/versions logbook/event_stream logbook/get_action_calls manifest/list mqtt/subscribe render_template '
-  + 'subscribe_trigger supervisor/api test_condition trace/get trace/list validate_config').split(' '));
+  + 'subscribe_events subscribe_trigger supervisor/api test_condition trace/get trace/list validate_config').split(' '));
 // Home Assistant's websocket commands without a slash, so a new one is noticed even though it looks like a word
 const WS_PLAIN = /^(render_template|subscribe_trigger|fire_event|call_service|test_condition|validate_config|extract_from_target|execute_script|subscribe_events|get_states|get_config|get_services|get_panels|subscribe_entities|ping)$/;
 const types = [...code.matchAll(/(?<![\w])type:\s*'([^']+)'/g)].map((m) => m[1]).filter((t) => t.includes('/') && !/^(application|text|image)\//.test(t) || WS_PLAIN.test(t));
 const unlisted = [...new Set(types)].filter((t) => !WS_OK.has(t));
 check('A4 every message the board sends Home Assistant is on the list', unlisted.length === 0, unlisted);
-const svcCalls = code.match(/callService\(\s*[^,]+/g) || [];
-check('A4 services: pausing automations, a logbook note, and the person\'s own test steps only', svcCalls.length > 0 && svcCalls.every((c) => /callService\(\s*('automation'|'logbook'|svc\.slice\(0)/.test(c)), svcCalls);
-const testCall = code.match(/const call = \(svc, data, target\) => \{[^\n]*callService\(svc\.slice\(0, i\)/g) || [];
+// (0.10.0: the board calls services through its link, this._svc(); Home Assistant's callService is reached in one
+// place, the link's wiring, which passes on what it's given)
+const svcCalls = code.match(/this\._svc\(\s*[^,]+/g) || [];
+const hassSvc = code.match(/callService\([^)]*\)/g) || [];
+check('A4 services: pausing automations, a logbook note, and the person\'s own test steps only', svcCalls.length > 0 && svcCalls.every((c) => /_svc\(\s*('automation'|'logbook'|svc\.slice\(0)/.test(c)) && hassSvc.length === 1 && /service: \(domain, service, data, target\) => this\._hass\.callService\(domain, service, data, target\)/.test(code), { svcCalls, hassSvc });
+const testCall = code.match(/const call = \(svc, data, target\) => \{[^\n]*_svc\(svc\.slice\(0, i\)/g) || [];
 check('A4 ... a test step\'s service is called in one place: running the person\'s test', testCall.length === 1 && code.indexOf(testCall[0]) > code.indexOf('async _execTest(t) {') && code.indexOf(testCall[0]) - code.indexOf('async _execTest(t) {') < 200, null);
 const fires = code.match(/type: 'fire_event'[^\n]{0,0}/g) || [];
 check('A4 events are fired only by the person\'s test steps', fires.length === 1 && /case 'event': return this\._ws\(\{ type: 'fire_event'/.test(code), fires.length);
 const sup = [...code.matchAll(/type: 'supervisor\/api'[^\n]{0,120}/g)].map((m) => m[0]);
 check('A4 the Supervisor is only asked (method get), never told', sup.length > 0 && sup.every((x) => /method: 'get'/.test(x)), sup);
 const pubs = code.match(/[^\n]{0,40}'mqtt\.publish'[^\n]{0,20}/g) || [];
-check('A4 MQTT: the board listens; a message is published only by the person\'s own MQTT test step (the sandbox only simulates one)', !/mqtt\/publish|callService\(\s*'mqtt'/.test(code) && pubs.length === 2 && pubs.some((p) => /if \(svc === 'mqtt\.publish'\) \{ await this\.mqtt\(/.test(p)) && pubs.some((p) => /case 'mqtt': return call\('mqtt\.publish'/.test(p)), pubs);
+check('A4 MQTT: the board listens; a message is published only by the person\'s own MQTT test step (the sandbox only simulates one)', !/mqtt\/publish|(callService|_svc)\(\s*'mqtt'/.test(code) && pubs.length === 2 && pubs.some((p) => /if \(svc === 'mqtt\.publish'\) \{ await this\.mqtt\(/.test(p)) && pubs.some((p) => /case 'mqtt': return call\('mqtt\.publish'/.test(p)), pubs);
 
 
 // 0.10.0: every wait the board sets goes through its clock (class Clock), so a board taken off the page stops them
@@ -204,6 +211,24 @@ check('A4 MQTT: the board listens; a message is published only by the person\'s 
   const cls = src.slice(src.indexOf('  class FunctionsBoard extends HTMLElement'));
   const raw = [...cls.matchAll(/\b(setTimeout|setInterval|requestAnimationFrame|clearTimeout|clearInterval|cancelAnimationFrame)\s*\(/g)].map((m) => m[1] + ' at line ' + (src.slice(0, src.length - cls.length + m.index).split('\n').length));
   check('the board sets no timer of its own: every wait goes through this._clock', raw.length === 0, raw);
+}
+
+// 0.10.0: every call to Home Assistant goes through the link (class Link), and no failure is dropped without a reason:
+// in the board's class, no .catch whose handler ignores the error; a call whose failure is expected says why
+// (o.optional: '<reason>'), and a task of the board's own does through this._ha.quiet(promise, '<reason>')
+{
+  const start = src.indexOf('  class FunctionsBoard extends HTMLElement'), cls = src.slice(start);
+  const at = (i) => src.slice(0, start + i).split('\n').length;
+  const dropped = [...cls.matchAll(/\.catch\(\(\)\s*=>/g)].map((m) => 'line ' + at(m.index));
+  check('the board drops no error without a reason: no .catch(() => …) in its class', dropped.length === 0, dropped);
+  const opt = [...cls.matchAll(/optional:\s*('(?:[^'\\]|\\.)*'|[^,}]+)/g)].map((m) => m[1].trim()).filter((v) => !/^'(?:[^'\\]|\\.){12,}'$/.test(v));
+  check('every optional call gives its reason, in words (a string of 12 characters or more)', opt.length === 0, opt);
+  const quiet = [...cls.matchAll(/this\._ha\.quiet\(/g)].map((m) => cls.slice(m.index, m.index + 400)).filter((t) => !/^this\._ha\.quiet\([\s\S]*?,\s*'[^']{12,}'/.test(t.split('\n')[0]));
+  check('every quiet task gives its reason, in words', quiet.length === 0, quiet.map((t) => t.split('\n')[0].slice(0, 120)));
+  const direct = [...cls.matchAll(/this\._hass\.(callWS|callApi|callService|connection)\b/g)].map((m) => m[1] + ' at line ' + at(m.index));
+  check('the board reaches Home Assistant\'s calls only through the link (its wiring in _init)', direct.length === 4 && /this\._ha = new Link\(\{\s*ws: \(m\) => this\._hass\.callWS\(m\),/.test(cls), direct);
+  const empty = [...cls.matchAll(/catch \((e|err|x)\) \{\s*\}/g)].map((m) => 'line ' + at(m.index));
+  check('no empty catch block in the board: one that ignores an error says why in a comment', empty.length === 0, empty);
 }
 
 // 0.10.0: every mutant's text is in its file exactly once, checked on every push (the mutants themselves run weekly,
