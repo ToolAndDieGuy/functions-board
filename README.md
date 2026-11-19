@@ -10,6 +10,27 @@ A sidebar page for Home Assistant that shows each **function** in your home (the
 
 Home Assistant files things by type: automations in one list, scripts in another, helpers in a third. A job in your home cuts across all of them, and after a while it gets hard to see what drives what. This started as a WTH ("What the heck?") post on the Home Assistant forum asking for a "functions" view.
 
+## How it's different from Node-RED
+
+At a glance the board looks like Node-RED: boxes joined by arrows. It does a different job.
+
+**Node-RED is an automation engine with its own editor.** Your logic lives in its flows and runs inside Node-RED, built largely from Node-RED's own nodes. The wires are the logic: a message travels along them from node to node.
+
+**The board is a management layer for what's already native to Home Assistant:** automations, scripts, helpers, scenes and devices. It holds no logic of its own and runs nothing. The arrows aren't wires that carry anything. They're the dependencies the board reads from your configs: what sets each automation off, what it checks, what it changes, and which scripts it calls.
+
+Say one job in your home takes 4 automations, 7 helpers, a scene and 3 scripts. In Home Assistant they're spread across four different lists, and nothing shows how they work together. The board puts them on one screen as the connected system they are, and you can edit all of them from there.
+
+| | Node-RED | Functions Board |
+|---|---|---|
+| Where the logic lives | in Node-RED's flows | in Home Assistant's own automations and scripts, as before |
+| What an arrow means | a wire: messages travel along it | a dependency read from a config: triggers, checks, changes, script calls |
+| What runs your automations | Node-RED | Home Assistant, as before; the board runs nothing on its own |
+| Editing | Node-RED's editor | Home Assistant's own editors, opened from the board, plus drawing a trigger, check or call as an arrow (Full manager) |
+| What it adds | another way to build automations | one view per job, with tracing, debugging, problems, a sandbox, saved checks and versions |
+| Taking it out | the flows stop | your automations keep running: everything stays where it always was, the labels the board added included |
+
+The two get along. If you use Node-RED as well, the board can show your flows next to the rest of a function (switch **Node-RED flows** on in the Key). Each wired group is a box, with arrows to what it triggers on, reads, changes and runs, so a job that's half automations and half flows is still on one board.
+
 ## What you get
 
 - **One board per function.** A function is a Home Assistant label. Everything carrying it is on the board, and still lives in its usual place under Settings.
