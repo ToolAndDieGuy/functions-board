@@ -152,10 +152,10 @@
   "expect": "anonymised"
  },
  {
-  "name": "board: a redrawn button doesn't get focus back",
+  "name": "draw: a button drawn again is a new element",
   "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "      if (!r.sel) return null;\n      const all = [...this.shadowRoot.querySelectorAll(r.sel)];",
-  "replace": "      return null;\n      const all = [...this.shadowRoot.querySelectorAll(r.sel)];",
+  "find": "      if (n.nodeType === 1 && k.includes('|')) o = (byId.get(k) || [])[0] || null;",
+  "replace": "      if (n.nodeType === 1 && k.includes('|')) o = null;",
   "suite": "board-regress",
   "only": "0.9.1",
   "expect": "gives focus back to its button"
@@ -163,8 +163,8 @@
  {
   "name": "board: a box loses focus when the board redraws",
   "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "if (fk && this._els.get(fk)) this._els.get(fk).focus({ preventScroll: true });",
-  "replace": "",
+  "find": "      this._put(this._$.nodes, [...vis].map((k) => this._nodeHTML(m.nodes.get(k))).join(''));",
+  "replace": "      this._$.nodes.innerHTML = [...vis].map((k) => this._nodeHTML(m.nodes.get(k))).join('');",
   "suite": "board-regress",
   "expect": "keeps focus when the board is drawn again",
   "only": "0.9.1 a focused"
@@ -320,8 +320,8 @@
  {
   "name": "rules: a board test file left out of run.sh's board suites",
   "file": "tests/run.sh",
-  "find": "BOARD=\"smoke a11y layout regress snapshots leak\"",
-  "replace": "BOARD=\"smoke a11y layout regress snapshots\"",
+  "find": "BOARD=\"smoke a11y layout regress snapshots leak draw\"",
+  "replace": "BOARD=\"smoke a11y layout regress snapshots leak\"",
   "suite": "static",
   "expect": "every test file in tests/board is a board suite"
  },
@@ -593,6 +593,46 @@
   "replace": "      if (h) h(el, { a, need, ev });",
   "suite": "board-snapshots",
   "expect": "S1 edit function"
+ },
+ {
+  "name": "draw: a field with focus loses what's being typed",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "    if (old === focused) return;\n    const t = old.tagName;",
+  "replace": "    const t = old.tagName;",
+  "suite": "board-draw",
+  "expect": "D3 \\.\\.\\. the one with focus keeps"
+ },
+ {
+  "name": "draw: an element moved loses focus",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "    if (focused && focused !== doc.body && target.contains(focused) && root.activeElement !== focused) focused.focus({ preventScroll: true });\n",
+  "replace": "",
+  "suite": "board-draw",
+  "expect": "D2 \\.\\.\\. it keeps focus"
+ },
+ {
+  "name": "draw: what's no longer in the HTML stays on the page",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "    while (old.childNodes.length > nu.childNodes.length) old.removeChild(old.lastChild);\n",
+  "replace": "",
+  "suite": "board-draw",
+  "expect": "D1 morph makes what innerHTML would"
+ },
+ {
+  "name": "draw: an attribute no longer in the HTML stays",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "    for (const a of [...old.attributes]) if (!nu.hasAttribute(a.name)) old.removeAttribute(a.name);\n",
+  "replace": "",
+  "suite": "board-draw",
+  "expect": "D1 morph makes what innerHTML would"
+ },
+ {
+  "name": "rules: a working view replaced instead of drawn in place",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      d.hidden = true; this._put(d, '');",
+  "replace": "      d.hidden = true; d.innerHTML = '';",
+  "suite": "static",
+  "expect": "drawn in place"
  },
  {
   "name": "isolation: an automation a test added is left behind",

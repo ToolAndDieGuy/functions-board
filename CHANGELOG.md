@@ -20,6 +20,9 @@ The board now keeps the time it asked each thing it knows from Home Assistant. A
 you saved can no longer be shown for a minute as if it were the saved one, and a restore planned right after
 something was deleted in Home Assistant sees the deletion.
 
+The board now redraws its list, header, boxes and side drawer by updating what's on the screen rather than
+replacing it, so the keyboard focus stays where it was when they change.
+
 ## 0.9.2 (2026-11-19)
 
 Fixed: a function another admin made could be deleted from the shared store. If you left the board and came back to

@@ -261,6 +261,14 @@ check('A4 MQTT: the board listens; a message is published only by the person\'s 
   check('an undo step is made in one place (_history)', pushes === 1 && /_history\(step\) \{[^}]*this\._undoStack\.push\(step\)/.test(cls), pushes);
 }
 
+// 0.10.0: the views a person works in are drawn in place (this._put, morph()): the list, the header, the boxes, the box's
+// bar, the Key and the drawer keep their elements, and with them focus and scroll
+{
+  const cls = src.slice(src.indexOf('  class FunctionsBoard extends HTMLElement'));
+  const whole = [...cls.matchAll(/(?<![\w.$])(d|bar|this\._\$\.(?:list|nodes|legend|drawer|title|nodebar))\.innerHTML\s*=/g)].map((m) => m[1]);
+  check('the list, header, boxes, bar, Key and drawer are drawn in place (_put), not replaced (innerHTML)', whole.length === 0 && (cls.match(/this\._put\(/g) || []).length >= 25, whole);
+}
+
 // 0.10.0: every mutant's text is in its file exactly once, checked on every push (the mutants themselves run weekly,
 // and a change to the code they break would otherwise only show then)
 {

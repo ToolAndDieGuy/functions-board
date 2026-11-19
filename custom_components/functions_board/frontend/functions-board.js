@@ -5014,6 +5014,71 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     forget(prefix) { for (const k of [...this._held.keys()]) if (k.startsWith(prefix)) this._held.delete(k); }
   }
 
+  /* ---------- drawing (0.10.0): a view's HTML put on the page by updating what's there ----------
+     morph(target, html) makes target's children what html says, as innerHTML would, but keeps the elements that are
+     still there: matched by what they are (tag and data-key, data-id, data-label, data-fn, data-act, data-tid, data-e,
+     data-i), else by tag in order. So the element with focus keeps it, a scrolled list keeps its place, and a
+     listener someone put on an element stays. Attributes are made the same; a form field gets the value its HTML
+     gives it (as innerHTML would), unless it has focus (what's being typed stays). Elements of the SVG namespace
+     aren't drawn with it: an <svg>'s content is put whole. */
+  const MORPH_IDS = ['data-key', 'data-id', 'data-label', 'data-fn', 'data-act', 'data-tid', 'data-e', 'data-i'];
+  function morphId(n) {
+    if (n.nodeType !== 1) return '#' + n.nodeType;
+    const ids = MORPH_IDS.map((a) => n.getAttribute(a)).filter((v) => v != null);
+    return n.tagName + (ids.length ? '|' + MORPH_IDS.map((a) => n.getAttribute(a) || '').join('|') : '');
+  }
+  function morphAttrs(old, nu) {
+    for (const a of [...old.attributes]) if (!nu.hasAttribute(a.name)) old.removeAttribute(a.name);
+    for (const a of [...nu.attributes]) if (old.getAttribute(a.name) !== a.value) old.setAttribute(a.name, a.value);
+  }
+  function morphField(old, focused) {
+    if (old === focused) return;
+    const t = old.tagName;
+    if (t === 'INPUT') {
+      if (old.type === 'checkbox' || old.type === 'radio') old.checked = old.hasAttribute('checked');
+      else if (old.type !== 'file') old.value = old.getAttribute('value') || '';
+    } else if (t === 'TEXTAREA') old.value = old.textContent;
+    else if (t === 'SELECT') {
+      const opts = [...old.options], pick = opts.find((o) => o.hasAttribute('selected'));
+      old.selectedIndex = pick ? opts.indexOf(pick) : opts.length && !old.multiple ? 0 : -1;
+    }
+  }
+  function morphChildren(old, nu, focused) {
+    const olds = [...old.childNodes], used = new Set(), byId = new Map();
+    olds.forEach((o) => { const k = morphId(o); if (!byId.has(k)) byId.set(k, []); byId.get(k).push(o); });
+    let at = 0;
+    const take = (o) => { used.add(o); const l = byId.get(morphId(o)); l.splice(l.indexOf(o), 1); return o; };
+    [...nu.childNodes].forEach((n, i) => {
+      const k = morphId(n);
+      let o = null;
+      if (n.nodeType === 1 && k.includes('|')) o = (byId.get(k) || [])[0] || null;
+      else { while (at < olds.length && used.has(olds[at])) at++; for (let j = at; j < olds.length; j++) if (!used.has(olds[j]) && morphId(olds[j]) === k) { o = olds[j]; break; } }
+      let el;
+      if (o) {
+        take(o);
+        el = o;
+        if (n.nodeType === 1) {
+          morphAttrs(o, n);
+          // an <svg>'s content, and an element of another namespace, put whole
+          if (o.namespaceURI !== n.namespaceURI || /\/svg$/.test(o.namespaceURI || '')) { if (o.innerHTML !== n.innerHTML) o.innerHTML = n.innerHTML; }
+          else morphChildren(o, n, focused);
+          morphField(o, focused);
+        } else if (o.nodeValue !== n.nodeValue) o.nodeValue = n.nodeValue;
+      } else el = old.ownerDocument.importNode(n, true);
+      const here = old.childNodes[i];
+      if (here !== el) old.insertBefore(el, here || null);
+    });
+    while (old.childNodes.length > nu.childNodes.length) old.removeChild(old.lastChild);
+  }
+  function morph(target, html) {
+    const doc = target.ownerDocument, tpl = doc.createElement('template');
+    tpl.innerHTML = html;
+    const root = target.getRootNode(), focused = (root && root.activeElement) || doc.activeElement;
+    morphChildren(target, tpl.content, focused);
+    // an element moved to its new place loses focus on the way: give it back
+    if (focused && focused !== doc.body && target.contains(focused) && root.activeElement !== focused) focused.focus({ preventScroll: true });
+  }
+
   // the board's action tables (one per view) as one map from a data-act name to its handler; a name in two tables
   // is a mistake (the later would silently win), so it throws
   function actionMap(tables) {
@@ -5159,6 +5224,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     // to Home Assistant, through the link: a websocket message, a REST call, a service (o: { optional: '<why its
     // failure is expected>', fallback, timeout })
     _ws(msg, o) { return this._ha.ask(msg, o); }
+    // a view's HTML put on the page by updating what's there (0.10.0, morph() in the library section): what has
+    // focus, a scrolled place and the elements still there stay
+    _put(el, html) { morph(el, html); }
     _api(method, path, body, o) { return this._ha.api(method, path, body, o); }
     _svc(domain, service, data, target, o) { return this._ha.service(domain, service, data, target, o); }
     async _loadData() {
@@ -6182,12 +6250,10 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       shown.forEach((e) => { vis2.add(e.from); vis2.add(e.to); });
       m.nodes.forEach((n, k) => { n.hidden = cnt.has(k) && !vis2.has(k) ? cnt.get(k) : 0; });
       this._renderFrames();
-      // a keyboard user's place: the box that has focus keeps it when the boxes are drawn anew
-      const fa = this.shadowRoot.activeElement, fk = fa && fa.classList && fa.classList.contains('node') ? fa.dataset.key : null;
-      this._$.nodes.innerHTML = [...vis].map((k) => this._nodeHTML(m.nodes.get(k))).join('');
+      // drawn in place (0.10.0): a box still there is the same element, so the one with focus keeps it
+      this._put(this._$.nodes, [...vis].map((k) => this._nodeHTML(m.nodes.get(k))).join(''));
       this._els = new Map();
       this._$.nodes.querySelectorAll('.node').forEach((el) => this._els.set(el.dataset.key, el));
-      if (fk && this._els.get(fk)) this._els.get(fk).focus({ preventScroll: true });
       this._renderNotes();
       this._renderMons();
       this._conn = this._connText();
@@ -6566,9 +6632,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const mk = (list) => list.map(([a, i, t, off, data]) => `<button data-act="${a}" ${data || ''} ${off ? `disabled title="${esc(off)}"` : `title="${esc(t)}"`}><ha-icon icon="${i}"></ha-icon><span>${esc(t)}</span></button>`).join('');
       if (n.kind === 'tool') {
         const tid = `data-tid="${esc(n.tool.id)}"`, inj = n.tool.type === 'inject', full = this._full() ? null : FULL_ONLY_TEST;
-        bar.innerHTML = `<span class="nbname">${esc(n.name)}</span>` + mk(inj
+        this._put(bar, `<span class="nbname">${esc(n.name)}</span>` + mk(inj
           ? [['tool-run', 'mdi:play', T('run_2'), full, tid], ['tool-edit', 'mdi:pencil-outline', T('edit_2'), full, tid], ['tool-del', 'mdi:delete-outline', T('remove'), null, tid]]
-          : [['mon-clear', 'mdi:broom', T('clear'), null, tid], ['tool-del', 'mdi:delete-outline', T('remove'), null, tid]]);
+          : [['mon-clear', 'mdi:broom', T('clear'), null, tid], ['tool-del', 'mdi:delete-outline', T('remove'), null, tid]]));
         bar.hidden = false;
         this._positionNodebar();
         return;
@@ -6579,7 +6645,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         if (eng.items.has(n.key)) b.push(['sbx-runbox', 'mdi:play', T('sbx_run_here')]);
         if (n.key.startsWith('event:')) b.push(['sbx-firebox', 'mdi:lightning-bolt-outline', T('sbx_fire_here')]);
         if (this._canTest(n)) b.push(['test', 'mdi:flask-outline', T('sbx_test_here')]);
-        bar.innerHTML = `<span class="nbname">${esc(n.name)}</span>` + mk(b) + `<span class="nbsbx">${T('sbx_bar_note')}</span>`;
+        this._put(bar, `<span class="nbname">${esc(n.name)}</span>` + mk(b) + `<span class="nbsbx">${T('sbx_bar_note')}</span>`);
         bar.hidden = false;
         this._positionNodebar();
         return;
@@ -6610,8 +6676,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (/^(event|nact):/.test(n.key) || (n.key.startsWith('mqtt:') && (this._hass.config.components || []).includes('mqtt'))) tools.push(['monitor', 'mdi:monitor-eye', T('monitor')]);
       if (n.key.startsWith('svc:notify.') || (n.domain === 'notify' && st)) tools.push(['messages', 'mdi:message-text-clock-outline', T('messages')]);
       if (this._canLink(n)) tools.push(['connect', 'mdi:vector-polyline-plus', T('connect'), this._full() ? null : T('drawing_arrows_needs_full_manager')]);
-      bar.innerHTML = `<span class="nbname">${esc(n.name)}</span>` + mk(btn.map(([a, i, t, off]) => [a, i, t, off || null, a === 'toggle' && st ? `data-state="${esc(st.state)}"` : '']))
-        + (tools.length ? '<span class="nbsep"></span>' + mk(tools) : '');
+      this._put(bar, `<span class="nbname">${esc(n.name)}</span>` + mk(btn.map(([a, i, t, off]) => [a, i, t, off || null, a === 'toggle' && st ? `data-state="${esc(st.state)}"` : '']))
+        + (tools.length ? '<span class="nbsep"></span>' + mk(tools) : ''));
       bar.hidden = false;
       this._positionNodebar();
     }
@@ -6669,7 +6735,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         return `<div class="fnrow"><button class="fn ${lid === this._data.ui.current ? 'cur' : ''}" data-fn="${esc(lid)}"><ha-icon icon="${esc(l.icon || 'mdi:puzzle-outline')}" style="color:${cssColor(l.color)}"></ha-icon><span class="fnt"><span class="fnn">${esc(l.name)}</span><span class="fnc">${esc(txt) || 'empty'}</span></span>${this._probs.has(lid) ? this._probBadge(this._probs.get(lid)) : unav ? `<span class="dot warn" title="${T('something_in_this_function_is')}"></span>` : ''}</button><button class="ib fnmore" data-act="fn-menu" data-label="${esc(lid)}" title="${T('edit_hide_or_delete', { name: esc(l.name) })}"><ha-icon icon="mdi:dots-vertical"></ha-icon></button></div>`;
       }).join('');
       const act = this.shadowRoot.activeElement, typing = act && act.classList && act.classList.contains('find'), caret = typing ? act.selectionStart : 0;
-      this._$.list.innerHTML = `<div class="lhead"><span>${T('functions')}</span><span><button data-act="import" title="${T('import_find_the_functions_already')}"><ha-icon icon="mdi:import"></ha-icon></button><button data-act="newfn" title="${T('new_empty_function')}"><ha-icon icon="mdi:plus"></ha-icon></button></span></div><div class="lfind"><ha-icon icon="mdi:magnify"></ha-icon><input class="find" placeholder="${T('find_an_automation_helper_device')}" value="${esc(this._findQ || '')}" aria-label="${T('find_anything')}">${this._findQ ? `<button class="ib" data-act="find-x" title="${T('clear')}"><ha-icon icon="mdi:close"></ha-icon></button>` : ''}</div><div class="fns">${this._findQ ? this._findHTML() : items || `<div class="muted pad">${T('no_functions_yet_press_import')}</div>`}</div><div class="lfoot"><button class="lbtn" data-act="import"><ha-icon icon="mdi:import"></ha-icon>${T('import_manager')}</button><div class="ver"><span>${T('functions_board_v_prototype', { version: VERSION })}</span><button class="ib" data-act="about" title="${T('about_and_what_the_board')}"><ha-icon icon="mdi:help-circle-outline"></ha-icon></button></div></div>`;
+      this._put(this._$.list, `<div class="lhead"><span>${T('functions')}</span><span><button data-act="import" title="${T('import_find_the_functions_already')}"><ha-icon icon="mdi:import"></ha-icon></button><button data-act="newfn" title="${T('new_empty_function')}"><ha-icon icon="mdi:plus"></ha-icon></button></span></div><div class="lfind"><ha-icon icon="mdi:magnify"></ha-icon><input class="find" placeholder="${T('find_an_automation_helper_device')}" value="${esc(this._findQ || '')}" aria-label="${T('find_anything')}">${this._findQ ? `<button class="ib" data-act="find-x" title="${T('clear')}"><ha-icon icon="mdi:close"></ha-icon></button>` : ''}</div><div class="fns">${this._findQ ? this._findHTML() : items || `<div class="muted pad">${T('no_functions_yet_press_import')}</div>`}</div><div class="lfoot"><button class="lbtn" data-act="import"><ha-icon icon="mdi:import"></ha-icon>${T('import_manager')}</button><div class="ver"><span>${T('functions_board_v_prototype', { version: VERSION })}</span><button class="ib" data-act="about" title="${T('about_and_what_the_board')}"><ha-icon icon="mdi:help-circle-outline"></ha-icon></button></div></div>`);
       if (typing) { const f = this._$.list.querySelector('.find'); if (f) { f.focus(); f.setSelectionRange(caret, caret); } }
     }
     // find anything across the whole system, and where it lives (4.4)
@@ -6720,9 +6786,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (vb) vb.hidden = !this._verOK();
       const l = this._labelMap.get(this._data && this._data.ui.current);
       const t = this._$.title;
-      if (!l) { t.innerHTML = `<span class="muted">${T('functions')}</span>`; this._$.tools.hidden = true; return; }
+      if (!l) { this._put(t, `<span class="muted">${T('functions')}</span>`); this._$.tools.hidden = true; return; }
       this._$.tools.hidden = false;
-      t.innerHTML = `<ha-icon icon="${esc(l.icon || 'mdi:puzzle-outline')}" style="color:${cssColor(l.color)}"></ha-icon><div class="tt"><div class="ttl">${esc(l.name)}</div>${l.description ? `<div class="desc">${esc(l.description)}</div>` : ''}</div><button class="ib" data-act="fn-edit" title="${T('edit_name_icon_colour_and')}"><ha-icon icon="mdi:pencil-outline"></ha-icon></button><button class="ib" data-act="fn-menu" data-label="${esc(l.label_id)}" title="${T('hide_or_delete_this_function')}"><ha-icon icon="mdi:dots-vertical"></ha-icon></button>${this._probChip()}`;
+      this._put(t, `<ha-icon icon="${esc(l.icon || 'mdi:puzzle-outline')}" style="color:${cssColor(l.color)}"></ha-icon><div class="tt"><div class="ttl">${esc(l.name)}</div>${l.description ? `<div class="desc">${esc(l.description)}</div>` : ''}</div><button class="ib" data-act="fn-edit" title="${T('edit_name_icon_colour_and')}"><ha-icon icon="mdi:pencil-outline"></ha-icon></button><button class="ib" data-act="fn-menu" data-label="${esc(l.label_id)}" title="${T('hide_or_delete_this_function')}"><ha-icon icon="mdi:dots-vertical"></ha-icon></button>${this._probChip()}`);
       this._renderPause();
     }
 
@@ -6792,11 +6858,11 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const u = this._model ? Object.assign({}, u0, this._flt(this._model.label)) : u0;
       const open = this._compact ? !!this._legendOpen : u.legend;
       const line = (cls) => `<svg width="38" height="10"><path class="${cls}" d="M4,5 L30,5"></path><path class="ah ${cls}" d="M30,1 L37,5 L30,9 z"></path>${cls === 'role-trigger' ? '<circle class="ah trig" cx="4" cy="5" r="3.5"></circle>' : ''}</svg>`;
-      this._$.legend.innerHTML = `<button class="lgt" data-act="legend"><ha-icon icon="mdi:map-legend"></ha-icon>${open ? T('hide_key') : T('key')}</button>`
+      this._put(this._$.legend, `<button class="lgt" data-act="legend"><ha-icon icon="mdi:map-legend"></ha-icon>${open ? T('hide_key') : T('key')}</button>`
         + (open ? `<div class="lg">${line('role-trigger')}<span>${T('triggers')}</span>${line('role-condition')}<span>${T('is_checked_or_read_by')}</span>${line('role-action')}<span>${T('changes_2')}</span>${line('role-call')}<span>${T('runs_script_call')}</span>${line('role-source')}<span>${T('is_read_by_a_helper')}</span>${line('loop')}<span>${T('loop_can_retrigger_itself')}</span>${line('role-tool')}<span>${T('a_test_button_or_a')}</span>`
           + `<svg width="38" height="14"><path d="M4,3 L16,3 L16,11 L30,11"></path><path d="M16,3 L30,3"></path><circle cx="16" cy="3" r="2.6" style="fill:var(--fb-edge)"></circle></svg><span>${T('one_line_that_branches_dot')}</span>`
           + `<svg width="38" height="14"><path d="M19,1 L19,13"></path><path d="M4,8 L15,8 A4,4 0 0 1 23,8 L34,8"></path></svg><span>${T('crosses_without_meeting')}</span>`
-          + `<svg width="38" height="14"><path d="M4,7 L34,7"></path><path class="ah" d="M15,7 L23,2.5 L23,11.5 z"></path></svg><span>${T('runs_back')}</span></div><div class="lgn"><span class="sw dashed"></span>${T('related_not_in_this_function')}<br><span class="sw pill"></span>${T('outside_item_it_touches')}<br><span class="sw st amber"></span>${T('unavailable')}<span class="sw st red"></span>${T('last_run_failed')}<span class="sw st blue"></span>${T('running')}<br><span class="cres-k ok">✓</span><span class="cres-k bad">✕</span> ${T('a_check_passes_or_fails')}<br><span class="sw dashed2"></span>${T('simulated_state')}${this._sbxOn() ? `<br><span class="sw sbk"></span>${T('sbx_changed_key')}<br><span class="sw sbg"></span>${T('sbx_ghost_key')}` : ''}</div><label class="tg"><input type="checkbox" data-tog="outside" ${u.outside ? 'checked' : ''}>${T('show_outside_items')}</label><label class="tg"><input type="checkbox" data-tog="suggest" ${u.suggest ? 'checked' : ''}>${T('show_related_suggestions')}</label><label class="tg" title="${T('reads_your_node_red_app')}"><input type="checkbox" data-nr ${u0.nodered === true ? 'checked' : ''}>${T('show_node_red_flows')}</label>${u0.nodered === true && this._nrCache && this._nrCache.err ? `<div class="lgerr">${esc(this._nrCache.err)}${this._nrCache.need ? ` <button class="lgbtn" data-act="nr-open">${T('open_node_red')}</button>` : ''}</div>` : ''}` : '');
+          + `<svg width="38" height="14"><path d="M4,7 L34,7"></path><path class="ah" d="M15,7 L23,2.5 L23,11.5 z"></path></svg><span>${T('runs_back')}</span></div><div class="lgn"><span class="sw dashed"></span>${T('related_not_in_this_function')}<br><span class="sw pill"></span>${T('outside_item_it_touches')}<br><span class="sw st amber"></span>${T('unavailable')}<span class="sw st red"></span>${T('last_run_failed')}<span class="sw st blue"></span>${T('running')}<br><span class="cres-k ok">✓</span><span class="cres-k bad">✕</span> ${T('a_check_passes_or_fails')}<br><span class="sw dashed2"></span>${T('simulated_state')}${this._sbxOn() ? `<br><span class="sw sbk"></span>${T('sbx_changed_key')}<br><span class="sw sbg"></span>${T('sbx_ghost_key')}` : ''}</div><label class="tg"><input type="checkbox" data-tog="outside" ${u.outside ? 'checked' : ''}>${T('show_outside_items')}</label><label class="tg"><input type="checkbox" data-tog="suggest" ${u.suggest ? 'checked' : ''}>${T('show_related_suggestions')}</label><label class="tg" title="${T('reads_your_node_red_app')}"><input type="checkbox" data-nr ${u0.nodered === true ? 'checked' : ''}>${T('show_node_red_flows')}</label>${u0.nodered === true && this._nrCache && this._nrCache.err ? `<div class="lgerr">${esc(this._nrCache.err)}${this._nrCache.need ? ` <button class="lgbtn" data-act="nr-open">${T('open_node_red')}</button>` : ''}</div>` : ''}` : ''));
     }
 
     /* ---------- view ---------- */
@@ -7715,13 +7781,13 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._drawer = { mode: 'frame', url, title };
       const d = this._$.drawer;
       d.hidden = false;
-      d.innerHTML = `<div class="dhead">${opt.back ? `<button data-act="back" title="${T('back_to_runs')}"><ha-icon icon="mdi:arrow-left"></ha-icon></button>` : ''}<span class="dtitle">${esc(title)}</span>${opt.capture && this._capture ? `<span class="dcap" title="${T('anything_you_create_here_gets', { fnName: esc(this._fnName(this._capture.label)) })}">${T('saves_into', { fnName: esc(this._fnName(this._capture.label)) })}</span>` : ''}<button data-act="newtab" title="${T('open_in_a_new_tab')}"><ha-icon icon="mdi:open-in-new"></ha-icon></button><button data-act="close" title="${T('close')}"><ha-icon icon="mdi:close"></ha-icon></button></div><iframe title="${esc(title)}" src="${esc(url)}"></iframe>`;
+      this._put(d, `<div class="dhead">${opt.back ? `<button data-act="back" title="${T('back_to_runs')}"><ha-icon icon="mdi:arrow-left"></ha-icon></button>` : ''}<span class="dtitle">${esc(title)}</span>${opt.capture && this._capture ? `<span class="dcap" title="${T('anything_you_create_here_gets', { fnName: esc(this._fnName(this._capture.label)) })}">${T('saves_into', { fnName: esc(this._fnName(this._capture.label)) })}</span>` : ''}<button data-act="newtab" title="${T('open_in_a_new_tab')}"><ha-icon icon="mdi:open-in-new"></ha-icon></button><button data-act="close" title="${T('close')}"><ha-icon icon="mdi:close"></ha-icon></button></div><iframe title="${esc(title)}" src="${esc(url)}"></iframe>`);
       this._fitLitbar();
     }
     _closeDrawer() {
       this._leaveDrawerMode();
       const d = this._$.drawer, was = this._drawer;
-      d.hidden = true; d.innerHTML = '';
+      d.hidden = true; this._put(d, '');
       this._drawer = null;
       this._endCapture();
       this._hover(null);
@@ -7775,7 +7841,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._drawer = { mode: 'runs' };
       const d = this._$.drawer;
       d.hidden = false;
-      d.innerHTML = `<div class="dhead"><span class="dtitle">${T('runs_3', { fnName: esc(this._fnName(this._data.ui.current)) })}</span><button data-act="refresh" title="${T('refresh')}"><ha-icon icon="mdi:refresh"></ha-icon></button><button data-act="close" title="${T('close')}"><ha-icon icon="mdi:close"></ha-icon></button></div><div class="runs"><div class="muted pad">${T('loading')}</div></div>`;
+      this._put(d, `<div class="dhead"><span class="dtitle">${T('runs_3', { fnName: esc(this._fnName(this._data.ui.current)) })}</span><button data-act="refresh" title="${T('refresh')}"><ha-icon icon="mdi:refresh"></ha-icon></button><button data-act="close" title="${T('close')}"><ha-icon icon="mdi:close"></ha-icon></button></div><div class="runs"><div class="muted pad">${T('loading')}</div></div>`);
       this._fitLitbar();
       await this._loadRuns();
       this._renderRuns();
@@ -7808,13 +7874,13 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const box = this._$.drawer.querySelector('.runs');
       if (!box) return;
       const runs = this._runs.slice(0, 100);
-      if (!runs.length) { box.innerHTML = `<div class="muted pad">${T('no_stored_runs_yet_for')}</div>`; return; }
-      box.innerHTML = `<div class="muted pad small">${T('every_automation_and_script_in')}</div>${runs.map((r, i) => {
+      if (!runs.length) { this._put(box, `<div class="muted pad">${T('no_stored_runs_yet_for')}</div>`); return; }
+      this._put(box, `<div class="muted pad small">${T('every_automation_and_script_in')}</div>${runs.map((r, i) => {
           const n = this._model && this._model.nodes.get(r.key), o = OUTCOME(r);
           return `<button class="run ${o.cls}" data-run="${i}" data-key="${esc(r.key)}"><span class="rt">${esc(clock(r.timestamp && r.timestamp.start))}</span>`
             + `<span class="rn"><b>${esc(n ? n.name : r.item_id)}</b><span>${esc(r.trigger || (r.domain === 'script' ? 'started' : ''))}</span></span>`
             + `<span class="ro" title="${esc(o.text)}">${esc(o.text)}</span></button>`;
-        }).join('')}`;
+        }).join('')}`);
     }
     // a run lights its path on the board (4.5); its trace is a click away in the bar
     _openRun(i) {
@@ -8473,7 +8539,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._drawer = { mode: 'debug' };
       const d = this._$.drawer;
       d.hidden = false;
-      d.innerHTML = `<div class="dhead"><span class="dtitle">${T('debug', { fnName: esc(this._fnName(label)) })}</span><span class="rec" title="${T('the_debugger_records_while_this')}"><i></i>${T('recording')}</span><button data-act="dbg-mon" title="${T('add_a_monitor_box_the')}"><ha-icon icon="mdi:monitor-eye"></ha-icon></button><button data-act="dbg-clear" title="${T('clear_the_timeline')}"><ha-icon icon="mdi:broom"></ha-icon></button><button data-act="close" title="${T('close')}"><ha-icon icon="mdi:close"></ha-icon></button></div><div class="dbg"><div class="dflt"></div><div class="dwhy" hidden></div><div class="dtl"><div class="muted pad">${T('reading_the_last_15_minutes')}</div></div></div>`;
+      this._put(d, `<div class="dhead"><span class="dtitle">${T('debug', { fnName: esc(this._fnName(label)) })}</span><span class="rec" title="${T('the_debugger_records_while_this')}"><i></i>${T('recording')}</span><button data-act="dbg-mon" title="${T('add_a_monitor_box_the')}"><ha-icon icon="mdi:monitor-eye"></ha-icon></button><button data-act="dbg-clear" title="${T('clear_the_timeline')}"><ha-icon icon="mdi:broom"></ha-icon></button><button data-act="close" title="${T('close')}"><ha-icon icon="mdi:close"></ha-icon></button></div><div class="dbg"><div class="dflt"></div><div class="dwhy" hidden></div><div class="dtl"><div class="muted pad">${T('reading_the_last_15_minutes')}</div></div></div>`);
       this._fitLitbar();
       if (!this._dbg || this._dbg.label !== label) this._dbg = this._dbgNew(label);
       await this._dbgStart();
@@ -8693,8 +8759,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (fl) fl.innerHTML = Object.entries(F).map(([k, [t, kinds]]) => `<button class="chip ${k === cur ? 'on' : ''}" data-act="dbg-flt" data-f="${k}">${t}<span>${count(kinds)}</span></button>`).join('');
       const kinds = F[cur][1], list = g.entries.filter((e) => !kinds || kinds.includes(e.kind) || e.kind === 'note');
       const atEnd = box.scrollTop + box.clientHeight >= box.scrollHeight - 40;
-      box.innerHTML = list.length ? list.map((e) => this._dbgRow(e)).join('')
-        : `<div class="muted pad">${T('nothing_yet_whatever_happens_to')}</div>`;
+      this._put(box, list.length ? list.map((e) => this._dbgRow(e)).join('')
+        : `<div class="muted pad">${T('nothing_yet_whatever_happens_to')}</div>`);
       if (atEnd || !this._dbgScrolled) { box.scrollTop = box.scrollHeight; this._dbgScrolled = true; }
     }
     _dbgRow(e) {
@@ -8777,7 +8843,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._drawer = { mode: 'versions' };
       const d = this._$.drawer;
       d.hidden = false;
-      d.innerHTML = `<div class="dhead"><span class="dtitle">${T('ver_title', { fnName: esc(this._fnName(label)) })}</span><button data-act="close" title="${T('close')}"><ha-icon icon="mdi:close"></ha-icon></button></div><div class="vers"><div class="vnote">${T('ver_note')}</div><div class="vact"><button class="primary" data-act="ver-new"><ha-icon icon="mdi:camera-outline"></ha-icon>${T('ver_save_b')}</button></div><div class="vlist"><div class="muted pad">${T('ver_reading')}</div></div></div>`;
+      this._put(d, `<div class="dhead"><span class="dtitle">${T('ver_title', { fnName: esc(this._fnName(label)) })}</span><button data-act="close" title="${T('close')}"><ha-icon icon="mdi:close"></ha-icon></button></div><div class="vers"><div class="vnote">${T('ver_note')}</div><div class="vact"><button class="primary" data-act="ver-new"><ha-icon icon="mdi:camera-outline"></ha-icon>${T('ver_save_b')}</button></div><div class="vlist"><div class="muted pad">${T('ver_reading')}</div></div></div>`);
       this._fitLitbar();
       await this._renderVersions();
     }
@@ -8785,7 +8851,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const label = this._data.ui.current, box = this._$.drawer.querySelector('.vlist');
       if (!box || !this._drawer || this._drawer.mode !== 'versions') return;
       let vs;
-      try { vs = await this._verList(label); } catch (e) { box.innerHTML = `<div class="lgerr">${esc((e && (e.message || e.code)) || e)}</div>`; return; }
+      try { vs = await this._verList(label); } catch (e) { this._put(box, `<div class="lgerr">${esc((e && (e.message || e.code)) || e)}</div>`); return; }
       // which version (if any) is what's there now
       let print = null;
       try { print = verPrint(await this._verSnapshot(label)); } catch (e) { /* no match shown */ }
@@ -8797,7 +8863,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         + `<button data-act="ver-restore" data-id="${esc(v.id)}"${full && !(active && active.id === v.id) ? '' : ' disabled'} title="${full ? (active && active.id === v.id ? T('ver_is_active') : T('ver_restore_t')) : T('ver_restore_full')}"><ha-icon icon="mdi:backup-restore"></ha-icon>${T('ver_restore')}</button>`
         + `<button class="ib" data-act="diag" data-ver="${esc(v.id)}" title="${T('diag_ver_t')}"><ha-icon icon="mdi:file-download-outline"></ha-icon></button><button class="ib" data-act="ver-edit" data-id="${esc(v.id)}" title="${T('ver_edit_t')}"><ha-icon icon="mdi:pencil-outline"></ha-icon></button><button class="ib" data-act="ver-del" data-id="${esc(v.id)}" title="${T('ver_del_t')}"><ha-icon icon="mdi:delete-outline"></ha-icon></button></div></div>`;
       const now = `<div class="vrow cur${active ? '' : ' on'}"><div class="vh"><b>${T('ver_now')}</b>${active ? `<span class="muted">${T('ver_now_is', { name: esc(active.name) })}</span>` : `<span class="vbadge">${T('ver_active')}</span><span class="muted">${T('ver_now_unsaved')}</span>`}</div></div>`;
-      box.innerHTML = now + (vs.length ? vs.slice().reverse().map(row).join('') : `<div class="muted pad">${T('ver_none')}</div>`);
+      this._put(box, now + (vs.length ? vs.slice().reverse().map(row).join('') : `<div class="muted pad">${T('ver_none')}</div>`));
     }
     _verNewDlg() {
       const m = this._$.modal;
@@ -9081,7 +9147,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._drawer = { mode: 'sandbox' };
       const d = this._$.drawer;
       d.hidden = false;
-      d.innerHTML = `<div class="dhead"><span class="dtitle">${T('sbx_title', { fnName: esc(this._fnName(label) + (this._ver ? ' · ' + this._ver.name : '')) })}</span><span class="sbclock"></span><button data-act="sbx-about" title="${T('sbx_about_t')}"><ha-icon icon="mdi:information-outline"></ha-icon></button><button data-act="sbx-reset" title="${T('sbx_reset_t')}"><ha-icon icon="mdi:restore"></ha-icon></button><button data-act="close" title="${T('sbx_close_t')}"><ha-icon icon="mdi:close"></ha-icon></button></div><div class="dbg sbx"><div class="sbnote">${T('sbx_note')}</div><div class="sbask"></div><div class="sbctl"></div><div class="sbchk"></div><div class="sbdue"></div><div class="dtl sbtl"><div class="muted pad">${T('reading_configs')}</div></div></div>`;
+      this._put(d, `<div class="dhead"><span class="dtitle">${T('sbx_title', { fnName: esc(this._fnName(label) + (this._ver ? ' · ' + this._ver.name : '')) })}</span><span class="sbclock"></span><button data-act="sbx-about" title="${T('sbx_about_t')}"><ha-icon icon="mdi:information-outline"></ha-icon></button><button data-act="sbx-reset" title="${T('sbx_reset_t')}"><ha-icon icon="mdi:restore"></ha-icon></button><button data-act="close" title="${T('sbx_close_t')}"><ha-icon icon="mdi:close"></ha-icon></button></div><div class="dbg sbx"><div class="sbnote">${T('sbx_note')}</div><div class="sbask"></div><div class="sbctl"></div><div class="sbchk"></div><div class="sbdue"></div><div class="dtl sbtl"><div class="muted pad">${T('reading_configs')}</div></div></div>`);
       this._$.board.classList.add('sbx');
       this._$.sbxpill.hidden = false;
       this._fitLitbar();
@@ -9200,11 +9266,11 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const topics = new Set([...m.nodes.keys()].filter((k) => k.startsWith('mqtt:')).map((k) => k.slice(5)));
       g.eng.items.forEach((it) => { if (it.kind === 'automation') g.eng._trigs(it).forEach((t) => { if (g.eng._plat(t) === 'mqtt' && t.topic && !/[+#]/.test(t.topic)) topics.add(String(t.topic)); }); });
       const opt = (k) => `<option value="${esc(k)}">${esc(nm(k))}</option>`;
-      box.innerHTML = `<div class="sbrow"><span class="sbl">${T('sbx_set')}</span><select class="sbent" aria-label="${T('sbx_entity')}">${ents.map(opt).join('')}</select>${this._sbxField('sbval', [], T('sbx_state'))}<button class="chip" data-act="sbx-set">${T('sbx_set_b')}</button></div>`
+      this._put(box, `<div class="sbrow"><span class="sbl">${T('sbx_set')}</span><select class="sbent" aria-label="${T('sbx_entity')}">${ents.map(opt).join('')}</select>${this._sbxField('sbval', [], T('sbx_state'))}<button class="chip" data-act="sbx-set">${T('sbx_set_b')}</button></div>`
         + `<div class="sbrow"><span class="sbl">${T('sbx_event')}</span>${this._sbxField('sbev', evs.map((x) => ({ v: x, l: x })), T('sbx_event_type'))}${this._sbxField('sbevd', [], T('sbx_event_data_ph'))}<button class="chip" data-act="sbx-fire">${T('sbx_fire')}</button></div>`
         + (topics.size ? `<div class="sbrow"><span class="sbl">MQTT</span>${this._sbxField('sbtop', [...topics].map((x) => ({ v: x, l: x })), T('sbx_topic'))}${this._sbxField('sbpay', [], T('sbx_payload'))}<button class="chip" data-act="sbx-mqtt">${T('sbx_send')}</button></div>` : '')
         + `<div class="sbrow"><span class="sbl">${T('sbx_run')}</span><select class="sbrun" aria-label="${T('sbx_run_what')}">${runs.map(opt).join('')}</select><select class="sbtrig" aria-label="${T('sbx_as_if')}"></select><label class="sbcb"><input type="checkbox" class="sbconds" checked>${T('sbx_check_conds')}</label><button class="chip" data-act="sbx-run">${T('sbx_run_b')}</button></div>`
-        + `<div class="sbrow"><span class="sbl">${T('sbx_clock')}</span><button class="chip" data-act="sbx-adv" data-ms="60000">+1 min</button><button class="chip" data-act="sbx-adv" data-ms="600000">+10 min</button><button class="chip" data-act="sbx-adv" data-ms="3600000">+1 h</button><button class="chip sbnext" data-act="sbx-next"></button></div>`;
+        + `<div class="sbrow"><span class="sbl">${T('sbx_clock')}</span><button class="chip" data-act="sbx-adv" data-ms="60000">+1 min</button><button class="chip" data-act="sbx-adv" data-ms="600000">+10 min</button><button class="chip" data-act="sbx-adv" data-ms="3600000">+1 h</button><button class="chip sbnext" data-act="sbx-next"></button></div>`);
       const pick = this._sel && ents.includes(this._sel) ? this._sel : ents[0];
       if (pick) this._sbxPick(pick);
       this._sbxTrigs();
@@ -9671,13 +9737,13 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const icon = { mqtt: 'mdi:access-point', state: 'mdi:swap-horizontal', event: 'mdi:lightning-bolt-outline', trigger: 'mdi:play-circle-outline', cond: 'mdi:help-rhombus-outline', call: 'mdi:arrow-right-bold-outline', run: 'mdi:flag-checkered', wait: 'mdi:timer-sand', note: 'mdi:information-outline', ask: 'mdi:account-question-outline' };
       const atEnd = box.scrollTop + box.clientHeight >= box.scrollHeight - 40;
       const fl = this._flow, fnum = new Map(fl ? fl.steps.map((s, i) => [s.e.id, i + 1]) : []);
-      box.innerHTML = eng.log.length ? eng.log.map((e) => {
+      this._put(box, eng.log.length ? eng.log.map((e) => {
         const t = this._sbxText(e), p = tzParts(e.t, eng.tz), tm = `${String(p.h).padStart(2, '0')}:${String(p.mi).padStart(2, '0')}:${String(p.s).padStart(2, '0')}`;
         const ic = e.kind === 'cond' ? (e.ok ? 'mdi:check-circle-outline' : 'mdi:close-circle-outline') : e.msg ? 'mdi:message-text-outline' : icon[e.kind] || 'mdi:circle-small';
         const partly = e.partly && e.partly.length ? `<span class="sbpart">${T('sbx_partly', { what: e.partly.map((x) => ({ states: T('sbx_reads_states'), closest: T('sbx_reads_places'), distance: T('sbx_reads_places'), state_translated: T('sbx_reads_translated') })[x] || T('sbx_reads_other')).join(', ') })}</span>` : '';
         const fn = fnum.get(e.id), inf = fl && e.id >= fl.act.a && e.id <= fl.act.b;
         return `<button class="dbrow k-${e.kind} ${t.cls || ''} ${g.sel === e.id ? 'on' : ''}${inf ? ' fin' : ''}" data-act="sbx-pick" data-id="${e.id}"><span class="rt">${fn ? `<i class="fsn">${fn}</i>` : ''}${tm}</span><ha-icon icon="${ic}"></ha-icon><span class="dm"><b>${esc(t.main)}</b>${t.sub ? `<span>${esc(t.sub)}</span>` : ''}${partly}</span></button>`;
-      }).join('') : `<div class="muted pad">${T('sbx_empty')}</div>`;
+      }).join('') : `<div class="muted pad">${T('sbx_empty')}</div>`);
       if (atEnd || !g.scrolled) { box.scrollTop = box.scrollHeight; g.scrolled = true; }
       this._paintFlow();
     }
@@ -9703,7 +9769,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (!id) { box.hidden = true; return; }
       box.hidden = false;
       const tok = this._whyTok = (this._whyTok || 0) + 1;
-      box.innerHTML = `<div class="wh"><b>${esc(n.name)}</b>${T('why_did_or_didn_t')}</div><div class="muted small">${T('reading_its_traces')}</div>`;
+      this._put(box, `<div class="wh"><b>${esc(n.name)}</b>${T('why_did_or_didn_t')}</div><div class="muted small">${T('reading_its_traces')}</div>`);
       const list = await this._ws({ type: 'trace/list', domain: 'automation', item_id: id }, { optional: 'an automation without an id keeps no traces', fallback: [] });
       if (tok !== this._whyTok) return;
       const recent = (list || []).slice().sort((a, b) => Date.parse(b.timestamp.start) - Date.parse(a.timestamp.start)).slice(0, 5);
@@ -9714,11 +9780,11 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       }));
       if (tok !== this._whyTok) return;
       const st = this._hass.states[k];
-      box.innerHTML = `<div class="wh"><b>${esc(n.name)}</b>${T('why_did_or_didn_t')}</div>${st && st.state === 'off' ? `<div class="wwarn">${T('it_is_turned_off_nothing')}</div>` : ''}${this._tw.has(k) ? `<div class="muted small">${T('watching_its_triggers_so_far', { hits: P('n_would_be_runs', this._tw.get(k).hits) })}</div>` : ''}${rows.length ? rows.map(({ r, why }) => {
+      this._put(box, `<div class="wh"><b>${esc(n.name)}</b>${T('why_did_or_didn_t')}</div>${st && st.state === 'off' ? `<div class="wwarn">${T('it_is_turned_off_nothing')}</div>` : ''}${this._tw.has(k) ? `<div class="muted small">${T('watching_its_triggers_so_far', { hits: P('n_would_be_runs', this._tw.get(k).hits) })}</div>` : ''}${rows.length ? rows.map(({ r, why }) => {
           const o = r.not_triggered ? { text: T('didn_t_fire'), cls: 'muted' } : OUTCOME(r);
           return `<button class="wrow ${o.cls}" data-act="why-run" data-rid="${esc(r.run_id)}" data-item="${esc(id)}" data-key="${esc(k)}"><span class="rt">${esc(clock(r.timestamp && r.timestamp.start))}</span>`
             + `<span class="dm"><b>${esc(o.text)}</b><span>${esc((r.trigger ? T('triggered_by', { trigger: r.trigger }) : '') + (why ? ' · ' + why : ''))}</span></span></button>`;
-        }).join('') : `<div class="muted small">${T('no_attempts_stored_home_assistant')}</div>`}`;
+        }).join('') : `<div class="muted small">${T('no_attempts_stored_home_assistant')}</div>`}`);
     }
     async _dbgPick(id) {
       const g = this._dbg, e = g && g.byId.get(id);
@@ -9860,7 +9926,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._drawer = { mode: 'msgs', key };
       const d = this._$.drawer;
       d.hidden = false;
-      d.innerHTML = `<div class="dhead"><span class="dtitle">${T('last_messages', { name: esc(n.name) })}</span><button data-act="close" title="${T('close')}"><ha-icon icon="mdi:close"></ha-icon></button></div><div class="runs msgs"><div class="muted pad">${T('reading_traces')}</div></div>`;
+      this._put(d, `<div class="dhead"><span class="dtitle">${T('last_messages', { name: esc(n.name) })}</span><button data-act="close" title="${T('close')}"><ha-icon icon="mdi:close"></ha-icon></button></div><div class="runs msgs"><div class="muted pad">${T('reading_traces')}</div></div>`);
       this._fitLitbar();
       const callers = [...new Set(m.edges.filter((e) => e.to === key && e.role === 'action' && /^(automation|script)\./.test(e.from)).map((e) => e.from))];
       const mine = (p) => (key.startsWith('svc:') ? p.domain + '.' + p.service === key.slice(4)
@@ -9884,13 +9950,13 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._msgs = out;
       const box = d.querySelector('.msgs');
       if (!box) return;
-      box.innerHTML = out.length ? `<div class="muted pad small">${T('what_this_sent_lately_newest')}</div>${out.slice(0, 40).map((x, i) => {
+      this._put(box, out.length ? `<div class="muted pad small">${T('what_this_sent_lately_newest')}</div>${out.slice(0, 40).map((x, i) => {
           const dd = x.data || {}, btns = dd.data && Array.isArray(dd.data.actions) ? dd.data.actions.map((a) => a && a.title).filter(Boolean) : [];
           return `<button class="run msg" data-act="msg-run" data-i="${i}" data-key="${esc(x.from)}"><span class="rt">${esc(clock(new Date(x.t).toISOString()))}</span>`
             + `<span class="rn"><b>${esc(dd.title || T('no_title'))}</b><span>${esc(shorten(dd.message == null ? '' : typeof dd.message === 'object' ? JSON.stringify(dd.message) : dd.message, 300))}</span>${btns.length ? `<span class="mb">${T('buttons', { btns: esc(btns.join(', ')) })}</span>` : ''}</span>`
             + `<span class="ro">${esc(this._boxName(x.from))}</span></button>`;
         }).join('')}`
-        : `<div class="muted pad">${T('nothing_found_home_assistant_keeps')}</div>`;
+        : `<div class="muted pad">${T('nothing_found_home_assistant_keeps')}</div>`);
     }
 
     /* ---------- the arrow editor (7.5, decision D8): an arrow is a reference in an automation or script config,
@@ -9911,7 +9977,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._applyFocus();
       const bar = this._$.edgebar, ends = this._arrowEnds(e), owner = ends && m.nodes.get(ends.owner);
       const full = this._full(), why = !ends ? (e.role === 'source' ? T('this_arrow_comes_from_the') : T('this_arrow_doesn_t_come')) : '';
-      bar.innerHTML = `<span class="ebtxt">${esc(this._edgeTitle(e))}</span><button data-act="arw-remove" ${!ends || !full ? 'disabled' : ''} title="${esc(!ends ? why : full ? T('remove_what_this_arrow_stands') : T('full_manager_only_switch_it'))}"><ha-icon icon="mdi:link-variant-remove"></ha-icon><span>${T('remove_2')}</span></button>${owner ? `<button data-act="arw-open" title="${T('open_in_its_editor', { name: esc(owner.name) })}"><ha-icon icon="mdi:pencil-outline"></ha-icon><span>${T('edit', { name: esc(owner.name) })}</span></button>` : ''}`;
+      this._put(bar, `<span class="ebtxt">${esc(this._edgeTitle(e))}</span><button data-act="arw-remove" ${!ends || !full ? 'disabled' : ''} title="${esc(!ends ? why : full ? T('remove_what_this_arrow_stands') : T('full_manager_only_switch_it'))}"><ha-icon icon="mdi:link-variant-remove"></ha-icon><span>${T('remove_2')}</span></button>${owner ? `<button data-act="arw-open" title="${T('open_in_its_editor', { name: esc(owner.name) })}"><ha-icon icon="mdi:pencil-outline"></ha-icon><span>${T('edit', { name: esc(owner.name) })}</span></button>` : ''}`);
       bar.hidden = false;
       const r = this._$.vp.getBoundingClientRect();
       bar.style.left = Math.max(6, Math.min(ev.clientX - r.left - 20, this._openWidth() - bar.offsetWidth - 6)) + 'px';
@@ -10296,7 +10362,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         if (open && !this._drawerOpen) {
           this._drawerOpen = true;
           const a = this.shadowRoot.activeElement;
-          this._drawerBack = a && !d.contains(a) ? this._remember(a) : null;
+          this._drawerBack = a && !d.contains(a) ? a : null;
           this._clock.after('drawer-focus', 0, () => {
             if (d.hidden || !this._$.modal.hidden || d.contains(this.shadowRoot.activeElement)) return;
             const h = d.querySelector('.dtitle');
@@ -10304,7 +10370,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           });
         } else if (!open && this._drawerOpen) {
           this._drawerOpen = false;
-          const back = this._recall(this._drawerBack), box = this._roveKey && this._els && this._els.get(this._roveKey);
+          const back = this._drawerBack && this._drawerBack.isConnected ? this._drawerBack : null, box = this._roveKey && this._els && this._els.get(this._roveKey);
           this._drawerBack = null;
           const a = this.shadowRoot.activeElement;
           if (!a || a === d || d.contains(a) || a === this.shadowRoot.host) { if (back) back.focus({ preventScroll: true }); else if (box) box.focus({ preventScroll: true }); }
@@ -10312,21 +10378,6 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       }).observe(d, { attributes: true, attributeFilter: ['hidden'], childList: true });
     }
     // dialogs: named, focus moves in and stays in, and goes back where it was when they close
-    // where focus should go back to, found again if the board drew it anew meanwhile (the list redraws when a
-    // count changes): the same button by what it does and what it's for, at the same place among its like
-    _remember(el) {
-      if (!el || !el.dataset) return null;
-      const keys = ['act', 'label', 'key', 'fn', 'id', 'k'].filter((k) => el.dataset[k] != null);
-      const sel = keys.length ? keys.map((k) => `[data-${k}="${CSS.escape(el.dataset[k])}"]`).join('') : null;
-      return { el, sel, i: sel ? [...this.shadowRoot.querySelectorAll(sel)].indexOf(el) : -1 };
-    }
-    _recall(r) {
-      if (!r) return null;
-      if (r.el.isConnected) return r.el;
-      if (!r.sel) return null;
-      const all = [...this.shadowRoot.querySelectorAll(r.sel)];
-      return all[r.i] || all[0] || null;
-    }
     _watchModal() {
       const md = this._$.modal;
       new MutationObserver(() => {
@@ -10339,11 +10390,11 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         }
         if (open && !this._modalOpen) {
           this._modalOpen = true;
-          this._modalBack = this._remember(this.shadowRoot.activeElement);
+          this._modalBack = this.shadowRoot.activeElement;
           this._clock.after('modal-focus', 60, () => { if (md.hidden) return; const f = md.querySelector('input:not([type=hidden]):not([disabled]), textarea, select, button.primary:not([disabled])') || md.querySelector('button'); if (f && !md.contains(this.shadowRoot.activeElement)) f.focus(); });
         } else if (!open && this._modalOpen) {
           this._modalOpen = false;
-          const back = this._recall(this._modalBack), box = this._roveKey && this._els.get(this._roveKey);
+          const back = this._modalBack && this._modalBack.isConnected ? this._modalBack : null, box = this._roveKey && this._els.get(this._roveKey);
           this._modalBack = null;
           if (back) back.focus(); else if (box) box.focus();
         }
@@ -10732,7 +10783,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       box.dataset.sig = sig;
       const mark = (c) => { const r = res.get(c.id); if (!r) return `<span class="ckst muted" title="${T('chk_not_run')}">·</span>`; if (r.unsure) return `<span class="ckst unsure" title="${esc(r.unsure)}">?</span>`; return r.ok ? `<span class="ckst ok" title="${T('chk_passes')}">&#10003;</span>` : `<span class="ckst bad" title="${T('chk_fails')}">&#10005;</span>`; };
       const row = (c) => `<div class="ckrow" data-id="${esc(c.id)}">${mark(c)}<span class="ckname" title="${esc(c.steps.map((x) => this._chkStepText(x).replace(/<[^>]+>/g, '')).join(' → '))}">${esc(c.name)}</span><button class="ib" data-act="chk-run" data-id="${esc(c.id)}" title="${T('chk_run_t')}"><ha-icon icon="mdi:play-circle-outline"></ha-icon></button><button class="ib" data-act="chk-replay" data-id="${esc(c.id)}" title="${T('chk_replay_t')}"><ha-icon icon="mdi:movie-open-play-outline"></ha-icon></button><button class="ib" data-act="chk-del" data-id="${esc(c.id)}" title="${T('chk_del_t')}"><ha-icon icon="mdi:delete-outline"></ha-icon></button></div>`;
-      box.innerHTML = this._ver ? '' : `<div class="ckhead"><span>${P('chk_n', list.length)}</span>${list.length ? `<button class="ib" data-act="chk-run" title="${T('chk_run_all_t')}"><ha-icon icon="mdi:play-box-multiple-outline"></ha-icon></button>` : ''}<button class="chip" data-act="chk-save"${can ? '' : ' disabled'} title="${can ? T('chk_save_t') : T('chk_save_none')}"><ha-icon icon="mdi:content-save-check-outline"></ha-icon>${T('chk_save')}</button></div>${list.map(row).join('')}`;
+      this._put(box, this._ver ? '' : `<div class="ckhead"><span>${P('chk_n', list.length)}</span>${list.length ? `<button class="ib" data-act="chk-run" title="${T('chk_run_all_t')}"><ha-icon icon="mdi:play-box-multiple-outline"></ha-icon></button>` : ''}<button class="chip" data-act="chk-save"${can ? '' : ' disabled'} title="${can ? T('chk_save_t') : T('chk_save_none')}"><ha-icon icon="mdi:content-save-check-outline"></ha-icon>${T('chk_save')}</button></div>${list.map(row).join('')}`);
     }
     _checkSaveDlg() {
       const g = this._sbx;
@@ -10972,8 +11023,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         + `</div></div></div>`;
       const other = dismissed ? `<button class="lnk" data-act="problems">${T('prob_back')}</button>`
         : ds.length ? `<button class="lnk" data-act="pdis-list">${P('prob_dismissed_n', ds.length)}</button>` : '';
-      d.innerHTML = `<div class="dhead"><span class="dtitle">${dismissed ? T('prob_dismissed_title', { fnName: esc(this._fnName(label)) }) : T('prob_title', { fnName: esc(this._fnName(label)) })}</span><button data-act="close" title="${T('close')}"><ha-icon icon="mdi:close"></ha-icon></button></div>`
-        + `<div class="probs"><div class="vnote">${dismissed ? T('prob_dismissed_note') : T('prob_note')}</div>${ps.length ? ps.map(row).join('') : `<div class="muted pad">${dismissed ? T('prob_none_dismissed') : T('prob_none')}</div>`}${other ? `<div class="pother">${other}</div>` : ''}</div>`;
+      this._put(d, `<div class="dhead"><span class="dtitle">${dismissed ? T('prob_dismissed_title', { fnName: esc(this._fnName(label)) }) : T('prob_title', { fnName: esc(this._fnName(label)) })}</span><button data-act="close" title="${T('close')}"><ha-icon icon="mdi:close"></ha-icon></button></div>`
+        + `<div class="probs"><div class="vnote">${dismissed ? T('prob_dismissed_note') : T('prob_note')}</div>${ps.length ? ps.map(row).join('') : `<div class="muted pad">${dismissed ? T('prob_none_dismissed') : T('prob_none')}</div>`}${other ? `<div class="pother">${other}</div>` : ''}</div>`);
       this._fitLitbar && this._fitLitbar();
     }
     _aboutModal() {
@@ -11911,6 +11962,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
   }
 
   FunctionsBoard.VERSION = VERSION;
+  // (for the drawing test, tests/board/draw.test.js)
+  FunctionsBoard.morph = morph;
   // the words, so a translation can be tried from the browser console: add a table, e.g.
   // customElements.get('functions-board').STR.de = { ... }, and the page switches at its next update
   FunctionsBoard.STR = STR;
