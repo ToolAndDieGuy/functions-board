@@ -4745,6 +4745,86 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     return { ok: !unsure && res.every((r) => r.ok), unsure, res, log: eng.log };
   }
 
+  /* ---------- the clock (0.10.0): every wait the board sets, by name, stopped together ----------
+     A board taken off the page (another sidebar entry, a dashboard view left) stops its clock: nothing it set
+     runs after that, and nothing new starts until it is back on the page (start). A name stands for one wait:
+     after() replaces the wait of that name (the last call wins: typing, saving), once() keeps it (the first call
+     wins: at most one redraw a second), every() repeats, frame() waits for the next frame. A name of null makes
+     a wait of its own; its name is returned, for cancel(). deadline() is how long a call may take: when the
+     clock stops, it runs at once (the call is given up), so nothing waits on it for ever. sleep() is a pause
+     inside a task in the background: it answers true when the time is up, and false at once when the clock
+     stops, so the task gives up. pause() is a pause inside a write to Home Assistant, which finishes even when
+     the board has left the page (it is not stopped). env: the timer functions, for tests. */
+  class Clock {
+    constructor(env) {
+      const g = env || globalThis;
+      this._env = {
+        setTimeout: g.setTimeout.bind(g), clearTimeout: g.clearTimeout.bind(g), setInterval: g.setInterval.bind(g), clearInterval: g.clearInterval.bind(g),
+        raf: g.requestAnimationFrame ? g.requestAnimationFrame.bind(g) : (f) => g.setTimeout(f, 16), caf: g.cancelAnimationFrame ? g.cancelAnimationFrame.bind(g) : g.clearTimeout.bind(g),
+      };
+      this._w = new Map();        // name → { kind, id }
+      this._sleeps = new Set();   // the resolve of every sleep() not yet over
+      this._n = 0;
+      this.running = true;
+    }
+    _name(name) { return name == null ? '#' + ++this._n : name; }
+    _set(name, kind, id) { this._w.set(name, { kind, id }); return name; }
+    after(name, ms, fn) {
+      name = this._name(name);
+      this.cancel(name);
+      if (!this.running) return name;
+      return this._set(name, 't', this._env.setTimeout(() => { this._w.delete(name); fn(); }, ms));
+    }
+    once(name, ms, fn) {
+      name = this._name(name);
+      if (this._w.has(name) || !this.running) return name;
+      return this._set(name, 't', this._env.setTimeout(() => { this._w.delete(name); fn(); }, ms));
+    }
+    every(name, ms, fn) {
+      name = this._name(name);
+      this.cancel(name);
+      if (!this.running) return name;
+      return this._set(name, 'i', this._env.setInterval(fn, ms));
+    }
+    frame(name, fn) {
+      name = this._name(name);
+      if (this._w.has(name) || !this.running) return name;
+      return this._set(name, 'f', this._env.raf((t) => { this._w.delete(name); fn(t); }));
+    }
+    deadline(ms, fn) {
+      const name = this._name(null);
+      if (!this.running) { fn(); return name; }
+      this._w.set(name, { kind: 'd', fn, id: this._env.setTimeout(() => { this._w.delete(name); fn(); }, ms) });
+      return name;
+    }
+    pause(ms) { return new Promise((r) => this._env.setTimeout(r, ms)); }
+    has(name) { return this._w.has(name); }
+    cancel(name) {
+      const w = this._w.get(name);
+      if (!w) return;
+      this._w.delete(name);
+      if (w.kind === 'i') this._env.clearInterval(w.id); else if (w.kind === 'f') this._env.caf(w.id); else this._env.clearTimeout(w.id);
+    }
+    sleep(ms) {
+      if (!this.running) return Promise.resolve(false);
+      return new Promise((resolve) => {
+        const done = (v) => { if (this._sleeps.delete(done)) { this._env.clearTimeout(id); resolve(v); } };
+        const id = this._env.setTimeout(() => done(true), ms);
+        this._sleeps.add(done);
+      });
+    }
+    // every wait cancelled, every sleep over (false); nothing new until start()
+    stop() {
+      this.running = false;
+      const due = [...this._w.values()].filter((w) => w.kind === 'd').map((w) => w.fn);
+      for (const name of [...this._w.keys()]) this.cancel(name);
+      for (const done of [...this._sleeps]) done(false);
+      due.forEach((fn) => fn());
+    }
+    start() { this.running = true; }
+    get size() { return this._w.size + this._sleeps.size; }
+  }
+
   class FunctionsBoard extends HTMLElement {
     constructor() {
       super();
@@ -4763,7 +4843,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._sel = null; this._focus = null; this._focusEdges = new Set(); this._els = new Map();
       this._drag = null; this._pointers = new Map(); this._live = new Map(); this._prev = new Map();
       this._drawer = null; this._capture = null; this._runs = []; this._errKeys = new Set(); this._pick = new Set();
-      this._unsubs = []; this._timers = {}; this._token = 0; this._booting = false;
+      this._unsubs = []; this._clock = new Clock(); this._token = 0; this._booting = false;
       this._watch = new Map(); this._cfgCache = new Map(); this._toastActs = [];
       this._undoStack = []; this._redoStack = [];
       this._tgt = new Map(); this._src = new Map();
@@ -4777,8 +4857,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     _relang() {
       this._flushSave(); this._unsubscribe(); this._listen(false);
       if (this._ro) this._ro.disconnect();
-      Object.values(this._timers).forEach((t) => clearTimeout(t));
-      if (this._raf) cancelAnimationFrame(this._raf);
+      this._clock.stop();
       const keep = new Set(['_hass', '_config', '_panelObj', '_route', '_narrow', '_isPanel', '_layoutMode',
         '_flushNow', '_winKeyFn', '_rootOn']);
       const undo = this._undoStack, redo = this._redoStack;
@@ -4799,8 +4878,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (!this._$) this._build();
       if (hass.user && !hass.user.is_admin) { this._renderNoAdmin(); return; }
       if (!this._data) { if (!this._booting) this._boot(); return; }
-      this._throttle('states', 1000, () => this._refreshStates());
-      this._throttle('probscan', 60000, () => this._scanProblems());
+      this._clock.once('states', 1000, () => this._refreshStates());
+      this._clock.once('probscan', 60000, () => this._scanProblems());
     }
     get hass() { return this._hass; }
     // set by Home Assistant when this runs as the integration's sidebar page
@@ -4833,6 +4912,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     }
 
     connectedCallback() {
+      this._clock.start();
       if (this._data) {
         this._subscribe();
         // back on the page: the open function's monitors listen again, and an open debugger records again
@@ -4853,16 +4933,12 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       window.removeEventListener('pagehide', this._flushNow);
       document.removeEventListener('visibilitychange', this._flushNow);
       this._flushSave();
+      // and nothing it set runs while it's away (0.10.0): the clock starts again when it's back
+      this._clock.stop();
     }
 
     /* ---------- small utilities ---------- */
     _ws(msg) { return this._hass.callWS(msg); }
-    _debounce(name, ms, fn) { clearTimeout(this._timers[name]); this._timers[name] = setTimeout(fn, ms); }
-    _throttle(name, ms, fn) {
-      const k = 't:' + name;
-      if (this._timers[k]) return;
-      this._timers[k] = setTimeout(() => { this._timers[k] = null; fn(); }, ms);
-    }
     async _loadData() {
       // The integration stores functions and layouts for everyone; without it they live in this user's data.
       let r = null;
@@ -4903,12 +4979,12 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     _save() {
       if (!this._data) return;
       this._savePending = true;
-      this._debounce('save', 700, () => this._doSave());
+      this._clock.after('save', 700, () => this._doSave());
     }
     // a change made just before the tab closes or the page is left still gets written
     _flushSave() {
       if (!this._savePending || !this._data) return;
-      clearTimeout(this._timers.save);
+      this._clock.cancel('save');
       this._doSave();
     }
     _doSave() {
@@ -4982,8 +5058,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const act = this.shadowRoot.activeElement;
       if (this._drag || (act && /^(INPUT|TEXTAREA|SELECT)$/.test(act.tagName))) {
         // finish what's in hand first; pick the change up shortly after
-        clearTimeout(this._timers.remote);
-        this._timers.remote = setTimeout(() => this._onShared({ what: 'all' }), 1500);
+        this._clock.after('remote', 1500, () => this._onShared({ what: 'all' }));
         return;
       }
       try {
@@ -5033,7 +5108,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._toastActs = acts || [];
       t.innerHTML = `<span>${esc(msg)}</span>` + this._toastActs.map((a, i) => `<button data-act="toast-act" data-i="${i}">${esc(a.text)}</button>`).join('');
       t.hidden = false;
-      this._debounce('toast', this._toastActs.length ? 9000 : 4500, () => { t.hidden = true; this._toastActs = []; });
+      this._clock.after('toast', this._toastActs.length ? 9000 : 4500, () => { t.hidden = true; this._toastActs = []; });
     }
     _fatal(e) {
       console.error('functions-board', e);
@@ -5043,7 +5118,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     _twoStep(el, text, fn) {
       if (el.dataset.confirm) { delete el.dataset.confirm; el.innerHTML = el._orig; fn(); return; }
       el.dataset.confirm = '1'; el._orig = el.innerHTML; el.innerHTML = `<span>${esc(text)}</span>`;
-      setTimeout(() => { if (el.dataset.confirm) { delete el.dataset.confirm; el.innerHTML = el._orig; } }, 4000);
+      this._clock.after(null, 4000, () => { if (el.dataset.confirm) { delete el.dataset.confirm; el.innerHTML = el._orig; } });
     }
 
     /* ---------- skeleton ---------- */
@@ -5174,7 +5249,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         this._markSaved();
         await Promise.all([this._loadRegistries(true), this._loadDescriptions()]);
         // the problem counts on the list, soon after the page is up (then as states and configs change)
-        this._throttle('probscan0', 2000, () => this._scanProblems());
+        this._clock.once('probscan0', 2000, () => this._scanProblems());
         this._subscribe();
         this._renderLegend();
         this._applyMode();
@@ -5186,7 +5261,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         if (cur) await this._open(cur, false, { replace: true });
         else { this._renderHeader(); this._setEmpty(); }
         this._resumeCapture();
-        if (this._regWarm) setTimeout(() => this._refreshWarm(), 600);
+        if (this._regWarm) this._clock.after('warm', 600, () => this._refreshWarm());
       } catch (e) { this._fatal(e); }
       this._booting = false;
     }
@@ -5239,7 +5314,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     _subscribe() {
       if (this._unsubs.length || !this._hass) return;
       const c = this._hass.connection;
-      const reload = () => this._debounce('reg', 1200, () => this._reload());
+      const reload = () => this._clock.after('reg', 1200, () => this._reload());
       this._unsubs = [
         c.subscribeEvents((ev) => this._onRegistry(ev), 'entity_registry_updated'),
         // devices: only creation, removal, and labels, names or areas changing matter to the board (5.5)
@@ -5261,8 +5336,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     // configs changed: forget the cached ones and redraw the open function, at most once a second
     _configChanged() {
       this._cfgCache.clear(); this._src = new Map(); this._grefs = null; this._cfgGen = (this._cfgGen || 0) + 1;
-      this._throttle('probscan2', 3000, () => this._scanProblems());
-      this._throttle('cfg', 1000, () => {
+      this._clock.once('probscan2', 3000, () => this._scanProblems());
+      this._clock.once('cfg', 1000, () => {
         if (this._drag) { this._configChanged(); return; }
         const cur = this._data && this._data.ui.current;
         if (cur && this._data.functions.includes(cur)) this._open(cur, true);
@@ -5273,7 +5348,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       u.forEach((p) => Promise.resolve(p).then((f) => f && f()).catch(() => {}));
       // and the developer tools' own subscriptions (Phase 9)
       this._stopWatches(); this._stopMonitors(); this._edgeHoverEnd(); this._dbgStop(true);
-      clearInterval(this._condTick); this._condTick = null;
+      this._clock.cancel('conds-tick');
     }
 
     async _reload(given) {
@@ -5293,13 +5368,13 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       } else if (d.action === 'update' && id && this._watch.has(id)) await this._rewatch(id);
       if (id && /^(automation|script)\./.test(id)) this._cfgCache.delete(id);
       const relevant = d.action !== 'update' || (this._model && this._model.nodes.has(id)) || (d.changes && 'labels' in d.changes);
-      if (relevant) this._debounce('reg', 1200, () => this._reload());
+      if (relevant) this._clock.after('reg', 1200, () => this._reload());
     }
     // something was created in the editor drawer: give it the function's label and keep an eye on it
     async _captured(id, c) {
       const w = { label: c.label, until: Date.now() + 20000, cat: null };
       this._watch.set(id, w);
-      setTimeout(() => { if (this._watch.get(id) === w) this._watch.delete(id); }, 20500);
+      this._clock.after('watch:' + id, 20500, () => { if (this._watch.get(id) === w) this._watch.delete(id); });
       try {
         const u = await this._label(id, c.label, true, true);
         w.cat = u.cat;
@@ -5369,9 +5444,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     _afterOpen(label) {
       this._startMonitors();
       this._testCondsSoon(150);
-      clearInterval(this._condTick);
       // time and sun conditions change without any state changing
-      this._condTick = setInterval(() => { if (document.visibilityState === 'visible' && this.isConnected) this._testConds(); }, 30000);
+      this._clock.every('conds-tick', 30000, () => { if (document.visibilityState === 'visible' && this.isConnected) this._testConds(); });
       if (this._drawer && this._drawer.mode === 'debug') {
         const g = this._dbg;
         if (!g || g.label !== label) { this._dbgStop(true); this._dbg = null; this._openDebug(); }
@@ -5605,9 +5679,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (DESC) { [this._trigDesc, this._condDesc] = DESC; return; }
       const get = (type) => new Promise((resolve) => {
         let done = false, unsub = null;
-        const fin = (v) => { if (done) return; done = true; resolve(v || {}); Promise.resolve(unsub).then((f) => f && f()).catch(() => {}); };
+        const fin = (v) => { if (done) return; done = true; this._clock.cancel(to); resolve(v || {}); Promise.resolve(unsub).then((f) => f && f()).catch(() => {}); };
         unsub = this._hass.connection.subscribeMessage((m) => fin(m), { type }).catch(() => fin({}));
-        setTimeout(() => fin({}), 4000);
+        const to = this._clock.deadline(4000, () => fin({}));
       });
       [this._trigDesc, this._condDesc] = await Promise.all([get('trigger_platforms/subscribe'), get('condition_platforms/subscribe')]);
       if (Object.keys(this._trigDesc).length && Object.keys(this._condDesc).length) DESC = [this._trigDesc, this._condDesc];
@@ -6246,7 +6320,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (el) { el.classList.remove('pulse'); void el.offsetWidth; el.classList.add('pulse'); }
       this._live.set(k, Date.now() + 2500);
       this._drawEdges();
-      this._debounce('live', 2600, () => this._drawEdges());
+      this._clock.after('live', 2600, () => this._drawEdges());
     }
 
     _renderNodebar() {
@@ -6498,7 +6572,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._positionNodebar();
     }
     _saveView() {
-      this._debounce('view', 800, () => {
+      this._clock.after('view', 800, () => {
         if (!this._model) return;
         const u = this._data.ui;
         (u.views = u.views || {})[this._viewKey(this._model.label)] = { x: Math.round(this._view.x), y: Math.round(this._view.y), k: +this._view.k.toFixed(3) };
@@ -6524,7 +6598,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const m = this._model;
       if (!m || !this.isConnected) return;
       const r = this._$.vp.getBoundingClientRect();
-      if (r.width < 80 || r.height < 80) { if (tries < 20) setTimeout(() => this._fit(opt, tries + 1), 250); return; }
+      if (r.width < 80 || r.height < 80) { if (tries < 20) this._clock.after('fit', 250, () => this._fit(opt, tries + 1)); return; }
       const L = this._layout(m.label), vis = this._visibleKeys();
       const boxes = [...vis].map((k) => m.nodes.get(k)).map((n) => [n.x, n.y, n.x + n.w, n.y + n.h])
         .concat(L.frames.map((f) => [f.x, f.y, f.x + f.w, f.y + f.h]))
@@ -6681,16 +6755,16 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._drag = d;
       if (e.pointerType !== 'touch') return;
       d.touch = true; d.wait = true;
-      d.timer = setTimeout(() => {
+      this._clock.after('hold', HOLD_MS, () => {
         if (this._drag !== d || !d.wait) return;
         d.wait = false;
         if (d.el) d.el.classList.add('lifted');
         try { if (navigator.vibrate) navigator.vibrate(20); } catch (err) { /* no buzz on this phone */ }
-      }, HOLD_MS);
+      });
     }
     _dropHold(d) {
       if (!d) return;
-      clearTimeout(d.timer); d.wait = false;
+      this._clock.cancel('hold'); d.wait = false;
       if (d.el) d.el.classList.remove('lifted');
     }
     _inFrame(f) {
@@ -6743,7 +6817,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           if (it.el) { it.el.style.left = o.x + 'px'; it.el.style.top = o.y + 'px'; }
         });
       }
-      if (!this._raf) this._raf = requestAnimationFrame(() => { this._raf = null; this._drawEdges(); this._positionNodebar(); });
+      this._clock.frame('edges', () => { this._drawEdges(); this._positionNodebar(); });
     }
     _onUp(e) {
       this._pointers.delete(e.pointerId);
@@ -7052,7 +7126,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (this._tst && t.closest && t.closest('.tdlg')) { this._testWhat(); return; }
       if (this._arw && t.closest && t.closest('.adlg')) { this._linkPreview(); return; }
       if (t.classList.contains('search')) { if (g) g.pshow = 200; this._renderPicks(t.value); return; }
-      if (t.classList.contains('find')) { this._findQ = t.value; this._debounce('find', 120, () => this._renderList()); return; }
+      if (t.classList.contains('find')) { this._findQ = t.value; this._clock.after('find', 120, () => this._renderList()); return; }
       if (t.name === 'icon' && t.tagName === 'INPUT') { this._fnIcon = t.value.trim(); return; }
       if (g && t.dataset.cname != null) { const c = g.cands && g.cands[+t.dataset.cname]; if (c) c.name = t.value; return; }
       if (g && t.hasAttribute('data-pnew')) { g.newName = t.value; this._mgrFootRefresh(); return; }
@@ -7083,7 +7157,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (t.classList && t.classList.contains('ftin') && this._model) {
         const f = this._layout(this._model.label).frames.find((x) => x.id === t.dataset.fid);
         if (f) { f.title = t.value.trim() || T('frame'); this._save(); if (t._before) this._layoutStep(this._model.label, t._before, T('rename_frame')); }
-        setTimeout(() => this._renderFrames(), 0);
+        this._clock.after('frames', 0, () => this._renderFrames());
       }
       if (t.classList && t.classList.contains('nbody') && this._model && t._before) {
         this._layoutStep(this._model.label, t._before, T('edit_note'));
@@ -7402,7 +7476,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       // a few seconds' grace: the item saved just before the drawer closed still gets the label
       const c = this._capture;
       if (!c) return;
-      setTimeout(() => { if (this._capture === c) this._capture = null; }, 3000);
+      this._clock.after('capture', 3000, () => { if (this._capture === c) this._capture = null; });
     }
     async _openRuns() {
       this._leaveDrawerMode();
@@ -7464,7 +7538,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const k = ev && ev.data && ev.data.entity_id, m = this._model;
       if (!m || !k || !m.nodes.has(k)) return;
       this._pulse(k);
-      this._debounce('runs', 2500, async () => {
+      this._clock.after('runs', 2500, async () => {
         await this._loadRuns();
         if (this._drawer && this._drawer.mode === 'runs') this._renderRuns();
       });
@@ -7775,9 +7849,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     _renderOnce(template) {
       return new Promise((resolve) => {
         let done = false, unsub = null;
-        const fin = (v) => { if (done) return; done = true; resolve(v); Promise.resolve(unsub).then((f) => f && f()).catch(() => {}); };
+        const fin = (v) => { if (done) return; done = true; this._clock.cancel(to); resolve(v); Promise.resolve(unsub).then((f) => f && f()).catch(() => {}); };
         unsub = this._hass.connection.subscribeMessage((msg) => fin(msg && !msg.error ? msg.result : null), { type: 'render_template', template, strict: false, report_errors: true, timeout: 3 }).catch(() => fin(null));
-        setTimeout(() => fin(null), 4000);
+        const to = this._clock.deadline(4000, () => fin(null));
       });
     }
     async _doTest(test) {
@@ -7918,7 +7992,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._monKind = 'event';
       m.hidden = false;
       m.innerHTML = `<div class="dlg mdlg"><h3>${T('monitor_box')}</h3><div class="hint">${T('a_box_on_the_board', { extra: mq ? T('or_the_last_10_messages') : '' })}</div>${mq ? `<div class="tchoice"><button class="chip on" data-act="mon-kind" data-k="event">${T('event_type')}</button><button class="chip" data-act="mon-kind" data-k="mqtt">${T('mqtt_topic')}</button></div>` : ''}<label><span class="mlab">${T('event_type')}</span><input name="topic" list="fbevtypes" placeholder="mobile_app_notification_action"><datalist id="fbevtypes"></datalist></label><div class="btns"><button data-act="modal-cancel">${T('cancel')}</button><button class="primary" data-act="mon-make">${T('add')}</button></div></div>`;
-      setTimeout(() => { const i = m.querySelector('input[name=topic]'); if (i) i.focus(); }, 50);
+      this._clock.after('focus', 50, () => { const i = m.querySelector('input[name=topic]'); if (i) i.focus(); });
       const types = await this._hass.callApi('GET', 'events').catch(() => []);
       const dl = m.querySelector('#fbevtypes');
       if (dl) dl.innerHTML = (types || []).map((x) => x && x.event).filter((x) => x && !NO_MONITOR.has(x)).sort().map((x) => `<option value="${esc(x)}">`).join('');
@@ -7954,7 +8028,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       list.unshift(item);
       this._monData.set(id, list.slice(0, 10));
       if (!item.err) this._monCount.set(id, (this._monCount.get(id) || 0) + 1);
-      this._throttle('mon:' + id, 250, () => this._renderMon(id));
+      this._clock.once('mon:' + id, 250, () => this._renderMon(id));
       const el = this._els.get('tool:' + id);
       if (el && !item.err) { el.classList.remove('pulse'); void el.offsetWidth; el.classList.add('pulse'); }
     }
@@ -8002,7 +8076,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         const el = this._els.get(key);
         if (el) { el.classList.remove('wpulse'); void el.offsetWidth; el.classList.add('wpulse'); }
         this._drawEdges();
-        this._debounce('live', 2600, () => this._drawEdges());
+        this._clock.after('live', 2600, () => this._drawEdges());
         this._refreshStates();
       }
       const n = m && m.nodes.get(key);
@@ -8012,7 +8086,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     _stopWatches(keepLabel) { [...this._tw.entries()].forEach(([k, w]) => { if (!keepLabel || w.label !== keepLabel) this._stopWatch(k); }); }
 
     // ---- live checks (9.3): each check arrow shows whether its condition passes right now
-    _testCondsSoon(ms) { this._debounce('conds', ms == null ? 400 : ms, () => this._testConds()); }
+    _testCondsSoon(ms) { this._clock.after('conds', ms == null ? 400 : ms, () => this._testConds()); }
     async _testConds() {
       const m = this._model;
       if (!m || this._data.ui.condres === false || this._sbxOn()) { if (this._cond.size) { this._cond = new Map(); this._drawEdges(); } this._condKeys = null; return; }
@@ -8153,15 +8227,14 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       g.seen = new Map(ents.map((k) => { const s = this._hass.states[k]; return [k, s ? s.last_changed : null]; }));
       // every run, also the ones a condition stopped, from the traces
       await this._dbgTraces();
-      clearInterval(g.poll);
-      if (g.rec) g.poll = setInterval(() => this._dbgTraces(), 4000);
+      if (g.rec) this._clock.every('dbg-poll', 4000, () => this._dbgTraces()); else this._clock.cancel('dbg-poll');
       if (!g.users.size) this._ws({ type: 'config/auth/list' }).then((us) => { (us || []).forEach((u) => g.users.set(u.id, u.name)); this._renderDbgSoon(); }, () => {});
     }
     _dbgStop(quiet) {
       const g = this._dbg;
       if (!g || !g.rec) return;
       g.rec = false;
-      clearInterval(g.poll); g.poll = null;
+      this._clock.cancel('dbg-poll');
       g.subs.forEach((p) => Promise.resolve(p).then((f) => f && f()).catch(() => {}));
       g.subs = [];
       if (!quiet) this._dbgAdd({ kind: 'note', t: Date.now(), text: T('stopped_recording') });
@@ -8317,7 +8390,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         this._dbgAdd({ id: 'st:' + k + ':' + t, kind: 'state', t, key: k, state: s.state, by });
       });
     }
-    _renderDbgSoon() { this._throttle('dbg', 200, () => this._renderDbg()); }
+    _renderDbgSoon() { this._clock.once('dbg', 200, () => this._renderDbg()); }
     _renderDbg() {
       const g = this._dbg, d = this._$.drawer;
       if (!g || !this._drawer || this._drawer.mode !== 'debug') return;
@@ -8646,7 +8719,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         } catch (e) { errs.push(name(k) + ': ' + ((e && (e.message || e.body || e.code)) || e)); }
       }
       // what came back, and what had left the function, wear its label again
-      await new Promise((r) => setTimeout(r, plan.recreate.length ? 1500 : 200));
+      await this._clock.pause(plan.recreate.length ? 1500 : 200);
       const reg = await this._ws({ type: 'config/entity_registry/list' }).catch(() => []);
       const findNew = (k) => { const it = snap.items[k], uid = it.newId || it.id; const e = reg.find((x) => x.platform === it.dom && x.unique_id === uid); return e ? e.entity_id : null; };
       for (const k of plan.rejoin.concat(plan.recreate)) {
@@ -8797,8 +8870,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     _renderRaw(template, variables) {
       return new Promise((res, rej) => {
         let done = false, un = null;
-        const fin = (f, v) => { if (done) return; done = true; clearTimeout(to); f(v); if (un) un.then((u) => u && u()).catch(() => {}); };
-        const to = setTimeout(() => fin(rej, new Error('timeout')), 8000);
+        const fin = (f, v) => { if (done) return; done = true; this._clock.cancel(to); f(v); if (un) un.then((u) => u && u()).catch(() => {}); };
+        const to = this._clock.deadline(8000, () => fin(rej, new Error('timeout')));
         un = this._hass.connection.subscribeMessage((m) => {
           if (m && m.error) { if (m.level !== 'WARNING') fin(rej, new Error(String(m.error))); return; }
           fin(res, m ? m.result : null);
@@ -8819,7 +8892,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       });
     }
     _sbxLogged() {
-      this._throttle('sbx', 120, () => { this._renderSbx(); this._refreshStates(); });
+      this._clock.once('sbx', 120, () => { this._renderSbx(); this._refreshStates(); });
     }
     // the entities you can set, the events you can fire, the automations and scripts you can run
     _renderSbxCtl() {
@@ -9015,7 +9088,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const f = act && (this._flow && this._flow.act === act ? this._flow : this._flowBuild(act));
       if (!f || !f.steps.length) { if (!auto) this._renderSbx(); return; }
       const fresh = f !== this._flow;
-      clearTimeout(this._timers.lit);
+      this._clock.cancel('lit');
       this._flow = f;
       this._sel = null;
       // the whole run in view if it reads at that size; otherwise the view follows the steps as they play
@@ -9113,14 +9186,14 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     _flowPlay() {
       const f = this._flow;
       if (!f) return;
-      clearTimeout(this._timers.lit);
+      this._clock.cancel('lit');
       if (lessMotion()) { this._flowGo(f.steps.length - 1, false); return; }
       let i = 0;
       const tick = () => {
         if (this._flow !== f) return;
         this._flowGo(i, true);
         // a long flow plays a little faster: ten seconds or so in all
-        if (++i < f.steps.length) this._timers.lit = setTimeout(tick, Math.max(450, Math.min(850, 10000 / f.steps.length)));
+        if (++i < f.steps.length) this._clock.after('lit', Math.max(450, Math.min(850, 10000 / f.steps.length)), tick);
       };
       tick();
     }
@@ -9186,14 +9259,14 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (R.x0 * v.k + v.x >= a.pad / 2 && R.y0 * v.k + v.y >= a.pad / 2 && R.x1 * v.k + v.x <= a.W - a.pad / 2 && R.y1 * v.k + v.y <= a.H - a.pad / 2) return;
       const k = Math.max(0.35, Math.min(v.k, this._fitK(R)));
       const to = { k, x: a.W / 2 - ((R.x0 + R.x1) / 2) * k, y: a.H / 2 - ((R.y0 + R.y1) / 2) * k }, from = { ...v }, t0 = performance.now(), ms = lessMotion() ? 0 : 380;
-      cancelAnimationFrame(this._followRaf);
+      this._clock.cancel('follow');
       const step = (now) => {
         const t = Math.min(1, (now - t0) / ms), e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
         this._view = { k: from.k + (to.k - from.k) * e, x: from.x + (to.x - from.x) * e, y: from.y + (to.y - from.y) * e };
         this._applyView();
-        if (t < 1) this._followRaf = requestAnimationFrame(step); else this._saveView();
+        if (t < 1) this._clock.frame('follow', step); else this._saveView();
       };
-      this._followRaf = requestAnimationFrame(step);
+      this._clock.frame('follow', step);
     }
     _flowBar() {
       const f = this._flow, b = this._$.litbar;
@@ -9275,7 +9348,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         default: return { main: e.text || '', sub: '', cls: e.warn ? 'amber' : '' };
       }
     }
-    _renderSbxSoon() { this._throttle('sbxr', 120, () => this._renderSbx()); }
+    _renderSbxSoon() { this._clock.once('sbxr', 120, () => this._renderSbx()); }
     _renderSbx() {
       this._renderChecks(true);
       const g = this._sbx, d = this._$.drawer;
@@ -9412,7 +9485,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         const a = keys[i - 1], b = keys[i], e = m.edges.find((x) => (x.from === a && x.to === b) || (x.from === b && x.to === a));
         edges.push(e ? e.id : null);
       }
-      clearTimeout(this._timers.lit);
+      this._clock.cancel('lit');
       if (!keys.length && !(run && run.keys.length)) { this._toast(T('nothing_in_this_step_is')); return; }
       this._sel = null;
       this._frameKeys(keys.concat(run ? run.keys : []));
@@ -9424,7 +9497,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         this._lit = { keys: ks, edges: es, now: keys[i - 1] || null };
         this._applyFocus();
         this._litBar(steps, i, run);
-        if (i < keys.length) this._timers.lit = setTimeout(tick, 650);
+        if (i < keys.length) this._clock.after('lit', 650, tick);
       };
       tick();
     }
@@ -9468,7 +9541,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       return s.text || '';
     }
     _clearLit(quiet) {
-      clearTimeout(this._timers.lit);
+      this._clock.cancel('lit');
       const was = !!this._lit, fl = !!this._flow;
       this._lit = null; this._litSteps = null; this._litRun = null; this._flow = null;
       this._$.litbar.hidden = true;
@@ -9930,11 +10003,11 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           this._drawerOpen = true;
           const a = this.shadowRoot.activeElement;
           this._drawerBack = a && !d.contains(a) ? this._remember(a) : null;
-          setTimeout(() => {
+          this._clock.after('drawer-focus', 0, () => {
             if (d.hidden || !this._$.modal.hidden || d.contains(this.shadowRoot.activeElement)) return;
             const h = d.querySelector('.dtitle');
             if (h) { h.tabIndex = -1; h.focus({ preventScroll: true }); }
-          }, 0);
+          });
         } else if (!open && this._drawerOpen) {
           this._drawerOpen = false;
           const back = this._recall(this._drawerBack), box = this._roveKey && this._els && this._els.get(this._roveKey);
@@ -9973,7 +10046,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         if (open && !this._modalOpen) {
           this._modalOpen = true;
           this._modalBack = this._remember(this.shadowRoot.activeElement);
-          setTimeout(() => { if (md.hidden) return; const f = md.querySelector('input:not([type=hidden]):not([disabled]), textarea, select, button.primary:not([disabled])') || md.querySelector('button'); if (f && !md.contains(this.shadowRoot.activeElement)) f.focus(); }, 60);
+          this._clock.after('modal-focus', 60, () => { if (md.hidden) return; const f = md.querySelector('input:not([type=hidden]):not([disabled]), textarea, select, button.primary:not([disabled])') || md.querySelector('button'); if (f && !md.contains(this.shadowRoot.activeElement)) f.focus(); });
         } else if (!open && this._modalOpen) {
           this._modalOpen = false;
           const back = this._recall(this._modalBack), box = this._roveKey && this._els.get(this._roveKey);
@@ -10096,7 +10169,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       m.hidden = false;
       m.innerHTML = `<div class="dlg"><h3>${l ? T('edit_function') : T('new_function_2')}</h3><label>${T('name')}<input name="name" value="${esc(l ? l.name : '')}" placeholder="${T('e_g_bathroom_heater_filter')}"></label><label>${T('description')}<input name="desc" value="${esc(l && l.description ? l.description : '')}" placeholder="${T('what_this_function_does_optional')}"></label><div class="row"><div class="selbox" data-sel="icon"></div><div class="selbox" data-sel="color"></div></div>${l ? '' : `<label class="chk"><input type="checkbox" name="cats" checked>${T('also_file_new_automations_scripts')}</label>`}<div class="hint">${l ? T('this_edits_the_home_assistant') : T('this_creates_a_home_assistant')}</div><div class="btns"><button data-act="modal-cancel">${T('cancel')}</button><button class="primary" data-act="modal-save">${l ? T('save') : T('create_2')}</button></div></div>`;
       this._mountPickers(l && l.icon ? l.icon : 'mdi:puzzle-outline', l && l.color ? l.color : 'indigo');
-      setTimeout(() => { const i = m.querySelector('input[name=name]'); if (i) i.focus(); }, 50);
+      this._clock.after('focus', 50, () => { const i = m.querySelector('input[name=name]'); if (i) i.focus(); });
     }
     _mountPickers(icon, color) {
       this._fnIcon = icon; this._fnColor = color;
@@ -10127,7 +10200,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           if (card && card.constructor && card.constructor.getConfigElement) await card.constructor.getConfigElement();
         }
       } catch (e) { /* fall back to the plain inputs */ }
-      await Promise.race([customElements.whenDefined('ha-selector'), new Promise((r) => setTimeout(r, 4000))]);
+      await Promise.race([customElements.whenDefined('ha-selector'), this._clock.sleep(4000)]);
       return !!customElements.get('ha-selector');
     }
     async _saveFn() {
@@ -10303,7 +10376,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
           a.download = `functions_board_diagnostics_${day}${anonymise ? '_anonymised' : ''}.json`;
           document.body.appendChild(a); a.click(); a.remove();
-          setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+          this._clock.deadline(5000, () => URL.revokeObjectURL(a.href));
           this._toast(T('diag_saved'));
         }
         this._closeModal();
@@ -10404,7 +10477,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._applyCheckProblems(label);
       this._toast(T('chk_deleted', { name: c.name }));
     }
-    _checksSoon(label) { clearTimeout(this._timers.chk); this._timers.chk = setTimeout(() => this._runChecks(label), 400); }
+    _checksSoon(label) { this._clock.after('checks', 400, () => this._runChecks(label)); }
     // replay checks on the function's current configs; results kept until the configs change. given: the configs
     // the scan already read (another function's)
     async _runChecks(label, ids, force, given) {
@@ -10475,7 +10548,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           return e.toNext();
         });
         if (this._sbx !== g) return;
-        await new Promise((r) => setTimeout(r, 300));
+        if (!(await this._clock.sleep(300))) return;
       }
       this._toast(T('chk_replayed', { name: c.name }));
     }
@@ -10539,7 +10612,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           const base = findProblems(items, members.concat(devs), this._probCtx(label));
           if ((this._layout(label).checks || []).length) await this._runChecks(label, null, false, logic.map((e, i) => ({ id: e, cfg: cfgs[i] })).filter((x) => x.cfg));
           this._noteProblems(label, this._splitProbs(label, base.concat(this._checkProblems(label)), (k) => !k.startsWith('c_') || this._checkRes.has(label)).shown);
-          await new Promise((r) => setTimeout(r, 0));
+          // (a turn for the page between functions; a board taken off the page stops counting)
+          if (!(await this._clock.sleep(0))) return;
         }
       } catch (e) { /* the counts stay as they were */ } finally { this._probScanning = false; }
     }
@@ -10765,7 +10839,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         const ents = await this._ws({ type: 'config/entity_registry/list' }).catch(() => []);
         const e = ents.find(test);
         if (e) return e;
-        await new Promise((r) => setTimeout(r, 300));
+        await this._clock.pause(300);
       }
       return null;
     }
@@ -10952,7 +11026,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       g.lastTab = g.tab;
       if (g.tab === 'pick') {
         const s = m.querySelector('.search');
-        if (s) { s.value = g.q || ''; setTimeout(() => s.focus(), 30); }
+        if (s) { s.value = g.q || ''; this._clock.after('focus', 30, () => s.focus()); }
         this._renderPicks(g.q || '');
       }
     }

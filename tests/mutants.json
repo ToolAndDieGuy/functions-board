@@ -302,14 +302,6 @@
   "expect": "L1 taken off for good"
  },
  {
-  "name": "board: taken off the page, its condition check keeps running",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "      clearInterval(this._condTick); this._condTick = null;\n    }",
-  "replace": "      this._condTick = null;\n    }",
-  "suite": "board-leak",
-  "expect": "L2 taken off for good, no interval"
- },
- {
   "name": "board: taken off the page, it leaves its key listener on window",
   "file": "custom_components/functions_board/frontend/functions-board.js",
   "find": "    disconnectedCallback() {\n      window.removeEventListener('keydown', this._winKeyFn);",
@@ -320,8 +312,8 @@
  {
   "name": "board: something holds on to every board taken off the page",
   "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "    connectedCallback() {\n      if (this._data) {",
-  "replace": "    connectedCallback() {\n      (window.__fbHeld = window.__fbHeld || []).push(this);\n      if (this._data) {",
+  "find": "    connectedCallback() {\n      this._clock.start();\n      if (this._data) {",
+  "replace": "    connectedCallback() {\n      (window.__fbHeld = window.__fbHeld || []).push(this);\n      this._clock.start();\n      if (this._data) {",
   "suite": "board-leak",
   "expect": "L4 the \\d+ boards taken off are all let go"
  },
@@ -334,6 +326,71 @@
   "expect": "every test file in tests/board is a board suite"
  },
  {
+  "name": "board: sets a timer of its own, not through its clock",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "this._clock.after('frames', 0, () => this._renderFrames());",
+  "replace": "setTimeout(() => this._renderFrames(), 0);",
+  "suite": "static",
+  "expect": "the board sets no timer of its own"
+ },
+ {
+  "name": "board: taken off the page, its clock goes on",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      // and nothing it set runs while it's away (0.10.0): the clock starts again when it's back\n      this._clock.stop();\n",
+  "replace": "",
+  "suite": "board-leak",
+  "expect": "L2 taken off for good, no timer of the board's fires"
+ },
+ {
+  "name": "clock: after() for a name doesn't replace the wait already set",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      name = this._name(name);\n      this.cancel(name);\n      if (!this.running) return name;\n      return this._set(name, 't',",
+  "replace": "      name = this._name(name);\n      if (!this.running) return name;\n      return this._set(name, 't',",
+  "suite": "clock",
+  "expect": "C1 after\\(\\)"
+ },
+ {
+  "name": "clock: stop() leaves deadlines waiting for ever",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      due.forEach((fn) => fn());\n",
+  "replace": "",
+  "suite": "clock",
+  "expect": "C7 stop\\(\\) runs every deadline"
+ },
+ {
+  "name": "clock: a sleep isn't ended when the clock stops",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      for (const done of [...this._sleeps]) done(false);\n",
+  "replace": "",
+  "suite": "clock",
+  "expect": "C6 a sleep still waiting"
+ },
+ {
+  "name": "rules: a quick node suite left out of CI",
+  "file": ".github/workflows/validate.yml",
+  "find": "--only 'selftest|static|wiring|problems|sandbox|clock'",
+  "replace": "--only 'selftest|static|wiring|problems|sandbox'",
+  "suite": "static",
+  "expect": "every quick node suite runs in CI"
+ },
+ {
+  "name": "board: put back on the page, its clock doesn't start again",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "    connectedCallback() {\n      this._clock.start();\n",
+  "replace": "    connectedCallback() {\n",
+  "suite": "board-regress",
+  "only": "0.10.0 the same board",
+  "expect": "0.10.0 put back, the board still shows"
+ },
+ {
+  "name": "clock: frame() drops the frame's time",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "this._env.raf((t) => { this._w.delete(name); fn(t); })",
+  "replace": "this._env.raf(() => { this._w.delete(name); fn(); })",
+  "suite": "clock",
+  "expect": "C3 frame\\(\\) hands on"
+ },
+ {
   "name": "board: starts on another board's registries without checking they know every function",
   "file": "custom_components/functions_board/frontend/functions-board.js",
   "find": "if (this._data.functions.concat(Object.keys(this._data.layouts)).some((l) => !known.has(l))) keep = null;",
@@ -341,6 +398,14 @@
   "suite": "board-regress",
   "only": "0.9.2 a board started",
   "expect": "function and its layout are still in the store"
+ },
+ {
+  "name": "rules: code a mutant breaks changes and the mutant goes stale",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      due.forEach((fn) => fn());\n",
+  "replace": "      due.forEach((f) => f());\n",
+  "suite": "static",
+  "expect": "every mutant in tests/mutants.json still finds its text"
  },
  {
   "name": "isolation: an automation a test added is left behind",

@@ -198,6 +198,23 @@ const pubs = code.match(/[^\n]{0,40}'mqtt\.publish'[^\n]{0,20}/g) || [];
 check('A4 MQTT: the board listens; a message is published only by the person\'s own MQTT test step (the sandbox only simulates one)', !/mqtt\/publish|callService\(\s*'mqtt'/.test(code) && pubs.length === 2 && pubs.some((p) => /if \(svc === 'mqtt\.publish'\) \{ await this\.mqtt\(/.test(p)) && pubs.some((p) => /case 'mqtt': return call\('mqtt\.publish'/.test(p)), pubs);
 
 
+// 0.10.0: every wait the board sets goes through its clock (class Clock), so a board taken off the page stops them
+// all: no timer, interval or animation frame of its own in the board's class
+{
+  const cls = src.slice(src.indexOf('  class FunctionsBoard extends HTMLElement'));
+  const raw = [...cls.matchAll(/\b(setTimeout|setInterval|requestAnimationFrame|clearTimeout|clearInterval|cancelAnimationFrame)\s*\(/g)].map((m) => m[1] + ' at line ' + (src.slice(0, src.length - cls.length + m.index).split('\n').length));
+  check('the board sets no timer of its own: every wait goes through this._clock', raw.length === 0, raw);
+}
+
+// 0.10.0: every mutant's text is in its file exactly once, checked on every push (the mutants themselves run weekly,
+// and a change to the code they break would otherwise only show then)
+{
+  const root = path.join(__dirname, '..');
+  const ms = JSON.parse(fs.readFileSync(path.join(root, 'tests', 'mutants.json'), 'utf8'));
+  const stale = ms.filter((x) => { try { return fs.readFileSync(path.join(root, x.file), 'utf8').split(x.find).length !== 2; } catch (e) { return true; } }).map((x) => x.name);
+  check('every mutant in tests/mutants.json still finds its text, once', ms.length > 30 && stale.length === 0, stale);
+}
+
 // 0.9.1: the real-HA suites are split between two CI jobs by --only patterns: a suite added to run.sh must be in
 // exactly one, or it never runs in CI (or runs twice)
 {
@@ -215,4 +232,8 @@ check('A4 MQTT: the board listens; a message is published only by the person\'s 
   // 0.10.0: and every board test file is one of run.sh's board suites (a file left out would never run)
   const files = fs.readdirSync(path.join(root, 'tests', 'board')).filter((f) => f.endsWith('.test.js')).map((f) => 'board-' + f.replace(/\.test\.js$/, ''));
   check('every test file in tests/board is a board suite in run.sh', files.every((f) => board.includes(f)) && board.every((b) => files.includes(b)), { files, board });
+  // and the quick node suites: each one run.sh lists is in the quick CI job's pattern
+  const quick = ((runsh.match(/^for s in ([\w ]+); do want "\$s" && nodetest/m) || [])[1] || '').split(/\s+/).filter(Boolean);
+  const qpat = (wf.match(/run: sh tests\/run\.sh --only '(selftest\|static[^']*)'/) || [])[1];
+  check('every quick node suite runs in CI', quick.length >= 5 && !!qpat && quick.every((q) => new RegExp('^(' + qpat + ')$').test(q)), { quick, qpat });
 }

@@ -13,7 +13,7 @@ function out in a sandbox. Published through HACS. Read this before changing any
   anonymiser; also the `functions_board/diagnostics` command's), `config_flow.py`.
 - `custom_components/functions_board/frontend/functions-board.js`: the whole board, one plain-JS web component
   (~10,000 lines, no build step, no dependencies). Top to bottom:
-  - the **library section** (pure functions, testable in Node without a browser): config analysis (`analyze`,
+  - the **library section** (pure functions, testable in Node without a browser): the clock (`class Clock`), config analysis (`analyze`,
     `condText`), layout (`layeredOnce`, `layered`), arrow routing (`arrowGeo`, `orthoAll`, `laneSpread`,
     `untangle`, `busDots`, `hopsOf`), the **sandbox engine** (`class Sandbox`, `sbxEffect`, `sbxRewrite`,
     `SBX_PRELUDE`, `SBX_ETRIG`), the English text table (`T()`, `P()` for plurals);
@@ -71,6 +71,7 @@ returns everything the library section defines.
 | `tests/wiring.test.js` | `analyze()` on many automation and script shapes: which arrows, roles, loops |
 | `tests/problems.test.js` | `findProblems()`: missing, not-loaded, disabled and unavailable entities, devices, areas, actions that don't exist, the function's own pieces |
 | `tests/sandbox.test.js` | the sandbox engine with a stand-in template renderer: triggers, conditions, actions, modes, waits, MQTT, per-entity triggers, `sbxRewrite` |
+| `tests/clock.test.js` | `class Clock` on a pretend clock: `after` (the last call wins), `once` (the first wins), `every`, `frame`, `deadline`, `sleep`, `pause`, and `stop()` leaving nothing set |
 | `tests/backend/` (pytest) | the Python side: setup, store, websocket commands, diagnostics; `test_privacy.py`: canary data through the anonymiser and the log, no network modules, the manifest (sockets are blocked in all of it) |
 | `tests/board/smoke.test.js` | the board starts, imports and draws the garage, on the fake |
 | `tests/board/a11y.test.js` | axe-core (WCAG 2.2 AA) on every view in dark and light mode, with a problem on the board; the keyboard (roving box focus, arrows, Space, Enter, Escape, dialog and drawer focus in and back); spoken names; less motion |
@@ -183,5 +184,11 @@ returns everything the library section defines.
   replays them on the current configs (results per config generation, `_cfgGen`), and failing ones join the
   problems (`c_failed`, `c_unsure`). The engine passes itself to `tpl(template, vars, engine)`, so templates read
   the states of the engine that asked.
+- **The clock** (0.10.0, `class Clock` in the library section, `this._clock`): every wait the board sets, by name.
+  `after` replaces the wait of that name (debounce), `once` keeps it (throttle), `every` repeats, `frame` waits for
+  the next frame, `deadline` is how long a call may take (run at once when the clock stops), `sleep` is a pause
+  in a background task (false when the clock stops: give up), `pause` is a pause inside a write (never stopped).
+  `disconnectedCallback` stops it, `connectedCallback` starts it again; no raw `setTimeout` in the board's class
+  (a static rule).
 - Debug hooks for tests: `board._ortho` (routes, owners, hops, `vert`), `board._sbx.eng` (the sandbox engine and
   its log), `window.__fbStyle` (overrides `PROTO()` layout switches).

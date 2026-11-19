@@ -741,4 +741,23 @@ test('0.9.1 a focused box keeps focus when the board is drawn again around it', 
   check('0.9.1 redraw focus: no errors', page.logs.length === 0, page.logs);
 });
 
+test('0.10.0 the same board taken off the page and put back carries on', async ({ browser, fake }) => {
+  const { page } = await imported(browser);
+  await openFn(page, /garage/i);
+  const DOOR = 'cover.garage_door';
+  // (the door is outside the function: its state is in its box's title)
+  const sub = () => el(page, (b, k) => { const n = b._els.get(k); return n ? n.getAttribute('title') : null; }, DOOR);
+  // taken off (its clock stops) and the same element put back, as a dashboard does with a card it moves
+  await page.evaluate(() => { const b = document.querySelector('functions-board'), p = b.parentNode; b.remove(); window.__fbBack = () => p.appendChild(b); });
+  await sleep(300);
+  await page.evaluate(() => window.__fbBack());
+  await fake.idle(400);
+  const was = await sub();
+  await fake.setState(DOOR, was && /· open/i.test(was) ? 'closed' : 'open');
+  const want = was && /· open/i.test(was) ? /· closed/i : /· open/i;
+  const now = await until(async () => { const t = await sub(); return t && want.test(t) ? t : null; }, 5000);
+  check('0.10.0 put back, the board still shows what Home Assistant changes (its clock runs again)', !!now, { was, now: await sub() });
+  check('0.10.0 put back: no errors', page.logs.length === 0, page.logs);
+});
+
 pwTest.afterAll(() => done());
