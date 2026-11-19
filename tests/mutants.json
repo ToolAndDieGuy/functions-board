@@ -270,6 +270,14 @@
   "expect": "every real-HA suite runs in exactly one CI job"
  },
  {
+  "name": "fake: manifest/list answers with a key Home Assistant doesn't have",
+  "file": "tests/board/fake-ha.js",
+  "find": "case 'manifest/list': return this.manifests;",
+  "replace": "case 'manifest/list': return this.manifests.map((m) => Object.assign({}, m, { fb_extra: 1 }));",
+  "suite": "e2e-contract",
+  "expect": "manifest/list answers in the same shape"
+ },
+ {
   "name": "isolation: an automation a test added is left behind",
   "file": "tests/e2e/ha-api.js",
   "find": "if (!(id in snap.autos)) { await rest('DELETE'",

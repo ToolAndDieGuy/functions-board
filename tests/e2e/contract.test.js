@@ -8,9 +8,23 @@ const { FakeHA, snapshot } = require('../board/fake-ha');
 const { check, done } = suite('contract');
 
 // the shape of a value: its type, and for an object the shapes of its keys (a list: the shape of its first item)
+// two shapes as one: every key either has, a key's shape from whichever item has it set
+const merge = (a, b) => {
+  if (a === 'null') return b;
+  if (b === 'null') return a;
+  if (Array.isArray(a) && Array.isArray(b)) return [merge(a[0], b[0])];
+  if (a && b && typeof a === 'object' && typeof b === 'object' && !Array.isArray(a) && !Array.isArray(b)) {
+    const out = Object.assign({}, a);
+    for (const k of Object.keys(b)) out[k] = k in out ? merge(out[k], b[k]) : b[k];
+    return out;
+  }
+  return a;
+};
 const shape = (v, depth = 3) => {
   if (v === null || v === undefined) return 'null';
-  if (Array.isArray(v)) return depth && v.length ? [shape(v[0], depth - 1)] : 'array';
+  // a list: the shape of all its items together, not of the first (manifest/list comes in the order integrations
+  // loaded, which changes from run to run, and its items don't all have the same optional keys)
+  if (Array.isArray(v)) return depth && v.length ? [v.map((x) => shape(x, depth - 1)).reduce(merge)] : 'array';
   if (typeof v === 'object') {
     if (!depth) return 'object';
     // keyed by IDs (config entry IDs and the like, new on every install): a map, compared by its values' shape
