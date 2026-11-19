@@ -5079,6 +5079,27 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     if (focused && focused !== doc.body && target.contains(focused) && root.activeElement !== focused) focused.focus({ preventScroll: true });
   }
 
+  /* ---------- the board's parts (0.10.0) ----------
+     The board's class is in parts: each a block of its methods under a "part:" heading. A part's own state (owns)
+     is used only by its own methods and by its view's action table (table, in _actionTables); any other part asks
+     one of its methods. Everything not owned is the board's shared state (the part called core): what it knows
+     (the store and its maps), the open function and its model, the board's modes (a version tab, the sandbox, a run
+     lit on the board, an arrow being drawn) and the page. _init declares every piece of state and _relang clears
+     it. A static rule holds all this (tests/static.test.js). */
+  const PARTS = {
+    list: { owns: ['_findQ'], table: 'list' },
+    functions: { owns: ['_watch', '_fnIcon', '_fnColor'], table: 'create' },
+    manager: { owns: ['_mgr', '_pick'], table: 'manager' },
+    problems: { owns: ['_probs', '_checkRes', '_probScanning'], table: 'problems' },
+    tools: { owns: ['_pendingTest', '_tw', '_monSubs', '_monData', '_monCount', '_monKind', '_testLog', '_testOk', '_msgs'], table: 'tools' },
+    debug: { owns: ['_dbg', '_dbgSel', '_dbgFlt', '_dbgScrolled', '_dbgSeq'], table: 'debug' },
+    arrows: { owns: ['_arw', '_tt'], table: 'arrows' },
+    sandbox: { owns: [], table: 'sandbox' },
+    versions: { owns: ['_verPending', '_verUrlDone'], table: 'versions' },
+    nodered: { owns: ['_nrCache', '_nrWait'] },
+    diagnostics: { owns: [] },
+  };
+
   // the board's action tables (one per view) as one map from a data-act name to its handler; a name in two tables
   // is a mistake (the later would silently win), so it throws
   function actionMap(tables) {
@@ -5094,6 +5115,12 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
   }
 
   class FunctionsBoard extends HTMLElement {
+    /* ======================================================================================================
+       part: core: what every part shares: start and stop, data and sync, the store's maps, the open function and its
+       model, drawing the board (boxes, arrows, view, pointer, keyboard, the Key, the bars), the board's modes (a
+       version tab, the sandbox, a run lit on the board, an arrow being drawn), the drawer, the actions
+       (_actionTables), undo
+       ====================================================================================================== */
     constructor() {
       super();
       this.attachShadow({ mode: 'open' });
@@ -5200,7 +5227,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         this._subscribe();
         // back on the page: the open function's monitors listen again, and an open debugger records again
         if (this._model) { this._startMonitors(); this._afterOpen(this._model.label); }
-        if (this._drawer && this._drawer.mode === 'debug' && this._dbg && !this._dbg.rec) this._dbgStart();
+        this._dbgResume();
         this._resumeCapture();
       }
       if (this._ro && this._$) this._ro.observe(this._$.board);
@@ -5344,7 +5371,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       // another board read Node-RED: one showing older flows takes the new ones (only with Node-RED switched on)
       if (d.what === 'versions') { if (this._drawer && this._drawer.mode === 'versions' && d.label === this._data.ui.current) this._renderVersions(); return; }
       if (d.what === 'nodered') {
-        if (this._data.ui.nodered === true && this._nrCache && this._nrCache.need && this._model) { this._nrCache = null; this._open(this._model.label, true).then(() => this._renderLegend()); }
+        this._nrTheirs();
         return;
       }
       const act = this.shadowRoot.activeElement;
@@ -5392,7 +5419,6 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       L.nodes = L.nodes || {}; L.frames = L.frames || []; L.notes = L.notes || [];
       return L;
     }
-    _fnName(label) { const l = this._labelMap.get(label); return l ? l.name : label; }
     _known(x) {
       if (this._hass.states[x] || this._entMap.has(x)) return x;
       return this._regIdMap.get(x) || null;
@@ -5504,30 +5530,14 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const ns = this._$.nodes;
       ns.addEventListener('pointerover', (e) => { if (e.pointerType === 'touch' || this._drag) return; const n = e.target.closest('.node'); this._setTrace(n ? this._busEdgesOf(n.dataset.key) : null); });
       ns.addEventListener('pointerleave', () => this._setTrace(null));
-      ed.addEventListener('pointermove', (e) => { if (this._tt) this._ttMove(e); });
-      ed.addEventListener('pointerout', (e) => { const p = e.target.closest('path.hit'); if (p && this._tt && this._tt.id === p.dataset.e) this._edgeHoverEnd(); });
+      ed.addEventListener('pointermove', (e) => this._ttPointerMove(e));
+      ed.addEventListener('pointerout', (e) => this._ttPointerOut(e));
       this._$.drawer.addEventListener('mouseleave', () => this._hover(null));
       this._renderLegend();
       this._applyMode();
       this._watchModal();
       this._watchDrawer();
       if (window.ResizeObserver) { this._ro = new ResizeObserver(() => this._checkCompact()); this._ro.observe(this._$.board); }
-    }
-    _checkCompact() {
-      // narrow board (phone, small dashboard column): the list becomes a drawer over the board, closed by default.
-      // A detached or hidden board reports width 0: that says nothing about its size, so keep the mode.
-      const w = this._$.board.clientWidth;
-      if (!w || !this.isConnected) return;
-      const c = w < 760;
-      if (c === !!this._compact) return;
-      this._compact = c; this._listOpen = false; this._legendOpen = false;
-      this._$.board.classList.toggle('compact', c);
-      this._renderList(); this._renderLegend();
-      if (this._model && this._data) {
-        // the board changed size class (window resized, phone rotated): use that size's own view
-        const v = this._viewFor(this._model.label);
-        if (v) { this._view = Object.assign({ x: 40, y: 40, k: 1 }, v); this._applyView(); } else this._fit();
-      }
     }
 
     /* ---------- data loading ---------- */
@@ -5667,38 +5677,12 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (d.action === 'create' && this._capture && id) {
         const c = this._capture;
         if (await this._captureMatch(id, c)) await this._captured(id, c);
-      } else if (d.action === 'update' && id && this._watch.has(id)) await this._rewatch(id);
+      } else if (d.action === 'update' && id && this._isWatched(id)) await this._rewatch(id);
       if (id && /^(automation|script)\./.test(id)) this._store.changed('cfg:' + id);
       // every change to the registry makes what's held older than it (as of now waits for the reload)
       this._store.changed('reg');
       const relevant = d.action !== 'update' || (this._model && this._model.nodes.has(id)) || (d.changes && 'labels' in d.changes);
       if (relevant) this._clock.after('reg', 1200, () => this._reload());
-    }
-    // something was created in the editor drawer: give it the function's label and keep an eye on it
-    async _captured(id, c) {
-      const w = { label: c.label, until: Date.now() + 20000, cat: null };
-      this._watch.set(id, w);
-      this._clock.after('watch:' + id, 20500, () => { if (this._watch.get(id) === w) this._watch.delete(id); });
-      try {
-        const u = await this._label(id, c.label, true, true);
-        w.cat = u.cat;
-        this._labelStep(T('add_to_6', { id, fnName: this._fnName(c.label) }), c.label, [u]);
-        this._toast(T('added_to_5', { fnName: this._fnName(c.label), id }), [{ text: T('undo'), fn: () => this._undo() }]);
-      } catch (e) { this._toast(T('created_but_could_not_label', { id })); }
-    }
-    // Home Assistant's automation and script editors write the labels, category and area from their save
-    // dialog just after a new item is created. That wipes the label the board added, so put it back (and the
-    // category, if the dialog left it empty) for 20 seconds after creation, keeping whatever the dialog set.
-    async _rewatch(id) {
-      const w = this._watch.get(id);
-      if (!w || Date.now() > w.until) { this._watch.delete(id); return; }
-      const reg = await this._ws({ type: 'config/entity_registry/get', entity_id: id }, { optional: 'an entity set up in YAML has no registry entry', fallback: null });
-      if (!reg) return;
-      const labels = reg.labels || [], cats = reg.categories || {};
-      const msg = { type: 'config/entity_registry/update', entity_id: id };
-      if (!labels.includes(w.label)) msg.labels = labels.concat([w.label]);
-      if (w.cat && !cats[w.cat[0]]) msg.categories = { [w.cat[0]]: w.cat[1] };
-      if (msg.labels || msg.categories) await this._ws(msg, { fallback: null });
     }
 
     async _open(label, keep, opt = {}) {
@@ -5723,9 +5707,11 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._renderHeader();
       this._$.loading.hidden = false;
       let model = null;
+      const st0 = this._hass.states;
       try { model = await this._buildModel(label); } catch (e) { this._toast(T('could_not_read_this_function', { message: e.message || e })); }
       this._$.loading.hidden = true;
       if (!model || this._data.ui.current !== label) return;
+      model.probSig = this._probSig(model, st0);
       this._model = model;
       this._applyCheckProblems(label);
       this._renderHeader();
@@ -5739,10 +5725,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._loadRuns();
       this._afterOpen(label);
       this._renderVtabs();
-      // a link to a saved version (…/functions/<function>?version=<id>, from "open in a new window")
-      const q = !this._verUrlDone && new URLSearchParams(location.search).get('version');
-      this._verUrlDone = true;
-      if (q && /^[0-9a-f]{32}$/.test(q) && !this._ver && this._verOK()) this._verOpenTab(q);
+      this._verFromUrl();
     }
     // the developer tools follow the open function (Phase 9)
     _afterOpen(label) {
@@ -5750,15 +5733,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._testCondsSoon(150);
       // time and sun conditions change without any state changing
       this._clock.every('conds-tick', 30000, () => { if (document.visibilityState === 'visible' && this.isConnected) this._testConds(); });
-      if (this._drawer && this._drawer.mode === 'debug') {
-        const g = this._dbg;
-        if (!g || g.label !== label) { this._dbgStop(true); this._dbg = null; this._openDebug(); }
-        else if (g.rec) {
-          // new members: listen for them too
-          const ents = this._dbgEntities();
-          if (ents.length !== g.ents.size || ents.some((k) => !g.ents.has(k))) { this._dbgStop(true); this._dbgStart(); }
-        }
-      }
+      this._dbgFollow(label);
     }
     _routeLabel() {
       const m = String((this._route && this._route.path) || '').match(/^\/([^/?#]+)/);
@@ -6231,8 +6206,6 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       // a heading over unwired boxes stays only while none of them has been moved by hand
       this._heads = (auto.heads || []).filter((h) => h.keys.every((k) => !L.nodes[k])).map((h) => ({ x: Math.round(h.x + dx), y: Math.round(h.y + dy), text: h.text }));
     }
-    // top to bottom (the function's layout says so)
-    _vert() { return !!(this._model && this._layout(this._model.label).dir === 'down'); }
     _routeFor(e, sd) {
       const r = this._routes && this._routes.get(e.id);
       if (!r || sd[0] !== 'r' || sd[1] !== 'l') return null;
@@ -6362,6 +6335,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     _refreshStates() {
       if (!this._model || !this._els) return;
       const m = this._model;
+      // a box turned off, gone or unavailable since the board was built changes its problems: build it again
+      if (m.probSig != null && !this._ver && this._probSig(m, this._hass.states) !== m.probSig) { m.probSig = null; this._clock.after('reprob', 300, () => this._open(m.label, true)); }
       this._els.forEach((el, k) => {
         const n = m.nodes.get(k);
         if (!n) return;
@@ -6386,7 +6361,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         // outside boxes have no state line: in the sandbox, a tag with the state
         if (this._sbxOn() && n.kind === 'outside') { const so = this._stOf(k), v = so ? this._fmtState(k, so.state) : ''; if (el.dataset.sbx !== v) el.dataset.sbx = v; }
         else if (el.dataset.sbx) delete el.dataset.sbx;
-        const w = this._tw.get(k);
+        const w = this._watching(k);
         el.classList.toggle('watching', !!w);
         if (w) { const t = 'watching' + (w.hits ? ' · ' + w.hits : ''); if (el.dataset.watch !== t) el.dataset.watch = t; } else if (el.dataset.watch) delete el.dataset.watch;
         const st = this._stOf(k);
@@ -6407,15 +6382,6 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         if (sig !== this._condSig) { this._condSig = sig; this._testCondsSoon(); }
       }
       this._dbgStates();
-    }
-
-    _edgeTitle(e) {
-      const a = this._model.nodes.get(e.from), b = this._model.nodes.get(e.to);
-      if (e.role === 'tool') return a.kind === 'tool' ? T('tests_2', { name: a.name, name2: b.name }) : T('lists', { name: b.name, name2: a.name });
-      const via = e.via && this._model.nodes.get(e.via);
-      return fill(VERB[e.role] || '{a} → {b}', { a: a.name, b: b.name }) + (e.svcs.size ? ` (${[...e.svcs].join(', ')})` : '')
-        + (via ? T('through_the', { domain: via.domain, name: via.name.replace(/ \(\d+\)$/, '') }) : '')
-        + (e.loop ? T('part_of_a_loop_this') : '');
     }
 
     _drawEdges() {
@@ -6672,7 +6638,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       // developer tools (Phase 9)
       const tools = [];
       if (this._canTest(n)) tools.push(['test', 'mdi:flask-outline', T('test_2'), this._full() ? null : FULL_ONLY_TEST]);
-      if (n.domain === 'automation' && st) tools.push(this._tw.has(n.key) ? ['watch', 'mdi:eye-off-outline', T('stop_watching')] : ['watch', 'mdi:eye-outline', T('watch_triggers')]);
+      if (n.domain === 'automation' && st) tools.push(this._watching(n.key) ? ['watch', 'mdi:eye-off-outline', T('stop_watching')] : ['watch', 'mdi:eye-outline', T('watch_triggers')]);
       if (/^(event|nact):/.test(n.key) || (n.key.startsWith('mqtt:') && (this._hass.config.components || []).includes('mqtt'))) tools.push(['monitor', 'mdi:monitor-eye', T('monitor')]);
       if (n.key.startsWith('svc:notify.') || (n.domain === 'notify' && st)) tools.push(['messages', 'mdi:message-text-clock-outline', T('messages')]);
       if (this._canLink(n)) tools.push(['connect', 'mdi:vector-polyline-plus', T('connect'), this._full() ? null : T('drawing_arrows_needs_full_manager')]);
@@ -6720,65 +6686,6 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         return;
       }
       e.hidden = true;
-    }
-
-    _renderList() {
-      if (!this._data) return;
-      this._$.board.classList.toggle('nolist', this._compact ? !this._listOpen : !this._data.ui.list);
-      const items = this._data.functions.map((lid) => {
-        const l = this._labelMap.get(lid);
-        if (!l) return '';
-        const mem = this._ents.filter((e) => (e.labels || []).includes(lid));
-        const devs = this._devs.filter((d) => (d.labels || []).includes(lid)).length;
-        const unav = mem.some((e) => this._hass.states[e.entity_id] && this._hass.states[e.entity_id].state === 'unavailable');
-        const txt = [this._countText(mem.map((e) => e.entity_id)), devs ? P('n_devices', devs) : ''].filter(Boolean).join(' · ');
-        return `<div class="fnrow"><button class="fn ${lid === this._data.ui.current ? 'cur' : ''}" data-fn="${esc(lid)}"><ha-icon icon="${esc(l.icon || 'mdi:puzzle-outline')}" style="color:${cssColor(l.color)}"></ha-icon><span class="fnt"><span class="fnn">${esc(l.name)}</span><span class="fnc">${esc(txt) || 'empty'}</span></span>${this._probs.has(lid) ? this._probBadge(this._probs.get(lid)) : unav ? `<span class="dot warn" title="${T('something_in_this_function_is')}"></span>` : ''}</button><button class="ib fnmore" data-act="fn-menu" data-label="${esc(lid)}" title="${T('edit_hide_or_delete', { name: esc(l.name) })}"><ha-icon icon="mdi:dots-vertical"></ha-icon></button></div>`;
-      }).join('');
-      const act = this.shadowRoot.activeElement, typing = act && act.classList && act.classList.contains('find'), caret = typing ? act.selectionStart : 0;
-      this._put(this._$.list, `<div class="lhead"><span>${T('functions')}</span><span><button data-act="import" title="${T('import_find_the_functions_already')}"><ha-icon icon="mdi:import"></ha-icon></button><button data-act="newfn" title="${T('new_empty_function')}"><ha-icon icon="mdi:plus"></ha-icon></button></span></div><div class="lfind"><ha-icon icon="mdi:magnify"></ha-icon><input class="find" placeholder="${T('find_an_automation_helper_device')}" value="${esc(this._findQ || '')}" aria-label="${T('find_anything')}">${this._findQ ? `<button class="ib" data-act="find-x" title="${T('clear')}"><ha-icon icon="mdi:close"></ha-icon></button>` : ''}</div><div class="fns">${this._findQ ? this._findHTML() : items || `<div class="muted pad">${T('no_functions_yet_press_import')}</div>`}</div><div class="lfoot"><button class="lbtn" data-act="import"><ha-icon icon="mdi:import"></ha-icon>${T('import_manager')}</button><div class="ver"><span>${T('functions_board_v_prototype', { version: VERSION })}</span><button class="ib" data-act="about" title="${T('about_and_what_the_board')}"><ha-icon icon="mdi:help-circle-outline"></ha-icon></button></div></div>`);
-      if (typing) { const f = this._$.list.querySelector('.find'); if (f) { f.focus(); f.setSelectionRange(caret, caret); } }
-    }
-    // find anything across the whole system, and where it lives (4.4)
-    _findHTML() {
-      const terms = String(this._findQ || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
-      if (!terms.length) return '';
-      const rank = { automation: 0, script: 1, helpers: 2, devices: 3, entities: 4 };
-      const rows = this._pickIndex().filter((r) => !r.diag && terms.every((t) => r.hay.includes(t)))
-        .map((r) => ({ r, s: r.name.toLowerCase().startsWith(terms[0]) ? 0 : 1 }))
-        .sort((x, y) => x.s - y.s || rank[x.r.type] - rank[y.r.type] || x.r.name.localeCompare(y.r.name)).slice(0, 40).map((x) => x.r);
-      if (!rows.length) return `<div class="muted pad">${T('nothing_matches')}</div>`;
-      const fset = new Set(this._data.functions);
-      return rows.map((r) => {
-        const fns = r.labels.filter((l) => fset.has(l));
-        return `<div class="fres"><button class="fgo" data-act="find-go" data-key="${esc(r.key)}" title="${fns.length ? T('open_it_on_its_board') : T('in_no_function_yet')}">`
-          + `<span class="tag">${esc(r.tag)}</span><span class="mn"><b>${esc(r.name)}</b><small>${esc(r.key.startsWith('device:') ? r.sub : r.key)}</small></span></button>`
-          + `<div class="fin">${fns.length ? fns.map((l) => `<button class="chip" data-act="find-in" data-key="${esc(r.key)}" data-label="${esc(l)}">${esc(this._fnName(l))}</button>`).join('')
-            : `<span class="muted small">${T('in_no_function')}</span><button class="chip" data-act="find-add" data-key="${esc(r.key)}">${T('add_to_3')}</button>`}</div></div>`;
-      }).join('');
-    }
-    _findGo(key, label) {
-      const r = this._pickIndex().find((x) => x.key === key);
-      const fns = r ? r.labels.filter((l) => this._data.functions.includes(l)) : [];
-      const to = label || (fns.includes(this._data.ui.current) ? this._data.ui.current : fns[0]);
-      if (!to) return false;
-      if (this._compact) this._listOpen = false;
-      this._closeDrawer();
-      if (to === this._data.ui.current && this._model && this._model.nodes.has(key)) { this._select(key); this._centerOn(key); this._renderList(); return true; }
-      this._pendingSelect = key;
-      this._open(to);
-      return true;
-    }
-    _findAdd(btn, key) {
-      this._menu(btn, this._data.functions.map((l) => ({ act: 'find-to', data: { key, label: l }, icon: (this._labelMap.get(l) || {}).icon || 'mdi:puzzle-outline', text: this._fnName(l) })), T('add_to_2'));
-    }
-    async _findTo(key, label) {
-      this._closeMenu();
-      const r = await this._labelMany([key], label, true);
-      if (!r.done.length) { this._toast(T('could_not_add_2', { why: (r.skipped[0] || {}).why || '' })); return; }
-      await this._loadRegistries();
-      this._pidx = null;
-      this._toast(T('added_to_4', { fnName: this._fnName(label) }), [{ text: T('undo'), fn: () => this._undo() }]);
-      this._findGo(key, label);
     }
 
     _renderHeader() {
@@ -6862,7 +6769,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         + (open ? `<div class="lg">${line('role-trigger')}<span>${T('triggers')}</span>${line('role-condition')}<span>${T('is_checked_or_read_by')}</span>${line('role-action')}<span>${T('changes_2')}</span>${line('role-call')}<span>${T('runs_script_call')}</span>${line('role-source')}<span>${T('is_read_by_a_helper')}</span>${line('loop')}<span>${T('loop_can_retrigger_itself')}</span>${line('role-tool')}<span>${T('a_test_button_or_a')}</span>`
           + `<svg width="38" height="14"><path d="M4,3 L16,3 L16,11 L30,11"></path><path d="M16,3 L30,3"></path><circle cx="16" cy="3" r="2.6" style="fill:var(--fb-edge)"></circle></svg><span>${T('one_line_that_branches_dot')}</span>`
           + `<svg width="38" height="14"><path d="M19,1 L19,13"></path><path d="M4,8 L15,8 A4,4 0 0 1 23,8 L34,8"></path></svg><span>${T('crosses_without_meeting')}</span>`
-          + `<svg width="38" height="14"><path d="M4,7 L34,7"></path><path class="ah" d="M15,7 L23,2.5 L23,11.5 z"></path></svg><span>${T('runs_back')}</span></div><div class="lgn"><span class="sw dashed"></span>${T('related_not_in_this_function')}<br><span class="sw pill"></span>${T('outside_item_it_touches')}<br><span class="sw st amber"></span>${T('unavailable')}<span class="sw st red"></span>${T('last_run_failed')}<span class="sw st blue"></span>${T('running')}<br><span class="cres-k ok">✓</span><span class="cres-k bad">✕</span> ${T('a_check_passes_or_fails')}<br><span class="sw dashed2"></span>${T('simulated_state')}${this._sbxOn() ? `<br><span class="sw sbk"></span>${T('sbx_changed_key')}<br><span class="sw sbg"></span>${T('sbx_ghost_key')}` : ''}</div><label class="tg"><input type="checkbox" data-tog="outside" ${u.outside ? 'checked' : ''}>${T('show_outside_items')}</label><label class="tg"><input type="checkbox" data-tog="suggest" ${u.suggest ? 'checked' : ''}>${T('show_related_suggestions')}</label><label class="tg" title="${T('reads_your_node_red_app')}"><input type="checkbox" data-nr ${u0.nodered === true ? 'checked' : ''}>${T('show_node_red_flows')}</label>${u0.nodered === true && this._nrCache && this._nrCache.err ? `<div class="lgerr">${esc(this._nrCache.err)}${this._nrCache.need ? ` <button class="lgbtn" data-act="nr-open">${T('open_node_red')}</button>` : ''}</div>` : ''}` : ''));
+          + `<svg width="38" height="14"><path d="M4,7 L34,7"></path><path class="ah" d="M15,7 L23,2.5 L23,11.5 z"></path></svg><span>${T('runs_back')}</span></div><div class="lgn"><span class="sw dashed"></span>${T('related_not_in_this_function')}<br><span class="sw pill"></span>${T('outside_item_it_touches')}<br><span class="sw st amber"></span>${T('unavailable')}<span class="sw st red"></span>${T('last_run_failed')}<span class="sw st blue"></span>${T('running')}<br><span class="cres-k ok">✓</span><span class="cres-k bad">✕</span> ${T('a_check_passes_or_fails')}<br><span class="sw dashed2"></span>${T('simulated_state')}${this._sbxOn() ? `<br><span class="sw sbk"></span>${T('sbx_changed_key')}<br><span class="sw sbg"></span>${T('sbx_ghost_key')}` : ''}</div><label class="tg"><input type="checkbox" data-tog="outside" ${u.outside ? 'checked' : ''}>${T('show_outside_items')}</label><label class="tg"><input type="checkbox" data-tog="suggest" ${u.suggest ? 'checked' : ''}>${T('show_related_suggestions')}</label><label class="tg" title="${T('reads_your_node_red_app')}"><input type="checkbox" data-nr ${u0.nodered === true ? 'checked' : ''}>${T('show_node_red_flows')}</label>${u0.nodered === true && this._nrState() && this._nrState().err ? `<div class="lgerr">${esc(this._nrState().err)}${this._nrState().need ? ` <button class="lgbtn" data-act="nr-open">${T('open_node_red')}</button>` : ''}</div>` : ''}` : ''));
     }
 
     /* ---------- view ---------- */
@@ -6970,18 +6877,6 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     _freeze(L) {
       const m = this._model;
       this._visibleKeys().forEach((k) => { const n = m.nodes.get(k); if (n && !L.nodes[k] && !k.startsWith('tool:')) L.nodes[k] = { x: n.x, y: n.y }; });
-    }
-    // keep a box in place: Auto-arrange (and an import's) leaves it where it is
-    _toggleKeep(key) {
-      const m = this._model, n = m && m.nodes.get(key);
-      if (!n) return;
-      const label = m.label, L = this._layout(label), before = this._snap(label), keep = new Set(L.keep || []);
-      if (keep.has(key)) keep.delete(key);
-      else { keep.add(key); L.nodes[key] = { x: n.x, y: n.y }; }
-      if (keep.size) L.keep = [...keep]; else delete L.keep;
-      this._save();
-      this._layoutStep(label, before, keep.has(key) ? T('keep_name_in_place', { name: n.name }) : T('let_auto_arrange_move_name', { name: n.name }));
-      this._render();
     }
 
     /* ---------- pointer: pan, zoom, drag nodes / frames / notes ---------- */
@@ -7192,7 +7087,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           'fn-goto': (el) => { this._closeModal(); this._open(el.dataset.label); },
           'fn-restore': (el) => { this._restoreFn(el.dataset.label); },
           'hamenu': () => { this.dispatchEvent(new Event('hass-toggle-menu', { bubbles: true, composed: true })); },
-          'find-x': () => { this._findQ = ''; this._renderList(); },
+          'find-x': () => { this._findClear(); },
           'find-go': (el) => { if (!this._findGo(el.dataset.key)) this._findAdd(el, el.dataset.key); },
           'find-in': (el) => { this._findGo(el.dataset.key, el.dataset.label); },
           'find-add': (el) => { this._findAdd(el, el.dataset.key); },
@@ -7294,6 +7189,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         },
         // the developer tools (Phase 9)
         tools: {
+          'messages': () => { if (this._sel) this._openMessages(this._sel); },
+          'msg-run': (el) => { const x = (this._msgs || [])[+el.dataset.i]; if (x) this._showRun({ kind: 'run', key: x.from, t: x.t, run: x.run }, null); },
           'test': () => { if (this._sel) this._testDialog(this._sel); },
           'test-pick': (el) => { if (this._tst) { this._tst.pick = el.dataset.id; this._tst.bad = null; this._renderTestDlg(); } },
           'test-run': () => { this._testRunDlg(false); },
@@ -7339,8 +7236,6 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         },
         // the debugger and a run followed on the board
         debug: {
-          'messages': () => { if (this._sel) this._openMessages(this._sel); },
-          'msg-run': (el) => { const x = (this._msgs || [])[+el.dataset.i]; if (x) this._showRun({ kind: 'run', key: x.from, t: x.t, run: x.run }, null); },
           'debug': (el, { need }) => { if (need()) { if (this._drawer && this._drawer.mode === 'debug') this._closeDrawer(); else this._openDebug(); } },
           'dbg-mon': () => { this._monitorDlg(); },
           'dbg-clear': () => { if (this._dbg) { this._dbg.entries = []; this._dbg.byId = new Map(); this._dbg.cleared = Date.now(); this._dbgSel = null; this._renderDbg(); } },
@@ -7418,79 +7313,32 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         },
       };
     }
+    // a field changed: each part looks at it in turn, and the first that knows it handles it
     _onChange(e) {
-      const t = e.target, g = this._mgr;
-      // diagnostics: anonymised or real names, one of the two, never both and never neither
-      if (t.name === 'danon' || t.name === 'dreal') {
-        const m = this._$.modal, other = m.querySelector(`input[name="${t.name === 'danon' ? 'dreal' : 'danon'}"]`);
-        if (t.checked && other) other.checked = false;
-        const pick = m.querySelector('input[name="danon"]:checked, input[name="dreal"]:checked');
-        m.querySelectorAll('[data-act="diag-go"], [data-act="diag-copy"]').forEach((b) => { b.disabled = !pick; });
-        const w = m.querySelector('.dwarn');
-        if (w) w.hidden = !(pick && pick.name === 'dreal');
-        return;
-      }
-      if (t.classList && t.classList.contains('sbent')) { this._sbxPick(t.value); return; }
-      if (t.classList && t.classList.contains('sbrun')) { this._sbxTrigs(); return; }
-      if (t.classList && t.classList.contains('sbsel')) {
-        this._sbxOther(t, true);
-        if (t.dataset.f === 'sbev') this._sbxEvData();
-        if (t.dataset.f === 'sbtop') this._sbxPayloads();
-        return;
-      }
-      if (t.hasAttribute && t.hasAttribute('data-nr')) {
-        // the Node-RED switch is yours, for every function: off means no request to Node-RED at all
-        this._data.ui.nodered = t.checked; this._save(); this._nrCache = null;
-        if (this._model) this._open(this._model.label, true).then(() => this._renderLegend()); else this._renderLegend();
-        return;
-      }
-      if (this._tst && t.closest && t.closest('.tdlg')) { this._testWhat(); return; }
-      if (this._arw && t.dataset && t.dataset.aref != null) { const i = +t.dataset.aref; if (t.checked) this._arw.sel.add(i); else this._arw.sel.delete(i); return; }
-      if (this._arw && t.closest && t.closest('.adlg')) { this._linkPreview(); return; }
-      if (t.dataset.tog) {
-        if (this._model) this._setFlt(this._model.label, t.dataset.tog, t.checked);
-        else { this._data.ui[t.dataset.tog] = t.checked; this._save(); }
-        if (t.dataset.tog === 'suggest') this._open(this._data.ui.current, true);
-        else if (this._model) { this._place(); this._render(); }
-        this._refreshHl();
-        return;
-      }
-      if (t.name === 'color' && t.tagName === 'SELECT') { this._fnColor = t.value; return; }
-      if (!g) return;
-      if (t.dataset.csel != null) { const i = +t.dataset.csel; if (t.checked) g.sel.add(i); else g.sel.delete(i); this._mgrFootRefresh(); return; }
-      if (t.dataset.cmem != null) {
-        const c = g.cands && g.cands[+t.dataset.cmem];
-        if (!c) return;
-        if (t.checked) c.keep.add(t.dataset.id); else c.keep.delete(t.dataset.id);
-        const card = t.closest('.cand'), cc = card && card.querySelector('.ccount');
-        if (cc) cc.textContent = this._countText(c.members.filter((id) => c.keep.has(id)));
-        return;
-      }
-      if (t.dataset.lsel != null) { if (t.checked) g.lsel.add(t.dataset.lsel); else g.lsel.delete(t.dataset.lsel); this._mgrFootRefresh(); return; }
-      if (t.hasAttribute('data-mcats')) { g.cats = t.checked; return; }
-      if (t.hasAttribute('data-mdev')) { g.devices = t.checked; if (g.roles) { g.sel = new Set(); g.expanded = new Set(); this._mgrRecluster(); this._renderManager(); } return; }
-      if (t.hasAttribute('data-pdiag')) { g.pdiag = t.checked; g.pshow = 200; this._renderPicks(); return; }
-      if (t.hasAttribute('data-ptarget')) { g.target = t.value; this._renderManager(); return; }
-      if (t.dataset.pick) {
-        if (t.checked) this._pick.add(t.dataset.pick); else this._pick.delete(t.dataset.pick);
-        const c = this._$.modal.querySelector('.chip[data-ptype="selected"] span');
-        if (c) c.textContent = this._pick.size;
-        this._mgrFootRefresh();
-      }
+      const t = e.target;
+      if (this._diagChange(t) || this._sbxChange(t) || this._nrChange(t) || this._testChange(t) || this._arwChange(t) || this._togChange(t) || this._fnChange(t) || this._mgrChange(t)) return;
     }
+    // typed into: the same, for what each part reads as it's typed
     _onInput(e) {
-      const t = e.target, g = this._mgr;
-      if (this._tst && t.closest && t.closest('.tdlg')) { this._testWhat(); return; }
-      if (this._arw && t.closest && t.closest('.adlg')) { this._linkPreview(); return; }
-      if (t.classList.contains('search')) { if (g) g.pshow = 200; this._renderPicks(t.value); return; }
-      if (t.classList.contains('find')) { this._findQ = t.value; this._clock.after('find', 120, () => this._renderList()); return; }
-      if (t.name === 'icon' && t.tagName === 'INPUT') { this._fnIcon = t.value.trim(); return; }
-      if (g && t.dataset.cname != null) { const c = g.cands && g.cands[+t.dataset.cname]; if (c) c.name = t.value; return; }
-      if (g && t.hasAttribute('data-pnew')) { g.newName = t.value; this._mgrFootRefresh(); return; }
-      if (t.classList.contains('nbody') && this._model) {
-        const nt = this._layout(this._model.label).notes.find((x) => x.id === t.dataset.nid);
-        if (nt) { nt.text = t.value; this._autosize(t); this._save(); }
-      }
+      const t = e.target;
+      if (this._testChange(t) || this._arwInput(t) || this._mgrInput(t) || this._findInput(t) || this._fnInput(t) || this._noteInput(t)) return;
+    }
+    // the Arrows menu's and the Key's switches (core: what the board shows)
+    _togChange(t) {
+      if (!t.dataset || !t.dataset.tog) return false;
+      if (this._model) this._setFlt(this._model.label, t.dataset.tog, t.checked);
+      else { this._data.ui[t.dataset.tog] = t.checked; this._save(); }
+      if (t.dataset.tog === 'suggest') this._open(this._data.ui.current, true);
+      else if (this._model) { this._place(); this._render(); }
+      this._refreshHl();
+      return true;
+    }
+    // a note on the board, typed into
+    _noteInput(t) {
+      if (!t.classList.contains('nbody') || !this._model) return false;
+      const nt = this._layout(this._model.label).notes.find((x) => x.id === t.dataset.nid);
+      if (nt) { nt.text = t.value; this._autosize(t); this._save(); }
+      return true;
     }
     _onDbl(e) {
       const nodeEl = e.target.closest('.node');
@@ -7535,7 +7383,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         if (e.key === 'Enter' && t.classList && t.classList.contains('search')) e.preventDefault();
         if (t.classList && t.classList.contains('find')) {
           if (e.key === 'Enter') { const b = this._$.list.querySelector('.fgo'); if (b) b.click(); }
-          if (e.key === 'Escape') { this._findQ = ''; this._renderList(); }
+          if (e.key === 'Escape') this._findClear();
         }
         return;
       }
@@ -7654,6 +7502,1213 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         } catch (e) { this._toast(T('could_not_add_3', { name: n.name, noLabelWhy: this._noLabelWhy(n.key, e) })); }
       }
     }
+    // a small menu under a toolbar button
+    _menu(anchor, items, title) {
+      this._closeMenu(true);
+      this._menuAnchor = anchor;
+      const m = document.createElement('div');
+      m.className = 'menu';
+      m.innerHTML = (title ? `<div class="mtitle">${esc(title)}</div>` : '') + items.map((it) => it.sep ? '<div class="msep"></div>'
+        : `<button class="mi" ${it.act ? `data-act="${it.act}"` : ''} ${Object.entries(it.data || {}).map(([k, v]) => `data-${k}="${esc(v)}"`).join(' ')} ${it.disabled ? 'disabled' : ''} ${it.title ? `title="${esc(it.title)}"` : ''}>`
+          + (it.icon ? `<ha-icon icon="${esc(it.icon)}"></ha-icon>` : '') + `<span>${esc(it.text)}</span></button>`).join('');
+      this._$.board.appendChild(m);
+      const br = this._$.board.getBoundingClientRect(), ar = anchor.getBoundingClientRect();
+      m.style.top = Math.round(ar.bottom - br.top + 4) + 'px';
+      m.style.left = Math.round(Math.max(6, Math.min(ar.left - br.left, br.width - m.offsetWidth - 6))) + 'px';
+      this._menuEl = m;
+    }
+    _closeMenu(keepAnchor) {
+      if (this._menuEl) {
+        // focus that was in the menu goes back to the button that opened it (4.8)
+        const had = this._menuEl.contains(this.shadowRoot.activeElement);
+        this._menuEl.remove(); this._menuEl = null;
+        if (had && this._menuAnchor && this._menuAnchor.isConnected) this._menuAnchor.focus();
+      }
+      if (!keepAnchor) this._menuAnchor = null;
+    }
+    // The phone app signs its page in through the app itself, and Home Assistant inside the drawer's frame can't
+    // reach that sign-in, so its editors never load there. In the app, Home Assistant's own pages open full
+    // screen instead; the app's Back returns to the board.
+    _inApp() { return !!(this._hass && this._hass.auth && this._hass.auth.external); }
+    _openDrawer(url, title, opt = {}) {
+      // only Home Assistant's own pages open in the drawer (or in a new tab from it), never another address
+      if (!SAME_ORIGIN.test(String(url))) return;
+      if (this._inApp() && /^\/config\//.test(url)) { this._goTo(url, opt.capture); return; }
+      this._leaveDrawerMode();
+      if (!opt.capture) this._capture = null;
+      const was = this._drawer;
+      if (was && was.mode === 'frame') this._configChanged();
+      this._drawer = { mode: 'frame', url, title };
+      const d = this._$.drawer;
+      d.hidden = false;
+      this._put(d, `<div class="dhead">${opt.back ? `<button data-act="back" title="${T('back_to_runs')}"><ha-icon icon="mdi:arrow-left"></ha-icon></button>` : ''}<span class="dtitle">${esc(title)}</span>${opt.capture && this._capture ? `<span class="dcap" title="${T('anything_you_create_here_gets', { fnName: esc(this._fnName(this._capture.label)) })}">${T('saves_into', { fnName: esc(this._fnName(this._capture.label)) })}</span>` : ''}<button data-act="newtab" title="${T('open_in_a_new_tab')}"><ha-icon icon="mdi:open-in-new"></ha-icon></button><button data-act="close" title="${T('close')}"><ha-icon icon="mdi:close"></ha-icon></button></div><iframe title="${esc(title)}" src="${esc(url)}"></iframe>`);
+      this._fitLitbar();
+    }
+    _closeDrawer() {
+      this._leaveDrawerMode();
+      const d = this._$.drawer, was = this._drawer;
+      d.hidden = true; this._put(d, '');
+      this._drawer = null;
+      this._endCapture();
+      this._hover(null);
+      if (was && was.mode === 'frame') this._configChanged();  // whatever was saved in the editor shows at once
+      this._nrBack();
+      this._fitLitbar();
+    }
+    // Leaving the board for one of Home Assistant's pages (the phone app). The board stops while it's away, so
+    // a create remembers what it's for, and when the board comes back, what was made meanwhile joins the
+    // function. "Meanwhile" is measured by the registry's own clock, not the phone's.
+    _goTo(url, capture) {
+      const c = capture && this._capture;
+      if (c) {
+        const since = (this._ents || []).reduce((m, e) => Math.max(m, e.created_at || 0), 0);
+        try { sessionStorage.setItem(CAPTURE_KEY, JSON.stringify({ label: c.label, kind: c.kind, domain: c.domain, since, at: Date.now() })); } catch (e) { /* the item just won't be labelled */ }
+      }
+      this._capture = null;
+      if (this._drawer) this._closeDrawer();
+      // "from" is how Home Assistant's own navigation marks a page that was opened from another one; with it, the
+      // editor's back arrow goes back here instead of to its own list
+      history.pushState({ from: location.pathname }, '', url);
+      window.dispatchEvent(new CustomEvent('location-changed', { detail: { replace: false } }));
+    }
+    _onRun(ev) {
+      const k = ev && ev.data && ev.data.entity_id, m = this._model;
+      if (!m || !k || !m.nodes.has(k)) return;
+      this._pulse(k);
+      this._clock.after('runs', 2500, async () => {
+        await this._loadRuns();
+        if (this._drawer && this._drawer.mode === 'runs') this._renderRuns();
+      });
+    }
+    // states worth offering for a simulated change: what the function's triggers wait for first
+    _stateHints(n) {
+      const st = this._hass.states[n.key], A = (st && st.attributes) || {}, out = new Set();
+      (this._model ? this._model.edges : []).forEach((e) => { if (e.from === n.key) e.tfs.forEach((f) => (f.to || []).forEach((s) => out.add(s))); });
+      const by = { binary_sensor: ['on', 'off'], cover: ['open', 'closed', 'opening', 'closing'], lock: ['locked', 'unlocked', 'jammed'], valve: ['open', 'closed'],
+        light: ['on', 'off'], switch: ['on', 'off'], fan: ['on', 'off'], siren: ['on', 'off'], schedule: ['on', 'off'], person: ['home', 'not_home'],
+        device_tracker: ['home', 'not_home'], media_player: ['playing', 'paused', 'idle', 'off'], vacuum: ['cleaning', 'docked', 'returning', 'idle'],
+        alarm_control_panel: ['disarmed', 'armed_home', 'armed_away', 'armed_night', 'triggered'] };
+      (by[n.domain] || []).forEach((s) => out.add(s));
+      if (n.domain === 'climate') toList(A.hvac_modes).forEach((s) => out.add(s));
+      if (n.domain === 'select' || n.domain === 'input_select') toList(A.options).forEach((s) => out.add(s));
+      if (n.domain === 'input_boolean') ['on', 'off'].forEach((s) => out.add(s));
+      if (n.domain === 'timer') ['idle', 'active', 'paused'].forEach((s) => out.add(s));
+      if (n.domain === 'sun') ['above_horizon', 'below_horizon'].forEach((s) => out.add(s));
+      if (n.domain === 'input_number' || n.domain === 'number') [A.min, A.max].forEach((s) => { if (s != null) out.add(String(s)); });
+      if (st) out.add(st.state);
+      return [...out].filter((s) => s != null && s !== '').map(String).slice(0, 30);
+    }
+    // what a test starts from: the data the function's own triggers and actions use
+    _prefill(n, what) {
+      const m = this._model, k = n.key;
+      if (what === 'event' || what === 'mqtt') {
+        for (const e of (m ? m.edges : [])) {
+          if (e.from !== k || !e.trigs) continue;
+          for (const t of e.trigs) {
+            const node = t.t || {};
+            if (what === 'event' && node.event_data && typeof node.event_data === 'object') return JSON.parse(JSON.stringify(node.event_data));
+            if (what === 'mqtt' && node.payload != null) return String(node.payload);
+          }
+        }
+        return what === 'mqtt' ? '' : {};
+      }
+      for (const e of (m ? m.edges : [])) {
+        if (e.to !== k || !e.acts) continue;
+        const a = e.acts.find((x) => x && x.data && typeof x.data === 'object');
+        if (a) { const d = JSON.parse(JSON.stringify(a.data)); delete d.entity_id; return d; }
+      }
+      return { message: T('test_from_the_functions_board') };
+    }
+    // a notification button: the event a phone fires when it is pressed, as the function's own trigger waits for it
+    _buttonEvent(n) {
+      const id = n.key.slice(5);
+      for (const e of (this._model ? this._model.edges : [])) {
+        if (e.from !== n.key || !e.trigs) continue;
+        for (const t of e.trigs) { const et = t.t && t.t.event_type; if (typeof et === 'string' && NOTIFY_EVENTS[et]) return { event_type: et, event_data: { [NOTIFY_EVENTS[et]]: id } }; }
+      }
+      return { event_type: 'mobile_app_notification_action', event_data: { action: id } };
+    }
+    async _scriptFields(k) {
+      const cfg = await this._fetchConfig(k);
+      const f = cfg && cfg.fields && typeof cfg.fields === 'object' ? cfg.fields : {};
+      return Object.entries(f).map(([name, x]) => ({ name, type: 'selector', label: (x && x.name) || name, selector: (x && x.selector) || { text: {} },
+        value: x && x.default !== undefined ? x.default : undefined, required: !!(x && x.required),
+        hint: (x && (x.description || (x.example != null ? T('for_example', { stringify: typeof x.example === 'object' ? JSON.stringify(x.example) : x.example }) : ''))) || '' }));
+    }
+    // a kept test back into the fields it was made with
+    _valsOf(spec, t) {
+      if (t.kind === 'action') return Object.assign({}, t.data || {});
+      if (t.kind === 'state') return { state: t.state };
+      if (t.kind === 'event') return { event_data: t.event_data || {} };
+      if (t.kind === 'mqtt') return { payload: t.payload };
+      if (t.kind === 'notify') return { data: t.data || {} };
+      if (t.kind === 'run') return t.target.startsWith('automation.') ? { check: !t.skip_condition } : Object.assign({}, t.variables || {});
+      return {};
+    }
+    _fieldHTML(f, i, vals) {
+      const v = vals && f.name in vals ? vals[f.name] : f.value, id = 'tf' + i;
+      const lab = (inner) => `<label>${esc(f.label)}${inner}${f.hint ? `<span class="fh">${esc(f.hint)}</span>` : ''}</label>`;
+      if (f.type === 'bool') return `<label class="chk"><input type="checkbox" name="${id}" ${v ? 'checked' : ''}>${esc(f.label)}</label>`;
+      if (f.type === 'select') return lab(`<select name="${id}">${toList(f.options).map((o) => `<option ${String(o) === String(v) ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`);
+      if (f.type === 'number') {
+        const at = (k, x) => (x != null && x !== '' ? ` ${k}="${esc(x)}"` : '');
+        return lab(`<input type="number" name="${id}" value="${esc(v == null ? '' : v)}"${at('min', f.min)}${at('max', f.max)}${f.step != null ? at('step', f.step) : ' step="any"'}>`);
+      }
+      if (f.type === 'date' || f.type === 'time') return lab(`<input type="${f.type}" name="${id}" value="${esc(v || '')}"${f.type === 'time' ? ' step="1"' : ''}>`);
+      if (f.type === 'object') return `<div class="selbox" data-f="${i}">${lab(`<textarea name="${id}" rows="4" spellcheck="false">${esc(toLoose(v))}</textarea>`)}</div>`;
+      if (f.type === 'selector') return `<div class="selbox" data-f="${i}">${lab(`<input name="${id}" value="${esc(v == null ? '' : typeof v === 'object' ? JSON.stringify(v) : v)}">`)}</div>`;
+      const opts = f.options && f.options.length ? `<datalist id="dl${i}">${f.options.map((o) => `<option value="${esc(o)}">`).join('')}</datalist>` : '';
+      return lab(`<input name="${id}" value="${esc(v == null ? '' : v)}"${opts ? ` list="dl${i}"` : ''}>${opts}`);
+    }
+    // a test in a few words, for its button, its toast and the logbook
+    _describeTest(t) {
+      const who = this._boxName(t.target);
+      switch (t.kind) {
+        case 'action': {
+          const s = t.service.split('.')[1], v = t.data || {};
+          const verb = { turn_on: T('turn_on'), turn_off: T('turn_off'), toggle: T('toggle'), press: T('press_2'), increment: T('increment'), decrement: T('decrement'), reset: T('reset'),
+            set_value: T('set'), select_option: T('set'), set_datetime: T('set'), start: T('start'), finish: T('finish'), cancel: T('cancel'), pause: T('pause') }[s] || t.service;
+          const val = v.value != null ? ' to ' + v.value : v.option != null ? ' to ' + v.option : v.duration ? ' for ' + v.duration : (v.date || v.time) ? ' to ' + [v.date, v.time].filter(Boolean).join(' ') : '';
+          return verb + ' ' + who + val;
+        }
+        case 'state': return T('simulated', { who, state: t.state });
+        case 'event': return t.target.startsWith('nact:') ? T('press', { who }) : T('fire', { event_type: t.event_type });
+        case 'mqtt': return T('publish_to', { topic: t.topic });
+        case 'notify': return T('send_a_test_notification_with', { who });
+        case 'run': return T('run', { who, extra: t.skip_condition ? T('without_its_conditions') : '' });
+        default: return T('test_2');
+      }
+    }
+    _boxName(k) {
+      const n = this._model && this._model.nodes.get(k);
+      return n ? n.name : String(k).includes(':') ? String(k).slice(String(k).indexOf(':') + 1) : this._nameOf(k);
+    }
+    // a notification's templates, filled in by Home Assistant, as sending it from an automation would
+    async _fillTemplates(v) {
+      if (typeof v === 'string') { if (!TPL_RE.test(v)) return v; const r = await this._renderOnce(v); return r == null ? v : typeof r === 'string' ? r : JSON.stringify(r); }
+      if (Array.isArray(v)) return Promise.all(v.map((x) => this._fillTemplates(x)));
+      if (v && typeof v === 'object') { const out = {}; for (const [k, x] of Object.entries(v)) out[k] = await this._fillTemplates(x); return out; }
+      return v;
+    }
+    _renderOnce(template) {
+      return new Promise((resolve) => {
+        let done = false, unsub = null;
+        const fin = (v) => { if (done) return; done = true; this._clock.cancel(to); resolve(v); this._ha.drop(unsub); };
+        unsub = this._haConn.subscribeMessage((msg) => fin(msg && !msg.error ? msg.result : null), { type: 'render_template', template, strict: false, report_errors: true, timeout: 3 }, { fallback: null }).then((u) => { if (!u) fin(null); return u; });
+        const to = this._clock.deadline(4000, () => fin(null));
+      });
+    }
+    // the open function's tool boxes, again from its layout (after adding, removing or undoing one)
+    _syncTools() {
+      const m = this._model;
+      if (!m) return;
+      [...m.nodes.keys()].filter((k) => k.startsWith('tool:')).forEach((k) => m.nodes.delete(k));
+      m.edges = m.edges.filter((e) => e.role !== 'tool');
+      this._toolNodes(m.label, m.nodes, m.edges);
+    }
+    _freeSpot(x, y, w, h) {
+      const boxes = this._model ? [...this._model.nodes.values()] : [];
+      const hit = (px, py) => boxes.some((o) => px < o.x + o.w + 16 && px + w + 16 > o.x && py < o.y + o.h + 12 && py + h + 12 > o.y);
+      let px = Math.round(x), py = Math.round(y);
+      for (let i = 0; i < 40 && hit(px, py); i++) py += h + 12;
+      return { x: px, y: py };
+    }
+    _addTool(tool, near, w, h, text) {
+      const label = this._model.label, L = this._layout(label), before = this._snap(label), c = this._center();
+      L.tools = (L.tools || []).concat([tool]);
+      const n = near && this._model.nodes.get(near);
+      L.nodes['tool:' + tool.id] = tool.type === 'inject'
+        ? this._freeSpot(n ? n.x - w - 70 : c.x - w / 2, n ? n.y : c.y, w, h)
+        : this._freeSpot(n ? n.x : c.x - w / 2, n ? n.y + n.h + 30 : c.y - h / 2, w, h);
+      this._save(); this._syncTools(); this._place(); this._render(); this._startMonitors();
+      this._layoutStep(label, before, text);
+      this._showBox('tool:' + tool.id);
+    }
+    // a box placed out of sight, or under the key, is brought into view
+    _showBox(key) {
+      const n = this._model && this._model.nodes.get(key);
+      if (!n) return;
+      const v = this._view, W = this._openWidth(), H = this._$.vp.clientHeight;
+      const x = n.x * v.k + v.x, y = n.y * v.k + v.y, w = n.w * v.k, h = n.h * v.k;
+      const vr = this._$.vp.getBoundingClientRect(), lr = this._$.legend.getBoundingClientRect();
+      const lx = lr.left - vr.left, ly = lr.top - vr.top, under = lr.width && x < lx + lr.width && x + w > lx && y < ly + lr.height && y + h > ly;
+      if (x < 8 || y < 8 || x + w > W - 8 || y + h > H - 8 || under) { this._centerOn(key); this._saveView(); }
+    }
+    _keepTest(test) { this._addTool({ id: uid(), type: 'inject', title: this._describeTest(test), test }, test.target, XW, 48, T('keep_a_test_on_the')); }
+    _saveTool(id, test) {
+      const label = this._model.label, L = this._layout(label), before = this._snap(label);
+      L.tools = (L.tools || []).map((t) => (t.id === id ? Object.assign({}, t, { test, title: this._describeTest(test) }) : t));
+      this._save(); this._syncTools(); this._place(); this._render();
+      this._layoutStep(label, before, T('change_a_test_button'));
+    }
+    _addMonitor(spec) {
+      this._addTool({ id: uid(), type: 'monitor', what: spec.what, topic: spec.topic, target: spec.target || null,
+        title: spec.title || (spec.what === 'mqtt' ? T('mqtt_2') : T('events')) + spec.topic }, spec.target, 280, 176, T('add_a_monitor'));
+    }
+    // leaving the debug panel for another drawer stops recording
+    _leaveDrawerMode() {
+      if (this._drawer && this._drawer.mode === 'debug') this._dbgStop();
+      if (this._drawer && this._drawer.mode === 'sandbox') { this._sbxEnd(); this._testCondsSoon(0); }
+    }
+    _fmtState(k, state) {
+      const st = this._hass.states[k];
+      try { return st && this._hass.formatEntityState ? this._hass.formatEntityState(Object.assign({}, st, { state: String(state) })) : String(state); } catch (e) { return String(state); }
+    }
+    // a box's state as the board shows it: the sandbox's while it's open, Home Assistant's otherwise
+    _stOf(k) {
+      if (!this._sbxOn()) return this._hass.states[k];
+      const s = this._sbx.eng.get(k);
+      return s ? { entity_id: k, state: String(s.state), attributes: s.attributes || {}, last_changed: s.last_changed, last_updated: s.last_updated, context: {} } : undefined;
+    }
+    _renderRaw(template, variables) {
+      return new Promise((res, rej) => {
+        let done = false, un = null;
+        const fin = (f, v) => { if (done) return; done = true; this._clock.cancel(to); f(v); if (un) this._ha.drop(un); };
+        const to = this._clock.deadline(8000, () => fin(rej, new Error('timeout')));
+        un = this._haConn.subscribeMessage((m) => {
+          if (m && m.error) { if (m.level !== 'WARNING') fin(rej, new Error(String(m.error))); return; }
+          fin(res, m ? m.result : null);
+        }, { type: 'render_template', template, variables, strict: false, report_errors: true }).catch((e) => { fin(rej, new Error((e && (e.message || e.code)) || 'error')); return null; });
+      });
+    }
+    _fitK(R) { const a = this._flowArea(); return Math.min((a.W - 2 * a.pad) / Math.max(1, R.x1 - R.x0), (a.H - 2 * a.pad) / Math.max(1, R.y1 - R.y0)); }
+    // the part of the board the drawer leaves visible
+    _openWidth() {
+      const W = this._$.vp.clientWidth, d = this._$.drawer;
+      return d && !d.hidden && this._drawer ? Math.max(200, W - d.offsetWidth) : W;
+    }
+    _fitLitbar() {
+      const r = (12 + this._$.vp.clientWidth - this._openWidth()) + 'px', b = this._$.litbar, vt = this._$.vtabs;
+      if (b && !b.hidden) b.style.right = r;
+      // the version tabs and their banner keep to the part of the board the drawer leaves free too
+      if (vt) vt.style.right = r;
+    }
+    // bring boxes into the visible part of the board, zooming out only when they don't fit
+    _frameKeys(keys, extra) {
+      const m = this._model, ns = [...new Set(keys)].map((k) => m && m.nodes.get(k)).filter(Boolean).concat(extra || []);
+      if (!ns.length) return;
+      const W = this._openWidth(), H = this._$.vp.clientHeight, v = this._view, pad = 50;
+      const x0 = Math.min(...ns.map((n) => n.x)), y0 = Math.min(...ns.map((n) => n.y)), x1 = Math.max(...ns.map((n) => n.x + n.w)), y1 = Math.max(...ns.map((n) => n.y + n.h));
+      const inView = x0 * v.k + v.x >= 0 && y0 * v.k + v.y >= 0 && x1 * v.k + v.x <= W && y1 * v.k + v.y <= H - 60;
+      if (inView) return;
+      const k = Math.max(0.35, Math.min(v.k, (W - pad * 2) / Math.max(1, x1 - x0), (H - 60 - pad * 2) / Math.max(1, y1 - y0)));
+      this._view = { k, x: (W - (x1 - x0) * k) / 2 - x0 * k, y: (H - 60 - (y1 - y0) * k) / 2 - y0 * k };
+      this._applyView();
+      this._saveView();
+    }
+    _stepText(s) {
+      if (s.kind === 'state') return `${this._boxName(s.key)} → ${this._fmtState(s.key, s.state)}`;
+      if (s.kind === 'run') return T('ran', { boxName: this._boxName(s.key) });
+      if (s.kind === 'call') return s.svc;
+      return s.text || '';
+    }
+    // the config of the automation or script that holds an arrow, or why it can't be changed from here
+    async _ownerCfg(owner) {
+      const n = this._model && this._model.nodes.get(owner), dom = owner.split('.')[0], id = n && this._itemId(n);
+      if (!n) return { err: T('it_isn_t_on_the') };
+      if (!id) return { err: T('has_no_id_so_it', { name: n.name }) };
+      let cfg;
+      try { cfg = await this._api('GET', `config/${dom}/config/${encodeURIComponent(id)}`); }
+      catch (e) {
+        const nf = e && (e.status_code === 404 || /404|not.found/i.test(String(e.message || e.body || e.error || '')));
+        return { err: nf ? T('is_set_up_in_yaml', { name: n.name, dom }) : T('could_not_read_its_config', { e: (e && (e.message || e.body)) || e }), n };
+      }
+      if (cfg && cfg.use_blueprint) return { err: T('comes_from_a_blueprint_its', { name: n.name }), n };
+      return { cfg, id, dom, n, isScript: dom === 'script' };
+    }
+    _yamlWarn(dom) {
+      return this._data.ui.yamlOk ? '' : `<div class="warnbox"><ha-icon icon="mdi:alert-outline"></ha-icon><span>${T('saving_writes_s_yaml_the', { dom })}</span></div>`;
+    }
+    // drawing an arrow: pick the box to connect to
+    _canLink(n) {
+      if (!n || n.kind === 'tool') return false;
+      const k = n.key;
+      return /^(automation|script)\./.test(k) || /^(event|nact):/.test(k) || TGT_RE.test(k) || (!k.includes(':') && !!this._hass.states[k]);
+    }
+    // which way an arrow between two boxes can go, and what it can mean
+    _linkKinds(from, to) {
+      const logic = (k) => /^(automation|script)\./.test(k);
+      const ent = (k) => !k.includes(':') && !!this._hass.states[k];
+      if (to.startsWith('automation.') && (ent(from) || /^(event|nact):/.test(from)) && !logic(from)) return { owner: to, other: from, kinds: /^(event|nact):/.test(from) ? ['trigger'] : ['trigger', 'condition'] };
+      if (logic(from) && to.startsWith('script.')) return { owner: from, other: to, kinds: ['call'] };
+      if (logic(from) && (ent(to) || TGT_RE.test(to))) return { owner: from, other: to, kinds: ['action'] };
+      return null;
+    }
+    _linkKey(kind, isScript, cfg) {
+      if (isScript) return 'sequence';
+      const plural = { trigger: 'triggers', condition: 'conditions', action: 'actions', call: 'actions' }[kind], single = plural.slice(0, -1);
+      return cfg[plural] == null && cfg[single] != null ? single : plural;
+    }
+    _saveCfg(dom, id, cfg) {
+      return this._api('POST', `config/${dom}/config/${encodeURIComponent(id)}`, cfg).then((r) => { this._store.changed('cfg:'); return r; });
+    }
+
+    /* ---------- keyboard and screen readers (4.8) ---------- */
+    // what each box is wired to, in words, for its accessible description
+    _connText() {
+      const m = this._model, out = new Map();
+      if (!m) return out;
+      const IN = { trigger: T('set_off_by'), condition: T('checks'), source: T('reads'), action: T('changed_by'), call: T('run_by'), tool: T('tested_or_listened_to_by') };
+      const OUT = { trigger: T('sets_off'), condition: T('is_checked_by'), source: T('is_read_by'), action: T('changes'), call: T('runs'), tool: T('tests') };
+      const list = (names) => (names.length > 4 ? T('and_more_2', { names: names.slice(0, 4).join(', '), n: names.length - 4 }) : names.join(', '));
+      const vis = this._visibleKeys(), E = this._visEdges();
+      vis.forEach((k) => {
+        const parts = [];
+        const group = (edges, other, words) => {
+          const by = new Map();
+          edges.forEach((e) => { const n = m.nodes.get(other(e)); if (n) (by.get(e.role) || by.set(e.role, []).get(e.role)).push(n.name); });
+          by.forEach((names, role) => parts.push(`${words[role] || role} ${list([...new Set(names)])}`));
+        };
+        // a check points into the automation: from the automation's side it checks the box
+        group(E.filter((e) => e.to === k), (e) => e.from, Object.assign({}, IN, { condition: T('checks') }));
+        group(E.filter((e) => e.from === k), (e) => e.to, OUT);
+        if (parts.length) out.set(k, parts.join('. '));
+      });
+      return out;
+    }
+    // one box is in the tab order at a time; the arrow keys move between them
+    _rove(key) {
+      const el = key && this._els.get(key);
+      if (!el) return;
+      if (this._roveKey && this._roveKey !== key) { const o = this._els.get(this._roveKey); if (o) o.tabIndex = -1; }
+      el.tabIndex = 0;
+      this._roveKey = key;
+    }
+    // the box an arrow key leads to: along the arrows for left and right, else the nearest in that direction
+    _navFrom(k, dir) {
+      const m = this._model, n = m && m.nodes.get(k);
+      if (!n) return null;
+      const vis = this._visibleKeys(), E = this._visEdges(), cx = (o) => o.x + o.w / 2, cy = (o) => o.y + o.h / 2;
+      let cand = dir === 'right' ? E.filter((e) => e.from === k).map((e) => e.to) : dir === 'left' ? E.filter((e) => e.to === k).map((e) => e.from) : [];
+      cand = cand.filter((x) => x !== k && vis.has(x));
+      if (!cand.length) {
+        cand = [...vis].filter((x) => {
+          const o = m.nodes.get(x);
+          return x !== k && (dir === 'right' ? cx(o) > cx(n) + 10 : dir === 'left' ? cx(o) < cx(n) - 10 : dir === 'up' ? cy(o) < cy(n) - 10 : cy(o) > cy(n) + 10);
+        });
+      }
+      const horiz = dir === 'left' || dir === 'right';
+      const d = (x) => { const o = m.nodes.get(x), dx = Math.abs(cx(o) - cx(n)), dy = Math.abs(cy(o) - cy(n)); return horiz ? dx + dy * 2 : dy + dx * 2; };
+      return cand.sort((a, b) => d(a) - d(b))[0] || null;
+    }
+    _boxKey(e, t) {
+      const k = t && t.classList && t.classList.contains('node') ? t.dataset.key : null;
+      if (!k) return false;
+      const dirs = { ArrowRight: 'right', ArrowLeft: 'left', ArrowUp: 'up', ArrowDown: 'down' };
+      if (dirs[e.key]) {
+        e.preventDefault();
+        const to = this._navFrom(k, dirs[e.key]);
+        if (to) { this._select(to); this._rove(to); this._showBox(to); const el = this._els.get(to); if (el) el.focus(); }
+        return true;
+      }
+      if (e.key === 'Enter') { e.preventDefault(); const n = this._model.nodes.get(k); if (n) this._editOrOpen(n); return true; }
+      if (e.key === ' ') {
+        e.preventDefault();
+        this._select(this._sel === k ? null : k);
+        // then Tab reaches the box's actions
+        return true;
+      }
+      return false;
+    }
+
+    /* ---------- undo and redo: one stack per board session ---------- */
+    // step: { label, text, undo(), redo(), check?(dir) } - check returns false when the item has changed
+    // since the step (someone edited it elsewhere); the board then asks before overwriting
+    _history(step) {
+      if (this._ver) return;
+      this._undoStack.push(step);
+      if (this._undoStack.length > 50) this._undoStack.shift();
+      this._redoStack = [];
+      this._renderUndo();
+    }
+    _renderUndo() {
+      if (!this._$) return;
+      const u = this._undoStack[this._undoStack.length - 1], r = this._redoStack[this._redoStack.length - 1];
+      const ub = this._$.tools.querySelector('[data-act="undo"]'), rb = this._$.tools.querySelector('[data-act="redo"]');
+      const key = /Mac|iPhone|iPad/.test(navigator.platform || '') ? T('cmd') : T('ctrl');
+      if (ub) { ub.disabled = !u || this._undoBusy; ub.title = u ? T('undo_z', { text: u.text, key }) : T('nothing_to_undo'); }
+      if (rb) { rb.disabled = !r || this._undoBusy; rb.title = r ? T('redo_shift_z', { text: r.text, key }) : T('nothing_to_redo'); }
+    }
+    async _undo() { await this._step(this._undoStack, this._redoStack, 'undo'); }
+    async _redo() { await this._step(this._redoStack, this._undoStack, 'redo'); }
+    async _step(from, to, dir) {
+      if (this._undoBusy) return;
+      const st = from[from.length - 1];
+      if (!st) return;
+      if (st.check && !this._confirmStep) {
+        let ok = true;
+        try { ok = await st.check(dir); } catch (e) { ok = true; }
+        if (!ok) {
+          this._toast(T('changed_since_somewhere_else', { text: st.text }), [{ text: dir === 'undo' ? T('undo_anyway') : T('redo_anyway'), fn: () => { this._confirmStep = true; this._step(from, to, dir).finally(() => { this._confirmStep = false; }); } }]);
+          return;
+        }
+      }
+      from.pop();
+      const startedOn = this._data.ui.current;
+      this._undoBusy = true; this._renderUndo();
+      try {
+        await st[dir]();
+        to.push(st);
+        this._toast((dir === 'undo' ? T('undone') : T('redone')) + st.text);
+      } catch (e) {
+        this._toast(T('could_not', { dir, text: st.text, message: e.message || e.code || e }));
+      }
+      this._undoBusy = false; this._renderUndo();
+      // show the function the step changed, unless the user has moved on to another one meanwhile
+      const moved = this._data.ui.current !== startedOn;
+      if (!moved && st.label && st.label !== this._data.ui.current && this._data.functions.includes(st.label)) this._open(st.label);
+      else if (this._model) { this._place(); this._render(); }
+    }
+    // layout steps: moving boxes, Arrange, frames and notes restore the function's previous layout
+    _snap(label) { const L = this._layout(label); return JSON.stringify({ nodes: L.nodes, frames: L.frames, notes: L.notes, tools: L.tools || [], keep: L.keep || [], dir: L.dir || 'right' }); }
+    _layoutStep(label, before, text) {
+      const after = this._snap(label);
+      if (after === before) return;
+      const apply = (j) => {
+        const v = JSON.parse(j), L = this._layout(label), tools = JSON.stringify(L.tools || []) !== JSON.stringify(v.tools || []);
+        L.nodes = v.nodes; L.frames = v.frames; L.notes = v.notes;
+        if (v.tools && v.tools.length) L.tools = v.tools; else delete L.tools;
+        if (v.keep && v.keep.length) L.keep = v.keep; else delete L.keep;
+        if (v.dir === 'down') L.dir = 'down'; else delete L.dir;
+        this._save();
+        // test buttons and monitors are boxes on the board: put them back or take them away too
+        if (tools && this._model && this._model.label === label) { this._syncTools(); this._startMonitors(); }
+      };
+      // another board may have changed this layout since: ask before overwriting that
+      const check = async (dir) => this._snap(label) === (dir === 'undo' ? after : before);
+      this._history({ label, text, check, undo: async () => apply(before), redo: async () => apply(after) });
+    }
+
+    /* ---------- frames and notes ---------- */
+    _addFrame() {
+      const label = this._model.label, L = this._layout(label), c = this._center(), before = this._snap(label);
+      L.frames.push({ id: uid(), title: T('new_frame'), x: Math.round(c.x - 270), y: Math.round(c.y - 170), w: 540, h: 340 });
+      this._save(); this._renderFrames();
+      this._layoutStep(label, before, T('add_frame'));
+    }
+    _addNote() {
+      const label = this._model.label, L = this._layout(label), c = this._center(), before = this._snap(label);
+      const n = { id: uid(), text: '', x: Math.round(c.x - 120), y: Math.round(c.y - 50), w: 240 };
+      L.notes.push(n);
+      this._save(); this._renderNotes();
+      this._layoutStep(label, before, T('add_note'));
+      const ta = this._$.notes.querySelector(`textarea[data-nid="${n.id}"]`);
+      if (ta) ta.focus();
+    }
+    _delFrame(id) {
+      const label = this._model.label, L = this._layout(label), before = this._snap(label);
+      L.frames = L.frames.filter((f) => f.id !== id);
+      this._save(); this._renderFrames();
+      this._layoutStep(label, before, T('delete_frame'));
+    }
+    _delNote(id) {
+      const label = this._model.label, L = this._layout(label), before = this._snap(label);
+      L.notes = L.notes.filter((n) => n.id !== id);
+      this._save(); this._renderNotes();
+      this._layoutStep(label, before, T('delete_note'));
+    }
+    async _ensureSelector() {
+      if (customElements.get('ha-selector')) return true;
+      try {
+        // Home Assistant loads its form widgets lazily; opening a built-in card editor loads them.
+        if (window.loadCardHelpers) {
+          const helpers = await window.loadCardHelpers();
+          const card = await helpers.createCardElement({ type: 'button', entity: 'sun.sun' });
+          if (card && card.constructor && card.constructor.getConfigElement) await card.constructor.getConfigElement();
+        }
+      } catch (e) { /* fall back to the plain inputs */ }
+      await Promise.race([customElements.whenDefined('ha-selector'), this._clock.sleep(4000)]);
+      return !!customElements.get('ha-selector');
+    }
+    _nameClash(l) {
+      const m = this._$.modal, box = m.querySelector('.clash') || document.createElement('div');
+      box.className = 'clash';
+      const onBoard = this._data.functions.includes(l.label_id);
+      box.innerHTML = onBoard
+        ? `<b>${esc(l.name)}</b> ${T('is_already_a_function_on')}<div class="cbtns"><button data-act="fn-goto" data-label="${esc(l.label_id)}">${T('open_it')}</button></div>`
+        : `${T('a_home_assistant_label_called')} <b>${esc(l.name)}</b> ${T('already_exists_so_this_name')}<div class="cbtns"><button class="primary" data-act="fn-restore" data-label="${esc(l.label_id)}">${T('put_it_back_on_the')}</button><button data-act="fn-rename">${T('choose_another_name')}</button></div>`;
+      const btns = m.querySelector('.btns');
+      if (!box.isConnected && btns) btns.before(box);
+    }
+    // categories named after a function, one per scope; an existing one with the same name is reused.
+    // Returns { ids: { scope: category_id }, made: [[scope, category_id]] } (made = created here, for undo)
+    async _categories(name, icon, scopes) {
+      const ids = {}, made = [];
+      for (const scope of scopes || ['automation', 'script', 'helpers']) {
+        try {
+          const list = await this._ws({ type: 'config/category_registry/list', scope });
+          const f = (list || []).find((c) => String(c.name).toLowerCase() === name.toLowerCase());
+          if (f) ids[scope] = f.category_id;
+          else { ids[scope] = (await this._ws({ type: 'config/category_registry/create', scope, name, icon })).category_id; made.push([scope, ids[scope]]); }
+        } catch (e) { /* leave this scope without a category */ }
+      }
+      return { ids, made };
+    }
+    _closeModal() { this._$.modal.hidden = true; this._$.modal.innerHTML = ''; this._editing = null; this._arwDone(); this._tst = null; }
+    // what the board changes in Home Assistant, in this install's mode (also in strings.json and the README)
+    _promise() {
+      const full = this._full();
+      const li = [
+        T('creating_a_function_creates_a'),
+        T('adding_or_removing_a_piece'),
+        T('pause_and_resume_turn_the'),
+        T('new_automations_scripts_helpers_and'),
+        T('hide_from_board_leaves_the'),
+      ];
+      if (full) {
+        li.push(T('full_manager_is_on_the'));
+        li.push(T('ver_promise_full'));
+        li.push(T('tests_full_manager_a_helper'));
+      } else {
+        li.push(T('this_install_is_set_to'));
+      }
+      li.push(T('the_debugger_watch_triggers_monitor'));
+      li.push(T('show_node_red_flows_in'));
+      li.push(T('ver_promise'));
+      li.push(T('every_change_is_shown_before'));
+      li.push(T('privacy_promise'));
+      return li;
+    }
+    _expText(x, got) {
+      const nm = esc(this._checkName(x.id)), g = got == null ? '' : ' ' + T('chk_got', { got: esc(got) });
+      if (x.k === 'state') return T('chk_x_state', { name: nm, state: esc(x.state) }) + g;
+      if (x.k === 'ran') return T('chk_x_ran', { name: nm }) + g;
+      if (x.k === 'stopped') return T('chk_x_stopped', { name: nm }) + g;
+      return T('chk_x_notran', { name: nm }) + g;
+    }
+    // the function's own layout, not a version's open in a tab
+    _liveLayout(label) { return this._data.layouts[label] || this._layout(label); }
+    // how one item would be deleted, whether Undo can bring it back, and why not when it can't
+    async _howDelete(id) {
+      if (id.startsWith('device:')) return { id, name: this._mkNode(id, 'member').name, can: false, undo: false, why: T('devices_are_never_deleted_it') };
+      const st = this._hass.states[id];
+      const reg = this._entMap.has(id) ? await this._ws({ type: 'config/entity_registry/get', entity_id: id }, { optional: 'an entity set up in YAML has no registry entry', fallback: null }) : null;
+      const name = (st && st.attributes.friendly_name) || (reg && (reg.name || reg.original_name)) || id;
+      const base = { id, name, reg, can: false, undo: false };
+      const dom = id.split('.')[0];
+      if (['automation', 'script', 'scene'].includes(dom)) {
+        const cid = reg && reg.unique_id;
+        if (!cid) return Object.assign(base, { why: T('defined_in_yaml_without_an') });
+        try {
+          const cfg = await this._api('GET', `config/${dom}/config/${encodeURIComponent(cid)}`);
+          return Object.assign(base, { can: true, undo: true, how: 'config', dom, cid, cfg, where: `${dom}s.yaml` });
+        } catch (e) { return Object.assign(base, { why: T('defined_in_yaml_outside_s', { dom }) }); }
+      }
+      if (HELPER_DOMAINS.has(dom)) {
+        const items = await this._ws({ type: dom + '/list' }, { optional: 'a helper domain not set up has no list of helpers', fallback: [] });
+        const item = reg && (items || []).find((x) => x.id === reg.unique_id);
+        if (item) return Object.assign(base, { can: true, undo: true, how: 'collection', dom, item, where: T('helpers_made_in_the_ui') });
+        return Object.assign(base, { why: T('defined_in_yaml_configuration_yaml') });
+      }
+      if (reg && reg.config_entry_id && HELPER_PLATFORMS.has(reg.platform)) {
+        const entries = await this._ws({ type: 'config_entries/get', domain: reg.platform }, { fallback: [] });
+        const entry = (entries || []).find((x) => x.entry_id === reg.config_entry_id);
+        const siblings = this._ents.filter((e) => e.config_entry_id === reg.config_entry_id).map((e) => e.entity_id);
+        return Object.assign(base, { can: true, undo: false, how: 'entry', entryId: reg.config_entry_id, where: `${reg.platform} helper${entry ? ' "' + entry.title + '"' : ''}`, siblings, why: T('deleting_a_helper_set_up') });
+      }
+      return Object.assign(base, { why: T('not_an_automation_script_or') });
+    }
+    // automations and scripts (outside `skip`) whose configs refer to any of these items
+    async _usedBy(ids, skip) {
+      const want = new Set(ids), out = new Map();
+      const all = this._logicIds().filter((e) => !skip.has(e));
+      const cfgs = await Promise.all(all.map((e) => this._fetchConfig(e)));
+      all.forEach((e, i) => {
+        if (!cfgs[i]) return;
+        analyze(cfgs[i], e.startsWith('script.'), (x) => this._known(x)).refs.forEach((r) => {
+          if (!want.has(r.ref)) return;
+          if (!out.has(r.ref)) out.set(r.ref, new Set());
+          out.get(r.ref).add(e);
+        });
+      });
+      return out;
+    }
+    _nameOf(id) { const st = this._hass.states[id], e = this._entMap.get(id); return (st && st.attributes.friendly_name) || (e && (e.name || e.original_name)) || id; }
+    _usedHtml(id, used) {
+      const u = used.get(id);
+      if (!u || !u.size) return '';
+      const names = [...u].map((x) => this._nameOf(x));
+      return `<div class="dwarn"><ha-icon icon="mdi:alert-outline"></ha-icon>${T('used_by', { count: esc(P('n_automations_and_scripts', u.size)), names: esc(names.slice(0, 4).join(', ')), extra: names.length > 4 ? T('and_more', { n: names.length - 4 }) : '' })}</div>`;
+    }
+    // the function's own categories, and whether anything outside `ids` is filed under them
+    async _fnCategories(label, ids) {
+      const L = this._data.layouts[label] || {}, cats = L.categories || {}, out = [];
+      const name = this._fnName(label).toLowerCase();
+      for (const scope of ['automation', 'script', 'helpers']) {
+        let cid = cats[scope];
+        const list = await this._ws({ type: 'config/category_registry/list', scope }, { fallback: [] });
+        const c = (list || []).find((x) => x.category_id === cid) || (list || []).find((x) => String(x.name).toLowerCase() === name);
+        if (!c) continue;
+        cid = c.category_id;
+        const inIt = this._ents.filter((e) => (e.categories || {})[scope] === cid);
+        const mine = inIt.filter((e) => (e.labels || []).includes(label) || ids.includes(e.entity_id));
+        out.push({ scope, id: cid, name: c.name, icon: c.icon || null, members: inIt.map((e) => e.entity_id), free: inIt.length === mine.length });
+      }
+      return out;
+    }
+    // wait until an entity's registry entry exists (Home Assistant creates it shortly after the config)
+    async _waitEntity(test, ms = 8000) {
+      const end = Date.now() + ms;
+      while (Date.now() < end) {
+        const ents = await this._ws({ type: 'config/entity_registry/list' }, { fallback: [] });
+        const e = ents.find(test);
+        if (e) return e;
+        await this._clock.pause(300);
+      }
+      return null;
+    }
+    // put deleted items back, with their registry settings (name, icon, labels, area, categories, entity id)
+    async _restoreItems(done) {
+      const back = [];
+      for (const p of done) {
+        if (!p.undo) continue;
+        let e = null;
+        if (p.how === 'config') {
+          await this._api('POST', `config/${p.dom}/config/${encodeURIComponent(p.cid)}`, p.cfg);
+          e = await this._waitEntity((x) => x.platform === p.dom && x.unique_id === p.cid);
+        } else if (p.how === 'collection') {
+          const settings = Object.assign({}, p.item);
+          delete settings.id;
+          const made = await this._ws(Object.assign({ type: p.dom + '/create' }, settings));
+          e = await this._waitEntity((x) => x.platform === p.dom && x.unique_id === made.id);
+          p.item = made;
+        }
+        if (!e) continue;
+        const r = p.reg || {}, msg = { type: 'config/entity_registry/update', entity_id: e.entity_id, name: r.name || null, icon: r.icon || null, area_id: r.area_id || null, labels: r.labels || [], categories: r.categories || {} };
+        if (e.entity_id !== p.id) msg.new_entity_id = p.id;
+        // (an entity whose id can't be changed back is put back under the id it has now)
+        if (msg.new_entity_id) { if ((await this._ws(msg, { optional: 'Home Assistant refuses an entity id already taken', fallback: false })) === false) await this._ws(Object.assign(msg, { new_entity_id: undefined }), { fallback: null }); } else await this._ws(msg, { fallback: null });
+        back.push(p);
+      }
+      return back;
+    }
+    async _runItemDelete(d) {
+      const p = d.plan[0], label = d.label;
+      const { done, failed } = await this._deleteItems(d.plan);
+      if (!done.length) { this._toast(T('could_not_delete', { failed: failed.join('; ') })); return; }
+      if (this._model && this._model.nodes.has(p.id)) this._select(null);
+      this._history({
+        label, text: T('delete', { name: p.name }),
+        check: async (dir) => dir !== 'undo' || !this._hass.states[p.id],
+        undo: async () => { await this._restoreItems(done); },
+        redo: async () => {
+          const again = await this._howDelete(p.id);
+          if (again.can) { const r = await this._deleteItems([again]); done.splice(0, done.length, ...r.done); }
+        },
+      });
+      this._store.changed('cfg:');
+      this._toast(T('deleted_2', { name: p.name }), p.undo ? [{ text: T('undo'), fn: () => this._undo() }] : []);
+    }
+    async _runFnDelete(d) {
+      const label = d.label, lab = this._labelMap.get(label), name = lab ? lab.name : label;
+      const keep = { name, icon: lab && lab.icon, color: lab && lab.color, description: lab && lab.description };
+      const layout = this._data.layouts[label] ? JSON.parse(JSON.stringify(this._data.layouts[label])) : null;
+      const pos = this._data.functions.indexOf(label);
+      const areas = (await this._ws({ type: 'config/area_registry/list' }, { fallback: [] })).filter((a) => (a.labels || []).includes(label)).map((a) => a.area_id);
+      const st = { label, ents: d.ents, devs: d.devs, areas, cats: d.dropCats ? d.cats : [], items: [] };
+      // 1. the items, when asked
+      if (d.withItems && d.plan.length) {
+        const r = await this._deleteItems(d.plan);
+        st.items = r.done;
+        if (r.failed.length) this._toast(T('some_items_could_not_be', { failed: r.failed.join('; ') }));
+      }
+      // 2. the categories (Home Assistant un-files whatever is still in them)
+      for (const c of st.cats) await this._ws({ type: 'config/category_registry/delete', scope: c.scope, category_id: c.id }, { fallback: null });
+      // 3. the label (Home Assistant takes it off every entity, device and area) and the layout
+      await this._ws({ type: 'config/label_registry/delete', label_id: label });
+      this._takeOff(label);
+      delete this._data.layouts[label];
+      this._save();
+      this._history({
+        label: null, text: T('delete', { name }),
+        check: async (dir) => dir !== 'undo' || !(await this._ws({ type: 'config/label_registry/list' })).some((l) => String(l.name).toLowerCase() === name.toLowerCase()),
+        undo: async () => {
+          const msg = { type: 'config/label_registry/create', name: keep.name, icon: keep.icon || 'mdi:puzzle-outline' };
+          if (keep.color) msg.color = keep.color;
+          if (keep.description) msg.description = keep.description;
+          const nl = await this._ws(msg);
+          const newId = nl.label_id;
+          const back = await this._restoreItems(st.items);
+          // categories come back with the same names; whatever was filed there is filed again
+          const catIds = {};
+          for (const c of st.cats) {
+            const made = await this._ws({ type: 'config/category_registry/create', scope: c.scope, name: c.name, icon: c.icon || undefined }, { fallback: null });
+            if (!made) continue;
+            catIds[c.scope] = made.category_id;
+            for (const id of c.members) await this._ws({ type: 'config/entity_registry/update', entity_id: id, categories: { [c.scope]: made.category_id } }, { fallback: null });
+          }
+          const deleted = new Set(st.items.map((p) => p.id).filter((id) => !back.some((p) => p.id === id)));
+          for (const id of st.ents) {
+            if (deleted.has(id)) continue;
+            const r = await this._ws({ type: 'config/entity_registry/get', entity_id: id }, { optional: 'an entity set up in YAML has no registry entry', fallback: null });
+            if (r) await this._ws({ type: 'config/entity_registry/update', entity_id: id, labels: [...new Set((r.labels || []).concat([newId]))] }, { fallback: null });
+          }
+          await this._loadRegistries();
+          for (const did of st.devs) {
+            const dev = this._devMap.get(did.slice(7));
+            if (dev) await this._ws({ type: 'config/device_registry/update', device_id: dev.id, labels: [...new Set((dev.labels || []).concat([newId]))] }, { fallback: null });
+          }
+          for (const aid of st.areas) {
+            const a = (await this._ws({ type: 'config/area_registry/list' })).find((x) => x.area_id === aid);
+            if (a) await this._ws({ type: 'config/area_registry/update', area_id: aid, labels: [...new Set((a.labels || []).concat([newId]))] }, { fallback: null });
+          }
+          if (layout) { const L = cleanLayout(layout); if (Object.keys(catIds).length) L.categories = Object.assign({}, L.categories || {}, catIds); this._data.layouts[newId] = L; }
+          if (!this._data.functions.includes(newId)) this._data.functions.splice(Math.max(0, pos), 0, newId);
+          this._data.ui.current = newId;
+          st.label = newId;
+          this._save();
+        },
+        redo: async () => {
+          await this._loadRegistries();
+          const items = st.items.length ? await Promise.all(st.items.map((p) => this._howDelete(p.id))) : [];
+          const cats = st.cats.length ? await this._fnCategories(st.label, []) : [];
+          await this._runFnDeleteQuiet(st.label, items.filter((p) => p.can), cats);
+        },
+      });
+      await this._loadRegistries();
+      this._renderList();
+      if (this._data.ui.current) this._open(this._data.ui.current); else { this._model = null; this._clearWorld(); this._renderHeader(); this._setEmpty(); }
+      this._toast(T('deleted', { name, extra: st.items.length ? T('and', { count: P('n_items', st.items.length) }) : '' }), [{ text: T('undo'), fn: () => this._undo() }]);
+    }
+    async _runFnDeleteQuiet(label, items, cats) {
+      if (items.length) await this._deleteItems(items);
+      for (const c of cats) await this._ws({ type: 'config/category_registry/delete', scope: c.scope, category_id: c.id }, { fallback: null });
+      await this._ws({ type: 'config/label_registry/delete', label_id: label }, { fallback: null });
+      this._takeOff(label);
+      delete this._data.layouts[label];
+      this._save();
+    }
+
+    /* ---------- types ---------- */
+    _scopeOf(id) {
+      const d = id.split('.')[0];
+      if (d === 'automation') return 'automation';
+      if (d === 'script') return 'script';
+      const reg = this._entMap.get(id);
+      if (HELPER_DOMAINS.has(d) || (reg && HELPER_PLATFORMS.has(reg.platform))) return 'helpers';
+      return null;
+    }
+    _tagOf(key) {
+      if (key.startsWith('device:')) return T('device');
+      if (key.startsWith('svc:')) return T('action');
+      if (key.startsWith('event:')) return T('event');
+      if (key.startsWith('mqtt:')) return T('mqtt');
+      if (key.startsWith('nact:')) return T('button');
+      if (key.startsWith('nr:')) return T('node_red');
+      if (TGT_RE.test(key)) return TYPE[key.slice(0, key.indexOf(':'))];
+      const s = this._scopeOf(key);
+      if (s === 'automation') return T('automation');
+      if (s === 'script') return T('script');
+      if (s === 'helpers') return T('helper');
+      const d = key.split('.')[0];
+      return TYPE[d] || d.replace(/_/g, ' ');
+    }
+    _countText(ids) {
+      const c = { a: 0, s: 0, h: 0, o: 0 };
+      ids.forEach((id) => { const t = this._scopeOf(id); if (t === 'automation') c.a++; else if (t === 'script') c.s++; else if (t === 'helpers') c.h++; else c.o++; });
+      const p = [];
+      if (c.a) p.push(P('n_automations', c.a));
+      if (c.s) p.push(P('n_scripts', c.s));
+      if (c.h) p.push(P('n_helpers', c.h));
+      if (c.o) p.push(c.o + ' other');
+      return p.join(' · ');
+    }
+    _memRow(i, c, id) {
+      const st = this._hass.states[id], e = this._entMap.get(id), can = this._canLabel(id);
+      const name = (st && st.attributes.friendly_name) || (e && (e.name || e.original_name)) || id;
+      const other = ((e && e.labels) || []).filter((l) => this._data.functions.includes(l)).map((l) => this._fnName(l));
+      const inFn = c.fn && can && !c.missing.includes(id);
+      return `<label class="mrow ${can ? '' : 'nolab'}"><input type="checkbox" data-cmem="${i}" data-id="${esc(id)}" ${can && c.keep.has(id) ? 'checked' : ''} ${inFn || !can ? 'disabled' : ''}>`
+        + `<span class="tag">${esc(this._tagOf(id))}</span><span class="mn"><b>${esc(name)}</b>`
+        + `<small>${esc(id)}${can ? '' : T('can_t_be_added_no')}${other.length ? ` ${T('already_in', { other: esc(other.join(', ')) })}` : ''}</small></span></label>`;
+    }
+    // only items in the entity or device registry can carry a label (a YAML automation without id: can't)
+    _canLabel(id) { return id.startsWith('device:') || this._entMap.has(id); }
+    async _catGroups() {
+      const scopes = ['automation', 'script', 'helpers'];
+      const lists = await Promise.all(scopes.map((s) => this._ws({ type: 'config/category_registry/list', scope: s }, { fallback: [] })));
+      const byId = new Map();
+      scopes.forEach((s, i) => (lists[i] || []).forEach((c) => byId.set(s + ':' + c.category_id, c)));
+      const byName = new Map();
+      this._ents.forEach((e) => Object.entries(e.categories || {}).forEach(([scope, cid]) => {
+        const c = byId.get(scope + ':' + cid);
+        if (!c) return;
+        const k = String(c.name).toLowerCase();
+        if (!byName.has(k)) byName.set(k, { name: c.name, icon: c.icon || null, members: new Set() });
+        byName.get(k).members.add(e.entity_id);
+      }));
+      return [...byName.values()];
+    }
+    _cluster(roles, cats, opt = {}) {
+      // Glue = helpers and scripts. Two pieces belong together when one triggers on, changes or calls the
+      // other; helpers only read as conditions don't join groups (mode flags), and helpers/scripts that a
+      // lot of automations drive are treated as shared hubs.
+      const isGlue = (id) => !id.includes(':') && (id.startsWith('script.') || this._scopeOf(id) === 'helpers');
+      const causal = new Map(), reads = new Map();
+      roles.forEach((m, L) => m.forEach((rs, ref) => {
+        if (!isGlue(ref)) return;
+        const map = [...rs].some((r) => r !== 'condition') ? causal : reads;
+        if (!map.has(ref)) map.set(ref, new Set());
+        map.get(ref).add(L);
+      }));
+      const hub = (gl) => { const n = causal.has(gl) ? causal.get(gl).size : 0; return gl.startsWith('script.') ? n > 6 : n > 12; };
+      const parent = new Map();
+      const find = (x) => {
+        if (!parent.has(x)) parent.set(x, x);
+        let r = x;
+        while (parent.get(r) !== r) r = parent.get(r);
+        while (parent.get(x) !== r) { const nx = parent.get(x); parent.set(x, r); x = nx; }
+        return r;
+      };
+      const union = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent.set(ra, rb); };
+      roles.forEach((_, L) => find(L));
+      // Category fences: when a shared helper/script links automations you filed under different categories,
+      // it only joins the side whose category it belongs to (plus uncategorised pieces). Your own organisation
+      // decides where one system ends and the next begins; wiring fills in everything you haven't filed.
+      const catOf = new Map();
+      cats.forEach((c) => c.members.forEach((id) => catOf.set(id, String(c.name).toLowerCase())));
+      causal.forEach((Ls, gl) => {
+        if (hub(gl)) return;
+        const byCat = new Map();
+        Ls.forEach((L) => { const c = catOf.get(L) || ''; if (!byCat.has(c)) byCat.set(c, []); byCat.get(c).push(L); });
+        const named = [...byCat.keys()].filter(Boolean);
+        if (named.length < 2) { Ls.forEach((L) => union(L, gl)); return; }
+        const own = catOf.get(gl) || named.sort((x, y) => byCat.get(y).length - byCat.get(x).length)[0];
+        (byCat.get(own) || []).concat(byCat.get('') || []).forEach((L) => union(L, gl));
+      });
+      if (opt.devices) {
+        // a device entity that one or two pieces change and one or two trigger on joins them, like the kitchen
+        // light the morning routine turns on and the kitchen speaker automation starts from (3.3)
+        const changers = new Map(), triggers = new Map();
+        const put = (m, k, L) => (m.get(k) || m.set(k, new Set()).get(k)).add(L);
+        roles.forEach((m, L) => m.forEach((rs, ref) => {
+          if (isGlue(ref) || ref.includes(':') || /^(automation|script)\./.test(ref)) return;
+          if (rs.has('action')) put(changers, ref, L);
+          if (rs.has('trigger')) put(triggers, ref, L);
+        }));
+        changers.forEach((cs, ref) => {
+          const ts = triggers.get(ref);
+          if (!ts || cs.size > 2 || ts.size > 2) return;
+          const all = [...new Set([...cs, ...ts])];
+          if (all.length < 2) return;
+          const byCat = new Map();
+          all.forEach((L) => { const c = catOf.get(L) || ''; if (!byCat.has(c)) byCat.set(c, []); byCat.get(c).push(L); });
+          const named = [...byCat.keys()].filter(Boolean);
+          const join = named.length < 2 ? all : (byCat.get(named.sort((x, y) => byCat.get(y).length - byCat.get(x).length)[0]) || []).concat(byCat.get('') || []);
+          for (let i = 1; i < join.length; i++) union(join[0], join[i]);
+        });
+      }
+      const comps = new Map();
+      [...parent.keys()].forEach((x) => { const r = find(x); if (!comps.has(r)) comps.set(r, new Set()); comps.get(r).add(x); });
+      const wiring = [...comps.values()].filter((s) => s.size >= 2 && [...s].some((id) => id.startsWith('automation.')));
+      reads.forEach((Ls, gl) => {
+        if (causal.has(gl)) return;
+        const owners = new Set([...Ls].map((L) => find(L)));
+        if (owners.size !== 1) return;
+        const w = wiring.find((s) => s.has([...Ls][0]));
+        if (w) w.add(gl);
+      });
+      // a lone automation that only checks helpers belonging to one group (and few others check them) joins it,
+      // e.g. "notify when the filter counter reaches 0"; mode flags checked by many automations don't pull anything in
+      const groupOf = (id) => wiring.find((s) => s.has(id));
+      roles.forEach((m, L) => {
+        if (!L.startsWith('automation.') || groupOf(L)) return;
+        const rd = [...m.entries()].filter(([ref, rs]) => isGlue(ref) && [...rs].every((r) => r === 'condition')).map(([ref]) => ref);
+        if (!rd.length) return;
+        const gs = new Set(rd.map((ref) => groupOf(ref)));
+        if (gs.size !== 1 || gs.has(undefined)) return;
+        if (rd.some((ref) => (reads.get(ref) || new Set()).size > 3)) return;
+        [...gs][0].add(L);
+      });
+      const fset = new Set(this._data.functions);
+      const fnOf = (id) => { const e = this._entMap.get(id); return ((e && e.labels) || []).filter((l) => fset.has(l)); };
+      // 1. wiring groups that are mostly an existing function become that function (with any missing pieces)
+      const out = [], fnOut = new Map(), rest = [];
+      wiring.forEach((w) => {
+        const tally = new Map();
+        w.forEach((id) => fnOf(id).forEach((l) => tally.set(l, (tally.get(l) || 0) + 1)));
+        let best = null, bn = 0;
+        tally.forEach((n, l) => { if (n > bn) { bn = n; best = l; } });
+        if (best && bn >= w.size / 2) {
+          if (!fnOut.has(best)) { const o = { fn: best, members: new Set(), source: 'function' }; fnOut.set(best, o); out.push(o); }
+          w.forEach((id) => fnOut.get(best).members.add(id));
+        } else rest.push(w);
+      });
+      fnOut.forEach((o, l) => this._ents.forEach((e) => { if ((e.labels || []).includes(l)) o.members.add(e.entity_id); }));
+      // 2. remaining wiring groups merge with the category they mostly sit in
+      const catC = cats.filter((c) => c.members.size >= 2 && [...c.members].some((id) => id.startsWith('automation.') || id.startsWith('script.')));
+      const catOut = new Map();
+      rest.forEach((w) => {
+        let bi = -1, bestOv = 0;
+        catC.forEach((c, ci) => { let ov = 0; w.forEach((id) => { if (c.members.has(id)) ov++; }); if (ov > bestOv) { bestOv = ov; bi = ci; } });
+        if (bi >= 0 && (bestOv >= w.size / 2 || bestOv >= catC[bi].members.size / 2)) {
+          if (catOut.has(bi)) { const o = catOut.get(bi); w.forEach((id) => o.members.add(id)); }
+          else { const c = catC[bi], o = { name: c.name, cat: c.name, icon: c.icon, members: new Set([...c.members, ...w]), source: 'both' }; catOut.set(bi, o); out.push(o); }
+        } else out.push({ name: null, icon: null, members: w, source: 'wiring' });
+      });
+      catC.forEach((c, ci) => { if (!catOut.has(ci)) out.push({ name: c.name, cat: c.name, icon: c.icon, members: new Set(c.members), source: 'category' }); });
+      // 3. finalize: names, icons, which existing function a group already is, what overlaps
+      const names = new Set(this._data.functions.map((l) => this._fnName(l).toLowerCase()));
+      const rank = (id) => { const t = this._scopeOf(id); return t === 'automation' ? 0 : t === 'script' ? 1 : t === 'helpers' ? 2 : 3; };
+      const can = (id) => this._canLabel(id);
+      const res = out.map((o) => {
+        const members = [...o.members].filter((id) => this._hass.states[id] || this._entMap.has(id)).sort((x, y) => rank(x) - rank(y) || x.localeCompare(y));
+        const tally = new Map();
+        members.forEach((id) => fnOf(id).forEach((l) => tally.set(l, (tally.get(l) || 0) + 1)));
+        let fn = o.fn || null;
+        if (!fn) tally.forEach((n, l) => { if (!fn && n >= members.length * 0.8) fn = l; });
+        if (!fn && o.name) this._data.functions.forEach((l) => { if (!fn && this._fnName(l).toLowerCase() === o.name.toLowerCase()) fn = l; });
+        const missing = fn ? members.filter((id) => can(id) && !fnOf(id).includes(fn)) : [];
+        let name;
+        if (fn) name = this._fnName(fn);
+        else {
+          name = o.name || this._suggestName(members);
+          const base = name;
+          for (let k = 2; names.has(name.toLowerCase()); k++) name = base + ' ' + k;
+          names.add(name.toLowerCase());
+        }
+        const lab = fn ? this._labelMap.get(fn) : null;
+        return {
+          name, cat: o.cat || null, fn, missing, members, keep: new Set(members.filter(can)), source: fn && o.source === 'function' ? 'function' : o.source,
+          icon: (lab && lab.icon) || o.icon || this._pickIcon(members),
+          overlap: fn ? [] : [...tally.entries()].map(([l, n]) => ({ l, n })).sort((x, y) => y.n - x.n),
+        };
+      });
+      // groups that turn out to be the same existing function (wiring + category) merge into one row
+      const byFn = new Map();
+      let list = [];
+      res.forEach((c) => {
+        if (!c.fn) { list.push(c); return; }
+        const t = byFn.get(c.fn);
+        if (!t) { byFn.set(c.fn, c); list.push(c); return; }
+        c.members.forEach((id) => { if (!t.members.includes(id)) { t.members.push(id); if (can(id)) t.keep.add(id); } });
+        t.members.sort((x, y) => rank(x) - rank(y) || x.localeCompare(y));
+        t.missing = t.members.filter((id) => can(id) && !fnOf(id).includes(t.fn));
+      });
+      list = list.filter((c) => c.members.length >= 2);
+      const order = (c) => (!c.fn ? 0 : c.missing.length ? 1 : 2);
+      list.sort((x, y) => order(x) - order(y) || y.members.length - x.members.length);
+      // identity colours only: red, orange, amber and yellow are kept for alarm and warning states
+      const SAFE = ['indigo', 'teal', 'purple', 'blue', 'green', 'cyan', 'deep-purple', 'light-blue', 'light-green', 'pink', 'brown', 'blue-grey', 'lime'];
+      list.forEach((c, i) => { c.color = SAFE[i % SAFE.length]; });
+      return list;
+    }
+    _suggestName(members) {
+      const STOP = new Set(['the', 'a', 'an', 'of', 'on', 'off', 'to', 'and', 'for', 'in', 'at', 'by', 'with', 'is', 'when', 'if', 'then',
+        'set', 'turn', 'new', 'auto', 'automation', 'script', 'input', 'boolean', 'number', 'text', 'select', 'button', 'counter', 'timer',
+        'sensor', 'binary', 'switch', 'notify', 'notification', 'run', 'do', 'my']);
+      const ACR = new Set(['led', 'ups', 'hvac', 'tv', 'ac', 'pc', 'ha', 'mqtt', 'ir', 'rf', 'ev', 'pv', 'dns', 'vpn', 'wan', 'lan', 'usb', 'nas', 'erv', 'co2', 'voc', 'ai']);
+      // 1. the user's own system name: "Garage: left open", "Garage - close", "[Garage] lights"
+      const fname = (id) => { const e = this._entMap.get(id), st = this._hass.states[id]; return ((e && e.name) || (st && st.attributes.friendly_name) || '').trim(); };
+      const logic = members.filter((id) => /^(automation|script)\./.test(id)).map(fname).filter(Boolean);
+      const pre = new Map();
+      logic.forEach((n) => {
+        const m = n.match(/^\[([^\]]{2,40})\]/) || n.match(/^(.{2,40}?)\s*(?::|\s[-\u2013\u2014|]\s)/);
+        if (!m || !/[a-z]{2}/i.test(m[1])) return;
+        const k = m[1].trim().toLowerCase(), p = pre.get(k) || { name: m[1].trim(), n: 0 };
+        p.n++; pre.set(k, p);
+      });
+      const best = [...pre.values()].sort((a, b) => b.n - a.n)[0];
+      if (best && best.n >= 2 && best.n >= logic.length / 2) return best.name;
+      // 2. leading words every automation and script name shares: "Morning lights...", "Morning briefing"
+      if (logic.length >= 2) {
+        const words = logic.map((n) => n.replace(/[:|\[\]\u2013\u2014]|\s-\s/g, ' ').split(/\s+/).filter(Boolean));
+        let k = 0;
+        while (k < 4 && words.every((w) => w[k] && w[k].toLowerCase() === words[0][k].toLowerCase())) k++;
+        const lead = words[0].slice(0, k).join(' ').replace(/[,.;]+$/, '');
+        if (k && /[a-z]{3}/i.test(lead) && !STOP.has(lead.toLowerCase())) return lead;
+      }
+      // 3. words the entity ids share
+      const counts = new Map(), first = new Map();
+      members.forEach((id, idx) => {
+        const obj = id.split('.')[1] || id;
+        new Set(obj.split('_').filter((t) => t.length > 1 && !STOP.has(t) && !/^\d+$/.test(t))).forEach((t) => {
+          counts.set(t, (counts.get(t) || 0) + 1);
+          if (!first.has(t)) first.set(t, idx * 1000 + obj.indexOf(t));
+        });
+      });
+      const need = Math.max(2, Math.ceil(members.length * 0.34));
+      const top = [...counts.entries()].filter(([, c]) => c >= need).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([t]) => t);
+      if (top.length) {
+        const ref = members.find((id) => top.every((t) => id.includes(t)));
+        top.sort((a, b) => (ref ? ref.indexOf(a) - ref.indexOf(b) : first.get(a) - first.get(b)));
+        return top.map((t) => (ACR.has(t) ? t.toUpperCase() : t[0].toUpperCase() + t.slice(1))).join(' ');
+      }
+      const lead = members.find((id) => this._scopeOf(id) === 'helpers') || members[0];
+      const st = this._hass.states[lead];
+      return (st && st.attributes.friendly_name) || lead;
+    }
+    // Create (or reuse) the label, file under categories, label every piece that can take a label, and put the
+    // function on the board even when some pieces are skipped. Returns { label, done, skipped }.
+    async _importGroup(name, icon, color, ids, withCats, catName, opt = {}) {
+      let label = this._labels.find((l) => String(l.name).toLowerCase() === name.toLowerCase()), made = false;
+      if (!label) {
+        const msg = { type: 'config/label_registry/create', name, icon: icon || 'mdi:puzzle-outline' };
+        if (color) msg.color = color;
+        label = await this._ws(msg);
+        this._labels.push(label); this._labelMap.set(label.label_id, label);
+        made = true;
+      }
+      const lid = label.label_id;
+      if (opt.layout && !this._data.layouts[lid]) this._data.layouts[lid] = opt.layout;
+      const L = this._layout(lid);
+      let madeCats = [];
+      if (withCats && !L.categories) {
+        const scopes = [...new Set(ids.map((id) => this._scopeOf(id)).filter(Boolean))];
+        const r = await this._categories(catName || name, icon || 'mdi:puzzle-outline', scopes);
+        L.categories = r.ids; madeCats = r.made;
+      }
+      const recs = [], skipped = [];
+      for (const id of ids) {
+        try { recs.push(await this._label(id, lid, true, withCats)); }
+        catch (e) { skipped.push({ id, why: this._noLabelWhy(id, e) }); }
+      }
+      const wasOn = this._data.functions.includes(lid);
+      if (!wasOn) this._data.functions.push(lid);
+      this._save();
+      const st = { lid, made, madeCats, recs, wasOn, layout: null };
+      if (!opt.quiet) {
+        this._history({
+          label: lid, text: T('import', { name }),
+          check: async (dir) => dir !== 'undo' || !st.made || (await this._labelCount(st.lid)) <= st.recs.filter((u) => !u.had).length,
+          undo: async () => {
+            for (const u of st.recs) await this._ha.quiet(this._unlabel(u), 'its calls to Home Assistant report their own failures');
+            if (!st.wasOn) this._takeOff(st.lid);
+            await this._dropCategories(st.madeCats);
+            if (st.made) {
+              st.layout = this._data.layouts[st.lid] || null;
+              delete this._data.layouts[st.lid];
+              await this._ws({ type: 'config/label_registry/delete', label_id: st.lid });
+            }
+            this._save();
+          },
+          redo: async () => {
+            await this._loadRegistries();
+            const r = await this._importGroup(name, icon, color, ids, withCats, catName, { quiet: true, layout: st.layout });
+            Object.assign(st, r.state);
+          },
+        });
+      }
+      return { label: lid, done: recs.map((u) => u.id), skipped, state: st };
+    }
+    _noLabelWhy(id, e) {
+      if (!this._canLabel(id)) return T('no_unique_id_add_id');
+      return (e && (e.message || e.code)) || T('could_not_be_labelled');
+    }
+
+    /* ======================================================================================================
+       part: list: the list of functions: drawing it, its search and its menus Owns _findQ (PARTS): only its own
+       methods use them; the other parts ask its methods.
+       ====================================================================================================== */
+    _fnName(label) { const l = this._labelMap.get(label); return l ? l.name : label; }
+
+    // the list's search, typed into
+    _findClear() { this._findQ = ''; this._renderList(); }
+    _findInput(t) { if (!t.classList.contains('find')) return false; this._findQ = t.value; this._clock.after('find', 120, () => this._renderList()); return true; }
+    _renderList() {
+      if (!this._data) return;
+      this._$.board.classList.toggle('nolist', this._compact ? !this._listOpen : !this._data.ui.list);
+      const items = this._data.functions.map((lid) => {
+        const l = this._labelMap.get(lid);
+        if (!l) return '';
+        const mem = this._ents.filter((e) => (e.labels || []).includes(lid));
+        const devs = this._devs.filter((d) => (d.labels || []).includes(lid)).length;
+        const unav = mem.some((e) => this._hass.states[e.entity_id] && this._hass.states[e.entity_id].state === 'unavailable');
+        const txt = [this._countText(mem.map((e) => e.entity_id)), devs ? P('n_devices', devs) : ''].filter(Boolean).join(' · ');
+        return `<div class="fnrow"><button class="fn ${lid === this._data.ui.current ? 'cur' : ''}" data-fn="${esc(lid)}"><ha-icon icon="${esc(l.icon || 'mdi:puzzle-outline')}" style="color:${cssColor(l.color)}"></ha-icon><span class="fnt"><span class="fnn">${esc(l.name)}</span><span class="fnc">${esc(txt) || 'empty'}</span></span>${this._probCount(lid) ? this._probBadge(this._probCount(lid)) : unav ? `<span class="dot warn" title="${T('something_in_this_function_is')}"></span>` : ''}</button><button class="ib fnmore" data-act="fn-menu" data-label="${esc(lid)}" title="${T('edit_hide_or_delete', { name: esc(l.name) })}"><ha-icon icon="mdi:dots-vertical"></ha-icon></button></div>`;
+      }).join('');
+      const act = this.shadowRoot.activeElement, typing = act && act.classList && act.classList.contains('find'), caret = typing ? act.selectionStart : 0;
+      this._put(this._$.list, `<div class="lhead"><span>${T('functions')}</span><span><button data-act="import" title="${T('import_find_the_functions_already')}"><ha-icon icon="mdi:import"></ha-icon></button><button data-act="newfn" title="${T('new_empty_function')}"><ha-icon icon="mdi:plus"></ha-icon></button></span></div><div class="lfind"><ha-icon icon="mdi:magnify"></ha-icon><input class="find" placeholder="${T('find_an_automation_helper_device')}" value="${esc(this._findQ || '')}" aria-label="${T('find_anything')}">${this._findQ ? `<button class="ib" data-act="find-x" title="${T('clear')}"><ha-icon icon="mdi:close"></ha-icon></button>` : ''}</div><div class="fns">${this._findQ ? this._findHTML() : items || `<div class="muted pad">${T('no_functions_yet_press_import')}</div>`}</div><div class="lfoot"><button class="lbtn" data-act="import"><ha-icon icon="mdi:import"></ha-icon>${T('import_manager')}</button><div class="ver"><span>${T('functions_board_v_prototype', { version: VERSION })}</span><button class="ib" data-act="about" title="${T('about_and_what_the_board')}"><ha-icon icon="mdi:help-circle-outline"></ha-icon></button></div></div>`);
+      if (typing) { const f = this._$.list.querySelector('.find'); if (f) { f.focus(); f.setSelectionRange(caret, caret); } }
+    }
+    // find anything across the whole system, and where it lives (4.4)
+    _findHTML() {
+      const terms = String(this._findQ || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+      if (!terms.length) return '';
+      const rank = { automation: 0, script: 1, helpers: 2, devices: 3, entities: 4 };
+      const rows = this._pickIndex().filter((r) => !r.diag && terms.every((t) => r.hay.includes(t)))
+        .map((r) => ({ r, s: r.name.toLowerCase().startsWith(terms[0]) ? 0 : 1 }))
+        .sort((x, y) => x.s - y.s || rank[x.r.type] - rank[y.r.type] || x.r.name.localeCompare(y.r.name)).slice(0, 40).map((x) => x.r);
+      if (!rows.length) return `<div class="muted pad">${T('nothing_matches')}</div>`;
+      const fset = new Set(this._data.functions);
+      return rows.map((r) => {
+        const fns = r.labels.filter((l) => fset.has(l));
+        return `<div class="fres"><button class="fgo" data-act="find-go" data-key="${esc(r.key)}" title="${fns.length ? T('open_it_on_its_board') : T('in_no_function_yet')}">`
+          + `<span class="tag">${esc(r.tag)}</span><span class="mn"><b>${esc(r.name)}</b><small>${esc(r.key.startsWith('device:') ? r.sub : r.key)}</small></span></button>`
+          + `<div class="fin">${fns.length ? fns.map((l) => `<button class="chip" data-act="find-in" data-key="${esc(r.key)}" data-label="${esc(l)}">${esc(this._fnName(l))}</button>`).join('')
+            : `<span class="muted small">${T('in_no_function')}</span><button class="chip" data-act="find-add" data-key="${esc(r.key)}">${T('add_to_3')}</button>`}</div></div>`;
+      }).join('');
+    }
+    _findGo(key, label) {
+      const r = this._pickIndex().find((x) => x.key === key);
+      const fns = r ? r.labels.filter((l) => this._data.functions.includes(l)) : [];
+      const to = label || (fns.includes(this._data.ui.current) ? this._data.ui.current : fns[0]);
+      if (!to) return false;
+      if (this._compact) this._listOpen = false;
+      this._closeDrawer();
+      if (to === this._data.ui.current && this._model && this._model.nodes.has(key)) { this._select(key); this._centerOn(key); this._renderList(); return true; }
+      this._pendingSelect = key;
+      this._open(to);
+      return true;
+    }
+    _findAdd(btn, key) {
+      this._menu(btn, this._data.functions.map((l) => ({ act: 'find-to', data: { key, label: l }, icon: (this._labelMap.get(l) || {}).icon || 'mdi:puzzle-outline', text: this._fnName(l) })), T('add_to_2'));
+    }
+    async _findTo(key, label) {
+      this._closeMenu();
+      const r = await this._labelMany([key], label, true);
+      if (!r.done.length) { this._toast(T('could_not_add_2', { why: (r.skipped[0] || {}).why || '' })); return; }
+      await this._loadRegistries();
+      this._pidx = null;
+      this._toast(T('added_to_4', { fnName: this._fnName(label) }), [{ text: T('undo'), fn: () => this._undo() }]);
+      this._findGo(key, label);
+    }
+
+    /* ---------- hide and delete (8.2): kept visibly apart, each with its own words ---------- */
+    _fnMenu(btn, label) {
+      if (this._menuEl && this._menuAnchor === btn) { this._closeMenu(); return; }
+      const full = this._full(), off = T('full_manager_only_switch_it');
+      this._menu(btn, [
+        { act: 'fnm-edit', data: { label }, icon: 'mdi:pencil-outline', text: T('edit_name_icon_colour') },
+        { act: 'fnm-hide', data: { label }, icon: 'mdi:eye-off-outline', text: T('hide_from_board'), title: T('the_label_everything_in_it') },
+        { sep: true },
+        { act: 'fnm-del', data: { label }, icon: 'mdi:label-off-outline', text: T('delete_function_2'), disabled: !full, title: full ? T('deletes_the_label_and_the') : off },
+        { act: 'fnm-delall', data: { label }, icon: 'mdi:delete-outline', text: T('delete_function_and_its_items'), disabled: !full, title: full ? T('also_deletes_its_automations_scripts') : off },
+      ], this._fnName(label));
+    }
+
+    /* ======================================================================================================
+       part: functions: making, editing, hiding and deleting functions; labelling what's made in the editor drawer
+       Owns _watch, _fnIcon, _fnColor (PARTS): only its own methods use them; the other parts ask its methods.
+       ====================================================================================================== */
+    // something was created in the editor drawer: give it the function's label and keep an eye on it
+    // something just made in the editor drawer, labelled and watched for a while (its id may change)
+    _isWatched(id) { return this._watch.has(id); }
+    async _captured(id, c) {
+      const w = { label: c.label, until: Date.now() + 20000, cat: null };
+      this._watch.set(id, w);
+      this._clock.after('watch:' + id, 20500, () => { if (this._watch.get(id) === w) this._watch.delete(id); });
+      try {
+        const u = await this._label(id, c.label, true, true);
+        w.cat = u.cat;
+        this._labelStep(T('add_to_6', { id, fnName: this._fnName(c.label) }), c.label, [u]);
+        this._toast(T('added_to_5', { fnName: this._fnName(c.label), id }), [{ text: T('undo'), fn: () => this._undo() }]);
+      } catch (e) { this._toast(T('created_but_could_not_label', { id })); }
+    }
+    // Home Assistant's automation and script editors write the labels, category and area from their save
+    // dialog just after a new item is created. That wipes the label the board added, so put it back (and the
+    // category, if the dialog left it empty) for 20 seconds after creation, keeping whatever the dialog set.
+    async _rewatch(id) {
+      const w = this._watch.get(id);
+      if (!w || Date.now() > w.until) { this._watch.delete(id); return; }
+      const reg = await this._ws({ type: 'config/entity_registry/get', entity_id: id }, { optional: 'an entity set up in YAML has no registry entry', fallback: null });
+      if (!reg) return;
+      const labels = reg.labels || [], cats = reg.categories || {};
+      const msg = { type: 'config/entity_registry/update', entity_id: id };
+      if (!labels.includes(w.label)) msg.labels = labels.concat([w.label]);
+      if (w.cat && !cats[w.cat[0]]) msg.categories = { [w.cat[0]]: w.cat[1] };
+      if (msg.labels || msg.categories) await this._ws(msg, { fallback: null });
+    }
     // Add or remove a function's label on one item. Returns what changed, so it can be undone:
     // { id, label, add, had, cat: [scope, category_id] when it also filed the item under the function's category }
     async _label(id, label, add, withCat) {
@@ -7742,75 +8797,6 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._menu(anchor, [{ act: 'mk-back', icon: 'mdi:arrow-left', text: T('back') }, { sep: true }]
         .concat(list.length ? list.map(([d, n]) => ({ act: 'mk-helper', data: { domain: d, name: n }, icon: 'mdi:tune-variant', text: n })) : [{ text: T('no_other_helper_types_found'), disabled: true }]), T('more_helper_types'));
     }
-    // a small menu under a toolbar button
-    _menu(anchor, items, title) {
-      this._closeMenu(true);
-      this._menuAnchor = anchor;
-      const m = document.createElement('div');
-      m.className = 'menu';
-      m.innerHTML = (title ? `<div class="mtitle">${esc(title)}</div>` : '') + items.map((it) => it.sep ? '<div class="msep"></div>'
-        : `<button class="mi" ${it.act ? `data-act="${it.act}"` : ''} ${Object.entries(it.data || {}).map(([k, v]) => `data-${k}="${esc(v)}"`).join(' ')} ${it.disabled ? 'disabled' : ''} ${it.title ? `title="${esc(it.title)}"` : ''}>`
-          + (it.icon ? `<ha-icon icon="${esc(it.icon)}"></ha-icon>` : '') + `<span>${esc(it.text)}</span></button>`).join('');
-      this._$.board.appendChild(m);
-      const br = this._$.board.getBoundingClientRect(), ar = anchor.getBoundingClientRect();
-      m.style.top = Math.round(ar.bottom - br.top + 4) + 'px';
-      m.style.left = Math.round(Math.max(6, Math.min(ar.left - br.left, br.width - m.offsetWidth - 6))) + 'px';
-      this._menuEl = m;
-    }
-    _closeMenu(keepAnchor) {
-      if (this._menuEl) {
-        // focus that was in the menu goes back to the button that opened it (4.8)
-        const had = this._menuEl.contains(this.shadowRoot.activeElement);
-        this._menuEl.remove(); this._menuEl = null;
-        if (had && this._menuAnchor && this._menuAnchor.isConnected) this._menuAnchor.focus();
-      }
-      if (!keepAnchor) this._menuAnchor = null;
-    }
-    // The phone app signs its page in through the app itself, and Home Assistant inside the drawer's frame can't
-    // reach that sign-in, so its editors never load there. In the app, Home Assistant's own pages open full
-    // screen instead; the app's Back returns to the board.
-    _inApp() { return !!(this._hass && this._hass.auth && this._hass.auth.external); }
-    _openDrawer(url, title, opt = {}) {
-      // only Home Assistant's own pages open in the drawer (or in a new tab from it), never another address
-      if (!SAME_ORIGIN.test(String(url))) return;
-      if (this._inApp() && /^\/config\//.test(url)) { this._goTo(url, opt.capture); return; }
-      this._leaveDrawerMode();
-      if (!opt.capture) this._capture = null;
-      const was = this._drawer;
-      if (was && was.mode === 'frame') this._configChanged();
-      this._drawer = { mode: 'frame', url, title };
-      const d = this._$.drawer;
-      d.hidden = false;
-      this._put(d, `<div class="dhead">${opt.back ? `<button data-act="back" title="${T('back_to_runs')}"><ha-icon icon="mdi:arrow-left"></ha-icon></button>` : ''}<span class="dtitle">${esc(title)}</span>${opt.capture && this._capture ? `<span class="dcap" title="${T('anything_you_create_here_gets', { fnName: esc(this._fnName(this._capture.label)) })}">${T('saves_into', { fnName: esc(this._fnName(this._capture.label)) })}</span>` : ''}<button data-act="newtab" title="${T('open_in_a_new_tab')}"><ha-icon icon="mdi:open-in-new"></ha-icon></button><button data-act="close" title="${T('close')}"><ha-icon icon="mdi:close"></ha-icon></button></div><iframe title="${esc(title)}" src="${esc(url)}"></iframe>`);
-      this._fitLitbar();
-    }
-    _closeDrawer() {
-      this._leaveDrawerMode();
-      const d = this._$.drawer, was = this._drawer;
-      d.hidden = true; this._put(d, '');
-      this._drawer = null;
-      this._endCapture();
-      this._hover(null);
-      if (was && was.mode === 'frame') this._configChanged();  // whatever was saved in the editor shows at once
-      if (this._nrWait) { this._nrWait = false; this._nrCache = null; if (this._model) this._open(this._model.label, true).then(() => this._renderLegend()); }
-      this._fitLitbar();
-    }
-    // Leaving the board for one of Home Assistant's pages (the phone app). The board stops while it's away, so
-    // a create remembers what it's for, and when the board comes back, what was made meanwhile joins the
-    // function. "Meanwhile" is measured by the registry's own clock, not the phone's.
-    _goTo(url, capture) {
-      const c = capture && this._capture;
-      if (c) {
-        const since = (this._ents || []).reduce((m, e) => Math.max(m, e.created_at || 0), 0);
-        try { sessionStorage.setItem(CAPTURE_KEY, JSON.stringify({ label: c.label, kind: c.kind, domain: c.domain, since, at: Date.now() })); } catch (e) { /* the item just won't be labelled */ }
-      }
-      this._capture = null;
-      if (this._drawer) this._closeDrawer();
-      // "from" is how Home Assistant's own navigation marks a page that was opened from another one; with it, the
-      // editor's back arrow goes back here instead of to its own list
-      history.pushState({ from: location.pathname }, '', url);
-      window.dispatchEvent(new CustomEvent('location-changed', { detail: { replace: false } }));
-    }
     async _resumeCapture() {
       if (this._mode() !== 'panel') return;
       let c = null;
@@ -7835,70 +8821,877 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (!c) return;
       this._clock.after('capture', 3000, () => { if (this._capture === c) this._capture = null; });
     }
-    async _openRuns() {
+
+    /* ---------- functions: create / edit / remove ---------- */
+    // the function dialog's colour and icon
+    _fnChange(t) { if (t.name === 'color' && t.tagName === 'SELECT') { this._fnColor = t.value; return true; } return false; }
+    _fnInput(t) { if (t.name === 'icon' && t.tagName === 'INPUT') { this._fnIcon = t.value.trim(); return true; } return false; }
+    _fnModal(label) {
+      const l = label ? this._labelMap.get(label) : null;
+      this._editing = label || null;
+      const m = this._$.modal;
+      m.hidden = false;
+      m.innerHTML = `<div class="dlg"><h3>${l ? T('edit_function') : T('new_function_2')}</h3><label>${T('name')}<input name="name" value="${esc(l ? l.name : '')}" placeholder="${T('e_g_bathroom_heater_filter')}"></label><label>${T('description')}<input name="desc" value="${esc(l && l.description ? l.description : '')}" placeholder="${T('what_this_function_does_optional')}"></label><div class="row"><div class="selbox" data-sel="icon"></div><div class="selbox" data-sel="color"></div></div>${l ? '' : `<label class="chk"><input type="checkbox" name="cats" checked>${T('also_file_new_automations_scripts')}</label>`}<div class="hint">${l ? T('this_edits_the_home_assistant') : T('this_creates_a_home_assistant')}</div><div class="btns"><button data-act="modal-cancel">${T('cancel')}</button><button class="primary" data-act="modal-save">${l ? T('save') : T('create_2')}</button></div></div>`;
+      this._mountPickers(l && l.icon ? l.icon : 'mdi:puzzle-outline', l && l.color ? l.color : 'indigo');
+      this._clock.after('focus', 50, () => { const i = m.querySelector('input[name=name]'); if (i) i.focus(); });
+    }
+    _mountPickers(icon, color) {
+      this._fnIcon = icon; this._fnColor = color;
+      const m = this._$.modal, iconBox = m.querySelector('[data-sel="icon"]'), colorBox = m.querySelector('[data-sel="color"]');
+      if (!iconBox || !colorBox) return;
+      // plain inputs first; swapped for Home Assistant's own pickers as soon as they are loaded
+      iconBox.innerHTML = `<label>${T('icon')}<input name="icon" value="${esc(icon)}"></label>`;
+      colorBox.innerHTML = `<label>${T('colour')}<select name="color">${COLORS.map((c) => `<option value="${c}" ${c === color ? 'selected' : ''}>${c}</option>`).join('')}</select></label>`;
+      this._ensureSelector().then((ok) => {
+        if (!ok || !iconBox.isConnected) return;
+        const mk = (box, selector, label, value, set) => {
+          const el = document.createElement('ha-selector');
+          el.hass = this._hass; el.selector = selector; el.label = label; el.value = value;
+          el.addEventListener('value-changed', (e) => { e.stopPropagation(); set(e.detail.value); el.value = e.detail.value; });
+          box.innerHTML = ''; box.appendChild(el);
+        };
+        mk(iconBox, { icon: {} }, T('icon'), this._fnIcon, (v) => { this._fnIcon = v; });
+        mk(colorBox, { ui_color: {} }, T('colour'), this._fnColor, (v) => { this._fnColor = v; });
+      });
+    }
+    async _saveFn() {
+      const m = this._$.modal, v = (n) => m.querySelector(`[name=${n}]`);
+      const name = v('name').value.trim();
+      if (!name) { v('name').focus(); return; }
+      const icon = this._fnIcon || 'mdi:puzzle-outline', color = this._fnColor || null, desc = v('desc').value.trim();
+      // Home Assistant label names are unique: say what the name is already used by, and offer the way out
+      const clash = this._labels.find((l) => String(l.name).toLowerCase() === name.toLowerCase() && l.label_id !== this._editing);
+      if (clash) { this._nameClash(clash); return; }
+      try {
+        if (this._editing) {
+          const old = this._labelMap.get(this._editing), lid = this._editing;
+          const before = { name: old.name, icon: old.icon, color: old.color, description: old.description || '' };
+          const after = { name, icon, color, description: desc };
+          await this._ws(Object.assign({ type: 'config/label_registry/update', label_id: lid }, after));
+          this._history({ label: lid, text: T('edit', { name: before.name }), undo: () => this._ws(Object.assign({ type: 'config/label_registry/update', label_id: lid }, before)), redo: () => this._ws(Object.assign({ type: 'config/label_registry/update', label_id: lid }, after)) });
+          this._closeModal();
+          await this._loadRegistries(); this._renderList(); this._renderHeader();
+          return;
+        }
+        const st = await this._createFn({ name, icon, color, desc, cats: !!(v('cats') && v('cats').checked) });
+        this._history({
+          label: st.lid, text: T('create', { name }),
+          check: async (dir) => dir !== 'undo' || (await this._labelCount(st.lid)) === 0,
+          undo: async () => { st.layout = this._data.layouts[st.lid] || null; this._takeOff(st.lid); delete this._data.layouts[st.lid]; await this._dropCategories(st.made); await this._ws({ type: 'config/label_registry/delete', label_id: st.lid }); this._save(); },
+          redo: async () => { await this._loadRegistries(); Object.assign(st, await this._createFn({ name, icon, color, desc, cats: st.cats, layout: st.layout })); },
+        });
+        this._closeModal();
+        await this._loadRegistries();
+        this._open(st.lid);
+      } catch (e) { this._toast(T('could_not_save', { message: e.message || e.code || e })); }
+    }
+    async _createFn(o) {
+      const msg = { type: 'config/label_registry/create', name: o.name, icon: o.icon };
+      if (o.color) msg.color = o.color;
+      if (o.desc) msg.description = o.desc;
+      const lbl = await this._ws(msg);
+      if (o.layout) this._data.layouts[lbl.label_id] = o.layout;
+      const L = this._layout(lbl.label_id);
+      let made = [];
+      if (o.cats) { const r = await this._categories(o.name, o.icon); L.categories = r.ids; made = r.made; }
+      if (!this._data.functions.includes(lbl.label_id)) this._data.functions.push(lbl.label_id);
+      this._save();
+      return { lid: lbl.label_id, made, cats: o.cats };
+    }
+    // delete categories a step created, unless something else has been filed under them since
+    async _dropCategories(made) {
+      if (!made || !made.length) return;
+      const ents = await this._ws({ type: 'config/entity_registry/list' }, { fallback: null });
+      for (const [scope, cid] of made) {
+        if (!ents || ents.some((e) => (e.categories || {})[scope] === cid)) continue;
+        await this._ws({ type: 'config/category_registry/delete', scope, category_id: cid }, { fallback: null });
+      }
+    }
+    // how many items carry a label right now (fresh from Home Assistant)
+    async _labelCount(label) {
+      const [ents, devs] = await Promise.all([this._ws({ type: 'config/entity_registry/list' }), this._ws({ type: 'config/device_registry/list' })]);
+      return ents.filter((e) => (e.labels || []).includes(label)).length + devs.filter((d) => (d.labels || []).includes(label)).length;
+    }
+    // Hide from board: the label, its items and the layout all stay; Import > Labels or the name check brings it back
+    _hideFunction(label) {
+      const name = this._fnName(label), at = this._data.functions.indexOf(label);
+      this._takeOff(label);
+      this._history({
+        label: null, text: T('hide_2', { name }),
+        undo: async () => { if (!this._data.functions.includes(label)) this._data.functions.splice(Math.max(0, at), 0, label); this._data.ui.current = label; this._save(); },
+        redo: async () => this._takeOff(label),
+      });
+      this._renderList();
+      if (this._data.ui.current) this._open(this._data.ui.current);
+      else { this._renderHeader(); this._setEmpty(); }
+      this._toast(T('hid_its_label_and_items', { name }), [{ text: T('undo'), fn: () => this._undo() }]);
+    }
+    async _deleteItemDialog(id) {
+      if (!this._full()) return;
+      const m = this._$.modal;
+      m.hidden = false;
+      m.innerHTML = `<div class="dlg"><h3>${T('delete_3')}</h3><div class="muted">${T('checking_what_uses_it')}</div></div>`;
+      const plan = await this._howDelete(id), used = await this._usedBy([id], new Set([id]));
+      this._pendingDelete = { kind: 'item', plan: [plan], label: this._data.ui.current };
+      const kind = this._tagOf(id).toLowerCase();
+      m.innerHTML = `<div class="dlg"><h3>${T('delete_2', { name: esc(plan.name) })}</h3>${plan.can
+          ? `<p class="dtext">${T('deletes_this_from_home_assistant', { kind: esc(kind), where: esc(plan.where), extra: plan.how === 'entry' && plan.siblings && plan.siblings.length > 1 ? T('that_also_deletes_the_same', { n: esc(P('n_other_entities', plan.siblings.length - 1)) }) : '' })}</p>${this._usedHtml(id, used)}<p class="dtext ${plan.undo ? '' : 'dno'}">${plan.undo ? T('undo_brings_it_back_with') : esc(T('this_can_t_be_undone', { why: plan.why }))}</p>`
+          : `<p class="dtext">${T('the_board_can_t_delete', { why: esc(plan.why) })}</p>`}<div class="btns"><button data-act="modal-cancel">${T('cancel')}</button>${plan.can ? `<button class="danger" data-act="del-go">${T('delete_3')}</button>` : ''}</div></div>`;
+    }
+    async _deleteFnDialog(label, withItems) {
+      if (!this._full()) return;
+      const m = this._$.modal, name = this._fnName(label);
+      m.hidden = false;
+      m.innerHTML = `<div class="dlg wide"><h3>${T('delete_2', { name: esc(name) })}</h3><div class="muted">${T('checking_what_it_contains_and')}</div></div>`;
+      await this._loadRegistries();
+      const ents = this._ents.filter((e) => (e.labels || []).includes(label)).map((e) => e.entity_id);
+      const devs = this._devs.filter((d) => (d.labels || []).includes(label)).map((d) => 'device:' + d.id);
+      const L = this._data.layouts[label] || {};
+      const cats = await this._fnCategories(label, withItems ? ents : []);
+      let plan = [], used = new Map();
+      if (withItems) {
+        for (const id of ents.concat(devs)) plan.push(await this._howDelete(id));
+        used = await this._usedBy(ents, new Set(ents));
+      }
+      this._pendingDelete = { kind: 'function', label, withItems, plan, cats, ents, devs };
+      const box = (L.frames || []).length, notes = (L.notes || []).length;
+      const items = withItems ? `<div class="dlist">${plan.map((p, i) => `<label class="drow ${p.can ? '' : 'dcant'}"><input type="checkbox" data-delpick="${i}" ${p.can ? 'checked' : 'disabled'}>`
+        + `<span class="tag">${esc(this._tagOf(p.id))}</span><span class="mn"><b>${esc(p.name)}</b><small>${esc(p.id.startsWith('device:') ? 'device' : p.id)}${p.can ? (p.undo ? '' : T('can_t_be_undone')) : ' · ' + esc(p.why)}</small>${this._usedHtml(p.id, used)}</span></label>`).join('')}</div>` : '';
+      const catLine = cats.length ? `<label class="chk"><input type="checkbox" data-delcats ${cats.every((c) => c.free) ? 'checked' : ''}>${T('also_delete_the_named', { count: esc(P('n_categories', cats.length)), name: esc(name), cats: esc(cats.map((c) => c.scope === 'helpers' ? 'helpers' : c.scope + 's').join(', ')), extra: cats.some((c) => !c.free) ? T('other_items_are_filed_there') : withItems ? '' : T('only_this_function_s_items') })}</label>` : '';
+      m.innerHTML = `<div class="dlg wide"><h3>${T('delete_2', { name: esc(name) })}</h3><p class="dtext">${T('deletes_the_label')} <b>${esc(name)}</b>${T('home_assistant_removes_it_from', { n: esc(P('n_items', ents.length + devs.length)), extra: withItems ? '' : T('the_items_themselves_stay_where') })}</p><p class="dtext">${T('deletes_the_board_s_layout', { extra: box ? ', ' + P('n_frames', box) : '', extra2: notes ? ', ' + P('n_notes', notes) : '' })}</p>${withItems ? `<p class="dtext">${T('deletes_these_from_home_assistant')}</p>${items}` : ''}${catLine}<p class="dtext">${withItems && plan.some((p) => p.can && !p.undo) ? T('undo_brings_back_the_function') : T('undo_brings_it_all_back')}</p><div class="btns"><button data-act="modal-cancel">${T('cancel')}</button><button class="danger" data-act="del-go">${withItems ? T('delete_function_and_items') : T('delete_function')}</button></div></div>`;
+    }
+    async _deleteGo() {
+      const d = this._pendingDelete, m = this._$.modal;
+      if (!d) return;
+      const go = m.querySelector('[data-act="del-go"]');
+      if (go) { go.disabled = true; go.textContent = T('deleting'); }
+      if (d.kind === 'function') {
+        const picks = new Set([...m.querySelectorAll('[data-delpick]:checked')].map((x) => +x.dataset.delpick));
+        d.plan = d.plan.filter((p, i) => p.can && picks.has(i));
+        d.dropCats = !!(m.querySelector('[data-delcats]') && m.querySelector('[data-delcats]').checked);
+      }
+      this._pendingDelete = null;
+      try {
+        if (d.kind === 'item') await this._runItemDelete(d);
+        else await this._runFnDelete(d);
+      } catch (e) { this._toast(T('could_not_delete_2', { message: e.message || e.code || e })); }
+      this._closeModal();
+    }
+    async _deleteItems(plan) {
+      const done = [], failed = [];
+      for (const p of plan) {
+        if (!p.can) continue;
+        try {
+          if (p.how === 'config') await this._api('DELETE', `config/${p.dom}/config/${encodeURIComponent(p.cid)}`);
+          else if (p.how === 'collection') await this._ws({ type: p.dom + '/delete', [p.dom + '_id']: p.item.id });
+          else if (p.how === 'entry') await this._api('DELETE', `config/config_entries/entry/${p.entryId}`);
+          done.push(p);
+        } catch (e) { failed.push(p.name + ': ' + (e.message || e.code || e)); }
+      }
+      return { done, failed };
+    }
+    // take a function off the list (the label stays); opens another one if it was on screen
+    _takeOff(label) {
+      this._data.functions = this._data.functions.filter((f) => f !== label);
+      if (this._data.ui.current === label) {
+        this._data.ui.current = this._data.functions[0] || null;
+        this._model = null; this._clearWorld();
+      }
+      this._save();
+    }
+    // label several items, carrying on past ones that can't take a label; one undo step for all of them
+    async _labelMany(ids, label, withCat) {
+      const done = [], skipped = [], undo = [];
+      for (const id of ids) {
+        try { undo.push(await this._label(id, label, true, withCat)); done.push(id); }
+        catch (e) { skipped.push({ id, why: this._noLabelWhy(id, e) }); }
+      }
+      if (done.length) this._labelStep(T('add_to', { count: P('n_items', done.length), fnName: this._fnName(label) }), label, undo);
+      return { done, skipped };
+    }
+
+    /* ======================================================================================================
+       part: manager: the import manager: detected functions, labels, picking items Owns _mgr, _pick (PARTS): only its
+       own methods use them; the other parts ask its methods.
+       ====================================================================================================== */
+
+    /* ---------- import manager: detected functions, labels, pick items ---------- */
+    // the import manager's fields: groups and members ticked, the picks, the options
+    _mgrChange(t) {
+      const g = this._mgr;
+      if (!g || !t.dataset) return false;
+      if (t.dataset.csel != null) { const i = +t.dataset.csel; if (t.checked) g.sel.add(i); else g.sel.delete(i); this._mgrFootRefresh(); return true; }
+      if (t.dataset.cmem != null) {
+        const c = g.cands && g.cands[+t.dataset.cmem];
+        if (!c) return true;
+        if (t.checked) c.keep.add(t.dataset.id); else c.keep.delete(t.dataset.id);
+        const card = t.closest('.cand'), cc = card && card.querySelector('.ccount');
+        if (cc) cc.textContent = this._countText(c.members.filter((id) => c.keep.has(id)));
+        return true;
+      }
+      if (t.dataset.lsel != null) { if (t.checked) g.lsel.add(t.dataset.lsel); else g.lsel.delete(t.dataset.lsel); this._mgrFootRefresh(); return true; }
+      if (t.hasAttribute('data-mcats')) { g.cats = t.checked; return true; }
+      if (t.hasAttribute('data-mdev')) { g.devices = t.checked; if (g.roles) { g.sel = new Set(); g.expanded = new Set(); this._mgrRecluster(); this._renderManager(); } return true; }
+      if (t.hasAttribute('data-pdiag')) { g.pdiag = t.checked; g.pshow = 200; this._renderPicks(); return true; }
+      if (t.hasAttribute('data-ptarget')) { g.target = t.value; this._renderManager(); return true; }
+      if (t.dataset.pick) {
+        if (t.checked) this._pick.add(t.dataset.pick); else this._pick.delete(t.dataset.pick);
+        const c = this._$.modal.querySelector('.chip[data-ptype="selected"] span');
+        if (c) c.textContent = this._pick.size;
+        this._mgrFootRefresh();
+        return true;
+      }
+      return false;
+    }
+    _mgrInput(t) {
+      const g = this._mgr;
+      if (t.classList.contains('search')) { if (g) g.pshow = 200; this._renderPicks(t.value); return true; }
+      if (g && t.dataset.cname != null) { const c = g.cands && g.cands[+t.dataset.cname]; if (c) c.name = t.value; return true; }
+      if (g && t.hasAttribute('data-pnew')) { g.newName = t.value; this._mgrFootRefresh(); return true; }
+      return false;
+    }
+    _openManager(tab, target) {
+      if (!this._mgr) {
+        this._mgr = { tab: 'detect', cands: null, scanning: false, expanded: new Set(), sel: new Set(), lsel: new Set(), cats: true, busy: false, target: null, newName: '', q: '', ptype: 'all', pshow: 200, pdiag: false };
+      }
+      const g = this._mgr;
+      g.tab = tab || g.tab;
+      // Pick items adds to the function on screen: every opening starts from it, never from an earlier visit
+      g.target = target || this._data.ui.current || '__new';
+      if (g.target !== '__new' && !this._data.functions.includes(g.target)) g.target = '__new';
+      this._pick = new Set();
+      this._renderManager();
+      if (g.tab === 'detect' && !g.cands && !g.scanning) this._scanFunctions();
+    }
+    _renderManager() {
+      const g = this._mgr, m = this._$.modal;
+      if (!g) return;
+      const old = m.querySelector('.mbody'), top = old ? old.scrollTop : 0;
+      m.hidden = false;
+      const tabs = [['detect', T('detected_functions')], ['labels', T('labels')], ['pick', T('pick_items')]];
+      const body = g.tab === 'detect' ? this._mgrDetect() : g.tab === 'labels' ? this._mgrLabels() : this._mgrPick();
+      m.innerHTML = `<div class="dlg mgr"><div class="mhead"><h3>${T('import_2')}</h3><div class="tabs">${tabs.map(([k, t]) => `<button class="tab ${g.tab === k ? 'on' : ''}" data-act="mgr-tab" data-tab="${k}">${t}</button>`).join('')}</div><button class="ib" data-act="modal-cancel" title="${T('close')}"><ha-icon icon="mdi:close"></ha-icon></button></div><div class="mbody">${body}</div><div class="mfoot">${this._mgrFoot()}</div></div>`;
+      const nb = m.querySelector('.mbody');
+      if (nb && g.tab === g.lastTab) nb.scrollTop = top;
+      g.lastTab = g.tab;
+      if (g.tab === 'pick') {
+        const s = m.querySelector('.search');
+        if (s) { s.value = g.q || ''; this._clock.after('focus', 30, () => s.focus()); }
+        this._renderPicks(g.q || '');
+      }
+    }
+    _mgrFoot() {
+      const g = this._mgr;
+      if (g.tab === 'detect') {
+        const avail = (g.cands || []).filter((c) => !(c.fn && !c.missing.length)).length, n = g.sel.size;
+        return `<label class="chk mcats"><input type="checkbox" data-mcats ${g.cats ? 'checked' : ''}>${T('file_imported_pieces_under_a')}</label><label class="chk mcats"><input type="checkbox" data-mdev ${g.devices ? 'checked' : ''}>${T('also_join_automations_that_meet')}</label><span class="cnt">${g.cands ? T('of_selected', { n, avail }) : ''}</span><button data-act="mgr-rescan" ${g.scanning || g.busy ? 'disabled' : ''}>${T('rescan')}</button><button data-act="mgr-selall" ${avail && !g.busy ? '' : 'disabled'}>${n && n === avail ? T('select_none') : T('select_all')}</button><button class="primary" data-act="mgr-import-sel" ${n && !g.busy ? '' : 'disabled'}>${g.busy ? T('importing_2') : T('import_selected')}</button>`;
+      }
+      if (g.tab === 'labels') {
+        const n = g.lsel.size;
+        return `<span class="cnt">${n ? n + ' selected' : T('none_selected')}</span><button class="primary" data-act="mgr-labels-add" ${n ? '' : 'disabled'}>${T('add_as_functions_2')}</button>`;
+      }
+      const n = this._pick.size, to = g.target === '__new' ? (String(g.newName || '').trim() || T('a_new_function')) : this._fnName(g.target);
+      return `<span class="cnt">${n ? n + ' selected' : T('none_selected')}</span><button class="primary" data-act="mgr-pick-add" ${n ? '' : 'disabled'}>${n ? T('add_to_4', { n: esc(P('n_items', n)), to: esc(to) }) : T('add')}</button>`;
+    }
+    _mgrFootRefresh() { const f = this._$.modal.querySelector('.mfoot'); if (f && this._mgr) f.innerHTML = this._mgrFoot(); }
+
+    _mgrDetect() {
+      const g = this._mgr;
+      if (g.scanning) return `<div class="muted pad">${T('tracing_every_automation_and_script')}</div>`;
+      if (g.error) return `<div class="muted pad">${T('the_scan_failed', { error: esc(g.error) })}</div>`;
+      if (!g.cands) return '';
+      if (!g.cands.length) return `<div class="muted pad">${T('no_groups_found_groups_show')}</div>`;
+      const s = g.stats, cv = s.cover;
+      return `<div class="hint mintro"><b>${T('of_and_of_are_in', { a: cv.a[0], a2: P('n_automations', cv.a[1]), s: cv.s[0], s2: P('n_scripts', cv.s[1]) })}</b> ${T('traced_and_each_group_below', { automations: P('n_automations', s.automations), scripts: P('n_scripts', s.scripts) })}</div>${g.cands.map((c, i) => this._candHTML(c, i)).join('')}${this._leftHTML()}`;
+    }
+    // automations and scripts in no group and no function, each two clicks from a function (3.2)
+    _leftHTML() {
+      const g = this._mgr, left = g.left || [];
+      if (!left.length) return '';
+      const open = !!g.leftOpen;
+      return `<div class="cand left"><div class="crow"><ha-icon icon="mdi:help-circle-outline"></ha-icon><span class="cname static">${T('not_in_any_function')}</span><span class="ccount">${esc(this._countText(left))}</span><span class="csrc">${T('no_wiring_or_category_ties')}</span><button class="ib" data-act="mgr-left" title="${open ? T('hide') : T('show')} them"><ha-icon icon="${open ? 'mdi:chevron-up' : 'mdi:chevron-down'}"></ha-icon></button></div>${open ? `<div class="cmem">${left.map((id) => `<div class="lrow2"><span class="tag">${esc(this._tagOf(id))}</span><span class="mn"><b>${esc(this._nameOf(id))}</b><small>${esc(id)}</small></span><button class="chip" data-act="left-add" data-id="${esc(id)}" ${this._canLabel(id) ? '' : `disabled title="${T('no_unique_id_add_id_2')}"`}>${T('add_to_3')}</button><button class="chip" data-act="left-new" data-id="${esc(id)}" ${this._canLabel(id) ? '' : 'disabled'}>${T('new_function_from_this')}</button></div>`).join('')}</div>` : ''}</div>`;
+    }
+    _leftAddMenu(btn, id) {
+      if (!this._data.functions.length) { this._leftNew(id); return; }
+      this._menu(btn, this._data.functions.map((l) => ({ act: 'left-to', data: { id, label: l }, icon: (this._labelMap.get(l) || {}).icon || 'mdi:puzzle-outline', text: this._fnName(l) })), T('add_to_2'));
+      // the manager is a modal: show the menu above it
+      if (this._menuEl) this._menuEl.style.zIndex = 40;
+    }
+    async _leftTo(id, label) {
+      this._closeMenu();
+      const r = await this._labelMany([id], label, this._mgr ? this._mgr.cats : true);
+      if (!r.done.length) { this._toast(T('could_not_add_2', { why: (r.skipped[0] || {}).why })); return; }
+      this._mgr.left = this._mgr.left.filter((x) => x !== id);
+      this._renderManager();
+      this._toast(T('added_to_2', { nameOf: this._nameOf(id), fnName: this._fnName(label) }), [{ text: T('undo'), fn: () => this._undo() }, { text: T('go_there'), fn: () => { this._closeModal(); this._open(label); } }]);
+    }
+    async _leftNew(id) {
+      const g = this._mgr, base = this._suggestName([id]);
+      let name = base;
+      for (let k = 2; this._labels.some((l) => String(l.name).toLowerCase() === name.toLowerCase()); k++) name = base + ' ' + k;
+      try {
+        const r = await this._importGroup(name, this._pickIcon([id]), 'indigo', [id], g ? g.cats : true);
+        if (g) g.left = g.left.filter((x) => x !== id);
+        await this._loadRegistries();
+        this._renderList();
+        this._renderManager();
+        this._toast(T('created', { name }), [{ text: T('undo'), fn: () => this._undo() }, { text: T('go_there'), fn: () => { this._closeModal(); this._open(r.label); } }]);
+      } catch (e) { this._toast(T('could_not_create', { message: e.message || e.code })); }
+    }
+    _candHTML(c, i) {
+      const g = this._mgr, open = g.expanded.has(i), done = c.fn && !c.missing.length, lock = !!c.fn || g.busy;
+      const src = { category: T('from_a_category'), wiring: T('from_the_wiring'), both: T('category_wiring'), function: T('on_the_board_2') }[c.source] || '';
+      const over = c.overlap && c.overlap.length ? c.overlap.slice(0, 2).map((o) => T('already_in_2', { n: o.n, fnName: esc(this._fnName(o.l)) })).join(' · ') : '';
+      let act;
+      if (done) act = `<span class="onb">${T('on_the_board')}</span>`;
+      else if (c.fn) act = `<button class="go" data-act="mgr-import-one" data-ci="${i}" ${g.busy ? 'disabled' : ''} title="${T('label_the_pieces_that_aren', { name: esc(c.name) })}">${T('add_missing', { count: c.missing.length })}</button>`;
+      else act = `<button class="go" data-act="mgr-import-one" data-ci="${i}" ${g.busy ? 'disabled' : ''}>${T('import_2')}</button>`;
+      return `<div class="cand ${done ? 'done' : ''}"><div class="crow"><input type="checkbox" data-csel="${i}" ${g.sel.has(i) ? 'checked' : ''} ${done || g.busy ? 'disabled' : ''} title="${T('select_for_import_selected')}"><ha-icon icon="${esc(c.icon)}"></ha-icon><input class="cname" data-cname="${i}" value="${esc(c.name)}" ${lock ? 'disabled' : ''} title="${c.fn ? T('already_a_function') : T('function_name_click_to_rename')}"><span class="ccount">${esc(this._countText(c.members.filter((id) => c.keep.has(id))))}${c.fn && c.missing.length ? T('not_in_it_yet', { count: c.missing.length }) : ''}</span>${over ? `<span class="csrc">${over}</span>` : ''}<span class="csrc">${src}</span><button class="ib" data-act="mgr-expand" data-ci="${i}" title="${T('the_pieces', { extra: open ? T('hide') : T('show') })}"><ha-icon icon="${open ? 'mdi:chevron-up' : 'mdi:chevron-down'}"></ha-icon></button>${act}</div>${open ? `<div class="cmem">${c.members.map((id) => this._memRow(i, c, id)).join('')}</div>` : ''}</div>`;
+    }
+
+    async _scanFunctions() {
+      const g = this._mgr;
+      g.scanning = true; g.error = null; g.sel = new Set(); g.expanded = new Set();
+      this._renderManager();
+      try {
+        await this._loadRegistries();
+        const ids = this._logicIds();
+        const cfgs = await Promise.all(ids.map((e) => this._fetchConfig(e)));
+        const an = ids.map((id, i) => (cfgs[i] ? analyze(cfgs[i], id.startsWith('script.'), (x) => this._known(x)) : null));
+        await this._resolveTargets(an.flatMap((a) => (a ? a.refs.map((r) => r.ref).filter((r) => TGT_RE.test(r)) : [])));
+        const roles = new Map();
+        ids.forEach((id, i) => {
+          if (!an[i]) return;
+          const m = new Map(), put = (ref, role) => { if (ref === id) return; if (!m.has(ref)) m.set(ref, new Set()); m.get(ref).add(role); };
+          // an area, floor or label target groups by the entities it covers, not the target itself (2.2)
+          an[i].refs.forEach((r) => { if (TGT_RE.test(r.ref)) this._targetEntities(r.ref, r).forEach((e) => put(e, r.role)); else put(r.ref, r.role); });
+          roles.set(id, m);
+        });
+        const cats = await this._catGroups();
+        g.roles = roles; g.catList = cats; g.ids = ids;
+        this._mgrRecluster();
+      } catch (e) { g.error = (e && (e.message || e.code)) || String(e); g.cands = null; }
+      g.scanning = false;
+      if (this._mgr === g && !this._$.modal.hidden && this._$.modal.querySelector('.mgr')) this._renderManager();
+    }
+    _mgrRecluster() {
+      const g = this._mgr, ids = g.ids;
+      g.cands = this._cluster(g.roles, g.catList, { devices: !!g.devices });
+      // what ended up in no group and no function (3.2)
+      const fset = new Set(this._data.functions), grouped = new Set(g.cands.flatMap((c) => c.members));
+      const inFn = (id) => ((this._entMap.get(id) || {}).labels || []).some((l) => fset.has(l));
+      g.left = ids.filter((id) => !grouped.has(id) && !inFn(id)).sort((x, y) => this._nameOf(x).localeCompare(this._nameOf(y)));
+      const count = (pre) => { const all = ids.filter((x) => x.startsWith(pre)); return [all.length - all.filter((x) => g.left.includes(x)).length, all.length]; };
+      g.stats = { automations: ids.filter((x) => x.startsWith('automation.')).length, scripts: ids.filter((x) => x.startsWith('script.')).length, cover: { a: count('automation.'), s: count('script.') } };
+    }
+    _pickIcon(members) {
+      for (const id of members) {
+        if (this._scopeOf(id) !== 'helpers') continue;
+        const e = this._entMap.get(id), st = this._hass.states[id], ic = (e && e.icon) || (st && st.attributes.icon);
+        if (ic) return ic;
+      }
+      return 'mdi:puzzle-outline';
+    }
+    async _mgrImport(list) {
+      const g = this._mgr;
+      if (!g || g.busy) return;
+      g.busy = true;
+      this._renderManager();
+      const done = [], skipped = [], failed = [];
+      for (const i of list) {
+        const c = g.cands && g.cands[i];
+        if (!c || (c.fn && !c.missing.length)) continue;
+        try {
+          if (c.fn) {
+            const ids = c.missing.filter((id) => c.keep.has(id));
+            this._toast(T('adding_to', { count: P('n_pieces', ids.length), name: c.name }));
+            const r = await this._labelMany(ids, c.fn, g.cats);
+            c.missing = c.missing.filter((id) => !r.done.includes(id));
+            skipped.push(...r.skipped);
+            done.push(c.fn);
+          } else {
+            const ids = c.members.filter((id) => c.keep.has(id)), name = String(c.name || '').trim();
+            if (!ids.length || !name) continue;
+            this._toast(T('importing', { name }));
+            const r = await this._importGroup(name, c.icon, c.color, ids, g.cats, c.cat);
+            c.fn = r.label; c.members = ids; c.keep = new Set(ids); c.missing = r.skipped.map((x) => x.id);
+            c.source = 'function';
+            skipped.push(...r.skipped);
+            done.push(c.fn);
+          }
+        } catch (e) { failed.push(c.name); this._toast(T('could_not_import', { name: c.name, message: e.message || e.code })); }
+      }
+      g.busy = false; g.sel = new Set();
+      // an import lays each function out again (Auto-arrange), leaving only boxes kept in place where they are
+      if (done.length) { done.forEach((l) => this._arrangeData(l)); this._save(); }
+      await this._loadRegistries();
+      this._renderList();
+      if (this._$.modal.querySelector('.mgr')) this._renderManager();
+      if (done.length) {
+        const names = done.map((l) => this._fnName(l));
+        const msg = (done.length === 1 ? T('imported_2', { names: names[0] }) : T('imported', { count: P('n_functions', done.length) }))
+          + (skipped.length ? T('skipped', { count: P('n_pieces', skipped.length), why: skipped[0].why }) : '')
+          + (failed.length ? T('failed', { failed: failed.join(', ') }) : '');
+        this._toast(msg, [{ text: T('undo'), fn: () => this._undo() }]);
+        if (!this._model) this._open(done[0]);
+        else if (done.includes(this._data.ui.current)) this._open(this._data.ui.current, true);
+      }
+    }
+
+    _mgrLabels() {
+      const avail = this._labels.filter((l) => !this._data.functions.includes(l.label_id)).sort((a, b) => a.name.localeCompare(b.name));
+      if (!avail.length) return `<div class="muted pad">${T('every_label_is_already_on')}</div>`;
+      const count = (lid) => this._ents.filter((e) => (e.labels || []).includes(lid)).length + this._devs.filter((d) => (d.labels || []).includes(lid)).length;
+      return `<div class="hint mintro">${T('labels_you_already_use_adding')}</div>${avail.map((l) => `<label class="lrow"><input type="checkbox" data-lsel="${esc(l.label_id)}" ${this._mgr.lsel.has(l.label_id) ? 'checked' : ''}>`
+          + `<ha-icon icon="${esc(l.icon || 'mdi:label-outline')}" style="color:${cssColor(l.color)}"></ha-icon><span class="mn"><b>${esc(l.name)}</b>`
+          + `<small>${P('n_items', count(l.label_id))}${l.description ? ' · ' + esc(l.description) : ''}</small></span></label>`).join('')}`;
+    }
+    _mgrLabelsAdd() {
+      const g = this._mgr, ids = [...g.lsel].filter((l) => !this._data.functions.includes(l));
+      ids.forEach((l) => this._data.functions.push(l));
+      g.lsel = new Set();
+      this._save(); this._renderList(); this._renderManager();
+      if (!ids.length) return;
+      this._history({ label: null, text: T('add_as_functions', { count: P('n_labels', ids.length) }), undo: async () => ids.forEach((l) => this._takeOff(l)), redo: async () => { ids.forEach((l) => { if (!this._data.functions.includes(l)) this._data.functions.push(l); }); this._save(); } });
+      this._toast(T('added', { count: P('n_functions', ids.length) }), [{ text: T('undo'), fn: () => this._undo() }]);
+      if (!this._model) this._open(ids[0]);
+    }
+
+    _mgrPick() {
+      const g = this._mgr;
+      const opts = `${this._data.functions.map((f) => `<option value="${esc(f)}" ${g.target === f ? 'selected' : ''}>${esc(this._fnName(f))}</option>`).join('')}<option value="__new" ${g.target === '__new' ? 'selected' : ''}>${T('new_function')}</option>`;
+      return `<div class="ptop"><label>${T('add_to_2')}<select data-ptarget>${opts}</select></label>${g.target === '__new' ? `<label>${T('new_function_name')}<input data-pnew value="${esc(g.newName || '')}" placeholder="${T('e_g_garage_door')}"></label>` : ''}</div><input class="search" placeholder="${T('search_by_name_entity_id')}"><div class="pchips"></div><div class="picks"></div><div class="hint">${T('adding_gives_each_item_the')}</div>`;
+    }
+    _pickIndex() {
+      if (this._pidx && this._pidxAt === this._regAt) return this._pidx;
+      const area = (id) => (id && this._areaMap && this._areaMap.get(id) ? this._areaMap.get(id).name : '');
+      const devCount = new Map();
+      this._ents.forEach((e) => { if (e.device_id && !e.disabled_by) devCount.set(e.device_id, (devCount.get(e.device_id) || 0) + 1); });
+      const rows = [];
+      for (const e of this._ents) {
+        if (e.disabled_by) continue;
+        const st = this._hass.states[e.entity_id], dev = e.device_id ? this._devMap.get(e.device_id) : null;
+        const devName = dev ? String(dev.name_by_user || dev.name || '') : '';
+        const name = String((st && st.attributes.friendly_name) || e.name || e.original_name || e.entity_id);
+        const ar = area(e.area_id || (dev && dev.area_id));
+        const sc = this._scopeOf(e.entity_id);
+        const type = sc === 'automation' ? 'automation' : sc === 'script' ? 'script' : sc === 'helpers' ? 'helpers' : 'entities';
+        const lbl = (e.labels || []).map((l) => (this._labelMap.get(l) || {}).name || l);
+        rows.push({
+          key: e.entity_id, type, tag: this._tagOf(e.entity_id), name, labels: e.labels || [], diag: !!e.entity_category,
+          sub: [e.entity_id, ar, devName && devName !== name ? devName : ''].filter(Boolean).join(' · '),
+          hay: [name, e.entity_id, ar, devName, e.platform, e.original_name || '', ...lbl].join(' ').toLowerCase(),
+        });
+      }
+      for (const d of this._devs) {
+        if (d.disabled_by) continue;
+        const name = String(d.name_by_user || d.name || T('device')), ar = area(d.area_id), n = devCount.get(d.id) || 0;
+        const model = [d.manufacturer, d.model].filter(Boolean).join(' ');
+        const lbl = (d.labels || []).map((l) => (this._labelMap.get(l) || {}).name || l);
+        rows.push({
+          key: 'device:' + d.id, type: 'devices', tag: T('device'), name, labels: d.labels || [], diag: false,
+          sub: [ar, model, P('n_entities', n)].filter(Boolean).join(' · '),
+          hay: [name, d.name || '', ar, model, ...lbl].join(' ').toLowerCase(),
+        });
+      }
+      this._pidx = rows; this._pidxAt = this._regAt;
+      return rows;
+    }
+    _renderPicks(q) {
+      const g = this._mgr, m = this._$.modal, box = m.querySelector('.picks'), chips = m.querySelector('.pchips');
+      if (!box || !g) return;
+      if (q != null) g.q = q;
+      const target = g.target !== '__new' ? g.target : null;
+      const terms = String(g.q || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+      const all = this._pickIndex();
+      const match = terms.length ? all.filter((r) => terms.every((t) => r.hay.includes(t))) : all;
+      const diagHidden = g.pdiag ? 0 : match.filter((r) => r.diag).length;
+      const base = g.pdiag ? match : match.filter((r) => !r.diag);
+      const counts = { all: base.length, automation: 0, script: 0, helpers: 0, devices: 0, entities: 0 };
+      base.forEach((r) => { counts[r.type]++; });
+      const types = [['all', T('all')], ['automation', T('automations')], ['script', T('scripts')], ['helpers', T('helpers')], ['devices', T('devices')], ['entities', T('entities')]];
+      if (chips) {
+        chips.innerHTML = `${types.map(([k, t]) => `<button class="chip ${g.ptype === k ? 'on' : ''}" data-act="mgr-ptype" data-ptype="${k}">${t}<span>${counts[k].toLocaleString()}</span></button>`).join('')}<button class="chip ${g.ptype === 'selected' ? 'on' : ''}" data-act="mgr-ptype" data-ptype="selected">${T('selected')}<span>${this._pick.size}</span></button><button class="chip" data-act="mgr-pickall" title="${T('tick_everything_currently_listed')}">${T('select_all_shown')}</button><label class="tg2"><input type="checkbox" data-pdiag ${g.pdiag ? 'checked' : ''}>${T('device_settings_and_diagnostics', { extra: diagHidden ? T('hidden', { diagHidden: diagHidden.toLocaleString() }) : '' })}</label>`;
+      }
+      const RANK = { automation: 0, script: 1, helpers: 2, devices: 3, entities: 4 };
+      let rows = g.ptype === 'selected' ? all.filter((r) => this._pick.has(r.key)) : g.ptype === 'all' ? base : base.filter((r) => r.type === g.ptype);
+      const score = (r) => {
+        if (!terms.length) return 0;
+        const n = r.name.toLowerCase();
+        return terms.every((t) => n.includes(t)) ? (n.startsWith(terms[0]) ? 0 : 1) : 2;
+      };
+      rows = rows.map((r) => ({ r, s: score(r) })).sort((x, y) => x.s - y.s || RANK[x.r.type] - RANK[y.r.type] || x.r.name.localeCompare(y.r.name)).map((x) => x.r);
+      const shown = rows.slice(0, g.pshow || 200);
+      g.pshownKeys = shown.filter((r) => !(target && r.labels.includes(target))).map((r) => r.key);
+      const html = shown.map((r) => {
+        const inFn = !!target && r.labels.includes(target);
+        return `<label class="pick ${inFn ? 'infn' : ''}"><input type="checkbox" data-pick="${esc(r.key)}" ${inFn || this._pick.has(r.key) ? 'checked' : ''} ${inFn ? 'disabled' : ''}>`
+          + `<span class="tag">${esc(r.tag)}</span><span class="mn"><b>${esc(r.name)}</b><small>${esc(r.sub)}${inFn ? T('already_in_this_function') : ''}</small></span></label>`;
+      }).join('');
+      const more = rows.length - shown.length;
+      box.innerHTML = (html || `<div class="muted pad">${T('nothing_matches')}</div>`)
+        + (more > 0 ? `<button class="more" data-act="mgr-more">${T('show_more_not_shown', { min: Math.min(200, more).toLocaleString(), more: more.toLocaleString() })}</button>` : '');
+    }
+    async _mgrPickAdd() {
+      const g = this._mgr, ids = [...this._pick];
+      if (!ids.length || g.busy) return;
+      let label = g.target, res;
+      g.busy = true;
+      try {
+        if (label === '__new') {
+          const name = String(g.newName || '').trim();
+          if (!name) { this._toast(T('give_the_new_function_a')); g.busy = false; return; }
+          res = await this._importGroup(name, 'mdi:puzzle-outline', 'indigo', ids, g.cats);
+          label = res.label;
+        } else {
+          res = await this._labelMany(ids, label, true);
+        }
+      } catch (e) { g.busy = false; this._toast(T('could_not_add', { message: e.message || e.code })); return; }
+      g.busy = false;
+      this._pick = new Set();
+      this._closeModal();
+      await this._loadRegistries();
+      this._renderList();
+      const here = label === this._data.ui.current;
+      const msg = T('added_to', { count: P('n_items', res.done.length), fnName: this._fnName(label), extra: res.skipped.length ? T('skipped', { count: P('n_items', res.skipped.length), why: res.skipped[0].why }) : '' });
+      const acts = [];
+      if (res.done.length) acts.push({ text: T('undo'), fn: () => this._undo() });
+      if (!here || !this._model) acts.push({ text: T('go_there'), fn: () => this._open(label) });
+      if (!this._model) this._open(label);
+      else if (here) this._open(label, true);
+      this._toast(msg, acts);
+    }
+
+    /* ======================================================================================================
+       part: problems: problems and saved checks: counting, the drawer, dismissing, replaying checks Owns _probs,
+       _checkRes, _probScanning (PARTS): only its own methods use them; the other parts ask its methods.
+       ====================================================================================================== */
+    _checkCompact() {
+      // narrow board (phone, small dashboard column): the list becomes a drawer over the board, closed by default.
+      // A detached or hidden board reports width 0: that says nothing about its size, so keep the mode.
+      const w = this._$.board.clientWidth;
+      if (!w || !this.isConnected) return;
+      const c = w < 760;
+      if (c === !!this._compact) return;
+      this._compact = c; this._listOpen = false; this._legendOpen = false;
+      this._$.board.classList.toggle('compact', c);
+      this._renderList(); this._renderLegend();
+      if (this._model && this._data) {
+        // the board changed size class (window resized, phone rotated): use that size's own view
+        const v = this._viewFor(this._model.label);
+        if (v) { this._view = Object.assign({ x: 40, y: 40, k: 1 }, v); this._applyView(); } else this._fit();
+      }
+    }
+    /* ---------- saved checks (0.9.0): keep a sandbox run with what should come of it; replayed on the current
+       configs after every change, a failing one is a problem ---------- */
+    // the states a check starts from: the function's own entities and what they point at (big attributes left out)
+    _checkStart(states) {
+      const out = {}, m = this._model;
+      if (!m) return out;
+      [...m.nodes.keys()].filter((k) => EXACT_RE.test(k) && states[k]).forEach((k) => {
+        const a = {};
+        Object.entries(states[k].attributes || {}).forEach(([n, v]) => { try { if (JSON.stringify(v).length <= 400) a[n] = v; } catch (e) { /* not kept */ } });
+        out[k] = { state: String(states[k].state), attributes: a };
+      });
+      return out;
+    }
+    _checkName(k) { return this._model && this._model.nodes.has(k) ? this._model.nodes.get(k).name : this._nameOf(k); }
+    _chkStepText(s) {
+      const nm = (k) => esc(this._checkName(k));
+      if (s.op === 'set') return T('chk_s_set', { name: nm(s.id), state: esc(s.state) });
+      if (s.op === 'event') return T('chk_s_event', { type: esc(s.type) });
+      if (s.op === 'mqtt') return T('chk_s_mqtt', { topic: esc(s.topic), payload: esc(shorten(s.payload, 40)) });
+      if (s.op === 'run') return T('chk_s_run', { name: nm(s.id) });
+      if (s.op === 'advance') return T('chk_s_advance', { dur: esc(clockShort(s.ms)) });
+      return T('chk_s_next');
+    }
+    // what the run in the sandbox suggests checking: states that changed, and how each automation and script ended
+    _checkSuggest() {
+      const g = this._sbx, eng = g.eng, out = [];
+      // what the function changed (whatever you set yourself is a step, not an outcome), as it ended
+      const byFn = new Set(eng.log.filter((e) => e.kind === 'state' && e.by !== 'you' && EXACT_RE.test(e.key || '') && !/^(automation|script)\./.test(e.key)).map((e) => e.key));
+      byFn.forEach((k) => { const v = eng.get(k); if (v) out.push({ x: { k: 'state', id: k, state: String(v.state) }, on: true }); });
+      const runs = new Map();
+      eng.log.filter((e) => e.kind === 'run').forEach((e) => { const r = runs.get(e.key) || []; r.push(e.outcome); runs.set(e.key, r); });
+      runs.forEach((r, k) => { if (r.includes('finished')) out.push({ x: { k: 'ran', id: k }, on: true }); else if (r.includes('stopped')) out.push({ x: { k: 'stopped', id: k }, on: true }); });
+      [...this._model.nodes.values()].filter((n) => n.kind === 'member' && /^(automation|script)$/.test(n.domain) && !runs.has(n.key)).forEach((n) => out.push({ x: { k: 'notran', id: n.key }, on: false }));
+      return out;
+    }
+    _renderChecks(soft) {
+      const box = this._$.drawer.querySelector('.sbchk'), g = this._sbx;
+      if (!box || !g) return;
+      const label = g.label, list = this._ver ? [] : this._layout(label).checks || [], have = this._checkRes.get(label) || {}, res = have.res || new Map();
+      const can = !this._ver && !!g.rec && g.rec.steps.length > 0, sig = [list.length, can, have.at || 0].join('|');
+      if (soft && box.dataset.sig === sig) return;
+      box.dataset.sig = sig;
+      const mark = (c) => { const r = res.get(c.id); if (!r) return `<span class="ckst muted" title="${T('chk_not_run')}">·</span>`; if (r.unsure) return `<span class="ckst unsure" title="${esc(r.unsure)}">?</span>`; return r.ok ? `<span class="ckst ok" title="${T('chk_passes')}">&#10003;</span>` : `<span class="ckst bad" title="${T('chk_fails')}">&#10005;</span>`; };
+      const row = (c) => `<div class="ckrow" data-id="${esc(c.id)}">${mark(c)}<span class="ckname" title="${esc(c.steps.map((x) => this._chkStepText(x).replace(/<[^>]+>/g, '')).join(' → '))}">${esc(c.name)}</span><button class="ib" data-act="chk-run" data-id="${esc(c.id)}" title="${T('chk_run_t')}"><ha-icon icon="mdi:play-circle-outline"></ha-icon></button><button class="ib" data-act="chk-replay" data-id="${esc(c.id)}" title="${T('chk_replay_t')}"><ha-icon icon="mdi:movie-open-play-outline"></ha-icon></button><button class="ib" data-act="chk-del" data-id="${esc(c.id)}" title="${T('chk_del_t')}"><ha-icon icon="mdi:delete-outline"></ha-icon></button></div>`;
+      this._put(box, this._ver ? '' : `<div class="ckhead"><span>${P('chk_n', list.length)}</span>${list.length ? `<button class="ib" data-act="chk-run" title="${T('chk_run_all_t')}"><ha-icon icon="mdi:play-box-multiple-outline"></ha-icon></button>` : ''}<button class="chip" data-act="chk-save"${can ? '' : ' disabled'} title="${can ? T('chk_save_t') : T('chk_save_none')}"><ha-icon icon="mdi:content-save-check-outline"></ha-icon>${T('chk_save')}</button></div>${list.map(row).join('')}`);
+    }
+    _checkSaveDlg() {
+      const g = this._sbx;
+      if (!g || !g.rec || !g.rec.steps.length || this._ver) return;
+      const sug = this._checkSuggest(), m = this._$.modal;
+      this._chkDraft = { sug };
+      m.hidden = false;
+      m.innerHTML = `<div class="dlg ckdlg"><h3>${T('chk_save_h')}</h3><p class="dtext">${T('chk_save_lead')}</p>`
+        + `<label>${T('chk_name')}<input name="ckname" maxlength="160" value="${esc(this._chkStepText(g.rec.steps[0]).replace(/<[^>]+>/g, ''))}"></label>`
+        + `<h4>${T('chk_steps_h')}</h4><ol class="cksteps">${g.rec.steps.map((x) => `<li>${this._chkStepText(x)}</li>`).join('')}</ol>`
+        + `<h4>${T('chk_expect_h')}</h4>${sug.length ? sug.map((s, i) => `<label class="chk"><input type="checkbox" name="ckx" value="${i}"${s.on ? ' checked' : ''}>${this._expText(s.x)}</label>`).join('') : `<p class="muted">${T('chk_expect_none')}</p>`}`
+        + `<div class="dval"></div><div class="btns"><button data-act="modal-cancel">${T('cancel')}</button><button class="primary" data-act="chk-save-go">${T('chk_save_b')}</button></div></div>`;
+      const n = m.querySelector('input[name="ckname"]'); if (n) { n.focus(); n.select(); }
+    }
+    _checkSaveGo() {
+      const g = this._sbx, m = this._$.modal, d = this._chkDraft;
+      if (!g || !d) return;
+      const expect = [...m.querySelectorAll('input[name="ckx"]:checked')].map((x) => d.sug[+x.value].x);
+      if (!expect.length) { m.querySelector('.dval').textContent = T('chk_pick_one'); return; }
+      const c = cleanCheck({ id: uid(), name: m.querySelector('input[name="ckname"]').value.trim() || T('chk_default'), at: g.rec.at, start: g.rec.start, items: g.rec.items, steps: g.rec.steps, answers: g.rec.answers, expect });
+      if (!c) { m.querySelector('.dval').textContent = T('chk_cant'); return; }
+      const label = g.label, L = this._layout(label);
+      L.checks = (L.checks || []).concat([c]);
+      this._save();
+      this._closeModal();
+      this._toast(T('chk_saved', { name: c.name }));
+      this._renderChecks();
+      this._runChecks(label, [c.id], true);
+    }
+    _checkDel(id) {
+      const label = this._data.ui.current, L = this._layout(label), c = (L.checks || []).find((x) => x.id === id);
+      if (!c) return;
+      L.checks = L.checks.filter((x) => x.id !== id);
+      const r = this._checkRes.get(label); if (r) r.res.delete(id);
+      this._save();
+      this._renderChecks();
+      this._applyCheckProblems(label);
+      this._toast(T('chk_deleted', { name: c.name }));
+    }
+    _checksSoon(label) { this._clock.after('checks', 400, () => this._runChecks(label)); }
+    // replay checks on the function's current configs; results kept until the configs change. given: the configs
+    // the scan already read (another function's)
+    async _runChecks(label, ids, force, given) {
+      const L = this._layout(label), list = (L.checks || []).filter((c) => !ids || ids.includes(c.id));
+      if (!list.length || this._ver) return;
+      const gen = this._cfgGen || 0, have = this._checkRes.get(label);
+      if (!force && have && have.gen === gen && list.every((c) => have.res.has(c.id))) return;
+      const members = this._ents.filter((e) => (e.labels || []).includes(label)).map((e) => e.entity_id).filter((e) => /^(automation|script)\./.test(e));
+      const cfgOf = new Map((given || []).map((x) => [x.id, x.cfg]));
+      const itemsFor = async (c) => {
+        const ids = [...new Set(members.concat(c.items || []))];
+        const cfgs = await Promise.all(ids.map((e) => (cfgOf.has(e) ? cfgOf.get(e) : this._fetchConfig(e))));
+        return ids.map((e, i) => ({ id: e, cfg: cfgs[i] })).filter((x) => x.cfg);
+      };
+      const resolve = (ref) => { if (ref.startsWith('device:')) return this._ents.filter((e) => e.device_id === ref.slice(7)).map((e) => e.entity_id); const t = this._tgt.get(ref); return t ? t.entities : []; };
+      const o = { states: this._hass.states, tz: this._hass.config && this._hass.config.time_zone, tpl: (t, v, e) => this._sbxTpl(t, v, e), resolve,
+        fetch: (id) => this._fetchConfig(id), name: (id) => this._boxName(id), condText: (c) => condText(c, (x) => this._boxName(x)) };
+      const rec = have && have.gen === gen ? have : { gen, res: new Map() };
+      for (const c of list) {
+        try { const r = await runCheck(c, Object.assign({ items: await itemsFor(c) }, o)); rec.res.set(c.id, { ok: r.ok, unsure: r.unsure, res: r.res }); }
+        catch (e) { rec.res.set(c.id, { ok: false, unsure: (e && e.message) || String(e), res: [] }); }
+      }
+      rec.at = Date.now();
+      this._checkRes.set(label, rec);
+      this._applyCheckProblems(label);
+      if (this._sbx && this._sbx.label === label) this._renderChecks();
+    }
+    _checkProblems(label) {
+      const r = this._checkRes.get(label), out = [];
+      if (!r) return out;
+      (this._layout(label).checks || []).forEach((c) => {
+        const x = r.res.get(c.id);
+        if (!x || x.ok) return;
+        if (x.unsure) { out.push({ sev: 'warn', kind: 'c_unsure', ref: 'check:' + c.id, by: [], name: c.name, detail: x.unsure }); return; }
+        const i = x.res.findIndex((y) => !y.ok);
+        out.push({ sev: 'error', kind: 'c_failed', ref: 'check:' + c.id, by: [], name: c.name, detail: i >= 0 ? this._expText(c.expect[i], x.res[i].got).replace(/<[^>]+>/g, '') : '' });
+      });
+      return out;
+    }
+    _applyCheckProblems(label) {
+      const m = this._model;
+      if (!m || m.label !== label || this._ver) return;
+      const all = (m.problems || []).concat(m.dismissed || []).filter((p) => !/^c_/.test(p.kind)).concat(this._checkProblems(label))
+        .sort((x, y) => (x.sev === y.sev ? 0 : x.sev === 'error' ? -1 : 1));
+      // checks' results are only known once they've run
+      const sp = this._splitProbs(label, all, (k) => !k.startsWith('c_') || this._checkRes.has(label));
+      m.problems = sp.shown; m.dismissed = sp.hidden;
+      this._noteProblems(label, m.problems);
+      this._renderHeader();
+      if (this._drawer && this._drawer.mode === 'problems') this._openProblems();
+    }
+    // a check played in the sandbox, step by step on the board: its states, its clock, its steps, its answers
+    async _checkReplay(id) {
+      const label = this._data.ui.current, c = (this._layout(label).checks || []).find((x) => x.id === id);
+      if (!c || !this._model) return;
+      if (this._sbxOn()) this._closeDrawer();
+      await this._openSandbox({ check: c });
+      for (const s of c.steps) {
+        if (!this._sbxOn()) return;
+        const g = this._sbx;
+        await this._sbxDo((e) => {
+          this._sbxRec(s);
+          if (s.op === 'set') return e.userSet(s.id, s.state);
+          if (s.op === 'event') return e.userEvent(s.type, s.data);
+          if (s.op === 'mqtt') return e.userMqtt(s.topic, s.payload);
+          if (s.op === 'run') return e.userRun(s.id, s.conds, s.ti);
+          if (s.op === 'advance') return e.advance(s.ms);
+          return e.toNext();
+        });
+        if (this._sbx !== g) return;
+        if (!(await this._clock.sleep(300))) return;
+      }
+      this._toast(T('chk_replayed', { name: c.name }));
+    }
+
+    /* ---------- problems (0.9.0) ---------- */
+    _probCtx(label) {
+      const L = this._layout(label), svcs = this._hass.services || {};
+      return {
+        state: (id) => this._hass.states[id], ent: (id) => this._entMap.get(id), dev: (id) => this._devMap.get(id),
+        area: (id) => this._areaMap && this._areaMap.get(id), floor: (id) => this._floorMap && this._floorMap.get(id), label: (id) => this._labelMap.get(id),
+        service: (d, s) => !!(svcs[d] && svcs[d][s]), paused: Array.isArray(L.paused) && L.paused.length > 0,
+      };
+    }
+    // a function's problems, without the ones dismissed; keeps the dismissals' bookkeeping (and saves it)
+    _splitProbs(label, problems, covers) {
+      const L = this._liveLayout(label);
+      if (!(L.dismissed || []).length) return { shown: problems, hidden: [] };
+      const r = splitDismissed(problems, L.dismissed, Date.now(), covers);
+      if (r.changed) { L.dismissed = r.dismissed; this._save(); }
+      return r;
+    }
+    _probDismiss(k, back) {
+      const m = this._model, label = this._data.ui.current;
+      if (!m || m.label !== label || this._ver) return;
+      const L = this._liveLayout(label), all = (m.problems || []).concat(m.dismissed || []), p = all.find((x) => probKey(x) === k);
+      L.dismissed = (L.dismissed || []).filter((d) => d.k !== k);
+      if (!back) L.dismissed.push({ k, at: Date.now() });
+      this._save();
+      const sp = splitDismissed(all, L.dismissed, Date.now(), () => false);
+      m.problems = sp.shown; m.dismissed = sp.hidden;
+      markProblems(m.nodes, m.edges, m.problems);
+      this._noteProblems(label, m.problems);
+      this._renderHeader();
+      this._render();
+      this._drawEdges();
+      if (this._drawer && this._drawer.mode === 'problems') this._openProblems(this._drawer.dismissed && m.dismissed.length > 0);
+      if (!back && p) this._toast(T('prob_dismissed_toast'), [{ text: T('undo'), fn: () => this._probDismiss(k, true) }]);
+    }
+    // what the problems of a function's boxes depend on in Home Assistant's states (0.10.0): which are missing,
+    // unavailable, or automations turned off (an automation turned off since the board was built is a warning)
+    _probSig(m, states) {
+      return [...m.nodes.keys()].filter((k) => !k.includes(':')).map((k) => { const st = states[k]; return !st ? k + '=-' : st.state === 'unavailable' ? k + '=u' : k.startsWith('automation.') && st.state === 'off' ? k + '=o' : ''; }).filter(Boolean).join('|');
+    }
+    // the list's count for a function: { e, w } (errors, warnings), once counted
+    _probCount(label) { return this._probs.get(label) || null; }
+    _noteProblems(label, problems) {
+      const e = problems.filter((p) => p.sev === 'error').length, w = problems.length - e, was = this._probs.get(label);
+      this._probs.set(label, { e, w });
+      if (!was || was.e !== e || was.w !== w) this._renderList();
+    }
+    // every function on the board, in the background: the counts on the list (configs come from the cache)
+    async _scanProblems() {
+      if (!this._data || !this._hass || this._probScanning || !this._ents) return;
+      this._probScanning = true;
+      try {
+        const known = (x) => this._known(x);
+        for (const label of this._data.functions.slice()) {
+          if (this._model && this._model.label === label && !this._ver) { this._noteProblems(label, this._model.problems || []); continue; }
+          const members = this._ents.filter((e) => (e.labels || []).includes(label)).map((e) => e.entity_id);
+          const devs = this._devs.filter((d) => (d.labels || []).includes(label)).map((d) => 'device:' + d.id);
+          const logic = members.filter((e) => /^(automation|script)\./.test(e));
+          const cfgs = await Promise.all(logic.map((e) => this._fetchConfig(e)));
+          // the open function's own result is newer than anything read before it was built
+          if (this._model && this._model.label === label && !this._ver) { this._noteProblems(label, this._model.problems || []); continue; }
+          const items = logic.map((e, i) => ({ key: e, refs: cfgs[i] ? analyze(cfgs[i], e.startsWith('script.'), known).refs : [] }));
+          const base = findProblems(items, members.concat(devs), this._probCtx(label));
+          if ((this._layout(label).checks || []).length) await this._runChecks(label, null, false, logic.map((e, i) => ({ id: e, cfg: cfgs[i] })).filter((x) => x.cfg));
+          this._noteProblems(label, this._splitProbs(label, base.concat(this._checkProblems(label)), (k) => !k.startsWith('c_') || this._checkRes.has(label)).shown);
+          // (a turn for the page between functions; a board taken off the page stops counting)
+          if (!(await this._clock.sleep(0))) return;
+        }
+      } catch (e) { /* the counts stay as they were */ } finally { this._probScanning = false; }
+    }
+    _probBadge(c) {
+      if (!c.e && !c.w) return '';
+      const say = c.e ? P('prob_n_errors', c.e) + (c.w ? ' · ' + P('prob_n_warnings', c.w) : '') : P('prob_n_warnings', c.w);
+      return `<span class="pbadge p-${c.e ? 'error' : 'warn'}" title="${esc(say)}"><span aria-hidden="true">${c.e || c.w}</span><span class="srt">${esc(say)}</span></span>`;
+    }
+    _probChip() {
+      const m = this._model && this._model.label === (this._data && this._data.ui.current) ? this._model : null, ps = (m && m.problems) || [], ds = (m && m.dismissed) || [];
+      const e = ps.filter((p) => p.sev === 'error').length;
+      return (ps.length ? `<button class="pchip p-${e ? 'error' : 'warn'}" data-act="problems" title="${T('prob_chip_t')}"><ha-icon icon="${e ? 'mdi:alert-circle' : 'mdi:alert'}"></ha-icon>${P('prob_n', ps.length)}</button>` : '')
+        + (ds.length ? `<button class="pdchip" data-act="pdis-list" title="${T('prob_dismissed_t')}"><ha-icon icon="mdi:eye-off-outline"></ha-icon>${P('prob_dismissed_n', ds.length)}</button>` : '');
+    }
+    _probWhat(ref) {
+      if (ref.startsWith('device:')) { const d = this._devMap.get(ref.slice(7)); return d ? d.name_by_user || d.name || ref.slice(7) : ref.slice(7); }
+      if (TGT_RE.test(ref)) return ref.slice(ref.indexOf(':') + 1);
+      return EXACT_RE.test(ref) ? this._nameOf(ref) + (this._nameOf(ref) !== ref ? ` (${ref})` : '') : ref;
+    }
+    _probText(p) {
+      const what = esc(this._probWhat(p.ref));
+      switch (p.kind) {
+        case 'e_missing': return T('prob_e_missing', { what });
+        case 'e_notloaded': return T('prob_e_notloaded', { what });
+        case 'e_disabled': return T('prob_e_disabled', { what });
+        case 'e_unavail': return T('prob_e_unavail', { what });
+        case 'd_missing': return T('prob_d_missing', { what });
+        case 'd_disabled': return T('prob_d_disabled', { what });
+        case 't_missing': return T('prob_t_missing', { what });
+        case 's_missing': return T('prob_s_missing', { what });
+        case 'm_broken': return T('prob_m_broken', { what });
+        case 'm_off': return T('prob_m_off', { what });
+        case 'c_failed': return T('prob_c_failed', { name: esc(p.name), what: esc(p.detail) });
+        case 'c_unsure': return T('prob_c_unsure', { name: esc(p.name), what: esc(p.detail) });
+        default: return what;
+      }
+    }
+    _probTitle(key) {
+      const ps = ((this._model && this._model.problems) || []).filter((p) => p.ref === key || p.by.includes(key));
+      return ps.map((p) => this._probText(p).replace(/<[^>]+>/g, '')).join('\n');
+    }
+    // the problems drawer; dismissed: the ones dismissed instead
+    _openProblems(dismissed) {
+      const label = this._data.ui.current;
+      if (!label || !this._model) return;
       this._leaveDrawerMode();
       this._capture = null;
-      this._drawer = { mode: 'runs' };
-      const d = this._$.drawer;
+      this._drawer = { mode: 'problems', dismissed: !!dismissed };
+      const d = this._$.drawer, ps = (dismissed ? this._model.dismissed : this._model.problems) || [], ds = this._model.dismissed || [];
       d.hidden = false;
-      this._put(d, `<div class="dhead"><span class="dtitle">${T('runs_3', { fnName: esc(this._fnName(this._data.ui.current)) })}</span><button data-act="refresh" title="${T('refresh')}"><ha-icon icon="mdi:refresh"></ha-icon></button><button data-act="close" title="${T('close')}"><ha-icon icon="mdi:close"></ha-icon></button></div><div class="runs"><div class="muted pad">${T('loading')}</div></div>`);
-      this._fitLitbar();
-      await this._loadRuns();
-      this._renderRuns();
+      const nm = (k) => esc(this._model.nodes.has(k) ? this._model.nodes.get(k).name : this._nameOf(k));
+      const row = (p) => `<div class="prow p-${p.sev}"><ha-icon icon="${p.sev === 'error' ? 'mdi:alert-circle' : 'mdi:alert'}"></ha-icon><div class="pbody"><div class="ptxt">${this._probText(p)}</div>`
+        + (p.by.length ? `<div class="pby">${T('prob_in')} ${p.by.map((b) => `<button class="lnk" data-act="prob-go" data-key="${esc(b)}">${nm(b)}</button>`).join(', ')}</div>` : '')
+        + `<div class="pact">${this._model.nodes.has(p.ref) ? `<button data-act="prob-go" data-key="${esc(p.ref)}"><ha-icon icon="mdi:crosshairs-gps"></ha-icon>${T('prob_show')}</button>` : ''}`
+        + p.by.filter((b) => /^(automation|script)\./.test(b)).map((b) => `<button data-act="prob-open" data-key="${esc(b)}"><ha-icon icon="mdi:pencil-outline"></ha-icon>${T('prob_edit', { name: nm(b) })}</button>`).join('')
+        + (/^c_/.test(p.kind) ? `<button data-act="chk-replay" data-id="${esc(p.ref.slice(6))}"><ha-icon icon="mdi:flask-outline"></ha-icon>${T('chk_replay')}</button>` : '')
+        + (!p.by.length && /^(automation|script)\./.test(p.ref) ? `<button data-act="prob-open" data-key="${esc(p.ref)}"><ha-icon icon="mdi:pencil-outline"></ha-icon>${T('prob_edit', { name: nm(p.ref) })}</button>` : '')
+        + (this._ver ? '' : dismissed
+          ? `<button data-act="pdis-back" data-k="${esc(probKey(p))}" aria-label="${esc(T('prob_undismiss_a', { what: this._probText(p).replace(/<[^>]+>/g, '') }))}"><ha-icon icon="mdi:eye-outline"></ha-icon>${T('prob_undismiss')}</button>`
+          : `<button data-act="pdis" data-k="${esc(probKey(p))}" title="${T('prob_dismiss_t')}" aria-label="${esc(T('prob_dismiss_a', { what: this._probText(p).replace(/<[^>]+>/g, '') }))}"><ha-icon icon="mdi:eye-off-outline"></ha-icon>${T('prob_dismiss')}</button>`)
+        + `</div></div></div>`;
+      const other = dismissed ? `<button class="lnk" data-act="problems">${T('prob_back')}</button>`
+        : ds.length ? `<button class="lnk" data-act="pdis-list">${P('prob_dismissed_n', ds.length)}</button>` : '';
+      this._put(d, `<div class="dhead"><span class="dtitle">${dismissed ? T('prob_dismissed_title', { fnName: esc(this._fnName(label)) }) : T('prob_title', { fnName: esc(this._fnName(label)) })}</span><button data-act="close" title="${T('close')}"><ha-icon icon="mdi:close"></ha-icon></button></div>`
+        + `<div class="probs"><div class="vnote">${dismissed ? T('prob_dismissed_note') : T('prob_note')}</div>${ps.length ? ps.map(row).join('') : `<div class="muted pad">${dismissed ? T('prob_none_dismissed') : T('prob_none')}</div>`}${other ? `<div class="pother">${other}</div>` : ''}</div>`);
+      this._fitLitbar && this._fitLitbar();
     }
-    async _loadRuns() {
-      const m = this._model;
-      if (!m) return;
-      const map = new Map();
-      m.nodes.forEach((n, k) => {
-        if (n.kind === 'outside' || (n.domain !== 'automation' && n.domain !== 'script')) return;
-        const id = this._itemId(n);
-        if (id) map.set(n.domain + ':' + id, k);
-      });
-      let runs = [];
-      if (map.size) {
-        const lists = await Promise.all(['automation', 'script'].map((dom) => this._ws({ type: 'trace/list', domain: dom }, { fallback: [] })
-          .then((l) => (l || []).map((r) => Object.assign({}, r, { domain: dom })))));
-        runs = lists.flat().filter((r) => map.has(r.domain + ':' + r.item_id)).map((r) => Object.assign(r, { key: map.get(r.domain + ':' + r.item_id) }));
-        const t = (r) => Date.parse((r.timestamp && r.timestamp.start) || '') || 0;
-        runs.sort((a, b) => t(b) - t(a));
-      }
-      if (m !== this._model) return;
-      this._runs = runs;
-      const latest = new Map();
-      runs.forEach((r) => { if (!latest.has(r.key)) latest.set(r.key, r); });
-      this._errKeys = new Set([...latest.values()].filter((r) => r.error || r.script_execution === 'error').map((r) => r.key));
-      this._refreshStates();
-    }
-    _renderRuns() {
-      const box = this._$.drawer.querySelector('.runs');
-      if (!box) return;
-      const runs = this._runs.slice(0, 100);
-      if (!runs.length) { this._put(box, `<div class="muted pad">${T('no_stored_runs_yet_for')}</div>`); return; }
-      this._put(box, `<div class="muted pad small">${T('every_automation_and_script_in')}</div>${runs.map((r, i) => {
-          const n = this._model && this._model.nodes.get(r.key), o = OUTCOME(r);
-          return `<button class="run ${o.cls}" data-run="${i}" data-key="${esc(r.key)}"><span class="rt">${esc(clock(r.timestamp && r.timestamp.start))}</span>`
-            + `<span class="rn"><b>${esc(n ? n.name : r.item_id)}</b><span>${esc(r.trigger || (r.domain === 'script' ? 'started' : ''))}</span></span>`
-            + `<span class="ro" title="${esc(o.text)}">${esc(o.text)}</span></button>`;
-        }).join('')}`);
-    }
-    // a run lights its path on the board (4.5); its trace is a click away in the bar
-    _openRun(i) {
-      const r = this._runs[i];
-      if (!r) return;
-      this._$.drawer.querySelectorAll('.run.on').forEach((x) => x.classList.remove('on'));
-      const row = this._$.drawer.querySelector(`.run[data-run="${i}"]`);
-      if (row) row.classList.add('on');
-      this._showRun({ kind: 'run', key: r.key, t: Date.parse((r.timestamp && r.timestamp.start) || '') || Date.now(), run: { domain: r.domain, item_id: r.item_id, run_id: r.run_id } }, null);
-    }
-    _onRun(ev) {
-      const k = ev && ev.data && ev.data.entity_id, m = this._model;
-      if (!m || !k || !m.nodes.has(k)) return;
-      this._pulse(k);
-      this._clock.after('runs', 2500, async () => {
-        await this._loadRuns();
-        if (this._drawer && this._drawer.mode === 'runs') this._renderRuns();
-      });
+
+    /* ======================================================================================================
+       part: tools: the developer tools on the board: test steps, monitors, watched triggers, the messages drawer Owns
+       _pendingTest, _tw, _monSubs, _monData, _monCount, _monKind, _testLog, _testOk, _msgs (PARTS): only its own
+       methods use them; the other parts ask its methods.
+       ====================================================================================================== */
+    // keep a box in place: Auto-arrange (and an import's) leaves it where it is
+    _toggleKeep(key) {
+      const m = this._model, n = m && m.nodes.get(key);
+      if (!n) return;
+      const label = m.label, L = this._layout(label), before = this._snap(label), keep = new Set(L.keep || []);
+      if (keep.has(key)) keep.delete(key);
+      else { keep.add(key); L.nodes[key] = { x: n.x, y: n.y }; }
+      if (keep.size) L.keep = [...keep]; else delete L.keep;
+      this._save();
+      this._layoutStep(label, before, keep.has(key) ? T('keep_name_in_place', { name: n.name }) : T('let_auto_arrange_move_name', { name: n.name }));
+      this._render();
     }
 
     /* ---------- developer tools on the board (Phase 9): tests, monitors, the function debugger ---------- */
@@ -7944,61 +9737,6 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       }
       return [{ id: 'state', text: T('simulate_a_state'), kind: 'state', fields: [{ name: 'state', type: 'text', label: T('state'), value: st.state, options: this._stateHints(n) }] }];
     }
-    // states worth offering for a simulated change: what the function's triggers wait for first
-    _stateHints(n) {
-      const st = this._hass.states[n.key], A = (st && st.attributes) || {}, out = new Set();
-      (this._model ? this._model.edges : []).forEach((e) => { if (e.from === n.key) e.tfs.forEach((f) => (f.to || []).forEach((s) => out.add(s))); });
-      const by = { binary_sensor: ['on', 'off'], cover: ['open', 'closed', 'opening', 'closing'], lock: ['locked', 'unlocked', 'jammed'], valve: ['open', 'closed'],
-        light: ['on', 'off'], switch: ['on', 'off'], fan: ['on', 'off'], siren: ['on', 'off'], schedule: ['on', 'off'], person: ['home', 'not_home'],
-        device_tracker: ['home', 'not_home'], media_player: ['playing', 'paused', 'idle', 'off'], vacuum: ['cleaning', 'docked', 'returning', 'idle'],
-        alarm_control_panel: ['disarmed', 'armed_home', 'armed_away', 'armed_night', 'triggered'] };
-      (by[n.domain] || []).forEach((s) => out.add(s));
-      if (n.domain === 'climate') toList(A.hvac_modes).forEach((s) => out.add(s));
-      if (n.domain === 'select' || n.domain === 'input_select') toList(A.options).forEach((s) => out.add(s));
-      if (n.domain === 'input_boolean') ['on', 'off'].forEach((s) => out.add(s));
-      if (n.domain === 'timer') ['idle', 'active', 'paused'].forEach((s) => out.add(s));
-      if (n.domain === 'sun') ['above_horizon', 'below_horizon'].forEach((s) => out.add(s));
-      if (n.domain === 'input_number' || n.domain === 'number') [A.min, A.max].forEach((s) => { if (s != null) out.add(String(s)); });
-      if (st) out.add(st.state);
-      return [...out].filter((s) => s != null && s !== '').map(String).slice(0, 30);
-    }
-    // what a test starts from: the data the function's own triggers and actions use
-    _prefill(n, what) {
-      const m = this._model, k = n.key;
-      if (what === 'event' || what === 'mqtt') {
-        for (const e of (m ? m.edges : [])) {
-          if (e.from !== k || !e.trigs) continue;
-          for (const t of e.trigs) {
-            const node = t.t || {};
-            if (what === 'event' && node.event_data && typeof node.event_data === 'object') return JSON.parse(JSON.stringify(node.event_data));
-            if (what === 'mqtt' && node.payload != null) return String(node.payload);
-          }
-        }
-        return what === 'mqtt' ? '' : {};
-      }
-      for (const e of (m ? m.edges : [])) {
-        if (e.to !== k || !e.acts) continue;
-        const a = e.acts.find((x) => x && x.data && typeof x.data === 'object');
-        if (a) { const d = JSON.parse(JSON.stringify(a.data)); delete d.entity_id; return d; }
-      }
-      return { message: T('test_from_the_functions_board') };
-    }
-    // a notification button: the event a phone fires when it is pressed, as the function's own trigger waits for it
-    _buttonEvent(n) {
-      const id = n.key.slice(5);
-      for (const e of (this._model ? this._model.edges : [])) {
-        if (e.from !== n.key || !e.trigs) continue;
-        for (const t of e.trigs) { const et = t.t && t.t.event_type; if (typeof et === 'string' && NOTIFY_EVENTS[et]) return { event_type: et, event_data: { [NOTIFY_EVENTS[et]]: id } }; }
-      }
-      return { event_type: 'mobile_app_notification_action', event_data: { action: id } };
-    }
-    async _scriptFields(k) {
-      const cfg = await this._fetchConfig(k);
-      const f = cfg && cfg.fields && typeof cfg.fields === 'object' ? cfg.fields : {};
-      return Object.entries(f).map(([name, x]) => ({ name, type: 'selector', label: (x && x.name) || name, selector: (x && x.selector) || { text: {} },
-        value: x && x.default !== undefined ? x.default : undefined, required: !!(x && x.required),
-        hint: (x && (x.description || (x.example != null ? T('for_example', { stringify: typeof x.example === 'object' ? JSON.stringify(x.example) : x.example }) : ''))) || '' }));
-    }
     async _testDialog(key, toolId) {
       if (!this._full()) { this._toast(FULL_ONLY_TEST); return; }
       const n = this._model && this._model.nodes.get(key);
@@ -8010,16 +9748,6 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._tst = { key, specs, pick: pick.id, vals: prev ? this._valsOf(pick, prev) : {}, toolId: toolId || null };
       this._renderTestDlg();
     }
-    // a kept test back into the fields it was made with
-    _valsOf(spec, t) {
-      if (t.kind === 'action') return Object.assign({}, t.data || {});
-      if (t.kind === 'state') return { state: t.state };
-      if (t.kind === 'event') return { event_data: t.event_data || {} };
-      if (t.kind === 'mqtt') return { payload: t.payload };
-      if (t.kind === 'notify') return { data: t.data || {} };
-      if (t.kind === 'run') return t.target.startsWith('automation.') ? { check: !t.skip_condition } : Object.assign({}, t.variables || {});
-      return {};
-    }
     _renderTestDlg() {
       const t = this._tst, n = t && this._model && this._model.nodes.get(t.key);
       if (!n) { this._closeModal(); return; }
@@ -8029,21 +9757,6 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       m.innerHTML = `<div class="dlg tdlg"><h3>${T('test_4', { name: esc(n.name) })}</h3>${t.specs.length > 1 ? `<div class="tchoice">${t.specs.map((s) => `<button class="chip ${s.id === spec.id ? 'on' : ''}" data-act="test-pick" data-id="${esc(s.id)}">${esc(s.text)}</button>`).join('')}</div>` : `<div class="tone">${esc(spec.text)}</div>`}${spec.fields.length ? `<div class="tfields">${spec.fields.map((f, i) => this._fieldHTML(f, i, t.vals)).join('')}</div>` : ''}<div class="hint twhat"></div>${this._testOk ? '' : `<div class="warnbox"><ha-icon icon="mdi:alert-outline"></ha-icon><span>${esc(TEST_WARN)}</span></div>`}${t.toolId ? '' : `<label class="chk"><input type="checkbox" name="keep">${T('keep_this_test_on_the')}</label>`}<div class="btns"><button data-act="modal-cancel">${T('cancel')}</button>${t.toolId ? `<button data-act="test-save">${T('save')}</button>` : ''}<button class="primary" data-act="test-run">${T('run_test')}</button></div></div>`;
       this._mountFields(spec);
       this._testWhat();
-    }
-    _fieldHTML(f, i, vals) {
-      const v = vals && f.name in vals ? vals[f.name] : f.value, id = 'tf' + i;
-      const lab = (inner) => `<label>${esc(f.label)}${inner}${f.hint ? `<span class="fh">${esc(f.hint)}</span>` : ''}</label>`;
-      if (f.type === 'bool') return `<label class="chk"><input type="checkbox" name="${id}" ${v ? 'checked' : ''}>${esc(f.label)}</label>`;
-      if (f.type === 'select') return lab(`<select name="${id}">${toList(f.options).map((o) => `<option ${String(o) === String(v) ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`);
-      if (f.type === 'number') {
-        const at = (k, x) => (x != null && x !== '' ? ` ${k}="${esc(x)}"` : '');
-        return lab(`<input type="number" name="${id}" value="${esc(v == null ? '' : v)}"${at('min', f.min)}${at('max', f.max)}${f.step != null ? at('step', f.step) : ' step="any"'}>`);
-      }
-      if (f.type === 'date' || f.type === 'time') return lab(`<input type="${f.type}" name="${id}" value="${esc(v || '')}"${f.type === 'time' ? ' step="1"' : ''}>`);
-      if (f.type === 'object') return `<div class="selbox" data-f="${i}">${lab(`<textarea name="${id}" rows="4" spellcheck="false">${esc(toLoose(v))}</textarea>`)}</div>`;
-      if (f.type === 'selector') return `<div class="selbox" data-f="${i}">${lab(`<input name="${id}" value="${esc(v == null ? '' : typeof v === 'object' ? JSON.stringify(v) : v)}">`)}</div>`;
-      const opts = f.options && f.options.length ? `<datalist id="dl${i}">${f.options.map((o) => `<option value="${esc(o)}">`).join('')}</datalist>` : '';
-      return lab(`<input name="${id}" value="${esc(v == null ? '' : v)}"${opts ? ` list="dl${i}"` : ''}>${opts}`);
     }
     // Home Assistant's own editors for event data, notification data and script fields, once they are loaded
     _mountFields(spec) {
@@ -8120,29 +9833,6 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (test.kind === 'notify' && !(test.data && test.data.message)) return T('a_notification_needs_a_message');
       return null;
     }
-    // a test in a few words, for its button, its toast and the logbook
-    _describeTest(t) {
-      const who = this._boxName(t.target);
-      switch (t.kind) {
-        case 'action': {
-          const s = t.service.split('.')[1], v = t.data || {};
-          const verb = { turn_on: T('turn_on'), turn_off: T('turn_off'), toggle: T('toggle'), press: T('press_2'), increment: T('increment'), decrement: T('decrement'), reset: T('reset'),
-            set_value: T('set'), select_option: T('set'), set_datetime: T('set'), start: T('start'), finish: T('finish'), cancel: T('cancel'), pause: T('pause') }[s] || t.service;
-          const val = v.value != null ? ' to ' + v.value : v.option != null ? ' to ' + v.option : v.duration ? ' for ' + v.duration : (v.date || v.time) ? ' to ' + [v.date, v.time].filter(Boolean).join(' ') : '';
-          return verb + ' ' + who + val;
-        }
-        case 'state': return T('simulated', { who, state: t.state });
-        case 'event': return t.target.startsWith('nact:') ? T('press', { who }) : T('fire', { event_type: t.event_type });
-        case 'mqtt': return T('publish_to', { topic: t.topic });
-        case 'notify': return T('send_a_test_notification_with', { who });
-        case 'run': return T('run', { who, extra: t.skip_condition ? T('without_its_conditions') : '' });
-        default: return T('test_2');
-      }
-    }
-    _boxName(k) {
-      const n = this._model && this._model.nodes.get(k);
-      return n ? n.name : String(k).includes(':') ? String(k).slice(String(k).indexOf(':') + 1) : this._nameOf(k);
-    }
     _testWhat() {
       const t = this._tst, el = this._$.modal.querySelector('.twhat');
       if (!t || !el) return;
@@ -8196,21 +9886,6 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         default: throw new Error(T('unknown_test'));
       }
     }
-    // a notification's templates, filled in by Home Assistant, as sending it from an automation would
-    async _fillTemplates(v) {
-      if (typeof v === 'string') { if (!TPL_RE.test(v)) return v; const r = await this._renderOnce(v); return r == null ? v : typeof r === 'string' ? r : JSON.stringify(r); }
-      if (Array.isArray(v)) return Promise.all(v.map((x) => this._fillTemplates(x)));
-      if (v && typeof v === 'object') { const out = {}; for (const [k, x] of Object.entries(v)) out[k] = await this._fillTemplates(x); return out; }
-      return v;
-    }
-    _renderOnce(template) {
-      return new Promise((resolve) => {
-        let done = false, unsub = null;
-        const fin = (v) => { if (done) return; done = true; this._clock.cancel(to); resolve(v); this._ha.drop(unsub); };
-        unsub = this._haConn.subscribeMessage((msg) => fin(msg && !msg.error ? msg.result : null), { type: 'render_template', template, strict: false, report_errors: true, timeout: 3 }, { fallback: null }).then((u) => { if (!u) fin(null); return u; });
-        const to = this._clock.deadline(4000, () => fin(null));
-      });
-    }
     async _doTest(test) {
       if (this._sbxOn()) return this._sbxTest(test);
       if (!this._full()) { this._toast(FULL_ONLY_TEST); return false; }
@@ -8223,12 +9898,16 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       else this._toast(T('test_sent_tests_can_t', { text }), this._drawer && this._drawer.mode === 'debug' ? [] : [{ text: T('debug_2'), fn: () => this._openDebug() }]);
       return !err;
     }
+    // this session's own test steps since a time (the debugger lists them)
+    // the test dialog's fields: what the step will do, said again as they change (changed or typed into)
+    _testChange(t) { if (this._tst && t.closest && t.closest('.tdlg')) { this._testWhat(); return true; } return false; }
+    _testsSince(t) { return this._testLog.filter((x) => x.t > t); }
     _logTest(test, err) {
       const text = this._describeTest(test);
       const entry = { kind: 'test', t: Date.now(), key: test.target, text: T('test_3', { text, extra: err ? ` ${T('failed_2', { err })}` : '' }) };
       this._testLog.push(entry);
       if (this._testLog.length > 100) this._testLog.shift();
-      if (this._dbg && this._dbg.rec && this._dbg.label === (this._model && this._model.label)) this._dbgAdd(Object.assign({}, entry));
+      this._dbgNote(Object.assign({}, entry));
       if (err || !this._hass.services.logbook || !this._hass.services.logbook.log) return;
       const ent = !String(test.target).includes(':') && this._hass.states[test.target] ? test.target : null;
       this._svc('logbook', 'log', Object.assign({ name: 'Functions Board', message: 'test: ' + text, domain: 'functions_board' }, ent ? { entity_id: ent } : {}), undefined, { fallback: null });
@@ -8244,49 +9923,6 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         const tgt = inj ? t.test && t.test.target : t.target, mk = (from, to) => ({ id: from + '>' + to, from, to, role: 'tool', svcs: new Set(), tfs: [], anyTrig: false, via: null, loop: false });
         if (tgt && nodes.has(tgt)) edges.push(inj ? mk(key, tgt) : mk(tgt, key));
       });
-    }
-    // the open function's tool boxes, again from its layout (after adding, removing or undoing one)
-    _syncTools() {
-      const m = this._model;
-      if (!m) return;
-      [...m.nodes.keys()].filter((k) => k.startsWith('tool:')).forEach((k) => m.nodes.delete(k));
-      m.edges = m.edges.filter((e) => e.role !== 'tool');
-      this._toolNodes(m.label, m.nodes, m.edges);
-    }
-    _freeSpot(x, y, w, h) {
-      const boxes = this._model ? [...this._model.nodes.values()] : [];
-      const hit = (px, py) => boxes.some((o) => px < o.x + o.w + 16 && px + w + 16 > o.x && py < o.y + o.h + 12 && py + h + 12 > o.y);
-      let px = Math.round(x), py = Math.round(y);
-      for (let i = 0; i < 40 && hit(px, py); i++) py += h + 12;
-      return { x: px, y: py };
-    }
-    _addTool(tool, near, w, h, text) {
-      const label = this._model.label, L = this._layout(label), before = this._snap(label), c = this._center();
-      L.tools = (L.tools || []).concat([tool]);
-      const n = near && this._model.nodes.get(near);
-      L.nodes['tool:' + tool.id] = tool.type === 'inject'
-        ? this._freeSpot(n ? n.x - w - 70 : c.x - w / 2, n ? n.y : c.y, w, h)
-        : this._freeSpot(n ? n.x : c.x - w / 2, n ? n.y + n.h + 30 : c.y - h / 2, w, h);
-      this._save(); this._syncTools(); this._place(); this._render(); this._startMonitors();
-      this._layoutStep(label, before, text);
-      this._showBox('tool:' + tool.id);
-    }
-    // a box placed out of sight, or under the key, is brought into view
-    _showBox(key) {
-      const n = this._model && this._model.nodes.get(key);
-      if (!n) return;
-      const v = this._view, W = this._openWidth(), H = this._$.vp.clientHeight;
-      const x = n.x * v.k + v.x, y = n.y * v.k + v.y, w = n.w * v.k, h = n.h * v.k;
-      const vr = this._$.vp.getBoundingClientRect(), lr = this._$.legend.getBoundingClientRect();
-      const lx = lr.left - vr.left, ly = lr.top - vr.top, under = lr.width && x < lx + lr.width && x + w > lx && y < ly + lr.height && y + h > ly;
-      if (x < 8 || y < 8 || x + w > W - 8 || y + h > H - 8 || under) { this._centerOn(key); this._saveView(); }
-    }
-    _keepTest(test) { this._addTool({ id: uid(), type: 'inject', title: this._describeTest(test), test }, test.target, XW, 48, T('keep_a_test_on_the')); }
-    _saveTool(id, test) {
-      const label = this._model.label, L = this._layout(label), before = this._snap(label);
-      L.tools = (L.tools || []).map((t) => (t.id === id ? Object.assign({}, t, { test, title: this._describeTest(test) }) : t));
-      this._save(); this._syncTools(); this._place(); this._render();
-      this._layoutStep(label, before, T('change_a_test_button'));
     }
     _delTool(id) {
       const label = this._model.label, L = this._layout(label), before = this._snap(label);
@@ -8338,10 +9974,6 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         spec = { what: 'event', topic: b.event_type, title: T('button_presses', { event_type: b.event_type }) };
       } else spec = { what: 'event', topic: key.slice(6), title: T('events_2', { key: key.slice(6) }) };
       this._addMonitor(Object.assign(spec, { target: key }));
-    }
-    _addMonitor(spec) {
-      this._addTool({ id: uid(), type: 'monitor', what: spec.what, topic: spec.topic, target: spec.target || null,
-        title: spec.title || (spec.what === 'mqtt' ? T('mqtt_2') : T('events')) + spec.topic }, spec.target, 280, 176, T('add_a_monitor'));
     }
     async _monitorDlg() {
       if (!this._model) return;
@@ -8437,8 +10069,10 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         this._refreshStates();
       }
       const n = m && m.nodes.get(key);
-      if (this._dbg && this._dbg.rec) this._dbgAdd({ kind: 'watch', t: Date.now(), key, text: T('trigger_would_fire', { name: n ? n.name : key, n: idx + 1, extra: tr.description ? ' (' + tr.description + ')' : '' }), by: { kind: 'watch', text: T('watch_triggers') } });
+      this._dbgNote({ kind: 'watch', t: Date.now(), key, text: T('trigger_would_fire', { name: n ? n.name : key, n: idx + 1, extra: tr.description ? ' (' + tr.description + ')' : '' }), by: { kind: 'watch', text: T('watch_triggers') } }, true);
     }
+    // a trigger watch on this box, if any ({ hits, label … })
+    _watching(key) { return this._tw.get(key) || null; }
     _stopWatch(key) { const w = this._tw.get(key); this._tw.delete(key); if (w && w.unsub) { try { w.unsub(); } catch (e) { /* gone */ } } }
     _stopWatches(keepLabel) { [...this._tw.entries()].forEach(([k, w]) => { if (!keepLabel || w.label !== keepLabel) this._stopWatch(k); }); }
 
@@ -8487,45 +10121,191 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         return T('right_now', { where, extra: x.ok ? 'passes' : 'fails' });
       }).join('\n');
     }
+    // "why did or didn't it run?": the selected automation's recent attempts, from its traces
+    async _renderWhy() {
+      const d = this._$.drawer, box = d && d.querySelector('.dwhy');
+      if (!box || !this._drawer || this._drawer.mode !== 'debug') return;
+      const k = this._sel, n = k && this._model && this._model.nodes.get(k);
+      const id = n && n.domain === 'automation' && n.kind !== 'tool' ? this._itemId(n) : null;
+      if (!id) { box.hidden = true; return; }
+      box.hidden = false;
+      const tok = this._whyTok = (this._whyTok || 0) + 1;
+      this._put(box, `<div class="wh"><b>${esc(n.name)}</b>${T('why_did_or_didn_t')}</div><div class="muted small">${T('reading_its_traces')}</div>`);
+      const list = await this._ws({ type: 'trace/list', domain: 'automation', item_id: id }, { optional: 'an automation without an id keeps no traces', fallback: [] });
+      if (tok !== this._whyTok) return;
+      const recent = (list || []).slice().sort((a, b) => Date.parse(b.timestamp.start) - Date.parse(a.timestamp.start)).slice(0, 5);
+      const rows = await Promise.all(recent.map(async (r) => {
+        if (!(r.not_triggered || r.script_execution === 'failed_conditions' || r.error || r.script_execution === 'error')) return { r, why: '' };
+        const tr = await this._ws({ type: 'trace/get', domain: 'automation', item_id: id, run_id: r.run_id }, { optional: 'a trace can be gone: Home Assistant keeps only the last few runs', fallback: null });
+        return { r, why: tr ? whyStopped(tr, (x) => this._nameOf(x)) : '' };
+      }));
+      if (tok !== this._whyTok) return;
+      const st = this._hass.states[k];
+      this._put(box, `<div class="wh"><b>${esc(n.name)}</b>${T('why_did_or_didn_t')}</div>${st && st.state === 'off' ? `<div class="wwarn">${T('it_is_turned_off_nothing')}</div>` : ''}${this._tw.has(k) ? `<div class="muted small">${T('watching_its_triggers_so_far', { hits: P('n_would_be_runs', this._tw.get(k).hits) })}</div>` : ''}${rows.length ? rows.map(({ r, why }) => {
+          const o = r.not_triggered ? { text: T('didn_t_fire'), cls: 'muted' } : OUTCOME(r);
+          return `<button class="wrow ${o.cls}" data-act="why-run" data-rid="${esc(r.run_id)}" data-item="${esc(id)}" data-key="${esc(k)}"><span class="rt">${esc(clock(r.timestamp && r.timestamp.start))}</span>`
+            + `<span class="dm"><b>${esc(o.text)}</b><span>${esc((r.trigger ? T('triggered_by', { trigger: r.trigger }) : '') + (why ? ' · ' + why : ''))}</span></span></button>`;
+        }).join('') : `<div class="muted small">${T('no_attempts_stored_home_assistant')}</div>`}`);
+    }
 
-    // ---- live template values (9.3): hovering an arrow that comes from a template shows what it gives now
-    _edgeHover(id, ev) {
-      const m = this._model, e = m && m.edges.find((x) => x.id === id);
-      if (!e || !e.tpls || !e.tpls.size) { this._edgeHoverEnd(); return; }
-      if (this._tt && this._tt.id === id) { this._ttMove(ev); return; }
-      this._edgeHoverEnd();
-      const tpls = [...e.tpls].slice(0, 3), tt = { id, vals: tpls.map(() => '…'), unsubs: [] };
-      this._tt = tt;
-      tpls.forEach((t, i) => {
-        const p = this._haConn.subscribeMessage((msg) => {
-          if (this._tt !== tt) return;
-          tt.vals[i] = msg && msg.error ? '⚠ ' + (/trigger|this\b/.test(msg.error) ? T('uses_the_data_of_what') : msg.error) : fmtValue(msg && msg.result);
-          this._ttRender(e, tpls);
-        }, { type: 'render_template', template: t, strict: false, report_errors: true, timeout: 3 });
-        p.catch((err) => { if (this._tt === tt) { tt.vals[i] = '⚠ ' + ((err && (err.message || err.code)) || 'error'); this._ttRender(e, tpls); } });
-        tt.unsubs.push(p);
+    // ---- notifications (9.5): what a notify box sent lately, from the traces of what sends it
+    async _openMessages(key) {
+      const m = this._model, n = m && m.nodes.get(key);
+      if (!n) return;
+      this._leaveDrawerMode();
+      this._capture = null;
+      this._drawer = { mode: 'msgs', key };
+      const d = this._$.drawer;
+      d.hidden = false;
+      this._put(d, `<div class="dhead"><span class="dtitle">${T('last_messages', { name: esc(n.name) })}</span><button data-act="close" title="${T('close')}"><ha-icon icon="mdi:close"></ha-icon></button></div><div class="runs msgs"><div class="muted pad">${T('reading_traces')}</div></div>`);
+      this._fitLitbar();
+      const callers = [...new Set(m.edges.filter((e) => e.to === key && e.role === 'action' && /^(automation|script)\./.test(e.from)).map((e) => e.from))];
+      const mine = (p) => (key.startsWith('svc:') ? p.domain + '.' + p.service === key.slice(4)
+        : p.domain === 'notify' && toList((p.target || {}).entity_id).concat(toList((p.service_data || {}).entity_id)).includes(key));
+      const out = [];
+      await Promise.all(callers.map(async (c) => {
+        const cn = m.nodes.get(c), id = cn && this._itemId(cn);
+        if (!id) return;
+        const list = await this._ws({ type: 'trace/list', domain: cn.domain, item_id: id }, { optional: 'an automation without an id keeps no traces', fallback: [] });
+        const recent = (list || []).filter((r) => r.state === 'stopped').sort((a, b) => Date.parse(b.timestamp.start) - Date.parse(a.timestamp.start)).slice(0, 8);
+        await Promise.all(recent.map(async (r) => {
+          const tr = await this._ws({ type: 'trace/get', domain: cn.domain, item_id: id, run_id: r.run_id }, { optional: 'a trace can be gone: Home Assistant keeps only the last few runs', fallback: null });
+          Object.values((tr && tr.trace) || {}).forEach((els) => (els || []).forEach((el) => {
+            const p = el && el.result && el.result.params;
+            if (p && mine(p)) out.push({ t: Date.parse(el.timestamp) || Date.parse(r.timestamp.start) || 0, from: c, data: p.service_data || {}, run: { domain: cn.domain, item_id: id, run_id: r.run_id } });
+          }));
+        }));
+      }));
+      if (!this._drawer || this._drawer.mode !== 'msgs' || this._drawer.key !== key) return;
+      out.sort((a, b) => b.t - a.t);
+      this._msgs = out;
+      const box = d.querySelector('.msgs');
+      if (!box) return;
+      this._put(box, out.length ? `<div class="muted pad small">${T('what_this_sent_lately_newest')}</div>${out.slice(0, 40).map((x, i) => {
+          const dd = x.data || {}, btns = dd.data && Array.isArray(dd.data.actions) ? dd.data.actions.map((a) => a && a.title).filter(Boolean) : [];
+          return `<button class="run msg" data-act="msg-run" data-i="${i}" data-key="${esc(x.from)}"><span class="rt">${esc(clock(new Date(x.t).toISOString()))}</span>`
+            + `<span class="rn"><b>${esc(dd.title || T('no_title'))}</b><span>${esc(shorten(dd.message == null ? '' : typeof dd.message === 'object' ? JSON.stringify(dd.message) : dd.message, 300))}</span>${btns.length ? `<span class="mb">${T('buttons', { btns: esc(btns.join(', ')) })}</span>` : ''}</span>`
+            + `<span class="ro">${esc(this._boxName(x.from))}</span></button>`;
+        }).join('')}`
+        : `<div class="muted pad">${T('nothing_found_home_assistant_keeps')}</div>`);
+    }
+    // the drawer: a labelled region beside the board; focus moves into it when it opens, back when it closes
+    _watchDrawer() {
+      const d = this._$.drawer;
+      d.setAttribute('role', 'complementary');
+      new MutationObserver(() => {
+        const open = !d.hidden && !!d.firstElementChild, t = d.querySelector('.dtitle');
+        if (t && d.getAttribute('aria-label') !== t.textContent) d.setAttribute('aria-label', t.textContent);
+        if (open && !this._drawerOpen) {
+          this._drawerOpen = true;
+          const a = this.shadowRoot.activeElement;
+          this._drawerBack = a && !d.contains(a) ? a : null;
+          this._clock.after('drawer-focus', 0, () => {
+            if (d.hidden || !this._$.modal.hidden || d.contains(this.shadowRoot.activeElement)) return;
+            const h = d.querySelector('.dtitle');
+            if (h) { h.tabIndex = -1; h.focus({ preventScroll: true }); }
+          });
+        } else if (!open && this._drawerOpen) {
+          this._drawerOpen = false;
+          const back = this._drawerBack && this._drawerBack.isConnected ? this._drawerBack : null, box = this._roveKey && this._els && this._els.get(this._roveKey);
+          this._drawerBack = null;
+          const a = this.shadowRoot.activeElement;
+          if (!a || a === d || d.contains(a) || a === this.shadowRoot.host) { if (back) back.focus({ preventScroll: true }); else if (box) box.focus({ preventScroll: true }); }
+        }
+      }).observe(d, { attributes: true, attributeFilter: ['hidden'], childList: true });
+    }
+    // dialogs: named, focus moves in and stays in, and goes back where it was when they close
+    _watchModal() {
+      const md = this._$.modal;
+      new MutationObserver(() => {
+        const open = !md.hidden && !!md.firstElementChild;
+        const dlg = md.querySelector('.dlg');
+        if (dlg && !dlg.hasAttribute('role')) {
+          dlg.setAttribute('role', 'dialog'); dlg.setAttribute('aria-modal', 'true');
+          const h = dlg.querySelector('h3');
+          if (h) { h.id = 'fbdlgtitle'; dlg.setAttribute('aria-labelledby', 'fbdlgtitle'); }
+        }
+        if (open && !this._modalOpen) {
+          this._modalOpen = true;
+          this._modalBack = this.shadowRoot.activeElement;
+          this._clock.after('modal-focus', 60, () => { if (md.hidden) return; const f = md.querySelector('input:not([type=hidden]):not([disabled]), textarea, select, button.primary:not([disabled])') || md.querySelector('button'); if (f && !md.contains(this.shadowRoot.activeElement)) f.focus(); });
+        } else if (!open && this._modalOpen) {
+          this._modalOpen = false;
+          const back = this._modalBack && this._modalBack.isConnected ? this._modalBack : null, box = this._roveKey && this._els.get(this._roveKey);
+          this._modalBack = null;
+          if (back) back.focus(); else if (box) box.focus();
+        }
+      }).observe(md, { attributes: true, attributeFilter: ['hidden'], childList: true });
+      md.addEventListener('keydown', (e) => {
+        if (e.key !== 'Tab' || md.hidden) return;
+        const list = [...md.querySelectorAll('button:not([disabled]), input:not([disabled]), textarea, select, [tabindex="0"], ha-selector')].filter((x) => x.offsetParent !== null);
+        if (!list.length) return;
+        const cur = this.shadowRoot.activeElement, i = list.indexOf(cur);
+        if (e.shiftKey && (i <= 0)) { e.preventDefault(); list[list.length - 1].focus(); }
+        else if (!e.shiftKey && (i === list.length - 1 || i < 0)) { e.preventDefault(); list[0].focus(); }
       });
-      this._ttRender(e, tpls);
-      this._ttMove(ev);
     }
-    _ttRender(e, tpls) {
-      const tip = this._$.ttip, tt = this._tt;
-      if (!tt) return;
-      tip.innerHTML = `<div class="tth">${esc(this._edgeTitle(e))}</div>` + tpls.map((t, i) => `<div class="ttt"><code>${esc(shorten(t, 180))}</code><div class="ttv">${esc(tt.vals[i])}</div></div>`).join('');
-      tip.hidden = false;
+
+    /* ======================================================================================================
+       part: debug: the debugger and the runs: recording, the timeline, why a run did or didn't happen Owns _dbg,
+       _dbgSel, _dbgFlt, _dbgScrolled, _dbgSeq (PARTS): only its own methods use them; the other parts ask its
+       methods.
+       ====================================================================================================== */
+    async _openRuns() {
+      this._leaveDrawerMode();
+      this._capture = null;
+      this._drawer = { mode: 'runs' };
+      const d = this._$.drawer;
+      d.hidden = false;
+      this._put(d, `<div class="dhead"><span class="dtitle">${T('runs_3', { fnName: esc(this._fnName(this._data.ui.current)) })}</span><button data-act="refresh" title="${T('refresh')}"><ha-icon icon="mdi:refresh"></ha-icon></button><button data-act="close" title="${T('close')}"><ha-icon icon="mdi:close"></ha-icon></button></div><div class="runs"><div class="muted pad">${T('loading')}</div></div>`);
+      this._fitLitbar();
+      await this._loadRuns();
+      this._renderRuns();
     }
-    _ttMove(ev) {
-      const tip = this._$.ttip, r = this._$.vp.getBoundingClientRect();
-      if (!ev || tip.hidden) return;
-      const x = Math.min(ev.clientX - r.left + 14, r.width - tip.offsetWidth - 8), y = Math.min(ev.clientY - r.top + 14, r.height - tip.offsetHeight - 8);
-      tip.style.left = Math.max(8, x) + 'px'; tip.style.top = Math.max(8, y) + 'px';
+    async _loadRuns() {
+      const m = this._model;
+      if (!m) return;
+      const map = new Map();
+      m.nodes.forEach((n, k) => {
+        if (n.kind === 'outside' || (n.domain !== 'automation' && n.domain !== 'script')) return;
+        const id = this._itemId(n);
+        if (id) map.set(n.domain + ':' + id, k);
+      });
+      let runs = [];
+      if (map.size) {
+        const lists = await Promise.all(['automation', 'script'].map((dom) => this._ws({ type: 'trace/list', domain: dom }, { fallback: [] })
+          .then((l) => (l || []).map((r) => Object.assign({}, r, { domain: dom })))));
+        runs = lists.flat().filter((r) => map.has(r.domain + ':' + r.item_id)).map((r) => Object.assign(r, { key: map.get(r.domain + ':' + r.item_id) }));
+        const t = (r) => Date.parse((r.timestamp && r.timestamp.start) || '') || 0;
+        runs.sort((a, b) => t(b) - t(a));
+      }
+      if (m !== this._model) return;
+      this._runs = runs;
+      const latest = new Map();
+      runs.forEach((r) => { if (!latest.has(r.key)) latest.set(r.key, r); });
+      this._errKeys = new Set([...latest.values()].filter((r) => r.error || r.script_execution === 'error').map((r) => r.key));
+      this._refreshStates();
     }
-    _edgeHoverEnd() {
-      const tt = this._tt;
-      if (!tt) return;
-      this._tt = null;
-      tt.unsubs.forEach((p) => this._ha.drop(p));
-      this._$.ttip.hidden = true;
+    _renderRuns() {
+      const box = this._$.drawer.querySelector('.runs');
+      if (!box) return;
+      const runs = this._runs.slice(0, 100);
+      if (!runs.length) { this._put(box, `<div class="muted pad">${T('no_stored_runs_yet_for')}</div>`); return; }
+      this._put(box, `<div class="muted pad small">${T('every_automation_and_script_in')}</div>${runs.map((r, i) => {
+          const n = this._model && this._model.nodes.get(r.key), o = OUTCOME(r);
+          return `<button class="run ${o.cls}" data-run="${i}" data-key="${esc(r.key)}"><span class="rt">${esc(clock(r.timestamp && r.timestamp.start))}</span>`
+            + `<span class="rn"><b>${esc(n ? n.name : r.item_id)}</b><span>${esc(r.trigger || (r.domain === 'script' ? 'started' : ''))}</span></span>`
+            + `<span class="ro" title="${esc(o.text)}">${esc(o.text)}</span></button>`;
+        }).join('')}`);
+    }
+    // a run lights its path on the board (4.5); its trace is a click away in the bar
+    _openRun(i) {
+      const r = this._runs[i];
+      if (!r) return;
+      this._$.drawer.querySelectorAll('.run.on').forEach((x) => x.classList.remove('on'));
+      const row = this._$.drawer.querySelector(`.run[data-run="${i}"]`);
+      if (row) row.classList.add('on');
+      this._showRun({ kind: 'run', key: r.key, t: Date.parse((r.timestamp && r.timestamp.start) || '') || Date.now(), run: { domain: r.domain, item_id: r.item_id, run_id: r.run_id } }, null);
     }
 
     // ---- the function debugger (9.4): a timeline of what happens to the function while the panel is open, with
@@ -8566,7 +10346,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       g.ents = new Set(ents);
       if (g.entries.length) this._dbgAdd({ kind: 'note', t: Date.now(), text: T('recording_again') });
       // this session's own tests (events have no entity, so the logbook below doesn't list them)
-      this._testLog.filter((x) => x.t > Date.now() - DBG_BACK).forEach((x) => this._dbgAdd(Object.assign({ id: 'test:' + x.t + ':' + x.key }, x)));
+      this._testsSince(Date.now() - DBG_BACK).forEach((x) => this._dbgAdd(Object.assign({ id: 'test:' + x.t + ':' + x.key }, x)));
       // what happened to its entities, and what caused it: the logbook, the last 15 minutes first, then live
       if (ents.length) {
         const p = c.subscribeMessage((msg) => this._dbgLogbook(msg), { type: 'logbook/event_stream', start_time: back, entity_ids: ents.slice(0, 500) });
@@ -8587,6 +10367,21 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (g.rec) this._clock.every('dbg-poll', 4000, () => this._dbgTraces()); else this._clock.cancel('dbg-poll');
       if (!g.users.size) this._ws({ type: 'config/auth/list' }).then((us) => { (us || []).forEach((u) => g.users.set(u.id, u.name)); this._renderDbgSoon(); }, () => {});
     }
+    // the open debugger follows the open function (another function: start again; new members: listen for them too)
+    _dbgFollow(label) {
+      if (!this._drawer || this._drawer.mode !== 'debug') return;
+      const g = this._dbg;
+      if (!g || g.label !== label) { this._dbgStop(true); this._dbg = null; this._openDebug(); }
+      else if (g.rec) {
+        // new members: listen for them too
+        const ents = this._dbgEntities();
+        if (ents.length !== g.ents.size || ents.some((k) => !g.ents.has(k))) { this._dbgStop(true); this._dbgStart(); }
+      }
+    }
+    // back on the page: an open debugger records again
+    _dbgResume() { if (this._drawer && this._drawer.mode === 'debug' && this._dbg && !this._dbg.rec) this._dbgStart(); }
+    // a note from elsewhere (a test step, a trigger that would fire) while the debugger records this function
+    _dbgNote(entry, anyFn) { const g = this._dbg; if (g && g.rec && (anyFn || g.label === (this._model && this._model.label))) this._dbgAdd(entry); }
     _dbgStop(quiet) {
       const g = this._dbg;
       if (!g || !g.rec) return;
@@ -8595,11 +10390,6 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       g.subs.forEach((p) => this._ha.drop(p));
       g.subs = [];
       if (!quiet) this._dbgAdd({ kind: 'note', t: Date.now(), text: T('stopped_recording') });
-    }
-    // leaving the debug panel for another drawer stops recording
-    _leaveDrawerMode() {
-      if (this._drawer && this._drawer.mode === 'debug') this._dbgStop();
-      if (this._drawer && this._drawer.mode === 'sandbox') { this._sbxEnd(); this._testCondsSoon(0); }
     }
     _dbgAdd(e) {
       const g = this._dbg;
@@ -8647,7 +10437,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         const t = Math.round((+ev.when || 0) * 1000), k = ev.entity_id;
         if (ev.domain === 'functions_board' || ev.name === 'Functions Board') {
           // a test: this session's are listed already; ones from another board come from the logbook
-          if (!this._testLog.some((x) => Math.abs(x.t - t) < 5000)) this._dbgAdd({ id: 'lbt:' + t, kind: 'test', t, key: k || null, text: T('test', { message: String(ev.message || '').replace(/^test: /, '') }), by: { kind: 'user', text: T('another_board') } });
+          if (!this._testsSince(t - 5000).some((x) => Math.abs(x.t - t) < 5000)) this._dbgAdd({ id: 'lbt:' + t, kind: 'test', t, key: k || null, text: T('test', { message: String(ev.message || '').replace(/^test: /, '') }), by: { kind: 'user', text: T('another_board') } });
           return;
         }
         if (ev.run_id && (ev.domain === 'automation' || ev.domain === 'script')) {
@@ -8777,353 +10567,336 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       return `<button class="dbrow k-${e.kind} ${cls} ${this._dbgSel === e.id ? 'on' : ''}" data-act="dbg-pick" data-id="${esc(e.id)}" data-key="${esc(e.key || '')}">`
         + `<span class="rt">${esc(clockShort(e.t))}</span><ha-icon icon="${DBG_ICON[e.kind] || 'mdi:circle-small'}"></ha-icon><span class="dm"><b>${esc(main)}</b>${sub ? `<span>${esc(sub)}</span>` : ''}</span></button>`;
     }
-    _fmtState(k, state) {
-      const st = this._hass.states[k];
-      try { return st && this._hass.formatEntityState ? this._hass.formatEntityState(Object.assign({}, st, { state: String(state) })) : String(state); } catch (e) { return String(state); }
+    async _dbgPick(id) {
+      const g = this._dbg, e = g && g.byId.get(id);
+      if (!e) return;
+      this._dbgSel = id;
+      this._renderDbg();
+      const steps = this._dbgChain(e);
+      if (e.kind === 'run') await this._showRun(e, steps);
+      else this._lightSteps(steps);
     }
-    /* ---------- Sandbox (Phase 10): the drawer, the controls, the timeline ---------- */
-    /* ---------- versions (0.8.0): named snapshots of a function, kept by the integration (functions_board/version_*).
-       A snapshot is what Home Assistant's own APIs return: the configs of the function's automations and scripts,
-       its UI helpers' settings, which items are in it, its layout, and the devices its steps use. Saving one changes
-       nothing. A version opens in a tab of its own (read-only, marked against what's there now), can be tried in
-       the sandbox, and in Full manager can be restored through the same config APIs Home Assistant's editors use,
-       after a dialog that lists every change; what's there before is saved first if the person ticks that box. ---------- */
-    _verOK() { return this._storeMode === 'shared'; }
-    async _verList(label) { const r = await this._ws({ type: 'functions_board/versions', label }); return (r && r.versions) || []; }
-    _verGet(label, id) { return this._ws({ type: 'functions_board/version_get', label, version_id: id }); }
-    // a saved config as the board reads it: a blueprint automation or script is filled in by Home Assistant
-    async _verCfg(k, it) {
-      const V = this._ver;
-      if (V.cfgs.has(k)) return V.cfgs.get(k);
-      let cfg = it.cfg;
-      const bp = cfg && cfg.use_blueprint;
-      if (bp && bp.path) {
-        try { const r = await this._ws({ type: 'blueprint/substitute', domain: it.dom, path: bp.path, input: bp.input || {} }); if (r && r.substituted_config) cfg = Object.assign({}, r.substituted_config, { alias: cfg.alias, id: cfg.id, use_blueprint: bp }); } catch (e) { /* inputs only */ }
+    // what led to a step, as far back as the timeline goes: a change was made by a run, a run was set off by a change
+    _dbgChain(e0) {
+      const g = this._dbg, steps = [e0], seen = new Set([e0.id]);
+      if (!g) return steps;
+      const last = (pred, before, within) => {
+        for (let i = g.entries.length - 1; i >= 0; i--) {
+          const x = g.entries[i];
+          if (x === before || seen.has(x.id) || x.kind === 'note' || x.t > before.t + 150) continue;
+          if (before.t - x.t > (within || 600000)) break;
+          if (pred(x)) return x;
+        }
+        return null;
+      };
+      let cur = e0;
+      for (let n = 0; n < 12 && cur; n++) {
+        let prev = null;
+        if (cur.by && (cur.by.kind === 'auto' || cur.by.kind === 'script') && cur.by.key && cur.by.key !== cur.key) prev = last((x) => x.kind === 'run' && x.key === cur.by.key, cur);
+        if (!prev && cur.kind === 'run') { const src = srcKey(cur.src); if (src) prev = last((x) => (x.kind === 'state' || x.kind === 'test' || x.kind === 'call') && x.key === src, cur, 60000); }
+        if (!prev && cur.kind === 'state' && cur.by && cur.by.kind === 'user') prev = last((x) => (x.kind === 'test' || x.kind === 'call') && (x.key === cur.key || (x.ents || []).includes(cur.key)), cur, 5000);
+        if (!prev) break;
+        steps.unshift(prev); seen.add(prev.id); cur = prev;
       }
-      V.cfgs.set(k, cfg);
+      return steps;
+    }
+    // a run on the board (4.5): its trigger arrow and the arrows to what it actually called, with its trace a click away
+    async _showRun(e, steps) {
+      const r = e.run;
+      let tr = null;
+      try { tr = await this._ws({ type: 'trace/get', domain: r.domain, item_id: r.item_id, run_id: r.run_id }); }
+      catch (err) { this._toast(T('could_not_read_its_trace', { err: (err && (err.message || err.code)) || err })); }
+      if (!this._model) return;
+      const path = tr ? runPath(e.key, tr, this._model.edges) : { keys: [e.key], edges: [] };
+      let chain = steps || [e];
+      // an event trigger carries what fired it (a timer, say): follow the chain from that change
+      const tv = tr && trigVar(tr), from = tv && ((tv.event && tv.event.data && tv.event.data.entity_id) || tv.entity_id);
+      if (this._dbg && chain.length === 1 && typeof from === 'string') {
+        const before = this._dbg.entries.slice().reverse().find((x) => x.kind === 'state' && x.key === from && x.t <= e.t + 150 && e.t - x.t < 60000);
+        if (before) chain = this._dbgChain(before).concat([e]);
+      }
+      this._lightSteps(chain, { keys: path.keys, edges: path.edges, e, tr });
+    }
+
+    /* ======================================================================================================
+       part: arrows: the arrow editor: an arrow's bar, its dialog, drawing a new arrow, an arrow's template tip Owns
+       _arw, _tt (PARTS): only its own methods use them; the other parts ask its methods.
+       ====================================================================================================== */
+
+    _edgeTitle(e) {
+      const a = this._model.nodes.get(e.from), b = this._model.nodes.get(e.to);
+      if (e.role === 'tool') return a.kind === 'tool' ? T('tests_2', { name: a.name, name2: b.name }) : T('lists', { name: b.name, name2: a.name });
+      const via = e.via && this._model.nodes.get(e.via);
+      return fill(VERB[e.role] || '{a} → {b}', { a: a.name, b: b.name }) + (e.svcs.size ? ` (${[...e.svcs].join(', ')})` : '')
+        + (via ? T('through_the', { domain: via.domain, name: via.name.replace(/ \(\d+\)$/, '') }) : '')
+        + (e.loop ? T('part_of_a_loop_this') : '');
+    }
+
+    // ---- live template values (9.3): hovering an arrow that comes from a template shows what it gives now
+    _edgeHover(id, ev) {
+      const m = this._model, e = m && m.edges.find((x) => x.id === id);
+      if (!e || !e.tpls || !e.tpls.size) { this._edgeHoverEnd(); return; }
+      if (this._tt && this._tt.id === id) { this._ttMove(ev); return; }
+      this._edgeHoverEnd();
+      const tpls = [...e.tpls].slice(0, 3), tt = { id, vals: tpls.map(() => '…'), unsubs: [] };
+      this._tt = tt;
+      tpls.forEach((t, i) => {
+        const p = this._haConn.subscribeMessage((msg) => {
+          if (this._tt !== tt) return;
+          tt.vals[i] = msg && msg.error ? '⚠ ' + (/trigger|this\b/.test(msg.error) ? T('uses_the_data_of_what') : msg.error) : fmtValue(msg && msg.result);
+          this._ttRender(e, tpls);
+        }, { type: 'render_template', template: t, strict: false, report_errors: true, timeout: 3 });
+        p.catch((err) => { if (this._tt === tt) { tt.vals[i] = '⚠ ' + ((err && (err.message || err.code)) || 'error'); this._ttRender(e, tpls); } });
+        tt.unsubs.push(p);
+      });
+      this._ttRender(e, tpls);
+      this._ttMove(ev);
+    }
+    _ttRender(e, tpls) {
+      const tip = this._$.ttip, tt = this._tt;
+      if (!tt) return;
+      tip.innerHTML = `<div class="tth">${esc(this._edgeTitle(e))}</div>` + tpls.map((t, i) => `<div class="ttt"><code>${esc(shorten(t, 180))}</code><div class="ttv">${esc(tt.vals[i])}</div></div>`).join('');
+      tip.hidden = false;
+    }
+    // the pointer over the arrows: an arrow's template tip follows it, and goes when the pointer leaves that arrow
+    _ttPointerMove(e) { if (this._tt) this._ttMove(e); }
+    _ttPointerOut(e) { const p = e.target.closest('path.hit'); if (p && this._tt && this._tt.id === p.dataset.e) this._edgeHoverEnd(); }
+    _ttMove(ev) {
+      const tip = this._$.ttip, r = this._$.vp.getBoundingClientRect();
+      if (!ev || tip.hidden) return;
+      const x = Math.min(ev.clientX - r.left + 14, r.width - tip.offsetWidth - 8), y = Math.min(ev.clientY - r.top + 14, r.height - tip.offsetHeight - 8);
+      tip.style.left = Math.max(8, x) + 'px'; tip.style.top = Math.max(8, y) + 'px';
+    }
+    _edgeHoverEnd() {
+      const tt = this._tt;
+      if (!tt) return;
+      this._tt = null;
+      tt.unsubs.forEach((p) => this._ha.drop(p));
+      this._$.ttip.hidden = true;
+    }
+
+    /* ---------- the arrow editor (7.5, decision D8): an arrow is a reference in an automation or script config,
+       so drawing or removing one edits that config, through the same API Home Assistant's own editor uses ---------- */
+    // the automation or script whose config an arrow comes from, and the box it names there
+    _arrowEnds(e) {
+      const logic = (k) => /^(automation|script)\./.test(k);
+      if ((e.role === 'trigger' || e.role === 'condition') && logic(e.to)) return { owner: e.to, other: e.from };
+      if ((e.role === 'action' || e.role === 'call') && logic(e.from)) return { owner: e.from, other: e.to };
+      return null;
+    }
+    // clicking an arrow selects it: what it means, and what can be done with it
+    _edgeClick(id, ev) {
+      const m = this._model, e = m && m.edges.find((x) => x.id === id);
+      if (!e || e.role === 'tool') return;
+      this._selEdge = id;
+      this._sel = null;
+      this._applyFocus();
+      const bar = this._$.edgebar, ends = this._arrowEnds(e), owner = ends && m.nodes.get(ends.owner);
+      const full = this._full(), why = !ends ? (e.role === 'source' ? T('this_arrow_comes_from_the') : T('this_arrow_doesn_t_come')) : '';
+      this._put(bar, `<span class="ebtxt">${esc(this._edgeTitle(e))}</span><button data-act="arw-remove" ${!ends || !full ? 'disabled' : ''} title="${esc(!ends ? why : full ? T('remove_what_this_arrow_stands') : T('full_manager_only_switch_it'))}"><ha-icon icon="mdi:link-variant-remove"></ha-icon><span>${T('remove_2')}</span></button>${owner ? `<button data-act="arw-open" title="${T('open_in_its_editor', { name: esc(owner.name) })}"><ha-icon icon="mdi:pencil-outline"></ha-icon><span>${T('edit', { name: esc(owner.name) })}</span></button>` : ''}`);
+      bar.hidden = false;
+      const r = this._$.vp.getBoundingClientRect();
+      bar.style.left = Math.max(6, Math.min(ev.clientX - r.left - 20, this._openWidth() - bar.offsetWidth - 6)) + 'px';
+      bar.style.top = Math.max(6, Math.min(ev.clientY - r.top + 14, r.height - bar.offsetHeight - 6)) + 'px';
+    }
+    _clearEdgeSel() {
+      if (!this._selEdge && this._$.edgebar.hidden) return;
+      this._selEdge = null;
+      this._$.edgebar.hidden = true;
+      this._drawEdges();
+    }
+    // removing an arrow: each reference behind it, ticked, with the YAML that goes
+    async _arrowRemoveDialog(id) {
+      const m = this._model, e = m && m.edges.find((x) => x.id === id), ends = e && this._arrowEnds(e);
+      this._clearEdgeSel();
+      if (!ends || !this._full()) return;
+      const md = this._$.modal;
+      md.hidden = false;
+      md.innerHTML = `<div class="dlg wide"><h3>${T('remove_an_arrow')}</h3><div class="muted">${T('reading_the_config')}</div></div>`;
+      const o = await this._ownerCfg(ends.owner), other = m.nodes.get(ends.other);
+      if (o.err) {
+        md.innerHTML = `<div class="dlg"><h3>${T('remove_an_arrow')}</h3><p class="dtext">${esc(o.err)}</p><div class="btns"><button data-act="modal-cancel">${T('close')}</button><button class="primary" data-act="arw-edit" data-key="${esc(ends.owner)}">${T('open_the_editor')}</button></div></div>`;
+        return;
+      }
+      const refs = refsTo(o.cfg, o.isScript, ends.other);
+      const indirect = analyze(o.cfg, o.isScript, (x) => this._known(x)).refs.filter((r) => r.ref === ends.other && r.tpl).length;
+      this._arw = { mode: 'remove', o, refs, sel: new Set(refs.map((r, i) => i)), owner: ends.owner, other: ends.other, otherName: other ? other.name : ends.other };
+      const row = (r, i) => {
+        const node = getPath(o.cfg, r.path);
+        const what = r.mode === 'node' ? T('removes_this', { extra: r.kind === 'trigger' ? 'trigger' : r.kind === 'condition' ? 'condition' : 'step' }) : T('takes_out_of_its_list', { otherName: this._arw.otherName });
+        return `<label class="aref"><input type="checkbox" data-aref="${i}" checked><span><b>${esc(refPlace(r))}</b> <span class="muted small">${esc(what)}</span><pre>${esc(shorten(toYaml(node), 600))}</pre></span></label>`;
+      };
+      md.innerHTML = `<div class="dlg wide adlg"><h3>${esc(this._arw.otherName)} and ${esc(o.n.name)}</h3>${refs.length ? `<div class="hint">${T('what_s_config_says_about', { name: esc(o.n.name), otherName: esc(this._arw.otherName) })}</div><div class="arefs">${refs.map(row).join('')}</div>`
+          : `<p class="dtext">${T('doesn_t_name_directly_so', { name: esc(o.n.name), otherName: esc(this._arw.otherName), extra: e.via ? ` ${T('the_arrow_comes_through', { boxName: esc(this._boxName(e.via)) })}` : '' })}</p>`}${indirect ? `<div class="hint">${T('it_is_also_read_inside', { indirect: P('n_templates', indirect) })}</div>` : ''}${this._yamlWarn(o.dom)}<div class="aval hint"></div><div class="btns"><button data-act="arw-edit" data-key="${esc(ends.owner)}">${T('open_the_editor')}</button><span class="cnt"></span><button data-act="modal-cancel">${T('cancel')}</button>${refs.length ? `<button class="primary danger" data-act="arw-save">${T('remove')}</button>` : ''}</div></div>`;
+    }
+    // rev: the arrow is to go into this box, from the box picked next
+    _startLink(key, drag, rev) {
+      if (!this._full()) { this._toast(T('drawing_arrows_needs_full_manager')); return; }
+      const n = this._model && this._model.nodes.get(key);
+      if (!this._canLink(n)) return;
+      this._linking = { from: key, drag: !!drag, moved: false, rev: !!rev };
+      this._$.board.classList.add('linking');
+      this._toast(rev ? T('now_click_the_box_that_leads_to', { name: n.name }) : T('now_click_the_box_to', { name: n.name }));
+    }
+    _linkMove(ev) {
+      const L = this._linking, m = this._model, n = L && m && m.nodes.get(L.from);
+      if (!n) return;
+      const r = this._$.vp.getBoundingClientRect(), v = this._view;
+      const x = (ev.clientX - r.left - v.x) / v.k, y = (ev.clientY - r.top - v.y) / v.k;
+      const sx = L.rev ? n.x : x >= n.x + n.w / 2 ? n.x + n.w : n.x, sy = n.y + n.h / 2;
+      this._$.links.innerHTML = `<path class="ltmp" d="M${sx},${sy} C${(sx + x) / 2},${sy} ${(sx + x) / 2},${y} ${x},${y}"></path>`;
+      L.moved = true;
+    }
+    _endLink() {
+      this._linking = null;
+      this._$.board.classList.remove('linking');
+      this._$.links.innerHTML = '';
+    }
+    async _linkDialog(from, to) {
+      const m = this._model, a = m.nodes.get(from), b = m.nodes.get(to), how = this._linkKinds(from, to);
+      if (!how) { this._toast(T('an_arrow_can_t_go', { name: a.name, name2: b.name })); return; }
+      const md = this._$.modal;
+      md.hidden = false;
+      md.innerHTML = `<div class="dlg wide"><h3>${T('connect')}</h3><div class="muted">${T('reading_what_home_assistant_offers')}</div></div>`;
+      const o = await this._ownerCfg(how.owner);
+      if (o.err) {
+        md.innerHTML = `<div class="dlg"><h3>${T('connect')}</h3><p class="dtext">${esc(o.err)}</p><div class="btns"><button data-act="modal-cancel">${T('close')}</button></div></div>`;
+        return;
+      }
+      const choices = await this._linkChoices(how);
+      if (!choices.length) { md.innerHTML = `<div class="dlg"><h3>${T('connect')}</h3><p class="dtext">${T('home_assistant_offers_nothing_that')}</p><div class="btns"><button data-act="modal-cancel">${T('close')}</button></div></div>`; return; }
+      this._arw = { mode: 'add', o, how, choices, pick: 0, vals: {}, owner: how.owner, other: how.other };
+      this._renderLinkDlg();
+    }
+    // what an arrow can mean, from Home Assistant's own lists for the box (get_triggers_for_target and the others)
+    async _linkChoices(how) {
+      const k = how.other, out = [], target = TGT_RE.test(k) ? { [{ area: 'area_id', floor: 'floor_id', label: 'label_id' }[k.slice(0, k.indexOf(':'))]]: k.slice(k.indexOf(':') + 1) } : { entity_id: k };
+      const get = (type) => (k.includes(':') && !TGT_RE.test(k) ? Promise.resolve([]) : this._ws({ type, target }, { optional: 'a Home Assistant before 2025.12 has no purpose-specific triggers or conditions', fallback: [] }));
+      const names = await this._ptNamesFor(how.kinds);
+      const ok = (desc) => !desc || Object.values(desc.fields || {}).every((f) => !f.required || f.default !== undefined);
+      for (const kind of how.kinds) {
+        if (kind === 'trigger') {
+          if (k.startsWith('event:')) out.push({ kind, text: T('it_triggers_it'), item: { trigger: 'event', event_type: k.slice(6) } });
+          else if (k.startsWith('nact:')) { const b = this._buttonEvent(this._model.nodes.get(k)); out.push({ kind, text: T('pressing_it_triggers_it'), item: { trigger: 'event', event_type: b.event_type, event_data: b.event_data } }); }
+          else {
+            out.push({ kind, text: T('it_changes_state'), state: 'to', item: { trigger: 'state', entity_id: k } });
+            ((await get('get_triggers_for_target')) || []).filter((t) => ok((this._trigDesc || {})[t])).sort().forEach((t) => out.push({ kind, text: names[t] || humanize(t), item: { trigger: t, target: { entity_id: k } } }));
+          }
+        } else if (kind === 'condition') {
+          out.push({ kind, text: T('its_state_is'), state: 'state', item: { condition: 'state', entity_id: k, state: '' } });
+          ((await get('get_conditions_for_target')) || []).filter((t) => ok((this._condDesc || {})[t])).sort().forEach((t) => out.push({ kind, text: names[t] || humanize(t), item: { condition: t, target: { entity_id: k } } }));
+        } else if (kind === 'call') {
+          out.push({ kind, text: T('it_runs_it'), item: { action: k }, fields: await this._scriptFields(k).then((fs) => fs.filter((f) => f.required)) });
+        } else if (kind === 'action') {
+          ((await get('get_services_for_target')) || []).filter((s) => !s.startsWith('homeassistant.')).sort().forEach((s) => {
+            const [d, sv] = s.split('.'), desc = ((this._hass.services || {})[d] || {})[sv] || {};
+            const fields = Object.entries(desc.fields || {}).filter(([, f]) => f && f.required).map(([name, f]) => ({ name, type: 'selector', label: f.name || name, selector: f.selector || { text: {} }, required: true }));
+            out.push({ kind, text: desc.name || humanize(s), item: Object.assign({ action: s, target }), fields });
+          });
+        }
+      }
+      return out;
+    }
+    // names of the purpose-specific triggers and conditions, in the user's language when Home Assistant has them
+    async _ptNamesFor(kinds) {
+      const cat = [].concat(kinds.includes('trigger') ? ['triggers'] : [], kinds.includes('condition') ? ['conditions'] : []);
+      const out = {};
+      for (const c of cat) {
+        try {
+          const r = await this._ws({ type: 'frontend/get_translations', language: this._hass.language || 'en', category: c });
+          Object.entries((r && r.resources) || {}).forEach(([key, v]) => { const mm = key.match(/^component\.([^.]+)\.(?:triggers|conditions)\.([^.]+)\.name$/); if (mm) out[mm[1] + '.' + mm[2]] = v; });
+        } catch (e) { /* the ids then */ }
+      }
+      return out;
+    }
+    _renderLinkDlg() {
+      const w = this._arw, md = this._$.modal, c = w.choices[w.pick], m = this._model;
+      const a = m.nodes.get(w.how.other), owner = w.o.n;
+      const lead = { trigger: T('triggers_when', { name: a.name, name2: owner.name }), condition: T('checks_only_if', { name: owner.name, name2: a.name }), action: T('changes_it', { name: owner.name, name2: a.name }), call: T('runs_2', { name: owner.name, name2: a.name }) };
+      const kinds = [...new Set(w.choices.map((x) => x.kind))];
+      md.innerHTML = `<div class="dlg wide adlg"><h3>${T('connect_and_2', { name: esc(a.name), name2: esc(owner.name) })}</h3>${kinds.length > 1 ? `<div class="tchoice">${kinds.map((k) => `<button class="chip ${c.kind === k ? 'on' : ''}" data-act="lnk-kind" data-k="${k}">${k === 'trigger' ? T('it_triggers_it') : T('it_is_checked_by_it')}</button>`).join('')}</div>` : ''}<div class="tone">${esc(lead[c.kind])}</div><div class="tchoice">${w.choices.map((x, i) => (x.kind === c.kind ? `<button class="chip ${i === w.pick ? 'on' : ''}" data-act="lnk-pick" data-i="${i}">${esc(x.text)}</button>` : '')).join('')}</div>${c.state ? `<label>${c.state === 'to' ? T('to_empty_any_change') : T('state')}<input name="lstate" value="${esc(w.vals.state || '')}" list="fblstates"><datalist id="fblstates">${this._stateHints(a).map((s) => `<option value="${esc(s)}">`).join('')}</datalist></label>` : ''}${c.fields && c.fields.length ? `<div class="tfields">${c.fields.map((f, i) => this._fieldHTML(f, i, w.vals)).join('')}</div>` : ''}<div class="hint">${T('adds_to', { name: esc(owner.name) })}</div><pre class="yprev"></pre>${this._yamlWarn(w.o.dom)}<div class="aval hint"></div><div class="btns"><button data-act="modal-cancel">${T('cancel')}</button><button class="primary" data-act="arw-save">${T('add')}</button></div></div>`;
+      if (c.fields && c.fields.length) { this._tst = { key: w.how.other, specs: [{ id: 'l', fields: c.fields }], pick: 'l', vals: w.vals }; this._mountFields(this._tst.specs[0]); }
+      this._linkPreview();
+    }
+    // the item a link adds, from the choice and what was typed
+    _linkItem() {
+      const w = this._arw, c = w.choices[w.pick], item = JSON.parse(JSON.stringify(c.item)), md = this._$.modal;
+      const st = md.querySelector('input[name="lstate"]');
+      if (c.state) { const v = st ? st.value.trim() : ''; if (v) item[c.state] = v; else delete item[c.state]; }
+      (c.fields || []).forEach((f, i) => {
+        const el = md.querySelector(`[name="tf${i}"]`), box = md.querySelector(`.selbox[data-f="${i}"]`);
+        const v = box && box.dataset.mounted ? w.vals[f.name] : el ? scalar(el.value) : undefined;
+        if (v !== undefined && v !== '' && v !== null) (item.data || (item.data = {}))[f.name] = v;
+      });
+      return item;
+    }
+    // the arrow dialog: which references to remove (ticked), and the preview as fields change or are typed into
+    _arwChange(t) {
+      if (!this._arw) return false;
+      if (t.dataset && t.dataset.aref != null) { const i = +t.dataset.aref; if (t.checked) this._arw.sel.add(i); else this._arw.sel.delete(i); return true; }
+      if (t.closest && t.closest('.adlg')) { this._linkPreview(); return true; }
+      return false;
+    }
+    // the arrow dialog closed
+    _arwDone() { this._arw = null; }
+    _arwInput(t) { if (this._arw && t.closest && t.closest('.adlg')) { this._linkPreview(); return true; } return false; }
+    _linkPreview() {
+      const w = this._arw, pre = this._$.modal.querySelector('.yprev');
+      if (!w || w.mode !== 'add' || !pre) return;
+      const c = w.choices[w.pick], key = this._linkKey(c.kind, w.o.isScript, w.o.cfg);
+      pre.textContent = toYaml({ [key]: [this._linkItem()] });
+    }
+    // the new config: a link appended to its list, or the ticked references removed
+    _arwResult() {
+      const w = this._arw, cfg = JSON.parse(JSON.stringify(w.o.cfg));
+      if (w.mode === 'remove') return dropRefs(cfg, w.refs.filter((r, i) => w.sel.has(i)));
+      const c = w.choices[w.pick], key = this._linkKey(c.kind, w.o.isScript, cfg), item = this._linkItem();
+      if (c.state === 'state' && !item.state) throw new Error(T('enter_the_state_it_checks'));
+      const miss = (c.fields || []).find((f) => f.required && !(item.data && f.name in item.data));
+      if (miss) throw new Error(T('fill_in', { label: miss.label }));
+      cfg[key] = toList(cfg[key]).concat([item]);
       return cfg;
     }
-    _verMembers(label) {
-      return this._ents.filter((e) => (e.labels || []).includes(label)).map((e) => e.entity_id).concat(this._devs.filter((d) => (d.labels || []).includes(label)).map((d) => 'device:' + d.id));
-    }
-    // the function as it is now, read through Home Assistant's own APIs (nothing is changed)
-    async _verSnapshot(label) {
-      const members = this._verMembers(label), items = {}, lists = new Map(), devices = {};
-      const list = async (dom) => { if (!lists.has(dom)) lists.set(dom, await this._ws({ type: dom + '/list' }, { optional: 'a helper domain not set up has no list of helpers', fallback: null })); return lists.get(dom) || []; };
-      for (const k of members) {
-        if (k.startsWith('device:')) continue;
-        const dom = k.split('.')[0], name = this._nameOf(k);
-        if (dom === 'automation' || dom === 'script') {
-          const r = await this._ws({ type: dom + '/config', entity_id: k }, { optional: 'an automation or script without an id has no stored config', fallback: null }), cfg = r && r.config;
-          if (!cfg) continue;
-          const id = dom === 'automation' ? cfg.id || null : k.slice(7);
-          // only what's in automations.yaml or scripts.yaml can be written back: Home Assistant's editors say the same
-          const own = id ? !!(await this._api('GET', `config/${dom}/config/${encodeURIComponent(id)}`, undefined, { optional: 'one set up in YAML has no stored config to read', fallback: null })) : false;
-          items[k] = { dom, id, name, cfg, yaml: !own };
-        } else if (VER_HELPERS.has(dom)) {
-          const reg = this._entMap.get(k), it = (await list(dom)).find((x) => reg && x.id === reg.unique_id);
-          if (it) { const cfg = Object.assign({}, it); delete cfg.id; items[k] = { dom, id: it.id, name, cfg }; } else items[k] = { dom, id: null, name, yaml: true };
-        }
+    async _arwSave() {
+      const w = this._arw, md = this._$.modal, val = md.querySelector('.aval'), btn = md.querySelector('[data-act="arw-save"]');
+      if (!w) return;
+      let after;
+      try { after = this._arwResult(); } catch (e) { if (val) val.textContent = e.message || String(e); return; }
+      if (w.mode === 'remove' && !w.sel.size) { if (val) val.textContent = T('tick_at_least_one'); return; }
+      // Home Assistant checks the new config first; nothing is saved when it doesn't accept it
+      const lists = w.o.isScript ? { actions: after.sequence || [] } : { triggers: after.triggers != null ? after.triggers : after.trigger || [], conditions: after.conditions != null ? after.conditions : after.condition || [], actions: after.actions != null ? after.actions : after.action || [] };
+      if (btn) btn.disabled = true;
+      let res = null;
+      try { res = await this._ws(Object.assign({ type: 'validate_config' }, lists)); } catch (e) { res = null; }
+      const bad = res && Object.entries(res).filter(([, v]) => v && v.valid === false);
+      if (bad && bad.length) {
+        if (val) val.innerHTML = `<b>${T('home_assistant_doesn_t_accept')}</b> ${bad.map(([k, v]) => esc(k + ': ' + v.error)).join('; ')}`;
+        if (btn) btn.disabled = false;
+        return;
       }
-      const ids = new Set(members.filter((k) => k.startsWith('device:')).map((k) => k.slice(7)));
-      Object.values(items).forEach((it) => { if (it.cfg) devIdsIn(it.cfg, ids); });
-      ids.forEach((id) => { const d = this._devMap.get(id); if (d) devices[id] = { name: d.name_by_user || d.name || '', model: d.model || '', manufacturer: d.manufacturer || '' }; });
-      const L = this._data.layouts[label] ? JSON.parse(JSON.stringify(this._data.layouts[label])) : null;
-      if (L) delete L.view;
-      return { fmt: 1, members, items, devices, layout: L };
-    }
-    _verWhen(at) { try { return new Date(at).toLocaleString(this._hass.language || undefined, { dateStyle: 'medium', timeStyle: 'short' }); } catch (e) { return new Date(at).toLocaleString(); } }
-
-    async _openVersions() {
-      const label = this._data.ui.current;
-      if (!label || !this._model) return;
-      if (!this._verOK()) { this._toast(T('ver_needs_integration')); return; }
-      this._leaveDrawerMode();
-      this._capture = null;
-      this._drawer = { mode: 'versions' };
-      const d = this._$.drawer;
-      d.hidden = false;
-      this._put(d, `<div class="dhead"><span class="dtitle">${T('ver_title', { fnName: esc(this._fnName(label)) })}</span><button data-act="close" title="${T('close')}"><ha-icon icon="mdi:close"></ha-icon></button></div><div class="vers"><div class="vnote">${T('ver_note')}</div><div class="vact"><button class="primary" data-act="ver-new"><ha-icon icon="mdi:camera-outline"></ha-icon>${T('ver_save_b')}</button></div><div class="vlist"><div class="muted pad">${T('ver_reading')}</div></div></div>`);
-      this._fitLitbar();
-      await this._renderVersions();
-    }
-    async _renderVersions() {
-      const label = this._data.ui.current, box = this._$.drawer.querySelector('.vlist');
-      if (!box || !this._drawer || this._drawer.mode !== 'versions') return;
-      let vs;
-      try { vs = await this._verList(label); } catch (e) { this._put(box, `<div class="lgerr">${esc((e && (e.message || e.code)) || e)}</div>`); return; }
-      // which version (if any) is what's there now
-      let print = null;
-      try { print = verPrint(await this._verSnapshot(label)); } catch (e) { /* no match shown */ }
-      if (!this._drawer || this._drawer.mode !== 'versions' || label !== this._data.ui.current) return;
-      const active = vs.slice().reverse().find((v) => v.print && v.print === print), full = this._full(), viewing = this._ver && this._ver.label === label ? this._ver.id : null;
-      this._verCache = { label, vs, active: active ? active.id : null };
-      const row = (v) => `<div class="vrow${active && active.id === v.id ? ' on' : ''}${viewing === v.id ? ' view' : ''}" data-id="${esc(v.id)}"><div class="vh"><b>${esc(v.name)}</b>${active && active.id === v.id ? `<span class="vbadge">${T('ver_active')}</span>` : ''}${v.auto ? `<span class="vauto">${T('ver_auto')}</span>` : ''}</div>${v.desc ? `<div class="vdesc">${esc(v.desc)}</div>` : ''}<div class="vm">${esc(this._verWhen(v.at))}${v.by ? ' · ' + esc(v.by) : ''}</div>`
-        + `<div class="vb"><button data-act="ver-open" data-id="${esc(v.id)}"><ha-icon icon="mdi:tab"></ha-icon>${T('ver_open')}</button><button data-act="ver-sbx" data-id="${esc(v.id)}"><ha-icon icon="mdi:flask-outline"></ha-icon>${T('ver_try')}</button>`
-        + `<button data-act="ver-restore" data-id="${esc(v.id)}"${full && !(active && active.id === v.id) ? '' : ' disabled'} title="${full ? (active && active.id === v.id ? T('ver_is_active') : T('ver_restore_t')) : T('ver_restore_full')}"><ha-icon icon="mdi:backup-restore"></ha-icon>${T('ver_restore')}</button>`
-        + `<button class="ib" data-act="diag" data-ver="${esc(v.id)}" title="${T('diag_ver_t')}"><ha-icon icon="mdi:file-download-outline"></ha-icon></button><button class="ib" data-act="ver-edit" data-id="${esc(v.id)}" title="${T('ver_edit_t')}"><ha-icon icon="mdi:pencil-outline"></ha-icon></button><button class="ib" data-act="ver-del" data-id="${esc(v.id)}" title="${T('ver_del_t')}"><ha-icon icon="mdi:delete-outline"></ha-icon></button></div></div>`;
-      const now = `<div class="vrow cur${active ? '' : ' on'}"><div class="vh"><b>${T('ver_now')}</b>${active ? `<span class="muted">${T('ver_now_is', { name: esc(active.name) })}</span>` : `<span class="vbadge">${T('ver_active')}</span><span class="muted">${T('ver_now_unsaved')}</span>`}</div></div>`;
-      this._put(box, now + (vs.length ? vs.slice().reverse().map(row).join('') : `<div class="muted pad">${T('ver_none')}</div>`));
-    }
-    _verNewDlg() {
-      const m = this._$.modal;
-      m.hidden = false;
-      m.innerHTML = `<div class="dlg"><h3>${T('ver_save_h')}</h3><label>${T('name')}<input name="vname" maxlength="100" placeholder="${T('ver_name_ph')}"></label><label>${T('description')}<textarea name="vdesc" rows="3" maxlength="2000" placeholder="${T('ver_desc_ph')}"></textarea></label><div class="hint">${T('ver_save_hint')}</div><div class="aval hint"></div><div class="btns"><button data-act="modal-cancel">${T('cancel')}</button><button class="primary" data-act="ver-save">${T('save')}</button></div></div>`;
-      m.querySelector('input[name="vname"]').focus();
-    }
-    async _verSave() {
-      const m = this._$.modal, label = this._data.ui.current, name = (m.querySelector('input[name="vname"]').value || '').trim(), desc = (m.querySelector('textarea[name="vdesc"]').value || '').trim();
-      const val = m.querySelector('.aval'), btn = m.querySelector('[data-act="ver-save"]');
-      if (!name) { val.textContent = T('ver_name_needed'); return; }
-      btn.disabled = true;
-      try {
-        const snap = await this._verSnapshot(label);
-        await this._ws({ type: 'functions_board/version_save', label, name, desc, snapshot: snap, print: verPrint(snap), client: this._client() });
-      } catch (e) { val.textContent = T('ver_not_saved', { e: (e && (e.message || e.code)) || e }); btn.disabled = false; return; }
+      const { dom, id, n } = w.o, before = w.o.cfg, label = this._model && this._model.label;
+      const text = w.mode === 'add' ? T('connect_and', { boxName: this._boxName(w.other), name: n.name }) : T('remove_from', { boxName: this._boxName(w.other), name: n.name });
+      try { await this._saveCfg(dom, id, after); } catch (e) {
+        if (val) val.textContent = T('could_not_save_2', { e: (e && (e.message || e.body)) || e });
+        if (btn) btn.disabled = false;
+        return;
+      }
+      if (!this._data.ui.yamlOk) { this._data.ui.yamlOk = true; this._save(); }
+      this._arw = null; this._tst = null;
       this._closeModal();
-      this._toast(T('ver_saved', { name }));
-      if (!this._drawer || this._drawer.mode !== 'versions') this._openVersions(); else this._renderVersions();
-    }
-    _verFind(id) { return this._verCache && this._verCache.vs.find((v) => v.id === id); }
-    _verEditDlg(id) {
-      const v = this._verFind(id), m = this._$.modal;
-      if (!v) return;
-      this._verEditing = id;
-      m.hidden = false;
-      m.innerHTML = `<div class="dlg"><h3>${T('ver_edit_h')}</h3><label>${T('name')}<input name="vname" maxlength="100" value="${esc(v.name)}"></label><label>${T('description')}<textarea name="vdesc" rows="3" maxlength="2000">${esc(v.desc || '')}</textarea></label><div class="aval hint"></div><div class="btns"><button data-act="modal-cancel">${T('cancel')}</button><button class="primary" data-act="ver-edit-save">${T('save')}</button></div></div>`;
-    }
-    async _verEditSave() {
-      const m = this._$.modal, name = (m.querySelector('input[name="vname"]').value || '').trim(), desc = (m.querySelector('textarea[name="vdesc"]').value || '').trim();
-      if (!name) { m.querySelector('.aval').textContent = T('ver_name_needed'); return; }
-      try { await this._ws({ type: 'functions_board/version_edit', label: this._data.ui.current, version_id: this._verEditing, name, desc, client: this._client() }); }
-      catch (e) { m.querySelector('.aval').textContent = T('ver_not_saved', { e: (e && (e.message || e.code)) || e }); return; }
-      const tabs = this._vtabs && this._vtabs.get(this._data.ui.current), t = tabs && tabs.find((x) => x.id === this._verEditing);
-      if (t) t.name = name;
-      if (this._ver && this._ver.id === this._verEditing) this._ver.name = name;
-      this._closeModal();
-      this._renderVersions();
-      this._renderVtabs();
-    }
-    _verDelDlg(id) {
-      const v = this._verFind(id), m = this._$.modal;
-      if (!v) return;
-      this._verEditing = id;
-      m.hidden = false;
-      m.innerHTML = `<div class="dlg"><h3>${T('ver_del_h', { name: esc(v.name) })}</h3><p class="dtext">${T('ver_del_text')}</p><div class="btns"><button data-act="modal-cancel">${T('cancel')}</button><button class="primary danger" data-act="ver-del-go">${T('delete_3')}</button></div></div>`;
-    }
-    async _verDel() {
-      const id = this._verEditing, label = this._data.ui.current;
-      try { await this._ws({ type: 'functions_board/version_delete', label, version_id: id, client: this._client() }); } catch (e) { this._toast(T('ver_not_saved', { e: (e && (e.message || e.code)) || e })); return; }
-      this._closeModal();
-      if (this._vtabs && this._vtabs.has(label)) this._verCloseTab(id);
-      this._renderVersions();
+      // put back exactly the config it had, unless someone has changed it since
+      const same = async (want) => { const now = await this._api('GET', `config/${dom}/config/${encodeURIComponent(id)}`, undefined, { fallback: null }); return canon(now) === canon(want); };
+      this._history({ label, text, check: (dir) => same(dir === 'undo' ? after : before), undo: () => this._saveCfg(dom, id, before), redo: () => this._saveCfg(dom, id, after) });
+      this._toast(T('saved_through_home_assistant_s', { text }), [{ text: T('undo'), fn: () => this._undo() }]);
+      this._configChanged();
     }
 
-    // ---- tabs: what's there now (active) and saved versions, one shown at a time
-    async _verOpenTab(id, sandbox) {
-      const label = this._data.ui.current;
-      if (!label) return;
-      let v;
-      try { v = await this._verGet(label, id); } catch (e) { this._toast(T('ver_gone')); return; }
-      this._vtabs = this._vtabs || new Map();
-      const tabs = this._vtabs.get(label) || [];
-      if (!tabs.some((t) => t.id === id)) tabs.push({ id, name: v.name });
-      this._vtabs.set(label, tabs);
-      await this._verView(id, v);
-      if (sandbox) this._verTrySandbox();
-    }
-    _verTrySandbox() {
-      if (this._sbxOn()) return;
-      if (this._data.ui.sbxIntro === false) this._openSandbox(); else this._sbxIntro();
-    }
-    _verCloseTab(id) {
-      const label = this._data.ui.current, tabs = (this._vtabs && this._vtabs.get(label)) || [];
-      this._vtabs.set(label, tabs.filter((t) => t.id !== id));
-      if (this._ver && this._ver.id === id) this._verView(null); else this._renderVtabs();
-    }
-    // show a saved version (id), or what's there now (null)
-    async _verView(id, v) {
-      const label = this._data.ui.current;
-      if (!label) return;
-      if (id && !v) { try { v = await this._verGet(label, id); } catch (e) { this._toast(T('ver_gone')); return; } }
-      if (this._sbx || (this._drawer && this._drawer.mode === 'sandbox')) this._closeDrawer();
-      this._clearLit(true);
-      if (v) {
-        const raw = v.snapshot.layout ? JSON.parse(JSON.stringify(v.snapshot.layout)) : {};
-        const layout = Object.assign({ nodes: {}, frames: [], notes: [], view: null, categories: null }, cleanLayout(raw) || {});
-        this._ver = { label, id: v.id, name: v.name, at: v.at, snap: v.snapshot, layout, cfgs: new Map(), diff: null };
-        this._ver.diff = await this._ha.soft(this._verDiff(label, v.snapshot), 'comparing a version with now', null);
-      } else this._ver = null;
-      this._$.board.classList.toggle('vview', !!v);
-      try { history.replaceState(history.state, '', location.pathname + (v ? '?version=' + v.id : '')); } catch (e) { /* the link just won't carry it */ }
-      await this._open(label, false, { fromRoute: true });
-      if (this._drawer && this._drawer.mode === 'versions') this._renderVersions();
-    }
-    // what differs between a version and what's there now: boxes changed since, only in the version, added since
-    async _verDiff(label, snap) {
-      const cur = new Set(this._verMembers(label)), ver = new Set(snap.members), changed = new Set(), only = new Set(), lists = new Map();
-      for (const k of ver) {
-        if (!cur.has(k)) { only.add(k); continue; }
-        const it = snap.items[k];
-        if (!it || !it.cfg) continue;
-        let now = null;
-        if (it.dom === 'automation' || it.dom === 'script') { const r = await this._ws({ type: it.dom + '/config', entity_id: k }, { optional: 'an automation or script without an id has no stored config', fallback: null }); now = r && r.config; }
-        else {
-          if (!lists.has(it.dom)) lists.set(it.dom, await this._ws({ type: it.dom + '/list' }, { optional: 'a helper domain not set up has no list of helpers', fallback: null }));
-          const x = (lists.get(it.dom) || []).find((y) => y.id === it.id);
-          if (x) { now = Object.assign({}, x); delete now.id; }
-        }
-        if (now && canon(now) !== canon(it.cfg)) changed.add(k);
-      }
-      return { changed, only, added: [...cur].filter((k) => !ver.has(k)) };
-    }
-    _renderVtabs() {
-      const el = this._$.vtabs, label = this._data && this._data.ui.current, tabs = (label && this._vtabs && this._vtabs.get(label)) || [];
-      if (!el) return;
-      const V = this._ver && this._ver.label === label ? this._ver : null;
-      if (!tabs.length && !V) { el.hidden = true; el.innerHTML = ''; return; }
-      el.hidden = false;
-      this._fitLitbar();
-      const d = V && V.diff;
-      el.innerHTML = `<div class="vtrow"><button class="vtab${V ? '' : ' on'}" data-act="vtab" data-id=""><span class="vdot"></span>${T('ver_current_tab')}<span class="vact">${T('ver_active')}</span></button>`
-        + tabs.map((t) => `<span class="vtab${V && V.id === t.id ? ' on' : ''}"><button data-act="vtab" data-id="${esc(t.id)}"><ha-icon icon="mdi:history"></ha-icon>${esc(t.name)}</button><button class="ib" data-act="vtab-win" data-id="${esc(t.id)}" title="${T('ver_new_window')}"><ha-icon icon="mdi:open-in-new"></ha-icon></button><button class="ib" data-act="vtab-x" data-id="${esc(t.id)}" title="${T('close')}"><ha-icon icon="mdi:close"></ha-icon></button></span>`).join('') + '</div>'
-        + (V ? `<div class="vban"><ha-icon icon="mdi:history"></ha-icon><span>${T('ver_banner', { name: esc(V.name), when: esc(this._verWhen(V.at)) })}${d ? ' ' + T('ver_diff', { changed: d.changed.size, only: d.only.size, added: d.added.length }) : ''}</span><button data-act="ver-sbx-cur"><ha-icon icon="mdi:flask-outline"></ha-icon>${T('ver_try')}</button>${this._full() ? `<button data-act="ver-restore" data-id="${esc(V.id)}"><ha-icon icon="mdi:backup-restore"></ha-icon>${T('ver_restore')}</button>` : ''}</div>` : '');
-    }
-
-    // ---- restoring (Full manager): plan, dialog, then the writes, each through Home Assistant's own config APIs
-    async _verRestore(id) {
-      if (!this._full()) { this._toast(T('ver_restore_full')); return; }
-      const label = this._data.ui.current, m = this._$.modal;
-      m.hidden = false;
-      m.innerHTML = `<div class="dlg"><h3>${T('ver_restore_h0')}</h3><div class="muted">${T('ver_checking')}</div></div>`;
-      let v, plan;
-      let savedAs = null;
-      try {
-        v = await this._verGet(label, id); plan = await this._verPlan(label, v.snapshot);
-        // is what's there now already one of the saved versions? (then a backup would only be another copy)
-        const [vs, now] = await Promise.all([this._verList(label), this._verSnapshot(label)]), pr = verPrint(now);
-        savedAs = vs.slice().reverse().find((x) => x.print && x.print === pr && x.id !== id) || null;
-      } catch (e) { m.innerHTML = `<div class="dlg"><h3>${T('ver_restore_h0')}</h3><p class="dtext">${esc((e && (e.message || e.code)) || e)}</p><div class="btns"><button data-act="modal-cancel">${T('close')}</button></div></div>`; return; }
-      this._verPending = { label, v, plan, devmap: {}, savedAs };
-      this._verRestoreDlg();
-    }
-    async _verPlan(label, snap) {
-      // the registries asked now (0.10.0: a plan made from registries 1.2 s out of date missed an automation deleted
-      // just before)
-      await this._regNow();
-      const diff = await this._verDiff(label, snap), cur = new Set(this._verMembers(label));
-      const plan = { write: [], recreate: [], same: [], yaml: [], rejoin: [], added: [], missing: [] };
-      Object.entries(snap.items).forEach(([k, it]) => {
-        if (it.yaml || !it.cfg || !it.id && (it.dom === 'automation' || it.dom === 'script')) { plan.yaml.push(k); return; }
-        const there = !!(this._hass.states[k] || this._entMap.has(k));
-        if (!there) plan.recreate.push(k); else if (diff.changed.has(k)) plan.write.push(k); else plan.same.push(k);
-      });
-      snap.members.forEach((k) => { if (!cur.has(k) && !plan.recreate.includes(k) && (k.startsWith('device:') ? this._devMap.has(k.slice(7)) : this._entMap.has(k))) plan.rejoin.push(k); });
-      plan.added = diff.added;
-      plan.missing = Object.keys(snap.devices || {}).filter((d) => !this._devMap.has(d));
-      return plan;
-    }
-    _verRestoreDlg() {
-      const p = this._verPending, { v, plan } = p, snap = v.snapshot, m = this._$.modal, nm = (k) => esc((snap.items[k] && snap.items[k].name) || this._boxName(k));
-      const line = (ks, text) => (ks.length ? `<li>${text} <span class="muted">${ks.slice(0, 8).map(nm).join(', ')}${ks.length > 8 ? ' …' : ''}</span></li>` : '');
-      const logic = (k) => /^(automation|script)\./.test(k) || VER_HELPERS.has(k.split('.')[0]);
-      const addLogic = plan.added.filter(logic), addOther = plan.added.filter((k) => !logic(k));
-      const doms = new Set(plan.write.concat(plan.recreate).map((k) => k.split('.')[0]));
-      const devs = plan.missing.map((d) => { const o = snap.devices[d] || {}; return `<div class="vdevrow"><div>${T('ver_dev_gone', { name: esc(o.name || d), model: esc([o.manufacturer, o.model].filter(Boolean).join(' ')) })}</div><div class="vdevpick" data-old="${esc(d)}"></div></div>`; }).join('');
-      m.hidden = false;
-      m.innerHTML = `<div class="dlg wide vrdlg"><h3>${T('ver_restore_h', { name: esc(v.name) })}</h3><p class="dtext">${T('ver_restore_lead', { fnName: esc(this._fnName(p.label)), when: esc(this._verWhen(v.at)) })}</p>`
-        + `<ul class="vplan">${line(plan.write, P('ver_p_write', plan.write.length))}${line(plan.recreate, P('ver_p_recreate', plan.recreate.length))}${line(plan.rejoin, P('ver_p_rejoin', plan.rejoin.length))}${line(plan.same, P('ver_p_same', plan.same.length))}${line(plan.yaml, P('ver_p_yaml', plan.yaml.length))}${snap.layout ? `<li>${T('ver_p_layout')}</li>` : ''}</ul>`
-        + (plan.missing.length ? `<h4>${T('ver_dev_h')}</h4><div class="hint">${T('ver_dev_hint')}</div>${devs}` : '')
-        + (addLogic.length || addOther.length ? `<h4>${T('ver_added_h')}</h4>${addLogic.length ? `<div class="hint">${addLogic.map(nm).join(', ')}</div><label class="chk"><input type="radio" name="vextra" value="off" checked>${T('ver_added_off')}</label><label class="chk"><input type="radio" name="vextra" value="delete">${T('ver_added_delete')}</label>` : ''}${addOther.length ? `<div class="hint">${T('ver_added_other', { list: addOther.map(nm).join(', ') })}</div>` : ''}` : '')
-        // a backup of what's there now only when asked for: switching between saved versions shouldn't pile up copies
-        + `<label class="chk vbackup"><input type="checkbox" name="vbackup">${T('ver_restore_backup')}</label><div class="hint">${p.savedAs ? T('ver_now_saved_as', { name: esc(p.savedAs.name) }) : T('ver_restore_unsaved')}</div>`
-        + [...doms].filter((d) => d === 'automation' || d === 'script').map((d) => this._yamlWarn(d)).join('')
-        + `<div class="aval hint"></div><div class="btns"><button data-act="modal-cancel">${T('cancel')}</button><button class="primary" data-act="ver-restore-go">${T('ver_restore')}</button></div></div>`;
-      // a replaced device: Home Assistant's own device picker, or a plain list if it isn't loaded
-      m.querySelectorAll('.vdevpick').forEach((box) => {
-        const old = box.dataset.old;
-        if (customElements.get('ha-selector')) {
-          const sel = document.createElement('ha-selector');
-          sel.hass = this._hass; sel.selector = { device: {} }; sel.label = T('ver_dev_pick'); sel.value = '';
-          sel.addEventListener('value-changed', (e) => { p.devmap[old] = (e.detail && e.detail.value) || ''; });
-          box.appendChild(sel);
-        } else {
-          const devs2 = this._devs.slice().sort((a, b) => (a.name_by_user || a.name || '').localeCompare(b.name_by_user || b.name || ''));
-          box.innerHTML = `<select aria-label="${T('ver_dev_pick')}"><option value="">${T('ver_dev_keep')}</option>${devs2.map((d) => `<option value="${esc(d.id)}">${esc((d.name_by_user || d.name || d.id) + (d.model ? ' (' + d.model + ')' : ''))}</option>`).join('')}</select>`;
-          box.querySelector('select').addEventListener('change', (e) => { p.devmap[old] = e.target.value; });
-        }
-      });
-    }
-    async _verRestoreGo() {
-      const p = this._verPending, m = this._$.modal, val = m.querySelector('.aval'), btn = m.querySelector('[data-act="ver-restore-go"]');
-      if (!p) return;
-      const extra = (m.querySelector('input[name="vextra"]:checked') || { value: 'off' }).value, backup = !!(m.querySelector('input[name="vbackup"]') || {}).checked;
-      const { label, v, plan } = p, snap = v.snapshot, map = Object.fromEntries(Object.entries(p.devmap).filter(([, x]) => x)), errs = [], name = (k) => (snap.items[k] && snap.items[k].name) || this._boxName(k);
-      btn.disabled = true;
-      val.textContent = T('ver_restoring');
-      // what's there now is saved first if asked for; otherwise undo goes back to the version it already matches, if any
-      let back = p.savedAs;
-      if (backup) {
-        try {
-          const now = await this._verSnapshot(label);
-          back = await this._ws({ type: 'functions_board/version_save', label, name: T('ver_before_name', { name: v.name }), desc: '', snapshot: now, print: verPrint(now), auto: true, client: this._client() });
-        } catch (e) { val.textContent = T('ver_not_saved', { e: (e && (e.message || e.code)) || e }); btn.disabled = false; return; }
-      }
-      const exists = (k) => !!(this._hass.states[k] || this._entMap.has(k));
-      for (const k of plan.write.concat(plan.recreate)) {
-        const it = snap.items[k], cfg = swapDevs(it.cfg, map);
-        try {
-          if (it.dom === 'automation' || it.dom === 'script') await this._saveCfg(it.dom, it.id, cfg);
-          else if (exists(k)) await this._ws(Object.assign({}, cfg, { type: it.dom + '/update', [it.dom + '_id']: it.id }));
-          else { const made = await this._ws(Object.assign({}, cfg, { type: it.dom + '/create' })); it.newId = made && made.id; }
-        } catch (e) { errs.push(name(k) + ': ' + ((e && (e.message || e.body || e.code)) || e)); }
-      }
-      // what came back, and what had left the function, wear its label again
-      await this._clock.pause(plan.recreate.length ? 1500 : 200);
-      const reg = await this._ws({ type: 'config/entity_registry/list' }, { fallback: [] });
-      const findNew = (k) => { const it = snap.items[k], uid = it.newId || it.id; const e = reg.find((x) => x.platform === it.dom && x.unique_id === uid); return e ? e.entity_id : null; };
-      for (const k of plan.rejoin.concat(plan.recreate)) {
-        const id = plan.recreate.includes(k) ? findNew(k) : k;
-        if (id) { try { await this._label(id, label, true, false); } catch (e) { errs.push(name(k) + ': ' + ((e && e.message) || e)); } }
-      }
-      // what was added since: turned off or deleted, as chosen; anything else is taken out of the function
-      for (const k of plan.added) {
-        const dom = k.split('.')[0];
-        try {
-          if (dom === 'automation') {
-            const r = await this._ws({ type: 'automation/config', entity_id: k }, { optional: 'an automation or script without an id has no stored config', fallback: null }), aid = r && r.config && r.config.id;
-            if (extra === 'delete' && aid) await this._api('DELETE', `config/automation/config/${encodeURIComponent(aid)}`);
-            else await this._svc('automation', 'turn_off', { entity_id: k });
-          } else if (dom === 'script') {
-            if (extra === 'delete') await this._api('DELETE', `config/script/config/${encodeURIComponent(k.slice(7))}`);
-          } else if (VER_HELPERS.has(dom)) {
-            const e = this._entMap.get(k);
-            if (extra === 'delete' && e && e.unique_id) await this._ws({ type: dom + '/delete', [dom + '_id']: e.unique_id });
-          } else await this._label(k, label, false, false);
-        } catch (e) { errs.push(this._boxName(k) + ': ' + ((e && (e.message || e.body || e.code)) || e)); }
-      }
-      // the board as it was laid out
-      if (snap.layout) { this._data.layouts[label] = Object.assign(cleanLayout(JSON.parse(JSON.stringify(snap.layout))) || {}, { view: (this._data.layouts[label] || {}).view || null }); this._save(); }
-      this._verPending = null;
-      this._closeModal();
-      this._store.changed('cfg:');
-      this._ver = null;
-      this._$.board.classList.remove('vview');
-      try { history.replaceState(history.state, '', location.pathname); } catch (e) { /* fine */ }
-      await this._ha.quiet(this._loadRegistries(), 'its calls to Home Assistant report their own failures');
-      await this._open(label, true);
-      const undo = back && back.id ? [{ text: T('undo'), fn: () => this._verRestore(back.id) }] : [];
-      this._toast(errs.length ? T('ver_restored_errs', { name: v.name, n: errs.length, list: errs.slice(0, 3).join('; ') }) : T('ver_restored', { name: v.name }), undo);
-      if (this._drawer && this._drawer.mode === 'versions') this._renderVersions();
-    }
+    /* ======================================================================================================
+       part: sandbox: the sandbox and a run followed on the board (the flow, lit steps) Owns nothing of its own
+       (PARTS): only its own methods use them; the other parts ask its methods.
+       ====================================================================================================== */
 
     _sbxOn() { return !!(this._sbx && this._drawer && this._drawer.mode === 'sandbox'); }
-    // a box's state as the board shows it: the sandbox's while it's open, Home Assistant's otherwise
-    _stOf(k) {
-      if (!this._sbxOn()) return this._hass.states[k];
-      const s = this._sbx.eng.get(k);
-      return s ? { entity_id: k, state: String(s.state), attributes: s.attributes || {}, last_changed: s.last_changed, last_updated: s.last_updated, context: {} } : undefined;
-    }
     // every time it opens: what the sandbox is for, and everything it can't do, to click through
     _sbxIntro() {
       const m = this._$.modal, li = (xs) => xs.map((x) => `<li>${x}</li>`).join(''), open = this._sbxOn();
@@ -9226,17 +10999,6 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (g && eng === g.eng) g.tplN++;
       try { return { ok: true, value: await this._renderRaw(SBX_PRELUDE + rw.text, variables), partly: rw.leftovers }; }
       catch (e) { return { ok: false, err: (e && e.message) || String(e) }; }
-    }
-    _renderRaw(template, variables) {
-      return new Promise((res, rej) => {
-        let done = false, un = null;
-        const fin = (f, v) => { if (done) return; done = true; this._clock.cancel(to); f(v); if (un) this._ha.drop(un); };
-        const to = this._clock.deadline(8000, () => fin(rej, new Error('timeout')));
-        un = this._haConn.subscribeMessage((m) => {
-          if (m && m.error) { if (m.level !== 'WARNING') fin(rej, new Error(String(m.error))); return; }
-          fin(res, m ? m.result : null);
-        }, { type: 'render_template', template, variables, strict: false, report_errors: true }).catch((e) => { fin(rej, new Error((e && (e.message || e.code)) || 'error')); return null; });
-      });
     }
     // what the sandbox can't know, answered by you
     _sbxAsk(q) {
@@ -9355,6 +11117,19 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     }
     // soft: only bring the suggestions and the "now …" hint up to date, if that entity is still the one picked, and
     // leave what's typed (after a Set settles, the person may already be on the next one)
+    // the sandbox drawer's own fields
+    _sbxChange(t) {
+      if (!t.classList) return false;
+      if (t.classList.contains('sbent')) { this._sbxPick(t.value); return true; }
+      if (t.classList.contains('sbrun')) { this._sbxTrigs(); return true; }
+      if (t.classList.contains('sbsel')) {
+        this._sbxOther(t, true);
+        if (t.dataset.f === 'sbev') this._sbxEvData();
+        if (t.dataset.f === 'sbtop') this._sbxPayloads();
+        return true;
+      }
+      return false;
+    }
     _sbxPick(k, soft) {
       const d = this._$.drawer, sel = d.querySelector('.sbent'), val = d.querySelector('input.sbval');
       if (!sel || !this._sbx) return;
@@ -9608,7 +11383,6 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     }
     // the part of the board left free by the drawer and the bar along its foot, and the zoom a rectangle fits at
     _flowArea() { return { W: this._openWidth(), H: this._$.vp.clientHeight - (this._$.litbar.hidden ? 20 : this._$.litbar.offsetHeight + 30), pad: 50 }; }
-    _fitK(R) { const a = this._flowArea(); return Math.min((a.W - 2 * a.pad) / Math.max(1, R.x1 - R.x0), (a.H - 2 * a.pad) / Math.max(1, R.y1 - R.y0)); }
     // a step out of view: glide to it, at the same zoom unless it doesn't fit
     _flowFollow(f, i) {
       let R = this._flowRects(f, [i]);
@@ -9760,82 +11534,6 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         default: this._toast(T('sbx_no_test')); return false;
       }
     }
-    // "why did or didn't it run?": the selected automation's recent attempts, from its traces
-    async _renderWhy() {
-      const d = this._$.drawer, box = d && d.querySelector('.dwhy');
-      if (!box || !this._drawer || this._drawer.mode !== 'debug') return;
-      const k = this._sel, n = k && this._model && this._model.nodes.get(k);
-      const id = n && n.domain === 'automation' && n.kind !== 'tool' ? this._itemId(n) : null;
-      if (!id) { box.hidden = true; return; }
-      box.hidden = false;
-      const tok = this._whyTok = (this._whyTok || 0) + 1;
-      this._put(box, `<div class="wh"><b>${esc(n.name)}</b>${T('why_did_or_didn_t')}</div><div class="muted small">${T('reading_its_traces')}</div>`);
-      const list = await this._ws({ type: 'trace/list', domain: 'automation', item_id: id }, { optional: 'an automation without an id keeps no traces', fallback: [] });
-      if (tok !== this._whyTok) return;
-      const recent = (list || []).slice().sort((a, b) => Date.parse(b.timestamp.start) - Date.parse(a.timestamp.start)).slice(0, 5);
-      const rows = await Promise.all(recent.map(async (r) => {
-        if (!(r.not_triggered || r.script_execution === 'failed_conditions' || r.error || r.script_execution === 'error')) return { r, why: '' };
-        const tr = await this._ws({ type: 'trace/get', domain: 'automation', item_id: id, run_id: r.run_id }, { optional: 'a trace can be gone: Home Assistant keeps only the last few runs', fallback: null });
-        return { r, why: tr ? whyStopped(tr, (x) => this._nameOf(x)) : '' };
-      }));
-      if (tok !== this._whyTok) return;
-      const st = this._hass.states[k];
-      this._put(box, `<div class="wh"><b>${esc(n.name)}</b>${T('why_did_or_didn_t')}</div>${st && st.state === 'off' ? `<div class="wwarn">${T('it_is_turned_off_nothing')}</div>` : ''}${this._tw.has(k) ? `<div class="muted small">${T('watching_its_triggers_so_far', { hits: P('n_would_be_runs', this._tw.get(k).hits) })}</div>` : ''}${rows.length ? rows.map(({ r, why }) => {
-          const o = r.not_triggered ? { text: T('didn_t_fire'), cls: 'muted' } : OUTCOME(r);
-          return `<button class="wrow ${o.cls}" data-act="why-run" data-rid="${esc(r.run_id)}" data-item="${esc(id)}" data-key="${esc(k)}"><span class="rt">${esc(clock(r.timestamp && r.timestamp.start))}</span>`
-            + `<span class="dm"><b>${esc(o.text)}</b><span>${esc((r.trigger ? T('triggered_by', { trigger: r.trigger }) : '') + (why ? ' · ' + why : ''))}</span></span></button>`;
-        }).join('') : `<div class="muted small">${T('no_attempts_stored_home_assistant')}</div>`}`);
-    }
-    async _dbgPick(id) {
-      const g = this._dbg, e = g && g.byId.get(id);
-      if (!e) return;
-      this._dbgSel = id;
-      this._renderDbg();
-      const steps = this._dbgChain(e);
-      if (e.kind === 'run') await this._showRun(e, steps);
-      else this._lightSteps(steps);
-    }
-    // what led to a step, as far back as the timeline goes: a change was made by a run, a run was set off by a change
-    _dbgChain(e0) {
-      const g = this._dbg, steps = [e0], seen = new Set([e0.id]);
-      if (!g) return steps;
-      const last = (pred, before, within) => {
-        for (let i = g.entries.length - 1; i >= 0; i--) {
-          const x = g.entries[i];
-          if (x === before || seen.has(x.id) || x.kind === 'note' || x.t > before.t + 150) continue;
-          if (before.t - x.t > (within || 600000)) break;
-          if (pred(x)) return x;
-        }
-        return null;
-      };
-      let cur = e0;
-      for (let n = 0; n < 12 && cur; n++) {
-        let prev = null;
-        if (cur.by && (cur.by.kind === 'auto' || cur.by.kind === 'script') && cur.by.key && cur.by.key !== cur.key) prev = last((x) => x.kind === 'run' && x.key === cur.by.key, cur);
-        if (!prev && cur.kind === 'run') { const src = srcKey(cur.src); if (src) prev = last((x) => (x.kind === 'state' || x.kind === 'test' || x.kind === 'call') && x.key === src, cur, 60000); }
-        if (!prev && cur.kind === 'state' && cur.by && cur.by.kind === 'user') prev = last((x) => (x.kind === 'test' || x.kind === 'call') && (x.key === cur.key || (x.ents || []).includes(cur.key)), cur, 5000);
-        if (!prev) break;
-        steps.unshift(prev); seen.add(prev.id); cur = prev;
-      }
-      return steps;
-    }
-    // a run on the board (4.5): its trigger arrow and the arrows to what it actually called, with its trace a click away
-    async _showRun(e, steps) {
-      const r = e.run;
-      let tr = null;
-      try { tr = await this._ws({ type: 'trace/get', domain: r.domain, item_id: r.item_id, run_id: r.run_id }); }
-      catch (err) { this._toast(T('could_not_read_its_trace', { err: (err && (err.message || err.code)) || err })); }
-      if (!this._model) return;
-      const path = tr ? runPath(e.key, tr, this._model.edges) : { keys: [e.key], edges: [] };
-      let chain = steps || [e];
-      // an event trigger carries what fired it (a timer, say): follow the chain from that change
-      const tv = tr && trigVar(tr), from = tv && ((tv.event && tv.event.data && tv.event.data.entity_id) || tv.entity_id);
-      if (this._dbg && chain.length === 1 && typeof from === 'string') {
-        const before = this._dbg.entries.slice().reverse().find((x) => x.kind === 'state' && x.key === from && x.t <= e.t + 150 && e.t - x.t < 60000);
-        if (before) chain = this._dbgChain(before).concat([e]);
-      }
-      this._lightSteps(chain, { keys: path.keys, edges: path.edges, e, tr });
-    }
     _lightSteps(steps, run) {
       const m = this._model;
       if (!m) return;
@@ -9870,36 +11568,6 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._litSteps = steps; this._litRun = run || null;
       this._fitLitbar();
     }
-    // the part of the board the drawer leaves visible
-    _openWidth() {
-      const W = this._$.vp.clientWidth, d = this._$.drawer;
-      return d && !d.hidden && this._drawer ? Math.max(200, W - d.offsetWidth) : W;
-    }
-    _fitLitbar() {
-      const r = (12 + this._$.vp.clientWidth - this._openWidth()) + 'px', b = this._$.litbar, vt = this._$.vtabs;
-      if (b && !b.hidden) b.style.right = r;
-      // the version tabs and their banner keep to the part of the board the drawer leaves free too
-      if (vt) vt.style.right = r;
-    }
-    // bring boxes into the visible part of the board, zooming out only when they don't fit
-    _frameKeys(keys, extra) {
-      const m = this._model, ns = [...new Set(keys)].map((k) => m && m.nodes.get(k)).filter(Boolean).concat(extra || []);
-      if (!ns.length) return;
-      const W = this._openWidth(), H = this._$.vp.clientHeight, v = this._view, pad = 50;
-      const x0 = Math.min(...ns.map((n) => n.x)), y0 = Math.min(...ns.map((n) => n.y)), x1 = Math.max(...ns.map((n) => n.x + n.w)), y1 = Math.max(...ns.map((n) => n.y + n.h));
-      const inView = x0 * v.k + v.x >= 0 && y0 * v.k + v.y >= 0 && x1 * v.k + v.x <= W && y1 * v.k + v.y <= H - 60;
-      if (inView) return;
-      const k = Math.max(0.35, Math.min(v.k, (W - pad * 2) / Math.max(1, x1 - x0), (H - 60 - pad * 2) / Math.max(1, y1 - y0)));
-      this._view = { k, x: (W - (x1 - x0) * k) / 2 - x0 * k, y: (H - 60 - (y1 - y0) * k) / 2 - y0 * k };
-      this._applyView();
-      this._saveView();
-    }
-    _stepText(s) {
-      if (s.kind === 'state') return `${this._boxName(s.key)} → ${this._fmtState(s.key, s.state)}`;
-      if (s.kind === 'run') return T('ran', { boxName: this._boxName(s.key) });
-      if (s.kind === 'call') return s.svc;
-      return s.text || '';
-    }
     _clearLit(quiet) {
       this._clock.cancel('lit');
       const was = !!this._lit, fl = !!this._flow;
@@ -9916,300 +11584,391 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._openDrawer(`/config/${r.domain}/trace/${encodeURIComponent(r.item_id)}?run_id=${encodeURIComponent(r.run_id)}`,
         T('trace', { boxName: this._boxName(run.e.key), extra: run.tr ? ' · ' + clock(run.tr.timestamp && run.tr.timestamp.start) : '' }), { back: true });
     }
+    _sbxRec(step) { const g = this._sbx; if (g && g.rec) g.rec.steps.push(step); }
 
-    // ---- notifications (9.5): what a notify box sent lately, from the traces of what sends it
-    async _openMessages(key) {
-      const m = this._model, n = m && m.nodes.get(key);
-      if (!n) return;
-      this._leaveDrawerMode();
-      this._capture = null;
-      this._drawer = { mode: 'msgs', key };
-      const d = this._$.drawer;
-      d.hidden = false;
-      this._put(d, `<div class="dhead"><span class="dtitle">${T('last_messages', { name: esc(n.name) })}</span><button data-act="close" title="${T('close')}"><ha-icon icon="mdi:close"></ha-icon></button></div><div class="runs msgs"><div class="muted pad">${T('reading_traces')}</div></div>`);
-      this._fitLitbar();
-      const callers = [...new Set(m.edges.filter((e) => e.to === key && e.role === 'action' && /^(automation|script)\./.test(e.from)).map((e) => e.from))];
-      const mine = (p) => (key.startsWith('svc:') ? p.domain + '.' + p.service === key.slice(4)
-        : p.domain === 'notify' && toList((p.target || {}).entity_id).concat(toList((p.service_data || {}).entity_id)).includes(key));
-      const out = [];
-      await Promise.all(callers.map(async (c) => {
-        const cn = m.nodes.get(c), id = cn && this._itemId(cn);
-        if (!id) return;
-        const list = await this._ws({ type: 'trace/list', domain: cn.domain, item_id: id }, { optional: 'an automation without an id keeps no traces', fallback: [] });
-        const recent = (list || []).filter((r) => r.state === 'stopped').sort((a, b) => Date.parse(b.timestamp.start) - Date.parse(a.timestamp.start)).slice(0, 8);
-        await Promise.all(recent.map(async (r) => {
-          const tr = await this._ws({ type: 'trace/get', domain: cn.domain, item_id: id, run_id: r.run_id }, { optional: 'a trace can be gone: Home Assistant keeps only the last few runs', fallback: null });
-          Object.values((tr && tr.trace) || {}).forEach((els) => (els || []).forEach((el) => {
-            const p = el && el.result && el.result.params;
-            if (p && mine(p)) out.push({ t: Date.parse(el.timestamp) || Date.parse(r.timestamp.start) || 0, from: c, data: p.service_data || {}, run: { domain: cn.domain, item_id: id, run_id: r.run_id } });
-          }));
-        }));
-      }));
-      if (!this._drawer || this._drawer.mode !== 'msgs' || this._drawer.key !== key) return;
-      out.sort((a, b) => b.t - a.t);
-      this._msgs = out;
-      const box = d.querySelector('.msgs');
-      if (!box) return;
-      this._put(box, out.length ? `<div class="muted pad small">${T('what_this_sent_lately_newest')}</div>${out.slice(0, 40).map((x, i) => {
-          const dd = x.data || {}, btns = dd.data && Array.isArray(dd.data.actions) ? dd.data.actions.map((a) => a && a.title).filter(Boolean) : [];
-          return `<button class="run msg" data-act="msg-run" data-i="${i}" data-key="${esc(x.from)}"><span class="rt">${esc(clock(new Date(x.t).toISOString()))}</span>`
-            + `<span class="rn"><b>${esc(dd.title || T('no_title'))}</b><span>${esc(shorten(dd.message == null ? '' : typeof dd.message === 'object' ? JSON.stringify(dd.message) : dd.message, 300))}</span>${btns.length ? `<span class="mb">${T('buttons', { btns: esc(btns.join(', ')) })}</span>` : ''}</span>`
-            + `<span class="ro">${esc(this._boxName(x.from))}</span></button>`;
-        }).join('')}`
-        : `<div class="muted pad">${T('nothing_found_home_assistant_keeps')}</div>`);
-    }
-
-    /* ---------- the arrow editor (7.5, decision D8): an arrow is a reference in an automation or script config,
-       so drawing or removing one edits that config, through the same API Home Assistant's own editor uses ---------- */
-    // the automation or script whose config an arrow comes from, and the box it names there
-    _arrowEnds(e) {
-      const logic = (k) => /^(automation|script)\./.test(k);
-      if ((e.role === 'trigger' || e.role === 'condition') && logic(e.to)) return { owner: e.to, other: e.from };
-      if ((e.role === 'action' || e.role === 'call') && logic(e.from)) return { owner: e.from, other: e.to };
-      return null;
-    }
-    // clicking an arrow selects it: what it means, and what can be done with it
-    _edgeClick(id, ev) {
-      const m = this._model, e = m && m.edges.find((x) => x.id === id);
-      if (!e || e.role === 'tool') return;
-      this._selEdge = id;
-      this._sel = null;
-      this._applyFocus();
-      const bar = this._$.edgebar, ends = this._arrowEnds(e), owner = ends && m.nodes.get(ends.owner);
-      const full = this._full(), why = !ends ? (e.role === 'source' ? T('this_arrow_comes_from_the') : T('this_arrow_doesn_t_come')) : '';
-      this._put(bar, `<span class="ebtxt">${esc(this._edgeTitle(e))}</span><button data-act="arw-remove" ${!ends || !full ? 'disabled' : ''} title="${esc(!ends ? why : full ? T('remove_what_this_arrow_stands') : T('full_manager_only_switch_it'))}"><ha-icon icon="mdi:link-variant-remove"></ha-icon><span>${T('remove_2')}</span></button>${owner ? `<button data-act="arw-open" title="${T('open_in_its_editor', { name: esc(owner.name) })}"><ha-icon icon="mdi:pencil-outline"></ha-icon><span>${T('edit', { name: esc(owner.name) })}</span></button>` : ''}`);
-      bar.hidden = false;
-      const r = this._$.vp.getBoundingClientRect();
-      bar.style.left = Math.max(6, Math.min(ev.clientX - r.left - 20, this._openWidth() - bar.offsetWidth - 6)) + 'px';
-      bar.style.top = Math.max(6, Math.min(ev.clientY - r.top + 14, r.height - bar.offsetHeight - 6)) + 'px';
-    }
-    _clearEdgeSel() {
-      if (!this._selEdge && this._$.edgebar.hidden) return;
-      this._selEdge = null;
-      this._$.edgebar.hidden = true;
-      this._drawEdges();
-    }
-    // the config of the automation or script that holds an arrow, or why it can't be changed from here
-    async _ownerCfg(owner) {
-      const n = this._model && this._model.nodes.get(owner), dom = owner.split('.')[0], id = n && this._itemId(n);
-      if (!n) return { err: T('it_isn_t_on_the') };
-      if (!id) return { err: T('has_no_id_so_it', { name: n.name }) };
-      let cfg;
-      try { cfg = await this._api('GET', `config/${dom}/config/${encodeURIComponent(id)}`); }
-      catch (e) {
-        const nf = e && (e.status_code === 404 || /404|not.found/i.test(String(e.message || e.body || e.error || '')));
-        return { err: nf ? T('is_set_up_in_yaml', { name: n.name, dom }) : T('could_not_read_its_config', { e: (e && (e.message || e.body)) || e }), n };
+    /* ======================================================================================================
+       part: versions: saved versions: the drawer, a version's tab, comparing, restoring Owns _verPending, _verUrlDone
+       (PARTS): only its own methods use them; the other parts ask its methods.
+       ====================================================================================================== */
+    // top to bottom (the function's layout says so)
+    _vert() { return !!(this._model && this._layout(this._model.label).dir === 'down'); }
+    /* ---------- Sandbox (Phase 10): the drawer, the controls, the timeline ---------- */
+    /* ---------- versions (0.8.0): named snapshots of a function, kept by the integration (functions_board/version_*).
+       A snapshot is what Home Assistant's own APIs return: the configs of the function's automations and scripts,
+       its UI helpers' settings, which items are in it, its layout, and the devices its steps use. Saving one changes
+       nothing. A version opens in a tab of its own (read-only, marked against what's there now), can be tried in
+       the sandbox, and in Full manager can be restored through the same config APIs Home Assistant's editors use,
+       after a dialog that lists every change; what's there before is saved first if the person ticks that box. ---------- */
+    _verOK() { return this._storeMode === 'shared'; }
+    async _verList(label) { const r = await this._ws({ type: 'functions_board/versions', label }); return (r && r.versions) || []; }
+    _verGet(label, id) { return this._ws({ type: 'functions_board/version_get', label, version_id: id }); }
+    // a saved config as the board reads it: a blueprint automation or script is filled in by Home Assistant
+    async _verCfg(k, it) {
+      const V = this._ver;
+      if (V.cfgs.has(k)) return V.cfgs.get(k);
+      let cfg = it.cfg;
+      const bp = cfg && cfg.use_blueprint;
+      if (bp && bp.path) {
+        try { const r = await this._ws({ type: 'blueprint/substitute', domain: it.dom, path: bp.path, input: bp.input || {} }); if (r && r.substituted_config) cfg = Object.assign({}, r.substituted_config, { alias: cfg.alias, id: cfg.id, use_blueprint: bp }); } catch (e) { /* inputs only */ }
       }
-      if (cfg && cfg.use_blueprint) return { err: T('comes_from_a_blueprint_its', { name: n.name }), n };
-      return { cfg, id, dom, n, isScript: dom === 'script' };
-    }
-    // removing an arrow: each reference behind it, ticked, with the YAML that goes
-    async _arrowRemoveDialog(id) {
-      const m = this._model, e = m && m.edges.find((x) => x.id === id), ends = e && this._arrowEnds(e);
-      this._clearEdgeSel();
-      if (!ends || !this._full()) return;
-      const md = this._$.modal;
-      md.hidden = false;
-      md.innerHTML = `<div class="dlg wide"><h3>${T('remove_an_arrow')}</h3><div class="muted">${T('reading_the_config')}</div></div>`;
-      const o = await this._ownerCfg(ends.owner), other = m.nodes.get(ends.other);
-      if (o.err) {
-        md.innerHTML = `<div class="dlg"><h3>${T('remove_an_arrow')}</h3><p class="dtext">${esc(o.err)}</p><div class="btns"><button data-act="modal-cancel">${T('close')}</button><button class="primary" data-act="arw-edit" data-key="${esc(ends.owner)}">${T('open_the_editor')}</button></div></div>`;
-        return;
-      }
-      const refs = refsTo(o.cfg, o.isScript, ends.other);
-      const indirect = analyze(o.cfg, o.isScript, (x) => this._known(x)).refs.filter((r) => r.ref === ends.other && r.tpl).length;
-      this._arw = { mode: 'remove', o, refs, sel: new Set(refs.map((r, i) => i)), owner: ends.owner, other: ends.other, otherName: other ? other.name : ends.other };
-      const row = (r, i) => {
-        const node = getPath(o.cfg, r.path);
-        const what = r.mode === 'node' ? T('removes_this', { extra: r.kind === 'trigger' ? 'trigger' : r.kind === 'condition' ? 'condition' : 'step' }) : T('takes_out_of_its_list', { otherName: this._arw.otherName });
-        return `<label class="aref"><input type="checkbox" data-aref="${i}" checked><span><b>${esc(refPlace(r))}</b> <span class="muted small">${esc(what)}</span><pre>${esc(shorten(toYaml(node), 600))}</pre></span></label>`;
-      };
-      md.innerHTML = `<div class="dlg wide adlg"><h3>${esc(this._arw.otherName)} and ${esc(o.n.name)}</h3>${refs.length ? `<div class="hint">${T('what_s_config_says_about', { name: esc(o.n.name), otherName: esc(this._arw.otherName) })}</div><div class="arefs">${refs.map(row).join('')}</div>`
-          : `<p class="dtext">${T('doesn_t_name_directly_so', { name: esc(o.n.name), otherName: esc(this._arw.otherName), extra: e.via ? ` ${T('the_arrow_comes_through', { boxName: esc(this._boxName(e.via)) })}` : '' })}</p>`}${indirect ? `<div class="hint">${T('it_is_also_read_inside', { indirect: P('n_templates', indirect) })}</div>` : ''}${this._yamlWarn(o.dom)}<div class="aval hint"></div><div class="btns"><button data-act="arw-edit" data-key="${esc(ends.owner)}">${T('open_the_editor')}</button><span class="cnt"></span><button data-act="modal-cancel">${T('cancel')}</button>${refs.length ? `<button class="primary danger" data-act="arw-save">${T('remove')}</button>` : ''}</div></div>`;
-    }
-    _yamlWarn(dom) {
-      return this._data.ui.yamlOk ? '' : `<div class="warnbox"><ha-icon icon="mdi:alert-outline"></ha-icon><span>${T('saving_writes_s_yaml_the', { dom })}</span></div>`;
-    }
-    // drawing an arrow: pick the box to connect to
-    _canLink(n) {
-      if (!n || n.kind === 'tool') return false;
-      const k = n.key;
-      return /^(automation|script)\./.test(k) || /^(event|nact):/.test(k) || TGT_RE.test(k) || (!k.includes(':') && !!this._hass.states[k]);
-    }
-    // rev: the arrow is to go into this box, from the box picked next
-    _startLink(key, drag, rev) {
-      if (!this._full()) { this._toast(T('drawing_arrows_needs_full_manager')); return; }
-      const n = this._model && this._model.nodes.get(key);
-      if (!this._canLink(n)) return;
-      this._linking = { from: key, drag: !!drag, moved: false, rev: !!rev };
-      this._$.board.classList.add('linking');
-      this._toast(rev ? T('now_click_the_box_that_leads_to', { name: n.name }) : T('now_click_the_box_to', { name: n.name }));
-    }
-    _linkMove(ev) {
-      const L = this._linking, m = this._model, n = L && m && m.nodes.get(L.from);
-      if (!n) return;
-      const r = this._$.vp.getBoundingClientRect(), v = this._view;
-      const x = (ev.clientX - r.left - v.x) / v.k, y = (ev.clientY - r.top - v.y) / v.k;
-      const sx = L.rev ? n.x : x >= n.x + n.w / 2 ? n.x + n.w : n.x, sy = n.y + n.h / 2;
-      this._$.links.innerHTML = `<path class="ltmp" d="M${sx},${sy} C${(sx + x) / 2},${sy} ${(sx + x) / 2},${y} ${x},${y}"></path>`;
-      L.moved = true;
-    }
-    _endLink() {
-      this._linking = null;
-      this._$.board.classList.remove('linking');
-      this._$.links.innerHTML = '';
-    }
-    // which way an arrow between two boxes can go, and what it can mean
-    _linkKinds(from, to) {
-      const logic = (k) => /^(automation|script)\./.test(k);
-      const ent = (k) => !k.includes(':') && !!this._hass.states[k];
-      if (to.startsWith('automation.') && (ent(from) || /^(event|nact):/.test(from)) && !logic(from)) return { owner: to, other: from, kinds: /^(event|nact):/.test(from) ? ['trigger'] : ['trigger', 'condition'] };
-      if (logic(from) && to.startsWith('script.')) return { owner: from, other: to, kinds: ['call'] };
-      if (logic(from) && (ent(to) || TGT_RE.test(to))) return { owner: from, other: to, kinds: ['action'] };
-      return null;
-    }
-    async _linkDialog(from, to) {
-      const m = this._model, a = m.nodes.get(from), b = m.nodes.get(to), how = this._linkKinds(from, to);
-      if (!how) { this._toast(T('an_arrow_can_t_go', { name: a.name, name2: b.name })); return; }
-      const md = this._$.modal;
-      md.hidden = false;
-      md.innerHTML = `<div class="dlg wide"><h3>${T('connect')}</h3><div class="muted">${T('reading_what_home_assistant_offers')}</div></div>`;
-      const o = await this._ownerCfg(how.owner);
-      if (o.err) {
-        md.innerHTML = `<div class="dlg"><h3>${T('connect')}</h3><p class="dtext">${esc(o.err)}</p><div class="btns"><button data-act="modal-cancel">${T('close')}</button></div></div>`;
-        return;
-      }
-      const choices = await this._linkChoices(how);
-      if (!choices.length) { md.innerHTML = `<div class="dlg"><h3>${T('connect')}</h3><p class="dtext">${T('home_assistant_offers_nothing_that')}</p><div class="btns"><button data-act="modal-cancel">${T('close')}</button></div></div>`; return; }
-      this._arw = { mode: 'add', o, how, choices, pick: 0, vals: {}, owner: how.owner, other: how.other };
-      this._renderLinkDlg();
-    }
-    // what an arrow can mean, from Home Assistant's own lists for the box (get_triggers_for_target and the others)
-    async _linkChoices(how) {
-      const k = how.other, out = [], target = TGT_RE.test(k) ? { [{ area: 'area_id', floor: 'floor_id', label: 'label_id' }[k.slice(0, k.indexOf(':'))]]: k.slice(k.indexOf(':') + 1) } : { entity_id: k };
-      const get = (type) => (k.includes(':') && !TGT_RE.test(k) ? Promise.resolve([]) : this._ws({ type, target }, { optional: 'a Home Assistant before 2025.12 has no purpose-specific triggers or conditions', fallback: [] }));
-      const names = await this._ptNamesFor(how.kinds);
-      const ok = (desc) => !desc || Object.values(desc.fields || {}).every((f) => !f.required || f.default !== undefined);
-      for (const kind of how.kinds) {
-        if (kind === 'trigger') {
-          if (k.startsWith('event:')) out.push({ kind, text: T('it_triggers_it'), item: { trigger: 'event', event_type: k.slice(6) } });
-          else if (k.startsWith('nact:')) { const b = this._buttonEvent(this._model.nodes.get(k)); out.push({ kind, text: T('pressing_it_triggers_it'), item: { trigger: 'event', event_type: b.event_type, event_data: b.event_data } }); }
-          else {
-            out.push({ kind, text: T('it_changes_state'), state: 'to', item: { trigger: 'state', entity_id: k } });
-            ((await get('get_triggers_for_target')) || []).filter((t) => ok((this._trigDesc || {})[t])).sort().forEach((t) => out.push({ kind, text: names[t] || humanize(t), item: { trigger: t, target: { entity_id: k } } }));
-          }
-        } else if (kind === 'condition') {
-          out.push({ kind, text: T('its_state_is'), state: 'state', item: { condition: 'state', entity_id: k, state: '' } });
-          ((await get('get_conditions_for_target')) || []).filter((t) => ok((this._condDesc || {})[t])).sort().forEach((t) => out.push({ kind, text: names[t] || humanize(t), item: { condition: t, target: { entity_id: k } } }));
-        } else if (kind === 'call') {
-          out.push({ kind, text: T('it_runs_it'), item: { action: k }, fields: await this._scriptFields(k).then((fs) => fs.filter((f) => f.required)) });
-        } else if (kind === 'action') {
-          ((await get('get_services_for_target')) || []).filter((s) => !s.startsWith('homeassistant.')).sort().forEach((s) => {
-            const [d, sv] = s.split('.'), desc = ((this._hass.services || {})[d] || {})[sv] || {};
-            const fields = Object.entries(desc.fields || {}).filter(([, f]) => f && f.required).map(([name, f]) => ({ name, type: 'selector', label: f.name || name, selector: f.selector || { text: {} }, required: true }));
-            out.push({ kind, text: desc.name || humanize(s), item: Object.assign({ action: s, target }), fields });
-          });
-        }
-      }
-      return out;
-    }
-    // names of the purpose-specific triggers and conditions, in the user's language when Home Assistant has them
-    async _ptNamesFor(kinds) {
-      const cat = [].concat(kinds.includes('trigger') ? ['triggers'] : [], kinds.includes('condition') ? ['conditions'] : []);
-      const out = {};
-      for (const c of cat) {
-        try {
-          const r = await this._ws({ type: 'frontend/get_translations', language: this._hass.language || 'en', category: c });
-          Object.entries((r && r.resources) || {}).forEach(([key, v]) => { const mm = key.match(/^component\.([^.]+)\.(?:triggers|conditions)\.([^.]+)\.name$/); if (mm) out[mm[1] + '.' + mm[2]] = v; });
-        } catch (e) { /* the ids then */ }
-      }
-      return out;
-    }
-    _renderLinkDlg() {
-      const w = this._arw, md = this._$.modal, c = w.choices[w.pick], m = this._model;
-      const a = m.nodes.get(w.how.other), owner = w.o.n;
-      const lead = { trigger: T('triggers_when', { name: a.name, name2: owner.name }), condition: T('checks_only_if', { name: owner.name, name2: a.name }), action: T('changes_it', { name: owner.name, name2: a.name }), call: T('runs_2', { name: owner.name, name2: a.name }) };
-      const kinds = [...new Set(w.choices.map((x) => x.kind))];
-      md.innerHTML = `<div class="dlg wide adlg"><h3>${T('connect_and_2', { name: esc(a.name), name2: esc(owner.name) })}</h3>${kinds.length > 1 ? `<div class="tchoice">${kinds.map((k) => `<button class="chip ${c.kind === k ? 'on' : ''}" data-act="lnk-kind" data-k="${k}">${k === 'trigger' ? T('it_triggers_it') : T('it_is_checked_by_it')}</button>`).join('')}</div>` : ''}<div class="tone">${esc(lead[c.kind])}</div><div class="tchoice">${w.choices.map((x, i) => (x.kind === c.kind ? `<button class="chip ${i === w.pick ? 'on' : ''}" data-act="lnk-pick" data-i="${i}">${esc(x.text)}</button>` : '')).join('')}</div>${c.state ? `<label>${c.state === 'to' ? T('to_empty_any_change') : T('state')}<input name="lstate" value="${esc(w.vals.state || '')}" list="fblstates"><datalist id="fblstates">${this._stateHints(a).map((s) => `<option value="${esc(s)}">`).join('')}</datalist></label>` : ''}${c.fields && c.fields.length ? `<div class="tfields">${c.fields.map((f, i) => this._fieldHTML(f, i, w.vals)).join('')}</div>` : ''}<div class="hint">${T('adds_to', { name: esc(owner.name) })}</div><pre class="yprev"></pre>${this._yamlWarn(w.o.dom)}<div class="aval hint"></div><div class="btns"><button data-act="modal-cancel">${T('cancel')}</button><button class="primary" data-act="arw-save">${T('add')}</button></div></div>`;
-      if (c.fields && c.fields.length) { this._tst = { key: w.how.other, specs: [{ id: 'l', fields: c.fields }], pick: 'l', vals: w.vals }; this._mountFields(this._tst.specs[0]); }
-      this._linkPreview();
-    }
-    // the item a link adds, from the choice and what was typed
-    _linkItem() {
-      const w = this._arw, c = w.choices[w.pick], item = JSON.parse(JSON.stringify(c.item)), md = this._$.modal;
-      const st = md.querySelector('input[name="lstate"]');
-      if (c.state) { const v = st ? st.value.trim() : ''; if (v) item[c.state] = v; else delete item[c.state]; }
-      (c.fields || []).forEach((f, i) => {
-        const el = md.querySelector(`[name="tf${i}"]`), box = md.querySelector(`.selbox[data-f="${i}"]`);
-        const v = box && box.dataset.mounted ? w.vals[f.name] : el ? scalar(el.value) : undefined;
-        if (v !== undefined && v !== '' && v !== null) (item.data || (item.data = {}))[f.name] = v;
-      });
-      return item;
-    }
-    _linkKey(kind, isScript, cfg) {
-      if (isScript) return 'sequence';
-      const plural = { trigger: 'triggers', condition: 'conditions', action: 'actions', call: 'actions' }[kind], single = plural.slice(0, -1);
-      return cfg[plural] == null && cfg[single] != null ? single : plural;
-    }
-    _linkPreview() {
-      const w = this._arw, pre = this._$.modal.querySelector('.yprev');
-      if (!w || w.mode !== 'add' || !pre) return;
-      const c = w.choices[w.pick], key = this._linkKey(c.kind, w.o.isScript, w.o.cfg);
-      pre.textContent = toYaml({ [key]: [this._linkItem()] });
-    }
-    // the new config: a link appended to its list, or the ticked references removed
-    _arwResult() {
-      const w = this._arw, cfg = JSON.parse(JSON.stringify(w.o.cfg));
-      if (w.mode === 'remove') return dropRefs(cfg, w.refs.filter((r, i) => w.sel.has(i)));
-      const c = w.choices[w.pick], key = this._linkKey(c.kind, w.o.isScript, cfg), item = this._linkItem();
-      if (c.state === 'state' && !item.state) throw new Error(T('enter_the_state_it_checks'));
-      const miss = (c.fields || []).find((f) => f.required && !(item.data && f.name in item.data));
-      if (miss) throw new Error(T('fill_in', { label: miss.label }));
-      cfg[key] = toList(cfg[key]).concat([item]);
+      V.cfgs.set(k, cfg);
       return cfg;
     }
-    async _arwSave() {
-      const w = this._arw, md = this._$.modal, val = md.querySelector('.aval'), btn = md.querySelector('[data-act="arw-save"]');
-      if (!w) return;
-      let after;
-      try { after = this._arwResult(); } catch (e) { if (val) val.textContent = e.message || String(e); return; }
-      if (w.mode === 'remove' && !w.sel.size) { if (val) val.textContent = T('tick_at_least_one'); return; }
-      // Home Assistant checks the new config first; nothing is saved when it doesn't accept it
-      const lists = w.o.isScript ? { actions: after.sequence || [] } : { triggers: after.triggers != null ? after.triggers : after.trigger || [], conditions: after.conditions != null ? after.conditions : after.condition || [], actions: after.actions != null ? after.actions : after.action || [] };
-      if (btn) btn.disabled = true;
-      let res = null;
-      try { res = await this._ws(Object.assign({ type: 'validate_config' }, lists)); } catch (e) { res = null; }
-      const bad = res && Object.entries(res).filter(([, v]) => v && v.valid === false);
-      if (bad && bad.length) {
-        if (val) val.innerHTML = `<b>${T('home_assistant_doesn_t_accept')}</b> ${bad.map(([k, v]) => esc(k + ': ' + v.error)).join('; ')}`;
-        if (btn) btn.disabled = false;
-        return;
+    _verMembers(label) {
+      return this._ents.filter((e) => (e.labels || []).includes(label)).map((e) => e.entity_id).concat(this._devs.filter((d) => (d.labels || []).includes(label)).map((d) => 'device:' + d.id));
+    }
+    // the function as it is now, read through Home Assistant's own APIs (nothing is changed)
+    async _verSnapshot(label) {
+      const members = this._verMembers(label), items = {}, lists = new Map(), devices = {};
+      const list = async (dom) => { if (!lists.has(dom)) lists.set(dom, await this._ws({ type: dom + '/list' }, { optional: 'a helper domain not set up has no list of helpers', fallback: null })); return lists.get(dom) || []; };
+      for (const k of members) {
+        if (k.startsWith('device:')) continue;
+        const dom = k.split('.')[0], name = this._nameOf(k);
+        if (dom === 'automation' || dom === 'script') {
+          const r = await this._ws({ type: dom + '/config', entity_id: k }, { optional: 'an automation or script without an id has no stored config', fallback: null }), cfg = r && r.config;
+          if (!cfg) continue;
+          const id = dom === 'automation' ? cfg.id || null : k.slice(7);
+          // only what's in automations.yaml or scripts.yaml can be written back: Home Assistant's editors say the same
+          const own = id ? !!(await this._api('GET', `config/${dom}/config/${encodeURIComponent(id)}`, undefined, { optional: 'one set up in YAML has no stored config to read', fallback: null })) : false;
+          items[k] = { dom, id, name, cfg, yaml: !own };
+        } else if (VER_HELPERS.has(dom)) {
+          const reg = this._entMap.get(k), it = (await list(dom)).find((x) => reg && x.id === reg.unique_id);
+          if (it) { const cfg = Object.assign({}, it); delete cfg.id; items[k] = { dom, id: it.id, name, cfg }; } else items[k] = { dom, id: null, name, yaml: true };
+        }
       }
-      const { dom, id, n } = w.o, before = w.o.cfg, label = this._model && this._model.label;
-      const text = w.mode === 'add' ? T('connect_and', { boxName: this._boxName(w.other), name: n.name }) : T('remove_from', { boxName: this._boxName(w.other), name: n.name });
-      try { await this._saveCfg(dom, id, after); } catch (e) {
-        if (val) val.textContent = T('could_not_save_2', { e: (e && (e.message || e.body)) || e });
-        if (btn) btn.disabled = false;
-        return;
-      }
-      if (!this._data.ui.yamlOk) { this._data.ui.yamlOk = true; this._save(); }
-      this._arw = null; this._tst = null;
+      const ids = new Set(members.filter((k) => k.startsWith('device:')).map((k) => k.slice(7)));
+      Object.values(items).forEach((it) => { if (it.cfg) devIdsIn(it.cfg, ids); });
+      ids.forEach((id) => { const d = this._devMap.get(id); if (d) devices[id] = { name: d.name_by_user || d.name || '', model: d.model || '', manufacturer: d.manufacturer || '' }; });
+      const L = this._data.layouts[label] ? JSON.parse(JSON.stringify(this._data.layouts[label])) : null;
+      if (L) delete L.view;
+      return { fmt: 1, members, items, devices, layout: L };
+    }
+    _verWhen(at) { try { return new Date(at).toLocaleString(this._hass.language || undefined, { dateStyle: 'medium', timeStyle: 'short' }); } catch (e) { return new Date(at).toLocaleString(); } }
+
+    async _openVersions() {
+      const label = this._data.ui.current;
+      if (!label || !this._model) return;
+      if (!this._verOK()) { this._toast(T('ver_needs_integration')); return; }
+      this._leaveDrawerMode();
+      this._capture = null;
+      this._drawer = { mode: 'versions' };
+      const d = this._$.drawer;
+      d.hidden = false;
+      this._put(d, `<div class="dhead"><span class="dtitle">${T('ver_title', { fnName: esc(this._fnName(label)) })}</span><button data-act="close" title="${T('close')}"><ha-icon icon="mdi:close"></ha-icon></button></div><div class="vers"><div class="vnote">${T('ver_note')}</div><div class="vact"><button class="primary" data-act="ver-new"><ha-icon icon="mdi:camera-outline"></ha-icon>${T('ver_save_b')}</button></div><div class="vlist"><div class="muted pad">${T('ver_reading')}</div></div></div>`);
+      this._fitLitbar();
+      await this._renderVersions();
+    }
+    async _renderVersions() {
+      const label = this._data.ui.current, box = this._$.drawer.querySelector('.vlist');
+      if (!box || !this._drawer || this._drawer.mode !== 'versions') return;
+      let vs;
+      try { vs = await this._verList(label); } catch (e) { this._put(box, `<div class="lgerr">${esc((e && (e.message || e.code)) || e)}</div>`); return; }
+      // which version (if any) is what's there now
+      let print = null;
+      try { print = verPrint(await this._verSnapshot(label)); } catch (e) { /* no match shown */ }
+      if (!this._drawer || this._drawer.mode !== 'versions' || label !== this._data.ui.current) return;
+      const active = vs.slice().reverse().find((v) => v.print && v.print === print), full = this._full(), viewing = this._ver && this._ver.label === label ? this._ver.id : null;
+      this._verCache = { label, vs, active: active ? active.id : null };
+      const row = (v) => `<div class="vrow${active && active.id === v.id ? ' on' : ''}${viewing === v.id ? ' view' : ''}" data-id="${esc(v.id)}"><div class="vh"><b>${esc(v.name)}</b>${active && active.id === v.id ? `<span class="vbadge">${T('ver_active')}</span>` : ''}${v.auto ? `<span class="vauto">${T('ver_auto')}</span>` : ''}</div>${v.desc ? `<div class="vdesc">${esc(v.desc)}</div>` : ''}<div class="vm">${esc(this._verWhen(v.at))}${v.by ? ' · ' + esc(v.by) : ''}</div>`
+        + `<div class="vb"><button data-act="ver-open" data-id="${esc(v.id)}"><ha-icon icon="mdi:tab"></ha-icon>${T('ver_open')}</button><button data-act="ver-sbx" data-id="${esc(v.id)}"><ha-icon icon="mdi:flask-outline"></ha-icon>${T('ver_try')}</button>`
+        + `<button data-act="ver-restore" data-id="${esc(v.id)}"${full && !(active && active.id === v.id) ? '' : ' disabled'} title="${full ? (active && active.id === v.id ? T('ver_is_active') : T('ver_restore_t')) : T('ver_restore_full')}"><ha-icon icon="mdi:backup-restore"></ha-icon>${T('ver_restore')}</button>`
+        + `<button class="ib" data-act="diag" data-ver="${esc(v.id)}" title="${T('diag_ver_t')}"><ha-icon icon="mdi:file-download-outline"></ha-icon></button><button class="ib" data-act="ver-edit" data-id="${esc(v.id)}" title="${T('ver_edit_t')}"><ha-icon icon="mdi:pencil-outline"></ha-icon></button><button class="ib" data-act="ver-del" data-id="${esc(v.id)}" title="${T('ver_del_t')}"><ha-icon icon="mdi:delete-outline"></ha-icon></button></div></div>`;
+      const now = `<div class="vrow cur${active ? '' : ' on'}"><div class="vh"><b>${T('ver_now')}</b>${active ? `<span class="muted">${T('ver_now_is', { name: esc(active.name) })}</span>` : `<span class="vbadge">${T('ver_active')}</span><span class="muted">${T('ver_now_unsaved')}</span>`}</div></div>`;
+      this._put(box, now + (vs.length ? vs.slice().reverse().map(row).join('') : `<div class="muted pad">${T('ver_none')}</div>`));
+    }
+    _verNewDlg() {
+      const m = this._$.modal;
+      m.hidden = false;
+      m.innerHTML = `<div class="dlg"><h3>${T('ver_save_h')}</h3><label>${T('name')}<input name="vname" maxlength="100" placeholder="${T('ver_name_ph')}"></label><label>${T('description')}<textarea name="vdesc" rows="3" maxlength="2000" placeholder="${T('ver_desc_ph')}"></textarea></label><div class="hint">${T('ver_save_hint')}</div><div class="aval hint"></div><div class="btns"><button data-act="modal-cancel">${T('cancel')}</button><button class="primary" data-act="ver-save">${T('save')}</button></div></div>`;
+      m.querySelector('input[name="vname"]').focus();
+    }
+    async _verSave() {
+      const m = this._$.modal, label = this._data.ui.current, name = (m.querySelector('input[name="vname"]').value || '').trim(), desc = (m.querySelector('textarea[name="vdesc"]').value || '').trim();
+      const val = m.querySelector('.aval'), btn = m.querySelector('[data-act="ver-save"]');
+      if (!name) { val.textContent = T('ver_name_needed'); return; }
+      btn.disabled = true;
+      try {
+        const snap = await this._verSnapshot(label);
+        await this._ws({ type: 'functions_board/version_save', label, name, desc, snapshot: snap, print: verPrint(snap), client: this._client() });
+      } catch (e) { val.textContent = T('ver_not_saved', { e: (e && (e.message || e.code)) || e }); btn.disabled = false; return; }
       this._closeModal();
-      // put back exactly the config it had, unless someone has changed it since
-      const same = async (want) => { const now = await this._api('GET', `config/${dom}/config/${encodeURIComponent(id)}`, undefined, { fallback: null }); return canon(now) === canon(want); };
-      this._history({ label, text, check: (dir) => same(dir === 'undo' ? after : before), undo: () => this._saveCfg(dom, id, before), redo: () => this._saveCfg(dom, id, after) });
-      this._toast(T('saved_through_home_assistant_s', { text }), [{ text: T('undo'), fn: () => this._undo() }]);
-      this._configChanged();
+      this._toast(T('ver_saved', { name }));
+      if (!this._drawer || this._drawer.mode !== 'versions') this._openVersions(); else this._renderVersions();
     }
-    _saveCfg(dom, id, cfg) {
-      return this._api('POST', `config/${dom}/config/${encodeURIComponent(id)}`, cfg).then((r) => { this._store.changed('cfg:'); return r; });
+    _verFind(id) { return this._verCache && this._verCache.vs.find((v) => v.id === id); }
+    _verEditDlg(id) {
+      const v = this._verFind(id), m = this._$.modal;
+      if (!v) return;
+      this._verEditing = id;
+      m.hidden = false;
+      m.innerHTML = `<div class="dlg"><h3>${T('ver_edit_h')}</h3><label>${T('name')}<input name="vname" maxlength="100" value="${esc(v.name)}"></label><label>${T('description')}<textarea name="vdesc" rows="3" maxlength="2000">${esc(v.desc || '')}</textarea></label><div class="aval hint"></div><div class="btns"><button data-act="modal-cancel">${T('cancel')}</button><button class="primary" data-act="ver-edit-save">${T('save')}</button></div></div>`;
     }
+    async _verEditSave() {
+      const m = this._$.modal, name = (m.querySelector('input[name="vname"]').value || '').trim(), desc = (m.querySelector('textarea[name="vdesc"]').value || '').trim();
+      if (!name) { m.querySelector('.aval').textContent = T('ver_name_needed'); return; }
+      try { await this._ws({ type: 'functions_board/version_edit', label: this._data.ui.current, version_id: this._verEditing, name, desc, client: this._client() }); }
+      catch (e) { m.querySelector('.aval').textContent = T('ver_not_saved', { e: (e && (e.message || e.code)) || e }); return; }
+      const tabs = this._vtabs && this._vtabs.get(this._data.ui.current), t = tabs && tabs.find((x) => x.id === this._verEditing);
+      if (t) t.name = name;
+      if (this._ver && this._ver.id === this._verEditing) this._ver.name = name;
+      this._closeModal();
+      this._renderVersions();
+      this._renderVtabs();
+    }
+    _verDelDlg(id) {
+      const v = this._verFind(id), m = this._$.modal;
+      if (!v) return;
+      this._verEditing = id;
+      m.hidden = false;
+      m.innerHTML = `<div class="dlg"><h3>${T('ver_del_h', { name: esc(v.name) })}</h3><p class="dtext">${T('ver_del_text')}</p><div class="btns"><button data-act="modal-cancel">${T('cancel')}</button><button class="primary danger" data-act="ver-del-go">${T('delete_3')}</button></div></div>`;
+    }
+    async _verDel() {
+      const id = this._verEditing, label = this._data.ui.current;
+      try { await this._ws({ type: 'functions_board/version_delete', label, version_id: id, client: this._client() }); } catch (e) { this._toast(T('ver_not_saved', { e: (e && (e.message || e.code)) || e })); return; }
+      this._closeModal();
+      if (this._vtabs && this._vtabs.has(label)) this._verCloseTab(id);
+      this._renderVersions();
+    }
+
+    // ---- tabs: what's there now (active) and saved versions, one shown at a time
+    // a link to a saved version (…/functions/<function>?version=<id>, from "open in a new window"): once, on the
+    // first function opened
+    _verFromUrl() {
+      const q = !this._verUrlDone && new URLSearchParams(location.search).get('version');
+      this._verUrlDone = true;
+      if (q && /^[0-9a-f]{32}$/.test(q) && !this._ver && this._verOK()) this._verOpenTab(q);
+    }
+    async _verOpenTab(id, sandbox) {
+      const label = this._data.ui.current;
+      if (!label) return;
+      let v;
+      try { v = await this._verGet(label, id); } catch (e) { this._toast(T('ver_gone')); return; }
+      this._vtabs = this._vtabs || new Map();
+      const tabs = this._vtabs.get(label) || [];
+      if (!tabs.some((t) => t.id === id)) tabs.push({ id, name: v.name });
+      this._vtabs.set(label, tabs);
+      await this._verView(id, v);
+      if (sandbox) this._verTrySandbox();
+    }
+    _verTrySandbox() {
+      if (this._sbxOn()) return;
+      if (this._data.ui.sbxIntro === false) this._openSandbox(); else this._sbxIntro();
+    }
+    _verCloseTab(id) {
+      const label = this._data.ui.current, tabs = (this._vtabs && this._vtabs.get(label)) || [];
+      this._vtabs.set(label, tabs.filter((t) => t.id !== id));
+      if (this._ver && this._ver.id === id) this._verView(null); else this._renderVtabs();
+    }
+    // show a saved version (id), or what's there now (null)
+    async _verView(id, v) {
+      const label = this._data.ui.current;
+      if (!label) return;
+      if (id && !v) { try { v = await this._verGet(label, id); } catch (e) { this._toast(T('ver_gone')); return; } }
+      if (this._sbx || (this._drawer && this._drawer.mode === 'sandbox')) this._closeDrawer();
+      this._clearLit(true);
+      if (v) {
+        const raw = v.snapshot.layout ? JSON.parse(JSON.stringify(v.snapshot.layout)) : {};
+        const layout = Object.assign({ nodes: {}, frames: [], notes: [], view: null, categories: null }, cleanLayout(raw) || {});
+        this._ver = { label, id: v.id, name: v.name, at: v.at, snap: v.snapshot, layout, cfgs: new Map(), diff: null };
+        this._ver.diff = await this._ha.soft(this._verDiff(label, v.snapshot), 'comparing a version with now', null);
+      } else this._ver = null;
+      this._$.board.classList.toggle('vview', !!v);
+      try { history.replaceState(history.state, '', location.pathname + (v ? '?version=' + v.id : '')); } catch (e) { /* the link just won't carry it */ }
+      await this._open(label, false, { fromRoute: true });
+      if (this._drawer && this._drawer.mode === 'versions') this._renderVersions();
+    }
+    // what differs between a version and what's there now: boxes changed since, only in the version, added since
+    async _verDiff(label, snap) {
+      const cur = new Set(this._verMembers(label)), ver = new Set(snap.members), changed = new Set(), only = new Set(), lists = new Map();
+      for (const k of ver) {
+        if (!cur.has(k)) { only.add(k); continue; }
+        const it = snap.items[k];
+        if (!it || !it.cfg) continue;
+        let now = null;
+        if (it.dom === 'automation' || it.dom === 'script') { const r = await this._ws({ type: it.dom + '/config', entity_id: k }, { optional: 'an automation or script without an id has no stored config', fallback: null }); now = r && r.config; }
+        else {
+          if (!lists.has(it.dom)) lists.set(it.dom, await this._ws({ type: it.dom + '/list' }, { optional: 'a helper domain not set up has no list of helpers', fallback: null }));
+          const x = (lists.get(it.dom) || []).find((y) => y.id === it.id);
+          if (x) { now = Object.assign({}, x); delete now.id; }
+        }
+        if (now && canon(now) !== canon(it.cfg)) changed.add(k);
+      }
+      return { changed, only, added: [...cur].filter((k) => !ver.has(k)) };
+    }
+    _renderVtabs() {
+      const el = this._$.vtabs, label = this._data && this._data.ui.current, tabs = (label && this._vtabs && this._vtabs.get(label)) || [];
+      if (!el) return;
+      const V = this._ver && this._ver.label === label ? this._ver : null;
+      if (!tabs.length && !V) { el.hidden = true; el.innerHTML = ''; return; }
+      el.hidden = false;
+      this._fitLitbar();
+      const d = V && V.diff;
+      el.innerHTML = `<div class="vtrow"><button class="vtab${V ? '' : ' on'}" data-act="vtab" data-id=""><span class="vdot"></span>${T('ver_current_tab')}<span class="vact">${T('ver_active')}</span></button>`
+        + tabs.map((t) => `<span class="vtab${V && V.id === t.id ? ' on' : ''}"><button data-act="vtab" data-id="${esc(t.id)}"><ha-icon icon="mdi:history"></ha-icon>${esc(t.name)}</button><button class="ib" data-act="vtab-win" data-id="${esc(t.id)}" title="${T('ver_new_window')}"><ha-icon icon="mdi:open-in-new"></ha-icon></button><button class="ib" data-act="vtab-x" data-id="${esc(t.id)}" title="${T('close')}"><ha-icon icon="mdi:close"></ha-icon></button></span>`).join('') + '</div>'
+        + (V ? `<div class="vban"><ha-icon icon="mdi:history"></ha-icon><span>${T('ver_banner', { name: esc(V.name), when: esc(this._verWhen(V.at)) })}${d ? ' ' + T('ver_diff', { changed: d.changed.size, only: d.only.size, added: d.added.length }) : ''}</span><button data-act="ver-sbx-cur"><ha-icon icon="mdi:flask-outline"></ha-icon>${T('ver_try')}</button>${this._full() ? `<button data-act="ver-restore" data-id="${esc(V.id)}"><ha-icon icon="mdi:backup-restore"></ha-icon>${T('ver_restore')}</button>` : ''}</div>` : '');
+    }
+
+    // ---- restoring (Full manager): plan, dialog, then the writes, each through Home Assistant's own config APIs
+    async _verRestore(id) {
+      if (!this._full()) { this._toast(T('ver_restore_full')); return; }
+      const label = this._data.ui.current, m = this._$.modal;
+      m.hidden = false;
+      m.innerHTML = `<div class="dlg"><h3>${T('ver_restore_h0')}</h3><div class="muted">${T('ver_checking')}</div></div>`;
+      let v, plan;
+      let savedAs = null;
+      try {
+        v = await this._verGet(label, id); plan = await this._verPlan(label, v.snapshot);
+        // is what's there now already one of the saved versions? (then a backup would only be another copy)
+        const [vs, now] = await Promise.all([this._verList(label), this._verSnapshot(label)]), pr = verPrint(now);
+        savedAs = vs.slice().reverse().find((x) => x.print && x.print === pr && x.id !== id) || null;
+      } catch (e) { m.innerHTML = `<div class="dlg"><h3>${T('ver_restore_h0')}</h3><p class="dtext">${esc((e && (e.message || e.code)) || e)}</p><div class="btns"><button data-act="modal-cancel">${T('close')}</button></div></div>`; return; }
+      this._verPending = { label, v, plan, devmap: {}, savedAs };
+      this._verRestoreDlg();
+    }
+    async _verPlan(label, snap) {
+      // the registries asked now (0.10.0: a plan made from registries 1.2 s out of date missed an automation deleted
+      // just before)
+      await this._regNow();
+      const diff = await this._verDiff(label, snap), cur = new Set(this._verMembers(label));
+      const plan = { write: [], recreate: [], same: [], yaml: [], rejoin: [], added: [], missing: [] };
+      Object.entries(snap.items).forEach(([k, it]) => {
+        if (it.yaml || !it.cfg || !it.id && (it.dom === 'automation' || it.dom === 'script')) { plan.yaml.push(k); return; }
+        const there = !!(this._hass.states[k] || this._entMap.has(k));
+        if (!there) plan.recreate.push(k); else if (diff.changed.has(k)) plan.write.push(k); else plan.same.push(k);
+      });
+      snap.members.forEach((k) => { if (!cur.has(k) && !plan.recreate.includes(k) && (k.startsWith('device:') ? this._devMap.has(k.slice(7)) : this._entMap.has(k))) plan.rejoin.push(k); });
+      plan.added = diff.added;
+      plan.missing = Object.keys(snap.devices || {}).filter((d) => !this._devMap.has(d));
+      return plan;
+    }
+    _verRestoreDlg() {
+      const p = this._verPending, { v, plan } = p, snap = v.snapshot, m = this._$.modal, nm = (k) => esc((snap.items[k] && snap.items[k].name) || this._boxName(k));
+      const line = (ks, text) => (ks.length ? `<li>${text} <span class="muted">${ks.slice(0, 8).map(nm).join(', ')}${ks.length > 8 ? ' …' : ''}</span></li>` : '');
+      const logic = (k) => /^(automation|script)\./.test(k) || VER_HELPERS.has(k.split('.')[0]);
+      const addLogic = plan.added.filter(logic), addOther = plan.added.filter((k) => !logic(k));
+      const doms = new Set(plan.write.concat(plan.recreate).map((k) => k.split('.')[0]));
+      const devs = plan.missing.map((d) => { const o = snap.devices[d] || {}; return `<div class="vdevrow"><div>${T('ver_dev_gone', { name: esc(o.name || d), model: esc([o.manufacturer, o.model].filter(Boolean).join(' ')) })}</div><div class="vdevpick" data-old="${esc(d)}"></div></div>`; }).join('');
+      m.hidden = false;
+      m.innerHTML = `<div class="dlg wide vrdlg"><h3>${T('ver_restore_h', { name: esc(v.name) })}</h3><p class="dtext">${T('ver_restore_lead', { fnName: esc(this._fnName(p.label)), when: esc(this._verWhen(v.at)) })}</p>`
+        + `<ul class="vplan">${line(plan.write, P('ver_p_write', plan.write.length))}${line(plan.recreate, P('ver_p_recreate', plan.recreate.length))}${line(plan.rejoin, P('ver_p_rejoin', plan.rejoin.length))}${line(plan.same, P('ver_p_same', plan.same.length))}${line(plan.yaml, P('ver_p_yaml', plan.yaml.length))}${snap.layout ? `<li>${T('ver_p_layout')}</li>` : ''}</ul>`
+        + (plan.missing.length ? `<h4>${T('ver_dev_h')}</h4><div class="hint">${T('ver_dev_hint')}</div>${devs}` : '')
+        + (addLogic.length || addOther.length ? `<h4>${T('ver_added_h')}</h4>${addLogic.length ? `<div class="hint">${addLogic.map(nm).join(', ')}</div><label class="chk"><input type="radio" name="vextra" value="off" checked>${T('ver_added_off')}</label><label class="chk"><input type="radio" name="vextra" value="delete">${T('ver_added_delete')}</label>` : ''}${addOther.length ? `<div class="hint">${T('ver_added_other', { list: addOther.map(nm).join(', ') })}</div>` : ''}` : '')
+        // a backup of what's there now only when asked for: switching between saved versions shouldn't pile up copies
+        + `<label class="chk vbackup"><input type="checkbox" name="vbackup">${T('ver_restore_backup')}</label><div class="hint">${p.savedAs ? T('ver_now_saved_as', { name: esc(p.savedAs.name) }) : T('ver_restore_unsaved')}</div>`
+        + [...doms].filter((d) => d === 'automation' || d === 'script').map((d) => this._yamlWarn(d)).join('')
+        + `<div class="aval hint"></div><div class="btns"><button data-act="modal-cancel">${T('cancel')}</button><button class="primary" data-act="ver-restore-go">${T('ver_restore')}</button></div></div>`;
+      // a replaced device: Home Assistant's own device picker, or a plain list if it isn't loaded
+      m.querySelectorAll('.vdevpick').forEach((box) => {
+        const old = box.dataset.old;
+        if (customElements.get('ha-selector')) {
+          const sel = document.createElement('ha-selector');
+          sel.hass = this._hass; sel.selector = { device: {} }; sel.label = T('ver_dev_pick'); sel.value = '';
+          sel.addEventListener('value-changed', (e) => { p.devmap[old] = (e.detail && e.detail.value) || ''; });
+          box.appendChild(sel);
+        } else {
+          const devs2 = this._devs.slice().sort((a, b) => (a.name_by_user || a.name || '').localeCompare(b.name_by_user || b.name || ''));
+          box.innerHTML = `<select aria-label="${T('ver_dev_pick')}"><option value="">${T('ver_dev_keep')}</option>${devs2.map((d) => `<option value="${esc(d.id)}">${esc((d.name_by_user || d.name || d.id) + (d.model ? ' (' + d.model + ')' : ''))}</option>`).join('')}</select>`;
+          box.querySelector('select').addEventListener('change', (e) => { p.devmap[old] = e.target.value; });
+        }
+      });
+    }
+    async _verRestoreGo() {
+      const p = this._verPending, m = this._$.modal, val = m.querySelector('.aval'), btn = m.querySelector('[data-act="ver-restore-go"]');
+      if (!p) return;
+      const extra = (m.querySelector('input[name="vextra"]:checked') || { value: 'off' }).value, backup = !!(m.querySelector('input[name="vbackup"]') || {}).checked;
+      const { label, v, plan } = p, snap = v.snapshot, map = Object.fromEntries(Object.entries(p.devmap).filter(([, x]) => x)), errs = [], name = (k) => (snap.items[k] && snap.items[k].name) || this._boxName(k);
+      btn.disabled = true;
+      val.textContent = T('ver_restoring');
+      // what's there now is saved first if asked for; otherwise undo goes back to the version it already matches, if any
+      let back = p.savedAs;
+      if (backup) {
+        try {
+          const now = await this._verSnapshot(label);
+          back = await this._ws({ type: 'functions_board/version_save', label, name: T('ver_before_name', { name: v.name }), desc: '', snapshot: now, print: verPrint(now), auto: true, client: this._client() });
+        } catch (e) { val.textContent = T('ver_not_saved', { e: (e && (e.message || e.code)) || e }); btn.disabled = false; return; }
+      }
+      const exists = (k) => !!(this._hass.states[k] || this._entMap.has(k));
+      for (const k of plan.write.concat(plan.recreate)) {
+        const it = snap.items[k], cfg = swapDevs(it.cfg, map);
+        try {
+          if (it.dom === 'automation' || it.dom === 'script') await this._saveCfg(it.dom, it.id, cfg);
+          else if (exists(k)) await this._ws(Object.assign({}, cfg, { type: it.dom + '/update', [it.dom + '_id']: it.id }));
+          else { const made = await this._ws(Object.assign({}, cfg, { type: it.dom + '/create' })); it.newId = made && made.id; }
+        } catch (e) { errs.push(name(k) + ': ' + ((e && (e.message || e.body || e.code)) || e)); }
+      }
+      // what came back, and what had left the function, wear its label again
+      await this._clock.pause(plan.recreate.length ? 1500 : 200);
+      const reg = await this._ws({ type: 'config/entity_registry/list' }, { fallback: [] });
+      const findNew = (k) => { const it = snap.items[k], uid = it.newId || it.id; const e = reg.find((x) => x.platform === it.dom && x.unique_id === uid); return e ? e.entity_id : null; };
+      for (const k of plan.rejoin.concat(plan.recreate)) {
+        const id = plan.recreate.includes(k) ? findNew(k) : k;
+        if (id) { try { await this._label(id, label, true, false); } catch (e) { errs.push(name(k) + ': ' + ((e && e.message) || e)); } }
+      }
+      // what was added since: turned off or deleted, as chosen; anything else is taken out of the function
+      for (const k of plan.added) {
+        const dom = k.split('.')[0];
+        try {
+          if (dom === 'automation') {
+            const r = await this._ws({ type: 'automation/config', entity_id: k }, { optional: 'an automation or script without an id has no stored config', fallback: null }), aid = r && r.config && r.config.id;
+            if (extra === 'delete' && aid) await this._api('DELETE', `config/automation/config/${encodeURIComponent(aid)}`);
+            else await this._svc('automation', 'turn_off', { entity_id: k });
+          } else if (dom === 'script') {
+            if (extra === 'delete') await this._api('DELETE', `config/script/config/${encodeURIComponent(k.slice(7))}`);
+          } else if (VER_HELPERS.has(dom)) {
+            const e = this._entMap.get(k);
+            if (extra === 'delete' && e && e.unique_id) await this._ws({ type: dom + '/delete', [dom + '_id']: e.unique_id });
+          } else await this._label(k, label, false, false);
+        } catch (e) { errs.push(this._boxName(k) + ': ' + ((e && (e.message || e.body || e.code)) || e)); }
+      }
+      // the board as it was laid out
+      if (snap.layout) { this._data.layouts[label] = Object.assign(cleanLayout(JSON.parse(JSON.stringify(snap.layout))) || {}, { view: (this._data.layouts[label] || {}).view || null }); this._save(); }
+      this._verPending = null;
+      this._closeModal();
+      this._store.changed('cfg:');
+      this._ver = null;
+      this._$.board.classList.remove('vview');
+      try { history.replaceState(history.state, '', location.pathname); } catch (e) { /* fine */ }
+      await this._ha.quiet(this._loadRegistries(), 'its calls to Home Assistant report their own failures');
+      await this._open(label, true);
+      const undo = back && back.id ? [{ text: T('undo'), fn: () => this._verRestore(back.id) }] : [];
+      this._toast(errs.length ? T('ver_restored_errs', { name: v.name, n: errs.length, list: errs.slice(0, 3).join('; ') }) : T('ver_restored', { name: v.name }), undo);
+      if (this._drawer && this._drawer.mode === 'versions') this._renderVersions();
+    }
+    _restoreFn(lid) {
+      if (!this._data.functions.includes(lid)) this._data.functions.push(lid);
+      this._save();
+      this._closeModal();
+      this._history({ label: lid, text: T('put_back', { fnName: this._fnName(lid) }), undo: async () => this._takeOff(lid), redo: async () => { if (!this._data.functions.includes(lid)) this._data.functions.push(lid); this._save(); } });
+      this._renderList();
+      this._open(lid);
+      this._toast(T('is_back_on_the_board', { fnName: this._fnName(lid) }));
+    }
+
+    /* ======================================================================================================
+       part: nodered: Node-RED flows: read through its page here, kept for every board Owns _nrCache, _nrWait (PARTS):
+       only its own methods use them; the other parts ask its methods.
+       ====================================================================================================== */
 
     /* ---------- Node-RED flows (2.7, decision D1): read in the browser through the Node-RED app's own page, only
        while the switch in the Key is on. That page answers only once Home Assistant has let this browser in, which
        it does when Node-RED is opened from its sidebar (the board never asks for that itself). Until then, the
        flows last read by any board, kept by the integration (functions_board/nodered), stand in, marked with when
        they were read. What's kept is the summary nrGroups makes: names and entity ids, no flow code. ---------- */
+    // forget the flows read (switched off or on: read again when asked)
+    // the Node-RED switch is yours, for every function: off means no request to Node-RED at all
+    _nrChange(t) {
+      if (!t.hasAttribute || !t.hasAttribute('data-nr')) return false;
+      this._data.ui.nodered = t.checked; this._save(); this._nrForget();
+      if (this._model) this._open(this._model.label, true).then(() => this._renderLegend()); else this._renderLegend();
+      return true;
+    }
+    _nrForget() { this._nrCache = null; }
+    // another board read Node-RED: one showing older flows takes the new ones (only with Node-RED switched on)
+    _nrTheirs() { if (this._data.ui.nodered === true && this._nrCache && this._nrCache.need && this._model) { this._nrCache = null; this._open(this._model.label, true).then(() => this._renderLegend()); } }
+    // back from Node-RED's page (opened to let it in): read the flows again
+    _nrBack() { if (this._nrWait) { this._nrWait = false; this._nrCache = null; if (this._model) this._open(this._model.label, true).then(() => this._renderLegend()); } }
+    // what the Key says of Node-RED: the last read's error, and whether it needs its page opened first
+    _nrState() { return this._nrCache || null; }
     async _nodered() {
       if (this._data.ui.nodered !== true) return null;
       const c = this._nrCache;
@@ -10285,403 +12044,25 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       used.forEach((k) => { const n = nodes.get(k); if (n) n.unref = false; });
     }
 
-    /* ---------- keyboard and screen readers (4.8) ---------- */
-    // what each box is wired to, in words, for its accessible description
-    _connText() {
-      const m = this._model, out = new Map();
-      if (!m) return out;
-      const IN = { trigger: T('set_off_by'), condition: T('checks'), source: T('reads'), action: T('changed_by'), call: T('run_by'), tool: T('tested_or_listened_to_by') };
-      const OUT = { trigger: T('sets_off'), condition: T('is_checked_by'), source: T('is_read_by'), action: T('changes'), call: T('runs'), tool: T('tests') };
-      const list = (names) => (names.length > 4 ? T('and_more_2', { names: names.slice(0, 4).join(', '), n: names.length - 4 }) : names.join(', '));
-      const vis = this._visibleKeys(), E = this._visEdges();
-      vis.forEach((k) => {
-        const parts = [];
-        const group = (edges, other, words) => {
-          const by = new Map();
-          edges.forEach((e) => { const n = m.nodes.get(other(e)); if (n) (by.get(e.role) || by.set(e.role, []).get(e.role)).push(n.name); });
-          by.forEach((names, role) => parts.push(`${words[role] || role} ${list([...new Set(names)])}`));
-        };
-        // a check points into the automation: from the automation's side it checks the box
-        group(E.filter((e) => e.to === k), (e) => e.from, Object.assign({}, IN, { condition: T('checks') }));
-        group(E.filter((e) => e.from === k), (e) => e.to, OUT);
-        if (parts.length) out.set(k, parts.join('. '));
-      });
-      return out;
-    }
-    // one box is in the tab order at a time; the arrow keys move between them
-    _rove(key) {
-      const el = key && this._els.get(key);
-      if (!el) return;
-      if (this._roveKey && this._roveKey !== key) { const o = this._els.get(this._roveKey); if (o) o.tabIndex = -1; }
-      el.tabIndex = 0;
-      this._roveKey = key;
-    }
-    // the box an arrow key leads to: along the arrows for left and right, else the nearest in that direction
-    _navFrom(k, dir) {
-      const m = this._model, n = m && m.nodes.get(k);
-      if (!n) return null;
-      const vis = this._visibleKeys(), E = this._visEdges(), cx = (o) => o.x + o.w / 2, cy = (o) => o.y + o.h / 2;
-      let cand = dir === 'right' ? E.filter((e) => e.from === k).map((e) => e.to) : dir === 'left' ? E.filter((e) => e.to === k).map((e) => e.from) : [];
-      cand = cand.filter((x) => x !== k && vis.has(x));
-      if (!cand.length) {
-        cand = [...vis].filter((x) => {
-          const o = m.nodes.get(x);
-          return x !== k && (dir === 'right' ? cx(o) > cx(n) + 10 : dir === 'left' ? cx(o) < cx(n) - 10 : dir === 'up' ? cy(o) < cy(n) - 10 : cy(o) > cy(n) + 10);
-        });
-      }
-      const horiz = dir === 'left' || dir === 'right';
-      const d = (x) => { const o = m.nodes.get(x), dx = Math.abs(cx(o) - cx(n)), dy = Math.abs(cy(o) - cy(n)); return horiz ? dx + dy * 2 : dy + dx * 2; };
-      return cand.sort((a, b) => d(a) - d(b))[0] || null;
-    }
-    _boxKey(e, t) {
-      const k = t && t.classList && t.classList.contains('node') ? t.dataset.key : null;
-      if (!k) return false;
-      const dirs = { ArrowRight: 'right', ArrowLeft: 'left', ArrowUp: 'up', ArrowDown: 'down' };
-      if (dirs[e.key]) {
-        e.preventDefault();
-        const to = this._navFrom(k, dirs[e.key]);
-        if (to) { this._select(to); this._rove(to); this._showBox(to); const el = this._els.get(to); if (el) el.focus(); }
-        return true;
-      }
-      if (e.key === 'Enter') { e.preventDefault(); const n = this._model.nodes.get(k); if (n) this._editOrOpen(n); return true; }
-      if (e.key === ' ') {
-        e.preventDefault();
-        this._select(this._sel === k ? null : k);
-        // then Tab reaches the box's actions
-        return true;
-      }
-      return false;
-    }
-    // the drawer: a labelled region beside the board; focus moves into it when it opens, back when it closes
-    _watchDrawer() {
-      const d = this._$.drawer;
-      d.setAttribute('role', 'complementary');
-      new MutationObserver(() => {
-        const open = !d.hidden && !!d.firstElementChild, t = d.querySelector('.dtitle');
-        if (t && d.getAttribute('aria-label') !== t.textContent) d.setAttribute('aria-label', t.textContent);
-        if (open && !this._drawerOpen) {
-          this._drawerOpen = true;
-          const a = this.shadowRoot.activeElement;
-          this._drawerBack = a && !d.contains(a) ? a : null;
-          this._clock.after('drawer-focus', 0, () => {
-            if (d.hidden || !this._$.modal.hidden || d.contains(this.shadowRoot.activeElement)) return;
-            const h = d.querySelector('.dtitle');
-            if (h) { h.tabIndex = -1; h.focus({ preventScroll: true }); }
-          });
-        } else if (!open && this._drawerOpen) {
-          this._drawerOpen = false;
-          const back = this._drawerBack && this._drawerBack.isConnected ? this._drawerBack : null, box = this._roveKey && this._els && this._els.get(this._roveKey);
-          this._drawerBack = null;
-          const a = this.shadowRoot.activeElement;
-          if (!a || a === d || d.contains(a) || a === this.shadowRoot.host) { if (back) back.focus({ preventScroll: true }); else if (box) box.focus({ preventScroll: true }); }
-        }
-      }).observe(d, { attributes: true, attributeFilter: ['hidden'], childList: true });
-    }
-    // dialogs: named, focus moves in and stays in, and goes back where it was when they close
-    _watchModal() {
-      const md = this._$.modal;
-      new MutationObserver(() => {
-        const open = !md.hidden && !!md.firstElementChild;
-        const dlg = md.querySelector('.dlg');
-        if (dlg && !dlg.hasAttribute('role')) {
-          dlg.setAttribute('role', 'dialog'); dlg.setAttribute('aria-modal', 'true');
-          const h = dlg.querySelector('h3');
-          if (h) { h.id = 'fbdlgtitle'; dlg.setAttribute('aria-labelledby', 'fbdlgtitle'); }
-        }
-        if (open && !this._modalOpen) {
-          this._modalOpen = true;
-          this._modalBack = this.shadowRoot.activeElement;
-          this._clock.after('modal-focus', 60, () => { if (md.hidden) return; const f = md.querySelector('input:not([type=hidden]):not([disabled]), textarea, select, button.primary:not([disabled])') || md.querySelector('button'); if (f && !md.contains(this.shadowRoot.activeElement)) f.focus(); });
-        } else if (!open && this._modalOpen) {
-          this._modalOpen = false;
-          const back = this._modalBack && this._modalBack.isConnected ? this._modalBack : null, box = this._roveKey && this._els.get(this._roveKey);
-          this._modalBack = null;
-          if (back) back.focus(); else if (box) box.focus();
-        }
-      }).observe(md, { attributes: true, attributeFilter: ['hidden'], childList: true });
-      md.addEventListener('keydown', (e) => {
-        if (e.key !== 'Tab' || md.hidden) return;
-        const list = [...md.querySelectorAll('button:not([disabled]), input:not([disabled]), textarea, select, [tabindex="0"], ha-selector')].filter((x) => x.offsetParent !== null);
-        if (!list.length) return;
-        const cur = this.shadowRoot.activeElement, i = list.indexOf(cur);
-        if (e.shiftKey && (i <= 0)) { e.preventDefault(); list[list.length - 1].focus(); }
-        else if (!e.shiftKey && (i === list.length - 1 || i < 0)) { e.preventDefault(); list[0].focus(); }
-      });
-    }
-
-    /* ---------- undo and redo: one stack per board session ---------- */
-    // step: { label, text, undo(), redo(), check?(dir) } - check returns false when the item has changed
-    // since the step (someone edited it elsewhere); the board then asks before overwriting
-    _history(step) {
-      if (this._ver) return;
-      this._undoStack.push(step);
-      if (this._undoStack.length > 50) this._undoStack.shift();
-      this._redoStack = [];
-      this._renderUndo();
-    }
-    _renderUndo() {
-      if (!this._$) return;
-      const u = this._undoStack[this._undoStack.length - 1], r = this._redoStack[this._redoStack.length - 1];
-      const ub = this._$.tools.querySelector('[data-act="undo"]'), rb = this._$.tools.querySelector('[data-act="redo"]');
-      const key = /Mac|iPhone|iPad/.test(navigator.platform || '') ? T('cmd') : T('ctrl');
-      if (ub) { ub.disabled = !u || this._undoBusy; ub.title = u ? T('undo_z', { text: u.text, key }) : T('nothing_to_undo'); }
-      if (rb) { rb.disabled = !r || this._undoBusy; rb.title = r ? T('redo_shift_z', { text: r.text, key }) : T('nothing_to_redo'); }
-    }
-    async _undo() { await this._step(this._undoStack, this._redoStack, 'undo'); }
-    async _redo() { await this._step(this._redoStack, this._undoStack, 'redo'); }
-    async _step(from, to, dir) {
-      if (this._undoBusy) return;
-      const st = from[from.length - 1];
-      if (!st) return;
-      if (st.check && !this._confirmStep) {
-        let ok = true;
-        try { ok = await st.check(dir); } catch (e) { ok = true; }
-        if (!ok) {
-          this._toast(T('changed_since_somewhere_else', { text: st.text }), [{ text: dir === 'undo' ? T('undo_anyway') : T('redo_anyway'), fn: () => { this._confirmStep = true; this._step(from, to, dir).finally(() => { this._confirmStep = false; }); } }]);
-          return;
-        }
-      }
-      from.pop();
-      const startedOn = this._data.ui.current;
-      this._undoBusy = true; this._renderUndo();
-      try {
-        await st[dir]();
-        to.push(st);
-        this._toast((dir === 'undo' ? T('undone') : T('redone')) + st.text);
-      } catch (e) {
-        this._toast(T('could_not', { dir, text: st.text, message: e.message || e.code || e }));
-      }
-      this._undoBusy = false; this._renderUndo();
-      // show the function the step changed, unless the user has moved on to another one meanwhile
-      const moved = this._data.ui.current !== startedOn;
-      if (!moved && st.label && st.label !== this._data.ui.current && this._data.functions.includes(st.label)) this._open(st.label);
-      else if (this._model) { this._place(); this._render(); }
-    }
-    // layout steps: moving boxes, Arrange, frames and notes restore the function's previous layout
-    _snap(label) { const L = this._layout(label); return JSON.stringify({ nodes: L.nodes, frames: L.frames, notes: L.notes, tools: L.tools || [], keep: L.keep || [], dir: L.dir || 'right' }); }
-    _layoutStep(label, before, text) {
-      const after = this._snap(label);
-      if (after === before) return;
-      const apply = (j) => {
-        const v = JSON.parse(j), L = this._layout(label), tools = JSON.stringify(L.tools || []) !== JSON.stringify(v.tools || []);
-        L.nodes = v.nodes; L.frames = v.frames; L.notes = v.notes;
-        if (v.tools && v.tools.length) L.tools = v.tools; else delete L.tools;
-        if (v.keep && v.keep.length) L.keep = v.keep; else delete L.keep;
-        if (v.dir === 'down') L.dir = 'down'; else delete L.dir;
-        this._save();
-        // test buttons and monitors are boxes on the board: put them back or take them away too
-        if (tools && this._model && this._model.label === label) { this._syncTools(); this._startMonitors(); }
-      };
-      // another board may have changed this layout since: ask before overwriting that
-      const check = async (dir) => this._snap(label) === (dir === 'undo' ? after : before);
-      this._history({ label, text, check, undo: async () => apply(before), redo: async () => apply(after) });
-    }
-
-    /* ---------- frames and notes ---------- */
-    _addFrame() {
-      const label = this._model.label, L = this._layout(label), c = this._center(), before = this._snap(label);
-      L.frames.push({ id: uid(), title: T('new_frame'), x: Math.round(c.x - 270), y: Math.round(c.y - 170), w: 540, h: 340 });
-      this._save(); this._renderFrames();
-      this._layoutStep(label, before, T('add_frame'));
-    }
-    _addNote() {
-      const label = this._model.label, L = this._layout(label), c = this._center(), before = this._snap(label);
-      const n = { id: uid(), text: '', x: Math.round(c.x - 120), y: Math.round(c.y - 50), w: 240 };
-      L.notes.push(n);
-      this._save(); this._renderNotes();
-      this._layoutStep(label, before, T('add_note'));
-      const ta = this._$.notes.querySelector(`textarea[data-nid="${n.id}"]`);
-      if (ta) ta.focus();
-    }
-    _delFrame(id) {
-      const label = this._model.label, L = this._layout(label), before = this._snap(label);
-      L.frames = L.frames.filter((f) => f.id !== id);
-      this._save(); this._renderFrames();
-      this._layoutStep(label, before, T('delete_frame'));
-    }
-    _delNote(id) {
-      const label = this._model.label, L = this._layout(label), before = this._snap(label);
-      L.notes = L.notes.filter((n) => n.id !== id);
-      this._save(); this._renderNotes();
-      this._layoutStep(label, before, T('delete_note'));
-    }
-
-    /* ---------- functions: create / edit / remove ---------- */
-    _fnModal(label) {
-      const l = label ? this._labelMap.get(label) : null;
-      this._editing = label || null;
-      const m = this._$.modal;
-      m.hidden = false;
-      m.innerHTML = `<div class="dlg"><h3>${l ? T('edit_function') : T('new_function_2')}</h3><label>${T('name')}<input name="name" value="${esc(l ? l.name : '')}" placeholder="${T('e_g_bathroom_heater_filter')}"></label><label>${T('description')}<input name="desc" value="${esc(l && l.description ? l.description : '')}" placeholder="${T('what_this_function_does_optional')}"></label><div class="row"><div class="selbox" data-sel="icon"></div><div class="selbox" data-sel="color"></div></div>${l ? '' : `<label class="chk"><input type="checkbox" name="cats" checked>${T('also_file_new_automations_scripts')}</label>`}<div class="hint">${l ? T('this_edits_the_home_assistant') : T('this_creates_a_home_assistant')}</div><div class="btns"><button data-act="modal-cancel">${T('cancel')}</button><button class="primary" data-act="modal-save">${l ? T('save') : T('create_2')}</button></div></div>`;
-      this._mountPickers(l && l.icon ? l.icon : 'mdi:puzzle-outline', l && l.color ? l.color : 'indigo');
-      this._clock.after('focus', 50, () => { const i = m.querySelector('input[name=name]'); if (i) i.focus(); });
-    }
-    _mountPickers(icon, color) {
-      this._fnIcon = icon; this._fnColor = color;
-      const m = this._$.modal, iconBox = m.querySelector('[data-sel="icon"]'), colorBox = m.querySelector('[data-sel="color"]');
-      if (!iconBox || !colorBox) return;
-      // plain inputs first; swapped for Home Assistant's own pickers as soon as they are loaded
-      iconBox.innerHTML = `<label>${T('icon')}<input name="icon" value="${esc(icon)}"></label>`;
-      colorBox.innerHTML = `<label>${T('colour')}<select name="color">${COLORS.map((c) => `<option value="${c}" ${c === color ? 'selected' : ''}>${c}</option>`).join('')}</select></label>`;
-      this._ensureSelector().then((ok) => {
-        if (!ok || !iconBox.isConnected) return;
-        const mk = (box, selector, label, value, set) => {
-          const el = document.createElement('ha-selector');
-          el.hass = this._hass; el.selector = selector; el.label = label; el.value = value;
-          el.addEventListener('value-changed', (e) => { e.stopPropagation(); set(e.detail.value); el.value = e.detail.value; });
-          box.innerHTML = ''; box.appendChild(el);
-        };
-        mk(iconBox, { icon: {} }, T('icon'), this._fnIcon, (v) => { this._fnIcon = v; });
-        mk(colorBox, { ui_color: {} }, T('colour'), this._fnColor, (v) => { this._fnColor = v; });
-      });
-    }
-    async _ensureSelector() {
-      if (customElements.get('ha-selector')) return true;
-      try {
-        // Home Assistant loads its form widgets lazily; opening a built-in card editor loads them.
-        if (window.loadCardHelpers) {
-          const helpers = await window.loadCardHelpers();
-          const card = await helpers.createCardElement({ type: 'button', entity: 'sun.sun' });
-          if (card && card.constructor && card.constructor.getConfigElement) await card.constructor.getConfigElement();
-        }
-      } catch (e) { /* fall back to the plain inputs */ }
-      await Promise.race([customElements.whenDefined('ha-selector'), this._clock.sleep(4000)]);
-      return !!customElements.get('ha-selector');
-    }
-    async _saveFn() {
-      const m = this._$.modal, v = (n) => m.querySelector(`[name=${n}]`);
-      const name = v('name').value.trim();
-      if (!name) { v('name').focus(); return; }
-      const icon = this._fnIcon || 'mdi:puzzle-outline', color = this._fnColor || null, desc = v('desc').value.trim();
-      // Home Assistant label names are unique: say what the name is already used by, and offer the way out
-      const clash = this._labels.find((l) => String(l.name).toLowerCase() === name.toLowerCase() && l.label_id !== this._editing);
-      if (clash) { this._nameClash(clash); return; }
-      try {
-        if (this._editing) {
-          const old = this._labelMap.get(this._editing), lid = this._editing;
-          const before = { name: old.name, icon: old.icon, color: old.color, description: old.description || '' };
-          const after = { name, icon, color, description: desc };
-          await this._ws(Object.assign({ type: 'config/label_registry/update', label_id: lid }, after));
-          this._history({ label: lid, text: T('edit', { name: before.name }), undo: () => this._ws(Object.assign({ type: 'config/label_registry/update', label_id: lid }, before)), redo: () => this._ws(Object.assign({ type: 'config/label_registry/update', label_id: lid }, after)) });
-          this._closeModal();
-          await this._loadRegistries(); this._renderList(); this._renderHeader();
-          return;
-        }
-        const st = await this._createFn({ name, icon, color, desc, cats: !!(v('cats') && v('cats').checked) });
-        this._history({
-          label: st.lid, text: T('create', { name }),
-          check: async (dir) => dir !== 'undo' || (await this._labelCount(st.lid)) === 0,
-          undo: async () => { st.layout = this._data.layouts[st.lid] || null; this._takeOff(st.lid); delete this._data.layouts[st.lid]; await this._dropCategories(st.made); await this._ws({ type: 'config/label_registry/delete', label_id: st.lid }); this._save(); },
-          redo: async () => { await this._loadRegistries(); Object.assign(st, await this._createFn({ name, icon, color, desc, cats: st.cats, layout: st.layout })); },
-        });
-        this._closeModal();
-        await this._loadRegistries();
-        this._open(st.lid);
-      } catch (e) { this._toast(T('could_not_save', { message: e.message || e.code || e })); }
-    }
-    async _createFn(o) {
-      const msg = { type: 'config/label_registry/create', name: o.name, icon: o.icon };
-      if (o.color) msg.color = o.color;
-      if (o.desc) msg.description = o.desc;
-      const lbl = await this._ws(msg);
-      if (o.layout) this._data.layouts[lbl.label_id] = o.layout;
-      const L = this._layout(lbl.label_id);
-      let made = [];
-      if (o.cats) { const r = await this._categories(o.name, o.icon); L.categories = r.ids; made = r.made; }
-      if (!this._data.functions.includes(lbl.label_id)) this._data.functions.push(lbl.label_id);
-      this._save();
-      return { lid: lbl.label_id, made, cats: o.cats };
-    }
-    _nameClash(l) {
-      const m = this._$.modal, box = m.querySelector('.clash') || document.createElement('div');
-      box.className = 'clash';
-      const onBoard = this._data.functions.includes(l.label_id);
-      box.innerHTML = onBoard
-        ? `<b>${esc(l.name)}</b> ${T('is_already_a_function_on')}<div class="cbtns"><button data-act="fn-goto" data-label="${esc(l.label_id)}">${T('open_it')}</button></div>`
-        : `${T('a_home_assistant_label_called')} <b>${esc(l.name)}</b> ${T('already_exists_so_this_name')}<div class="cbtns"><button class="primary" data-act="fn-restore" data-label="${esc(l.label_id)}">${T('put_it_back_on_the')}</button><button data-act="fn-rename">${T('choose_another_name')}</button></div>`;
-      const btns = m.querySelector('.btns');
-      if (!box.isConnected && btns) btns.before(box);
-    }
-    _restoreFn(lid) {
-      if (!this._data.functions.includes(lid)) this._data.functions.push(lid);
-      this._save();
-      this._closeModal();
-      this._history({ label: lid, text: T('put_back', { fnName: this._fnName(lid) }), undo: async () => this._takeOff(lid), redo: async () => { if (!this._data.functions.includes(lid)) this._data.functions.push(lid); this._save(); } });
-      this._renderList();
-      this._open(lid);
-      this._toast(T('is_back_on_the_board', { fnName: this._fnName(lid) }));
-    }
-    // categories named after a function, one per scope; an existing one with the same name is reused.
-    // Returns { ids: { scope: category_id }, made: [[scope, category_id]] } (made = created here, for undo)
-    async _categories(name, icon, scopes) {
-      const ids = {}, made = [];
-      for (const scope of scopes || ['automation', 'script', 'helpers']) {
-        try {
-          const list = await this._ws({ type: 'config/category_registry/list', scope });
-          const f = (list || []).find((c) => String(c.name).toLowerCase() === name.toLowerCase());
-          if (f) ids[scope] = f.category_id;
-          else { ids[scope] = (await this._ws({ type: 'config/category_registry/create', scope, name, icon })).category_id; made.push([scope, ids[scope]]); }
-        } catch (e) { /* leave this scope without a category */ }
-      }
-      return { ids, made };
-    }
-    // delete categories a step created, unless something else has been filed under them since
-    async _dropCategories(made) {
-      if (!made || !made.length) return;
-      const ents = await this._ws({ type: 'config/entity_registry/list' }, { fallback: null });
-      for (const [scope, cid] of made) {
-        if (!ents || ents.some((e) => (e.categories || {})[scope] === cid)) continue;
-        await this._ws({ type: 'config/category_registry/delete', scope, category_id: cid }, { fallback: null });
-      }
-    }
-    // how many items carry a label right now (fresh from Home Assistant)
-    async _labelCount(label) {
-      const [ents, devs] = await Promise.all([this._ws({ type: 'config/entity_registry/list' }), this._ws({ type: 'config/device_registry/list' })]);
-      return ents.filter((e) => (e.labels || []).includes(label)).length + devs.filter((d) => (d.labels || []).includes(label)).length;
-    }
-    // Hide from board: the label, its items and the layout all stay; Import > Labels or the name check brings it back
-    _hideFunction(label) {
-      const name = this._fnName(label), at = this._data.functions.indexOf(label);
-      this._takeOff(label);
-      this._history({
-        label: null, text: T('hide_2', { name }),
-        undo: async () => { if (!this._data.functions.includes(label)) this._data.functions.splice(Math.max(0, at), 0, label); this._data.ui.current = label; this._save(); },
-        redo: async () => this._takeOff(label),
-      });
-      this._renderList();
-      if (this._data.ui.current) this._open(this._data.ui.current);
-      else { this._renderHeader(); this._setEmpty(); }
-      this._toast(T('hid_its_label_and_items', { name }), [{ text: T('undo'), fn: () => this._undo() }]);
-    }
-    _closeModal() { this._$.modal.hidden = true; this._$.modal.innerHTML = ''; this._editing = null; this._arw = null; this._tst = null; }
-    // what the board changes in Home Assistant, in this install's mode (also in strings.json and the README)
-    _promise() {
-      const full = this._full();
-      const li = [
-        T('creating_a_function_creates_a'),
-        T('adding_or_removing_a_piece'),
-        T('pause_and_resume_turn_the'),
-        T('new_automations_scripts_helpers_and'),
-        T('hide_from_board_leaves_the'),
-      ];
-      if (full) {
-        li.push(T('full_manager_is_on_the'));
-        li.push(T('ver_promise_full'));
-        li.push(T('tests_full_manager_a_helper'));
-      } else {
-        li.push(T('this_install_is_set_to'));
-      }
-      li.push(T('the_debugger_watch_triggers_monitor'));
-      li.push(T('show_node_red_flows_in'));
-      li.push(T('ver_promise'));
-      li.push(T('every_change_is_shown_before'));
-      li.push(T('privacy_promise'));
-      return li;
-    }
+    /* ======================================================================================================
+       part: diagnostics: the About dialog and the Diagnostics file Owns nothing of its own (PARTS): only its own
+       methods use them; the other parts ask its methods.
+       ====================================================================================================== */
     /* ---------- diagnostics: a file for an issue or a forum post, made here and handed to the person ----------
        Nothing is sent anywhere. The person chooses anonymised or real names every time (neither is ticked to
        start with, and nothing can be made until one is), and may add a snapshot of the open function as it is
        now and any of its saved versions. */
+    // diagnostics: anonymised or real names, one of the two, never both and never neither
+    _diagChange(t) {
+      if (t.name !== 'danon' && t.name !== 'dreal') return false;
+      const m = this._$.modal, other = m.querySelector(`input[name="${t.name === 'danon' ? 'dreal' : 'danon'}"]`);
+      if (t.checked && other) other.checked = false;
+      const pick = m.querySelector('input[name="danon"]:checked, input[name="dreal"]:checked');
+      m.querySelectorAll('[data-act="diag-go"], [data-act="diag-copy"]').forEach((b) => { b.disabled = !pick; });
+      const w = m.querySelector('.dwarn');
+      if (w) w.hidden = !(pick && pick.name === 'dreal');
+      return true;
+    }
     async _diagModal(verId) {
       const m = this._$.modal, label = this._data && this._data.ui && this._data.ui.current;
       m.hidden = false;
@@ -10731,1233 +12112,11 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         btns.forEach((b) => { b.disabled = false; });
       }
     }
-    /* ---------- saved checks (0.9.0): keep a sandbox run with what should come of it; replayed on the current
-       configs after every change, a failing one is a problem ---------- */
-    // the states a check starts from: the function's own entities and what they point at (big attributes left out)
-    _checkStart(states) {
-      const out = {}, m = this._model;
-      if (!m) return out;
-      [...m.nodes.keys()].filter((k) => EXACT_RE.test(k) && states[k]).forEach((k) => {
-        const a = {};
-        Object.entries(states[k].attributes || {}).forEach(([n, v]) => { try { if (JSON.stringify(v).length <= 400) a[n] = v; } catch (e) { /* not kept */ } });
-        out[k] = { state: String(states[k].state), attributes: a };
-      });
-      return out;
-    }
-    _sbxRec(step) { const g = this._sbx; if (g && g.rec) g.rec.steps.push(step); }
-    _checkName(k) { return this._model && this._model.nodes.has(k) ? this._model.nodes.get(k).name : this._nameOf(k); }
-    _chkStepText(s) {
-      const nm = (k) => esc(this._checkName(k));
-      if (s.op === 'set') return T('chk_s_set', { name: nm(s.id), state: esc(s.state) });
-      if (s.op === 'event') return T('chk_s_event', { type: esc(s.type) });
-      if (s.op === 'mqtt') return T('chk_s_mqtt', { topic: esc(s.topic), payload: esc(shorten(s.payload, 40)) });
-      if (s.op === 'run') return T('chk_s_run', { name: nm(s.id) });
-      if (s.op === 'advance') return T('chk_s_advance', { dur: esc(clockShort(s.ms)) });
-      return T('chk_s_next');
-    }
-    _expText(x, got) {
-      const nm = esc(this._checkName(x.id)), g = got == null ? '' : ' ' + T('chk_got', { got: esc(got) });
-      if (x.k === 'state') return T('chk_x_state', { name: nm, state: esc(x.state) }) + g;
-      if (x.k === 'ran') return T('chk_x_ran', { name: nm }) + g;
-      if (x.k === 'stopped') return T('chk_x_stopped', { name: nm }) + g;
-      return T('chk_x_notran', { name: nm }) + g;
-    }
-    // what the run in the sandbox suggests checking: states that changed, and how each automation and script ended
-    _checkSuggest() {
-      const g = this._sbx, eng = g.eng, out = [];
-      // what the function changed (whatever you set yourself is a step, not an outcome), as it ended
-      const byFn = new Set(eng.log.filter((e) => e.kind === 'state' && e.by !== 'you' && EXACT_RE.test(e.key || '') && !/^(automation|script)\./.test(e.key)).map((e) => e.key));
-      byFn.forEach((k) => { const v = eng.get(k); if (v) out.push({ x: { k: 'state', id: k, state: String(v.state) }, on: true }); });
-      const runs = new Map();
-      eng.log.filter((e) => e.kind === 'run').forEach((e) => { const r = runs.get(e.key) || []; r.push(e.outcome); runs.set(e.key, r); });
-      runs.forEach((r, k) => { if (r.includes('finished')) out.push({ x: { k: 'ran', id: k }, on: true }); else if (r.includes('stopped')) out.push({ x: { k: 'stopped', id: k }, on: true }); });
-      [...this._model.nodes.values()].filter((n) => n.kind === 'member' && /^(automation|script)$/.test(n.domain) && !runs.has(n.key)).forEach((n) => out.push({ x: { k: 'notran', id: n.key }, on: false }));
-      return out;
-    }
-    _renderChecks(soft) {
-      const box = this._$.drawer.querySelector('.sbchk'), g = this._sbx;
-      if (!box || !g) return;
-      const label = g.label, list = this._ver ? [] : this._layout(label).checks || [], have = this._checkRes.get(label) || {}, res = have.res || new Map();
-      const can = !this._ver && !!g.rec && g.rec.steps.length > 0, sig = [list.length, can, have.at || 0].join('|');
-      if (soft && box.dataset.sig === sig) return;
-      box.dataset.sig = sig;
-      const mark = (c) => { const r = res.get(c.id); if (!r) return `<span class="ckst muted" title="${T('chk_not_run')}">·</span>`; if (r.unsure) return `<span class="ckst unsure" title="${esc(r.unsure)}">?</span>`; return r.ok ? `<span class="ckst ok" title="${T('chk_passes')}">&#10003;</span>` : `<span class="ckst bad" title="${T('chk_fails')}">&#10005;</span>`; };
-      const row = (c) => `<div class="ckrow" data-id="${esc(c.id)}">${mark(c)}<span class="ckname" title="${esc(c.steps.map((x) => this._chkStepText(x).replace(/<[^>]+>/g, '')).join(' → '))}">${esc(c.name)}</span><button class="ib" data-act="chk-run" data-id="${esc(c.id)}" title="${T('chk_run_t')}"><ha-icon icon="mdi:play-circle-outline"></ha-icon></button><button class="ib" data-act="chk-replay" data-id="${esc(c.id)}" title="${T('chk_replay_t')}"><ha-icon icon="mdi:movie-open-play-outline"></ha-icon></button><button class="ib" data-act="chk-del" data-id="${esc(c.id)}" title="${T('chk_del_t')}"><ha-icon icon="mdi:delete-outline"></ha-icon></button></div>`;
-      this._put(box, this._ver ? '' : `<div class="ckhead"><span>${P('chk_n', list.length)}</span>${list.length ? `<button class="ib" data-act="chk-run" title="${T('chk_run_all_t')}"><ha-icon icon="mdi:play-box-multiple-outline"></ha-icon></button>` : ''}<button class="chip" data-act="chk-save"${can ? '' : ' disabled'} title="${can ? T('chk_save_t') : T('chk_save_none')}"><ha-icon icon="mdi:content-save-check-outline"></ha-icon>${T('chk_save')}</button></div>${list.map(row).join('')}`);
-    }
-    _checkSaveDlg() {
-      const g = this._sbx;
-      if (!g || !g.rec || !g.rec.steps.length || this._ver) return;
-      const sug = this._checkSuggest(), m = this._$.modal;
-      this._chkDraft = { sug };
-      m.hidden = false;
-      m.innerHTML = `<div class="dlg ckdlg"><h3>${T('chk_save_h')}</h3><p class="dtext">${T('chk_save_lead')}</p>`
-        + `<label>${T('chk_name')}<input name="ckname" maxlength="160" value="${esc(this._chkStepText(g.rec.steps[0]).replace(/<[^>]+>/g, ''))}"></label>`
-        + `<h4>${T('chk_steps_h')}</h4><ol class="cksteps">${g.rec.steps.map((x) => `<li>${this._chkStepText(x)}</li>`).join('')}</ol>`
-        + `<h4>${T('chk_expect_h')}</h4>${sug.length ? sug.map((s, i) => `<label class="chk"><input type="checkbox" name="ckx" value="${i}"${s.on ? ' checked' : ''}>${this._expText(s.x)}</label>`).join('') : `<p class="muted">${T('chk_expect_none')}</p>`}`
-        + `<div class="dval"></div><div class="btns"><button data-act="modal-cancel">${T('cancel')}</button><button class="primary" data-act="chk-save-go">${T('chk_save_b')}</button></div></div>`;
-      const n = m.querySelector('input[name="ckname"]'); if (n) { n.focus(); n.select(); }
-    }
-    _checkSaveGo() {
-      const g = this._sbx, m = this._$.modal, d = this._chkDraft;
-      if (!g || !d) return;
-      const expect = [...m.querySelectorAll('input[name="ckx"]:checked')].map((x) => d.sug[+x.value].x);
-      if (!expect.length) { m.querySelector('.dval').textContent = T('chk_pick_one'); return; }
-      const c = cleanCheck({ id: uid(), name: m.querySelector('input[name="ckname"]').value.trim() || T('chk_default'), at: g.rec.at, start: g.rec.start, items: g.rec.items, steps: g.rec.steps, answers: g.rec.answers, expect });
-      if (!c) { m.querySelector('.dval').textContent = T('chk_cant'); return; }
-      const label = g.label, L = this._layout(label);
-      L.checks = (L.checks || []).concat([c]);
-      this._save();
-      this._closeModal();
-      this._toast(T('chk_saved', { name: c.name }));
-      this._renderChecks();
-      this._runChecks(label, [c.id], true);
-    }
-    _checkDel(id) {
-      const label = this._data.ui.current, L = this._layout(label), c = (L.checks || []).find((x) => x.id === id);
-      if (!c) return;
-      L.checks = L.checks.filter((x) => x.id !== id);
-      const r = this._checkRes.get(label); if (r) r.res.delete(id);
-      this._save();
-      this._renderChecks();
-      this._applyCheckProblems(label);
-      this._toast(T('chk_deleted', { name: c.name }));
-    }
-    _checksSoon(label) { this._clock.after('checks', 400, () => this._runChecks(label)); }
-    // replay checks on the function's current configs; results kept until the configs change. given: the configs
-    // the scan already read (another function's)
-    async _runChecks(label, ids, force, given) {
-      const L = this._layout(label), list = (L.checks || []).filter((c) => !ids || ids.includes(c.id));
-      if (!list.length || this._ver) return;
-      const gen = this._cfgGen || 0, have = this._checkRes.get(label);
-      if (!force && have && have.gen === gen && list.every((c) => have.res.has(c.id))) return;
-      const members = this._ents.filter((e) => (e.labels || []).includes(label)).map((e) => e.entity_id).filter((e) => /^(automation|script)\./.test(e));
-      const cfgOf = new Map((given || []).map((x) => [x.id, x.cfg]));
-      const itemsFor = async (c) => {
-        const ids = [...new Set(members.concat(c.items || []))];
-        const cfgs = await Promise.all(ids.map((e) => (cfgOf.has(e) ? cfgOf.get(e) : this._fetchConfig(e))));
-        return ids.map((e, i) => ({ id: e, cfg: cfgs[i] })).filter((x) => x.cfg);
-      };
-      const resolve = (ref) => { if (ref.startsWith('device:')) return this._ents.filter((e) => e.device_id === ref.slice(7)).map((e) => e.entity_id); const t = this._tgt.get(ref); return t ? t.entities : []; };
-      const o = { states: this._hass.states, tz: this._hass.config && this._hass.config.time_zone, tpl: (t, v, e) => this._sbxTpl(t, v, e), resolve,
-        fetch: (id) => this._fetchConfig(id), name: (id) => this._boxName(id), condText: (c) => condText(c, (x) => this._boxName(x)) };
-      const rec = have && have.gen === gen ? have : { gen, res: new Map() };
-      for (const c of list) {
-        try { const r = await runCheck(c, Object.assign({ items: await itemsFor(c) }, o)); rec.res.set(c.id, { ok: r.ok, unsure: r.unsure, res: r.res }); }
-        catch (e) { rec.res.set(c.id, { ok: false, unsure: (e && e.message) || String(e), res: [] }); }
-      }
-      rec.at = Date.now();
-      this._checkRes.set(label, rec);
-      this._applyCheckProblems(label);
-      if (this._sbx && this._sbx.label === label) this._renderChecks();
-    }
-    _checkProblems(label) {
-      const r = this._checkRes.get(label), out = [];
-      if (!r) return out;
-      (this._layout(label).checks || []).forEach((c) => {
-        const x = r.res.get(c.id);
-        if (!x || x.ok) return;
-        if (x.unsure) { out.push({ sev: 'warn', kind: 'c_unsure', ref: 'check:' + c.id, by: [], name: c.name, detail: x.unsure }); return; }
-        const i = x.res.findIndex((y) => !y.ok);
-        out.push({ sev: 'error', kind: 'c_failed', ref: 'check:' + c.id, by: [], name: c.name, detail: i >= 0 ? this._expText(c.expect[i], x.res[i].got).replace(/<[^>]+>/g, '') : '' });
-      });
-      return out;
-    }
-    _applyCheckProblems(label) {
-      const m = this._model;
-      if (!m || m.label !== label || this._ver) return;
-      const all = (m.problems || []).concat(m.dismissed || []).filter((p) => !/^c_/.test(p.kind)).concat(this._checkProblems(label))
-        .sort((x, y) => (x.sev === y.sev ? 0 : x.sev === 'error' ? -1 : 1));
-      // checks' results are only known once they've run
-      const sp = this._splitProbs(label, all, (k) => !k.startsWith('c_') || this._checkRes.has(label));
-      m.problems = sp.shown; m.dismissed = sp.hidden;
-      this._noteProblems(label, m.problems);
-      this._renderHeader();
-      if (this._drawer && this._drawer.mode === 'problems') this._openProblems();
-    }
-    // a check played in the sandbox, step by step on the board: its states, its clock, its steps, its answers
-    async _checkReplay(id) {
-      const label = this._data.ui.current, c = (this._layout(label).checks || []).find((x) => x.id === id);
-      if (!c || !this._model) return;
-      if (this._sbxOn()) this._closeDrawer();
-      await this._openSandbox({ check: c });
-      for (const s of c.steps) {
-        if (!this._sbxOn()) return;
-        const g = this._sbx;
-        await this._sbxDo((e) => {
-          this._sbxRec(s);
-          if (s.op === 'set') return e.userSet(s.id, s.state);
-          if (s.op === 'event') return e.userEvent(s.type, s.data);
-          if (s.op === 'mqtt') return e.userMqtt(s.topic, s.payload);
-          if (s.op === 'run') return e.userRun(s.id, s.conds, s.ti);
-          if (s.op === 'advance') return e.advance(s.ms);
-          return e.toNext();
-        });
-        if (this._sbx !== g) return;
-        if (!(await this._clock.sleep(300))) return;
-      }
-      this._toast(T('chk_replayed', { name: c.name }));
-    }
-
-    /* ---------- problems (0.9.0) ---------- */
-    _probCtx(label) {
-      const L = this._layout(label), svcs = this._hass.services || {};
-      return {
-        state: (id) => this._hass.states[id], ent: (id) => this._entMap.get(id), dev: (id) => this._devMap.get(id),
-        area: (id) => this._areaMap && this._areaMap.get(id), floor: (id) => this._floorMap && this._floorMap.get(id), label: (id) => this._labelMap.get(id),
-        service: (d, s) => !!(svcs[d] && svcs[d][s]), paused: Array.isArray(L.paused) && L.paused.length > 0,
-      };
-    }
-    // the function's own layout, not a version's open in a tab
-    _liveLayout(label) { return this._data.layouts[label] || this._layout(label); }
-    // a function's problems, without the ones dismissed; keeps the dismissals' bookkeeping (and saves it)
-    _splitProbs(label, problems, covers) {
-      const L = this._liveLayout(label);
-      if (!(L.dismissed || []).length) return { shown: problems, hidden: [] };
-      const r = splitDismissed(problems, L.dismissed, Date.now(), covers);
-      if (r.changed) { L.dismissed = r.dismissed; this._save(); }
-      return r;
-    }
-    _probDismiss(k, back) {
-      const m = this._model, label = this._data.ui.current;
-      if (!m || m.label !== label || this._ver) return;
-      const L = this._liveLayout(label), all = (m.problems || []).concat(m.dismissed || []), p = all.find((x) => probKey(x) === k);
-      L.dismissed = (L.dismissed || []).filter((d) => d.k !== k);
-      if (!back) L.dismissed.push({ k, at: Date.now() });
-      this._save();
-      const sp = splitDismissed(all, L.dismissed, Date.now(), () => false);
-      m.problems = sp.shown; m.dismissed = sp.hidden;
-      markProblems(m.nodes, m.edges, m.problems);
-      this._noteProblems(label, m.problems);
-      this._renderHeader();
-      this._render();
-      this._drawEdges();
-      if (this._drawer && this._drawer.mode === 'problems') this._openProblems(this._drawer.dismissed && m.dismissed.length > 0);
-      if (!back && p) this._toast(T('prob_dismissed_toast'), [{ text: T('undo'), fn: () => this._probDismiss(k, true) }]);
-    }
-    _noteProblems(label, problems) {
-      const e = problems.filter((p) => p.sev === 'error').length, w = problems.length - e, was = this._probs.get(label);
-      this._probs.set(label, { e, w });
-      if (!was || was.e !== e || was.w !== w) this._renderList();
-    }
-    // every function on the board, in the background: the counts on the list (configs come from the cache)
-    async _scanProblems() {
-      if (!this._data || !this._hass || this._probScanning || !this._ents) return;
-      this._probScanning = true;
-      try {
-        const known = (x) => this._known(x);
-        for (const label of this._data.functions.slice()) {
-          if (this._model && this._model.label === label && !this._ver) { this._noteProblems(label, this._model.problems || []); continue; }
-          const members = this._ents.filter((e) => (e.labels || []).includes(label)).map((e) => e.entity_id);
-          const devs = this._devs.filter((d) => (d.labels || []).includes(label)).map((d) => 'device:' + d.id);
-          const logic = members.filter((e) => /^(automation|script)\./.test(e));
-          const cfgs = await Promise.all(logic.map((e) => this._fetchConfig(e)));
-          // the open function's own result is newer than anything read before it was built
-          if (this._model && this._model.label === label && !this._ver) { this._noteProblems(label, this._model.problems || []); continue; }
-          const items = logic.map((e, i) => ({ key: e, refs: cfgs[i] ? analyze(cfgs[i], e.startsWith('script.'), known).refs : [] }));
-          const base = findProblems(items, members.concat(devs), this._probCtx(label));
-          if ((this._layout(label).checks || []).length) await this._runChecks(label, null, false, logic.map((e, i) => ({ id: e, cfg: cfgs[i] })).filter((x) => x.cfg));
-          this._noteProblems(label, this._splitProbs(label, base.concat(this._checkProblems(label)), (k) => !k.startsWith('c_') || this._checkRes.has(label)).shown);
-          // (a turn for the page between functions; a board taken off the page stops counting)
-          if (!(await this._clock.sleep(0))) return;
-        }
-      } catch (e) { /* the counts stay as they were */ } finally { this._probScanning = false; }
-    }
-    _probBadge(c) {
-      if (!c.e && !c.w) return '';
-      const say = c.e ? P('prob_n_errors', c.e) + (c.w ? ' · ' + P('prob_n_warnings', c.w) : '') : P('prob_n_warnings', c.w);
-      return `<span class="pbadge p-${c.e ? 'error' : 'warn'}" title="${esc(say)}"><span aria-hidden="true">${c.e || c.w}</span><span class="srt">${esc(say)}</span></span>`;
-    }
-    _probChip() {
-      const m = this._model && this._model.label === (this._data && this._data.ui.current) ? this._model : null, ps = (m && m.problems) || [], ds = (m && m.dismissed) || [];
-      const e = ps.filter((p) => p.sev === 'error').length;
-      return (ps.length ? `<button class="pchip p-${e ? 'error' : 'warn'}" data-act="problems" title="${T('prob_chip_t')}"><ha-icon icon="${e ? 'mdi:alert-circle' : 'mdi:alert'}"></ha-icon>${P('prob_n', ps.length)}</button>` : '')
-        + (ds.length ? `<button class="pdchip" data-act="pdis-list" title="${T('prob_dismissed_t')}"><ha-icon icon="mdi:eye-off-outline"></ha-icon>${P('prob_dismissed_n', ds.length)}</button>` : '');
-    }
-    _probWhat(ref) {
-      if (ref.startsWith('device:')) { const d = this._devMap.get(ref.slice(7)); return d ? d.name_by_user || d.name || ref.slice(7) : ref.slice(7); }
-      if (TGT_RE.test(ref)) return ref.slice(ref.indexOf(':') + 1);
-      return EXACT_RE.test(ref) ? this._nameOf(ref) + (this._nameOf(ref) !== ref ? ` (${ref})` : '') : ref;
-    }
-    _probText(p) {
-      const what = esc(this._probWhat(p.ref));
-      switch (p.kind) {
-        case 'e_missing': return T('prob_e_missing', { what });
-        case 'e_notloaded': return T('prob_e_notloaded', { what });
-        case 'e_disabled': return T('prob_e_disabled', { what });
-        case 'e_unavail': return T('prob_e_unavail', { what });
-        case 'd_missing': return T('prob_d_missing', { what });
-        case 'd_disabled': return T('prob_d_disabled', { what });
-        case 't_missing': return T('prob_t_missing', { what });
-        case 's_missing': return T('prob_s_missing', { what });
-        case 'm_broken': return T('prob_m_broken', { what });
-        case 'm_off': return T('prob_m_off', { what });
-        case 'c_failed': return T('prob_c_failed', { name: esc(p.name), what: esc(p.detail) });
-        case 'c_unsure': return T('prob_c_unsure', { name: esc(p.name), what: esc(p.detail) });
-        default: return what;
-      }
-    }
-    _probTitle(key) {
-      const ps = ((this._model && this._model.problems) || []).filter((p) => p.ref === key || p.by.includes(key));
-      return ps.map((p) => this._probText(p).replace(/<[^>]+>/g, '')).join('\n');
-    }
-    // the problems drawer; dismissed: the ones dismissed instead
-    _openProblems(dismissed) {
-      const label = this._data.ui.current;
-      if (!label || !this._model) return;
-      this._leaveDrawerMode();
-      this._capture = null;
-      this._drawer = { mode: 'problems', dismissed: !!dismissed };
-      const d = this._$.drawer, ps = (dismissed ? this._model.dismissed : this._model.problems) || [], ds = this._model.dismissed || [];
-      d.hidden = false;
-      const nm = (k) => esc(this._model.nodes.has(k) ? this._model.nodes.get(k).name : this._nameOf(k));
-      const row = (p) => `<div class="prow p-${p.sev}"><ha-icon icon="${p.sev === 'error' ? 'mdi:alert-circle' : 'mdi:alert'}"></ha-icon><div class="pbody"><div class="ptxt">${this._probText(p)}</div>`
-        + (p.by.length ? `<div class="pby">${T('prob_in')} ${p.by.map((b) => `<button class="lnk" data-act="prob-go" data-key="${esc(b)}">${nm(b)}</button>`).join(', ')}</div>` : '')
-        + `<div class="pact">${this._model.nodes.has(p.ref) ? `<button data-act="prob-go" data-key="${esc(p.ref)}"><ha-icon icon="mdi:crosshairs-gps"></ha-icon>${T('prob_show')}</button>` : ''}`
-        + p.by.filter((b) => /^(automation|script)\./.test(b)).map((b) => `<button data-act="prob-open" data-key="${esc(b)}"><ha-icon icon="mdi:pencil-outline"></ha-icon>${T('prob_edit', { name: nm(b) })}</button>`).join('')
-        + (/^c_/.test(p.kind) ? `<button data-act="chk-replay" data-id="${esc(p.ref.slice(6))}"><ha-icon icon="mdi:flask-outline"></ha-icon>${T('chk_replay')}</button>` : '')
-        + (!p.by.length && /^(automation|script)\./.test(p.ref) ? `<button data-act="prob-open" data-key="${esc(p.ref)}"><ha-icon icon="mdi:pencil-outline"></ha-icon>${T('prob_edit', { name: nm(p.ref) })}</button>` : '')
-        + (this._ver ? '' : dismissed
-          ? `<button data-act="pdis-back" data-k="${esc(probKey(p))}" aria-label="${esc(T('prob_undismiss_a', { what: this._probText(p).replace(/<[^>]+>/g, '') }))}"><ha-icon icon="mdi:eye-outline"></ha-icon>${T('prob_undismiss')}</button>`
-          : `<button data-act="pdis" data-k="${esc(probKey(p))}" title="${T('prob_dismiss_t')}" aria-label="${esc(T('prob_dismiss_a', { what: this._probText(p).replace(/<[^>]+>/g, '') }))}"><ha-icon icon="mdi:eye-off-outline"></ha-icon>${T('prob_dismiss')}</button>`)
-        + `</div></div></div>`;
-      const other = dismissed ? `<button class="lnk" data-act="problems">${T('prob_back')}</button>`
-        : ds.length ? `<button class="lnk" data-act="pdis-list">${P('prob_dismissed_n', ds.length)}</button>` : '';
-      this._put(d, `<div class="dhead"><span class="dtitle">${dismissed ? T('prob_dismissed_title', { fnName: esc(this._fnName(label)) }) : T('prob_title', { fnName: esc(this._fnName(label)) })}</span><button data-act="close" title="${T('close')}"><ha-icon icon="mdi:close"></ha-icon></button></div>`
-        + `<div class="probs"><div class="vnote">${dismissed ? T('prob_dismissed_note') : T('prob_note')}</div>${ps.length ? ps.map(row).join('') : `<div class="muted pad">${dismissed ? T('prob_none_dismissed') : T('prob_none')}</div>`}${other ? `<div class="pother">${other}</div>` : ''}</div>`);
-      this._fitLitbar && this._fitLitbar();
-    }
     _aboutModal() {
       const m = this._$.modal;
       m.hidden = false;
       const store = this._storeMode === 'shared' ? T('shared_between_administrators_functions_board') : T('stored_for_your_user_only');
       m.innerHTML = `<div class="dlg about"><h3>${T('functions_board')} <span class="muted">${T('v_prototype', { version: VERSION })}</span></h3><h4>${T('what_it_changes', { extra: this._storeMode === 'shared' ? (this._full() ? T('full_manager') : T('organise_only')) : '' })}</h4><ul>${this._promise().map((x) => `<li>${esc(x)}</li>`).join('')}</ul><h4>${T('where_things_are_kept')}</h4><p>${T('frames_notes_and_positions_are', { store })}</p><h4>${T('how_the_arrows_are_drawn')}</h4><p>${T('from_each_automation_and_script')}</p><h4>${T('diag_about_h')}</h4><p>${T('diag_about_p')}</p><div class="btns">${REPO_URL ? `<a class="lnk" href="${REPO_URL}" target="_blank" rel="noopener">${T('project_page_and_issues')}</a>` : ''}<button data-act="diag"><ha-icon icon="mdi:file-download-outline"></ha-icon>${T('diag_btn')}</button><button data-act="modal-cancel">${T('close')}</button></div></div>`;
-    }
-
-    /* ---------- hide and delete (8.2): kept visibly apart, each with its own words ---------- */
-    _fnMenu(btn, label) {
-      if (this._menuEl && this._menuAnchor === btn) { this._closeMenu(); return; }
-      const full = this._full(), off = T('full_manager_only_switch_it');
-      this._menu(btn, [
-        { act: 'fnm-edit', data: { label }, icon: 'mdi:pencil-outline', text: T('edit_name_icon_colour') },
-        { act: 'fnm-hide', data: { label }, icon: 'mdi:eye-off-outline', text: T('hide_from_board'), title: T('the_label_everything_in_it') },
-        { sep: true },
-        { act: 'fnm-del', data: { label }, icon: 'mdi:label-off-outline', text: T('delete_function_2'), disabled: !full, title: full ? T('deletes_the_label_and_the') : off },
-        { act: 'fnm-delall', data: { label }, icon: 'mdi:delete-outline', text: T('delete_function_and_its_items'), disabled: !full, title: full ? T('also_deletes_its_automations_scripts') : off },
-      ], this._fnName(label));
-    }
-    // how one item would be deleted, whether Undo can bring it back, and why not when it can't
-    async _howDelete(id) {
-      if (id.startsWith('device:')) return { id, name: this._mkNode(id, 'member').name, can: false, undo: false, why: T('devices_are_never_deleted_it') };
-      const st = this._hass.states[id];
-      const reg = this._entMap.has(id) ? await this._ws({ type: 'config/entity_registry/get', entity_id: id }, { optional: 'an entity set up in YAML has no registry entry', fallback: null }) : null;
-      const name = (st && st.attributes.friendly_name) || (reg && (reg.name || reg.original_name)) || id;
-      const base = { id, name, reg, can: false, undo: false };
-      const dom = id.split('.')[0];
-      if (['automation', 'script', 'scene'].includes(dom)) {
-        const cid = reg && reg.unique_id;
-        if (!cid) return Object.assign(base, { why: T('defined_in_yaml_without_an') });
-        try {
-          const cfg = await this._api('GET', `config/${dom}/config/${encodeURIComponent(cid)}`);
-          return Object.assign(base, { can: true, undo: true, how: 'config', dom, cid, cfg, where: `${dom}s.yaml` });
-        } catch (e) { return Object.assign(base, { why: T('defined_in_yaml_outside_s', { dom }) }); }
-      }
-      if (HELPER_DOMAINS.has(dom)) {
-        const items = await this._ws({ type: dom + '/list' }, { optional: 'a helper domain not set up has no list of helpers', fallback: [] });
-        const item = reg && (items || []).find((x) => x.id === reg.unique_id);
-        if (item) return Object.assign(base, { can: true, undo: true, how: 'collection', dom, item, where: T('helpers_made_in_the_ui') });
-        return Object.assign(base, { why: T('defined_in_yaml_configuration_yaml') });
-      }
-      if (reg && reg.config_entry_id && HELPER_PLATFORMS.has(reg.platform)) {
-        const entries = await this._ws({ type: 'config_entries/get', domain: reg.platform }, { fallback: [] });
-        const entry = (entries || []).find((x) => x.entry_id === reg.config_entry_id);
-        const siblings = this._ents.filter((e) => e.config_entry_id === reg.config_entry_id).map((e) => e.entity_id);
-        return Object.assign(base, { can: true, undo: false, how: 'entry', entryId: reg.config_entry_id, where: `${reg.platform} helper${entry ? ' "' + entry.title + '"' : ''}`, siblings, why: T('deleting_a_helper_set_up') });
-      }
-      return Object.assign(base, { why: T('not_an_automation_script_or') });
-    }
-    // automations and scripts (outside `skip`) whose configs refer to any of these items
-    async _usedBy(ids, skip) {
-      const want = new Set(ids), out = new Map();
-      const all = this._logicIds().filter((e) => !skip.has(e));
-      const cfgs = await Promise.all(all.map((e) => this._fetchConfig(e)));
-      all.forEach((e, i) => {
-        if (!cfgs[i]) return;
-        analyze(cfgs[i], e.startsWith('script.'), (x) => this._known(x)).refs.forEach((r) => {
-          if (!want.has(r.ref)) return;
-          if (!out.has(r.ref)) out.set(r.ref, new Set());
-          out.get(r.ref).add(e);
-        });
-      });
-      return out;
-    }
-    _nameOf(id) { const st = this._hass.states[id], e = this._entMap.get(id); return (st && st.attributes.friendly_name) || (e && (e.name || e.original_name)) || id; }
-    _usedHtml(id, used) {
-      const u = used.get(id);
-      if (!u || !u.size) return '';
-      const names = [...u].map((x) => this._nameOf(x));
-      return `<div class="dwarn"><ha-icon icon="mdi:alert-outline"></ha-icon>${T('used_by', { count: esc(P('n_automations_and_scripts', u.size)), names: esc(names.slice(0, 4).join(', ')), extra: names.length > 4 ? T('and_more', { n: names.length - 4 }) : '' })}</div>`;
-    }
-    async _deleteItemDialog(id) {
-      if (!this._full()) return;
-      const m = this._$.modal;
-      m.hidden = false;
-      m.innerHTML = `<div class="dlg"><h3>${T('delete_3')}</h3><div class="muted">${T('checking_what_uses_it')}</div></div>`;
-      const plan = await this._howDelete(id), used = await this._usedBy([id], new Set([id]));
-      this._pendingDelete = { kind: 'item', plan: [plan], label: this._data.ui.current };
-      const kind = this._tagOf(id).toLowerCase();
-      m.innerHTML = `<div class="dlg"><h3>${T('delete_2', { name: esc(plan.name) })}</h3>${plan.can
-          ? `<p class="dtext">${T('deletes_this_from_home_assistant', { kind: esc(kind), where: esc(plan.where), extra: plan.how === 'entry' && plan.siblings && plan.siblings.length > 1 ? T('that_also_deletes_the_same', { n: esc(P('n_other_entities', plan.siblings.length - 1)) }) : '' })}</p>${this._usedHtml(id, used)}<p class="dtext ${plan.undo ? '' : 'dno'}">${plan.undo ? T('undo_brings_it_back_with') : esc(T('this_can_t_be_undone', { why: plan.why }))}</p>`
-          : `<p class="dtext">${T('the_board_can_t_delete', { why: esc(plan.why) })}</p>`}<div class="btns"><button data-act="modal-cancel">${T('cancel')}</button>${plan.can ? `<button class="danger" data-act="del-go">${T('delete_3')}</button>` : ''}</div></div>`;
-    }
-    async _deleteFnDialog(label, withItems) {
-      if (!this._full()) return;
-      const m = this._$.modal, name = this._fnName(label);
-      m.hidden = false;
-      m.innerHTML = `<div class="dlg wide"><h3>${T('delete_2', { name: esc(name) })}</h3><div class="muted">${T('checking_what_it_contains_and')}</div></div>`;
-      await this._loadRegistries();
-      const ents = this._ents.filter((e) => (e.labels || []).includes(label)).map((e) => e.entity_id);
-      const devs = this._devs.filter((d) => (d.labels || []).includes(label)).map((d) => 'device:' + d.id);
-      const L = this._data.layouts[label] || {};
-      const cats = await this._fnCategories(label, withItems ? ents : []);
-      let plan = [], used = new Map();
-      if (withItems) {
-        for (const id of ents.concat(devs)) plan.push(await this._howDelete(id));
-        used = await this._usedBy(ents, new Set(ents));
-      }
-      this._pendingDelete = { kind: 'function', label, withItems, plan, cats, ents, devs };
-      const box = (L.frames || []).length, notes = (L.notes || []).length;
-      const items = withItems ? `<div class="dlist">${plan.map((p, i) => `<label class="drow ${p.can ? '' : 'dcant'}"><input type="checkbox" data-delpick="${i}" ${p.can ? 'checked' : 'disabled'}>`
-        + `<span class="tag">${esc(this._tagOf(p.id))}</span><span class="mn"><b>${esc(p.name)}</b><small>${esc(p.id.startsWith('device:') ? 'device' : p.id)}${p.can ? (p.undo ? '' : T('can_t_be_undone')) : ' · ' + esc(p.why)}</small>${this._usedHtml(p.id, used)}</span></label>`).join('')}</div>` : '';
-      const catLine = cats.length ? `<label class="chk"><input type="checkbox" data-delcats ${cats.every((c) => c.free) ? 'checked' : ''}>${T('also_delete_the_named', { count: esc(P('n_categories', cats.length)), name: esc(name), cats: esc(cats.map((c) => c.scope === 'helpers' ? 'helpers' : c.scope + 's').join(', ')), extra: cats.some((c) => !c.free) ? T('other_items_are_filed_there') : withItems ? '' : T('only_this_function_s_items') })}</label>` : '';
-      m.innerHTML = `<div class="dlg wide"><h3>${T('delete_2', { name: esc(name) })}</h3><p class="dtext">${T('deletes_the_label')} <b>${esc(name)}</b>${T('home_assistant_removes_it_from', { n: esc(P('n_items', ents.length + devs.length)), extra: withItems ? '' : T('the_items_themselves_stay_where') })}</p><p class="dtext">${T('deletes_the_board_s_layout', { extra: box ? ', ' + P('n_frames', box) : '', extra2: notes ? ', ' + P('n_notes', notes) : '' })}</p>${withItems ? `<p class="dtext">${T('deletes_these_from_home_assistant')}</p>${items}` : ''}${catLine}<p class="dtext">${withItems && plan.some((p) => p.can && !p.undo) ? T('undo_brings_back_the_function') : T('undo_brings_it_all_back')}</p><div class="btns"><button data-act="modal-cancel">${T('cancel')}</button><button class="danger" data-act="del-go">${withItems ? T('delete_function_and_items') : T('delete_function')}</button></div></div>`;
-    }
-    // the function's own categories, and whether anything outside `ids` is filed under them
-    async _fnCategories(label, ids) {
-      const L = this._data.layouts[label] || {}, cats = L.categories || {}, out = [];
-      const name = this._fnName(label).toLowerCase();
-      for (const scope of ['automation', 'script', 'helpers']) {
-        let cid = cats[scope];
-        const list = await this._ws({ type: 'config/category_registry/list', scope }, { fallback: [] });
-        const c = (list || []).find((x) => x.category_id === cid) || (list || []).find((x) => String(x.name).toLowerCase() === name);
-        if (!c) continue;
-        cid = c.category_id;
-        const inIt = this._ents.filter((e) => (e.categories || {})[scope] === cid);
-        const mine = inIt.filter((e) => (e.labels || []).includes(label) || ids.includes(e.entity_id));
-        out.push({ scope, id: cid, name: c.name, icon: c.icon || null, members: inIt.map((e) => e.entity_id), free: inIt.length === mine.length });
-      }
-      return out;
-    }
-    async _deleteGo() {
-      const d = this._pendingDelete, m = this._$.modal;
-      if (!d) return;
-      const go = m.querySelector('[data-act="del-go"]');
-      if (go) { go.disabled = true; go.textContent = T('deleting'); }
-      if (d.kind === 'function') {
-        const picks = new Set([...m.querySelectorAll('[data-delpick]:checked')].map((x) => +x.dataset.delpick));
-        d.plan = d.plan.filter((p, i) => p.can && picks.has(i));
-        d.dropCats = !!(m.querySelector('[data-delcats]') && m.querySelector('[data-delcats]').checked);
-      }
-      this._pendingDelete = null;
-      try {
-        if (d.kind === 'item') await this._runItemDelete(d);
-        else await this._runFnDelete(d);
-      } catch (e) { this._toast(T('could_not_delete_2', { message: e.message || e.code || e })); }
-      this._closeModal();
-    }
-    async _deleteItems(plan) {
-      const done = [], failed = [];
-      for (const p of plan) {
-        if (!p.can) continue;
-        try {
-          if (p.how === 'config') await this._api('DELETE', `config/${p.dom}/config/${encodeURIComponent(p.cid)}`);
-          else if (p.how === 'collection') await this._ws({ type: p.dom + '/delete', [p.dom + '_id']: p.item.id });
-          else if (p.how === 'entry') await this._api('DELETE', `config/config_entries/entry/${p.entryId}`);
-          done.push(p);
-        } catch (e) { failed.push(p.name + ': ' + (e.message || e.code || e)); }
-      }
-      return { done, failed };
-    }
-    // wait until an entity's registry entry exists (Home Assistant creates it shortly after the config)
-    async _waitEntity(test, ms = 8000) {
-      const end = Date.now() + ms;
-      while (Date.now() < end) {
-        const ents = await this._ws({ type: 'config/entity_registry/list' }, { fallback: [] });
-        const e = ents.find(test);
-        if (e) return e;
-        await this._clock.pause(300);
-      }
-      return null;
-    }
-    // put deleted items back, with their registry settings (name, icon, labels, area, categories, entity id)
-    async _restoreItems(done) {
-      const back = [];
-      for (const p of done) {
-        if (!p.undo) continue;
-        let e = null;
-        if (p.how === 'config') {
-          await this._api('POST', `config/${p.dom}/config/${encodeURIComponent(p.cid)}`, p.cfg);
-          e = await this._waitEntity((x) => x.platform === p.dom && x.unique_id === p.cid);
-        } else if (p.how === 'collection') {
-          const settings = Object.assign({}, p.item);
-          delete settings.id;
-          const made = await this._ws(Object.assign({ type: p.dom + '/create' }, settings));
-          e = await this._waitEntity((x) => x.platform === p.dom && x.unique_id === made.id);
-          p.item = made;
-        }
-        if (!e) continue;
-        const r = p.reg || {}, msg = { type: 'config/entity_registry/update', entity_id: e.entity_id, name: r.name || null, icon: r.icon || null, area_id: r.area_id || null, labels: r.labels || [], categories: r.categories || {} };
-        if (e.entity_id !== p.id) msg.new_entity_id = p.id;
-        // (an entity whose id can't be changed back is put back under the id it has now)
-        if (msg.new_entity_id) { if ((await this._ws(msg, { optional: 'Home Assistant refuses an entity id already taken', fallback: false })) === false) await this._ws(Object.assign(msg, { new_entity_id: undefined }), { fallback: null }); } else await this._ws(msg, { fallback: null });
-        back.push(p);
-      }
-      return back;
-    }
-    async _runItemDelete(d) {
-      const p = d.plan[0], label = d.label;
-      const { done, failed } = await this._deleteItems(d.plan);
-      if (!done.length) { this._toast(T('could_not_delete', { failed: failed.join('; ') })); return; }
-      if (this._model && this._model.nodes.has(p.id)) this._select(null);
-      this._history({
-        label, text: T('delete', { name: p.name }),
-        check: async (dir) => dir !== 'undo' || !this._hass.states[p.id],
-        undo: async () => { await this._restoreItems(done); },
-        redo: async () => {
-          const again = await this._howDelete(p.id);
-          if (again.can) { const r = await this._deleteItems([again]); done.splice(0, done.length, ...r.done); }
-        },
-      });
-      this._store.changed('cfg:');
-      this._toast(T('deleted_2', { name: p.name }), p.undo ? [{ text: T('undo'), fn: () => this._undo() }] : []);
-    }
-    async _runFnDelete(d) {
-      const label = d.label, lab = this._labelMap.get(label), name = lab ? lab.name : label;
-      const keep = { name, icon: lab && lab.icon, color: lab && lab.color, description: lab && lab.description };
-      const layout = this._data.layouts[label] ? JSON.parse(JSON.stringify(this._data.layouts[label])) : null;
-      const pos = this._data.functions.indexOf(label);
-      const areas = (await this._ws({ type: 'config/area_registry/list' }, { fallback: [] })).filter((a) => (a.labels || []).includes(label)).map((a) => a.area_id);
-      const st = { label, ents: d.ents, devs: d.devs, areas, cats: d.dropCats ? d.cats : [], items: [] };
-      // 1. the items, when asked
-      if (d.withItems && d.plan.length) {
-        const r = await this._deleteItems(d.plan);
-        st.items = r.done;
-        if (r.failed.length) this._toast(T('some_items_could_not_be', { failed: r.failed.join('; ') }));
-      }
-      // 2. the categories (Home Assistant un-files whatever is still in them)
-      for (const c of st.cats) await this._ws({ type: 'config/category_registry/delete', scope: c.scope, category_id: c.id }, { fallback: null });
-      // 3. the label (Home Assistant takes it off every entity, device and area) and the layout
-      await this._ws({ type: 'config/label_registry/delete', label_id: label });
-      this._takeOff(label);
-      delete this._data.layouts[label];
-      this._save();
-      this._history({
-        label: null, text: T('delete', { name }),
-        check: async (dir) => dir !== 'undo' || !(await this._ws({ type: 'config/label_registry/list' })).some((l) => String(l.name).toLowerCase() === name.toLowerCase()),
-        undo: async () => {
-          const msg = { type: 'config/label_registry/create', name: keep.name, icon: keep.icon || 'mdi:puzzle-outline' };
-          if (keep.color) msg.color = keep.color;
-          if (keep.description) msg.description = keep.description;
-          const nl = await this._ws(msg);
-          const newId = nl.label_id;
-          const back = await this._restoreItems(st.items);
-          // categories come back with the same names; whatever was filed there is filed again
-          const catIds = {};
-          for (const c of st.cats) {
-            const made = await this._ws({ type: 'config/category_registry/create', scope: c.scope, name: c.name, icon: c.icon || undefined }, { fallback: null });
-            if (!made) continue;
-            catIds[c.scope] = made.category_id;
-            for (const id of c.members) await this._ws({ type: 'config/entity_registry/update', entity_id: id, categories: { [c.scope]: made.category_id } }, { fallback: null });
-          }
-          const deleted = new Set(st.items.map((p) => p.id).filter((id) => !back.some((p) => p.id === id)));
-          for (const id of st.ents) {
-            if (deleted.has(id)) continue;
-            const r = await this._ws({ type: 'config/entity_registry/get', entity_id: id }, { optional: 'an entity set up in YAML has no registry entry', fallback: null });
-            if (r) await this._ws({ type: 'config/entity_registry/update', entity_id: id, labels: [...new Set((r.labels || []).concat([newId]))] }, { fallback: null });
-          }
-          await this._loadRegistries();
-          for (const did of st.devs) {
-            const dev = this._devMap.get(did.slice(7));
-            if (dev) await this._ws({ type: 'config/device_registry/update', device_id: dev.id, labels: [...new Set((dev.labels || []).concat([newId]))] }, { fallback: null });
-          }
-          for (const aid of st.areas) {
-            const a = (await this._ws({ type: 'config/area_registry/list' })).find((x) => x.area_id === aid);
-            if (a) await this._ws({ type: 'config/area_registry/update', area_id: aid, labels: [...new Set((a.labels || []).concat([newId]))] }, { fallback: null });
-          }
-          if (layout) { const L = cleanLayout(layout); if (Object.keys(catIds).length) L.categories = Object.assign({}, L.categories || {}, catIds); this._data.layouts[newId] = L; }
-          if (!this._data.functions.includes(newId)) this._data.functions.splice(Math.max(0, pos), 0, newId);
-          this._data.ui.current = newId;
-          st.label = newId;
-          this._save();
-        },
-        redo: async () => {
-          await this._loadRegistries();
-          const items = st.items.length ? await Promise.all(st.items.map((p) => this._howDelete(p.id))) : [];
-          const cats = st.cats.length ? await this._fnCategories(st.label, []) : [];
-          await this._runFnDeleteQuiet(st.label, items.filter((p) => p.can), cats);
-        },
-      });
-      await this._loadRegistries();
-      this._renderList();
-      if (this._data.ui.current) this._open(this._data.ui.current); else { this._model = null; this._clearWorld(); this._renderHeader(); this._setEmpty(); }
-      this._toast(T('deleted', { name, extra: st.items.length ? T('and', { count: P('n_items', st.items.length) }) : '' }), [{ text: T('undo'), fn: () => this._undo() }]);
-    }
-    async _runFnDeleteQuiet(label, items, cats) {
-      if (items.length) await this._deleteItems(items);
-      for (const c of cats) await this._ws({ type: 'config/category_registry/delete', scope: c.scope, category_id: c.id }, { fallback: null });
-      await this._ws({ type: 'config/label_registry/delete', label_id: label }, { fallback: null });
-      this._takeOff(label);
-      delete this._data.layouts[label];
-      this._save();
-    }
-
-    /* ---------- types ---------- */
-    _scopeOf(id) {
-      const d = id.split('.')[0];
-      if (d === 'automation') return 'automation';
-      if (d === 'script') return 'script';
-      const reg = this._entMap.get(id);
-      if (HELPER_DOMAINS.has(d) || (reg && HELPER_PLATFORMS.has(reg.platform))) return 'helpers';
-      return null;
-    }
-    _tagOf(key) {
-      if (key.startsWith('device:')) return T('device');
-      if (key.startsWith('svc:')) return T('action');
-      if (key.startsWith('event:')) return T('event');
-      if (key.startsWith('mqtt:')) return T('mqtt');
-      if (key.startsWith('nact:')) return T('button');
-      if (key.startsWith('nr:')) return T('node_red');
-      if (TGT_RE.test(key)) return TYPE[key.slice(0, key.indexOf(':'))];
-      const s = this._scopeOf(key);
-      if (s === 'automation') return T('automation');
-      if (s === 'script') return T('script');
-      if (s === 'helpers') return T('helper');
-      const d = key.split('.')[0];
-      return TYPE[d] || d.replace(/_/g, ' ');
-    }
-    _countText(ids) {
-      const c = { a: 0, s: 0, h: 0, o: 0 };
-      ids.forEach((id) => { const t = this._scopeOf(id); if (t === 'automation') c.a++; else if (t === 'script') c.s++; else if (t === 'helpers') c.h++; else c.o++; });
-      const p = [];
-      if (c.a) p.push(P('n_automations', c.a));
-      if (c.s) p.push(P('n_scripts', c.s));
-      if (c.h) p.push(P('n_helpers', c.h));
-      if (c.o) p.push(c.o + ' other');
-      return p.join(' · ');
-    }
-
-    /* ---------- import manager: detected functions, labels, pick items ---------- */
-    _openManager(tab, target) {
-      if (!this._mgr) {
-        this._mgr = { tab: 'detect', cands: null, scanning: false, expanded: new Set(), sel: new Set(), lsel: new Set(), cats: true, busy: false, target: null, newName: '', q: '', ptype: 'all', pshow: 200, pdiag: false };
-      }
-      const g = this._mgr;
-      g.tab = tab || g.tab;
-      // Pick items adds to the function on screen: every opening starts from it, never from an earlier visit
-      g.target = target || this._data.ui.current || '__new';
-      if (g.target !== '__new' && !this._data.functions.includes(g.target)) g.target = '__new';
-      this._pick = new Set();
-      this._renderManager();
-      if (g.tab === 'detect' && !g.cands && !g.scanning) this._scanFunctions();
-    }
-    _renderManager() {
-      const g = this._mgr, m = this._$.modal;
-      if (!g) return;
-      const old = m.querySelector('.mbody'), top = old ? old.scrollTop : 0;
-      m.hidden = false;
-      const tabs = [['detect', T('detected_functions')], ['labels', T('labels')], ['pick', T('pick_items')]];
-      const body = g.tab === 'detect' ? this._mgrDetect() : g.tab === 'labels' ? this._mgrLabels() : this._mgrPick();
-      m.innerHTML = `<div class="dlg mgr"><div class="mhead"><h3>${T('import_2')}</h3><div class="tabs">${tabs.map(([k, t]) => `<button class="tab ${g.tab === k ? 'on' : ''}" data-act="mgr-tab" data-tab="${k}">${t}</button>`).join('')}</div><button class="ib" data-act="modal-cancel" title="${T('close')}"><ha-icon icon="mdi:close"></ha-icon></button></div><div class="mbody">${body}</div><div class="mfoot">${this._mgrFoot()}</div></div>`;
-      const nb = m.querySelector('.mbody');
-      if (nb && g.tab === g.lastTab) nb.scrollTop = top;
-      g.lastTab = g.tab;
-      if (g.tab === 'pick') {
-        const s = m.querySelector('.search');
-        if (s) { s.value = g.q || ''; this._clock.after('focus', 30, () => s.focus()); }
-        this._renderPicks(g.q || '');
-      }
-    }
-    _mgrFoot() {
-      const g = this._mgr;
-      if (g.tab === 'detect') {
-        const avail = (g.cands || []).filter((c) => !(c.fn && !c.missing.length)).length, n = g.sel.size;
-        return `<label class="chk mcats"><input type="checkbox" data-mcats ${g.cats ? 'checked' : ''}>${T('file_imported_pieces_under_a')}</label><label class="chk mcats"><input type="checkbox" data-mdev ${g.devices ? 'checked' : ''}>${T('also_join_automations_that_meet')}</label><span class="cnt">${g.cands ? T('of_selected', { n, avail }) : ''}</span><button data-act="mgr-rescan" ${g.scanning || g.busy ? 'disabled' : ''}>${T('rescan')}</button><button data-act="mgr-selall" ${avail && !g.busy ? '' : 'disabled'}>${n && n === avail ? T('select_none') : T('select_all')}</button><button class="primary" data-act="mgr-import-sel" ${n && !g.busy ? '' : 'disabled'}>${g.busy ? T('importing_2') : T('import_selected')}</button>`;
-      }
-      if (g.tab === 'labels') {
-        const n = g.lsel.size;
-        return `<span class="cnt">${n ? n + ' selected' : T('none_selected')}</span><button class="primary" data-act="mgr-labels-add" ${n ? '' : 'disabled'}>${T('add_as_functions_2')}</button>`;
-      }
-      const n = this._pick.size, to = g.target === '__new' ? (String(g.newName || '').trim() || T('a_new_function')) : this._fnName(g.target);
-      return `<span class="cnt">${n ? n + ' selected' : T('none_selected')}</span><button class="primary" data-act="mgr-pick-add" ${n ? '' : 'disabled'}>${n ? T('add_to_4', { n: esc(P('n_items', n)), to: esc(to) }) : T('add')}</button>`;
-    }
-    _mgrFootRefresh() { const f = this._$.modal.querySelector('.mfoot'); if (f && this._mgr) f.innerHTML = this._mgrFoot(); }
-
-    _mgrDetect() {
-      const g = this._mgr;
-      if (g.scanning) return `<div class="muted pad">${T('tracing_every_automation_and_script')}</div>`;
-      if (g.error) return `<div class="muted pad">${T('the_scan_failed', { error: esc(g.error) })}</div>`;
-      if (!g.cands) return '';
-      if (!g.cands.length) return `<div class="muted pad">${T('no_groups_found_groups_show')}</div>`;
-      const s = g.stats, cv = s.cover;
-      return `<div class="hint mintro"><b>${T('of_and_of_are_in', { a: cv.a[0], a2: P('n_automations', cv.a[1]), s: cv.s[0], s2: P('n_scripts', cv.s[1]) })}</b> ${T('traced_and_each_group_below', { automations: P('n_automations', s.automations), scripts: P('n_scripts', s.scripts) })}</div>${g.cands.map((c, i) => this._candHTML(c, i)).join('')}${this._leftHTML()}`;
-    }
-    // automations and scripts in no group and no function, each two clicks from a function (3.2)
-    _leftHTML() {
-      const g = this._mgr, left = g.left || [];
-      if (!left.length) return '';
-      const open = !!g.leftOpen;
-      return `<div class="cand left"><div class="crow"><ha-icon icon="mdi:help-circle-outline"></ha-icon><span class="cname static">${T('not_in_any_function')}</span><span class="ccount">${esc(this._countText(left))}</span><span class="csrc">${T('no_wiring_or_category_ties')}</span><button class="ib" data-act="mgr-left" title="${open ? T('hide') : T('show')} them"><ha-icon icon="${open ? 'mdi:chevron-up' : 'mdi:chevron-down'}"></ha-icon></button></div>${open ? `<div class="cmem">${left.map((id) => `<div class="lrow2"><span class="tag">${esc(this._tagOf(id))}</span><span class="mn"><b>${esc(this._nameOf(id))}</b><small>${esc(id)}</small></span><button class="chip" data-act="left-add" data-id="${esc(id)}" ${this._canLabel(id) ? '' : `disabled title="${T('no_unique_id_add_id_2')}"`}>${T('add_to_3')}</button><button class="chip" data-act="left-new" data-id="${esc(id)}" ${this._canLabel(id) ? '' : 'disabled'}>${T('new_function_from_this')}</button></div>`).join('')}</div>` : ''}</div>`;
-    }
-    _leftAddMenu(btn, id) {
-      if (!this._data.functions.length) { this._leftNew(id); return; }
-      this._menu(btn, this._data.functions.map((l) => ({ act: 'left-to', data: { id, label: l }, icon: (this._labelMap.get(l) || {}).icon || 'mdi:puzzle-outline', text: this._fnName(l) })), T('add_to_2'));
-      // the manager is a modal: show the menu above it
-      if (this._menuEl) this._menuEl.style.zIndex = 40;
-    }
-    async _leftTo(id, label) {
-      this._closeMenu();
-      const r = await this._labelMany([id], label, this._mgr ? this._mgr.cats : true);
-      if (!r.done.length) { this._toast(T('could_not_add_2', { why: (r.skipped[0] || {}).why })); return; }
-      this._mgr.left = this._mgr.left.filter((x) => x !== id);
-      this._renderManager();
-      this._toast(T('added_to_2', { nameOf: this._nameOf(id), fnName: this._fnName(label) }), [{ text: T('undo'), fn: () => this._undo() }, { text: T('go_there'), fn: () => { this._closeModal(); this._open(label); } }]);
-    }
-    async _leftNew(id) {
-      const g = this._mgr, base = this._suggestName([id]);
-      let name = base;
-      for (let k = 2; this._labels.some((l) => String(l.name).toLowerCase() === name.toLowerCase()); k++) name = base + ' ' + k;
-      try {
-        const r = await this._importGroup(name, this._pickIcon([id]), 'indigo', [id], g ? g.cats : true);
-        if (g) g.left = g.left.filter((x) => x !== id);
-        await this._loadRegistries();
-        this._renderList();
-        this._renderManager();
-        this._toast(T('created', { name }), [{ text: T('undo'), fn: () => this._undo() }, { text: T('go_there'), fn: () => { this._closeModal(); this._open(r.label); } }]);
-      } catch (e) { this._toast(T('could_not_create', { message: e.message || e.code })); }
-    }
-    _candHTML(c, i) {
-      const g = this._mgr, open = g.expanded.has(i), done = c.fn && !c.missing.length, lock = !!c.fn || g.busy;
-      const src = { category: T('from_a_category'), wiring: T('from_the_wiring'), both: T('category_wiring'), function: T('on_the_board_2') }[c.source] || '';
-      const over = c.overlap && c.overlap.length ? c.overlap.slice(0, 2).map((o) => T('already_in_2', { n: o.n, fnName: esc(this._fnName(o.l)) })).join(' · ') : '';
-      let act;
-      if (done) act = `<span class="onb">${T('on_the_board')}</span>`;
-      else if (c.fn) act = `<button class="go" data-act="mgr-import-one" data-ci="${i}" ${g.busy ? 'disabled' : ''} title="${T('label_the_pieces_that_aren', { name: esc(c.name) })}">${T('add_missing', { count: c.missing.length })}</button>`;
-      else act = `<button class="go" data-act="mgr-import-one" data-ci="${i}" ${g.busy ? 'disabled' : ''}>${T('import_2')}</button>`;
-      return `<div class="cand ${done ? 'done' : ''}"><div class="crow"><input type="checkbox" data-csel="${i}" ${g.sel.has(i) ? 'checked' : ''} ${done || g.busy ? 'disabled' : ''} title="${T('select_for_import_selected')}"><ha-icon icon="${esc(c.icon)}"></ha-icon><input class="cname" data-cname="${i}" value="${esc(c.name)}" ${lock ? 'disabled' : ''} title="${c.fn ? T('already_a_function') : T('function_name_click_to_rename')}"><span class="ccount">${esc(this._countText(c.members.filter((id) => c.keep.has(id))))}${c.fn && c.missing.length ? T('not_in_it_yet', { count: c.missing.length }) : ''}</span>${over ? `<span class="csrc">${over}</span>` : ''}<span class="csrc">${src}</span><button class="ib" data-act="mgr-expand" data-ci="${i}" title="${T('the_pieces', { extra: open ? T('hide') : T('show') })}"><ha-icon icon="${open ? 'mdi:chevron-up' : 'mdi:chevron-down'}"></ha-icon></button>${act}</div>${open ? `<div class="cmem">${c.members.map((id) => this._memRow(i, c, id)).join('')}</div>` : ''}</div>`;
-    }
-    _memRow(i, c, id) {
-      const st = this._hass.states[id], e = this._entMap.get(id), can = this._canLabel(id);
-      const name = (st && st.attributes.friendly_name) || (e && (e.name || e.original_name)) || id;
-      const other = ((e && e.labels) || []).filter((l) => this._data.functions.includes(l)).map((l) => this._fnName(l));
-      const inFn = c.fn && can && !c.missing.includes(id);
-      return `<label class="mrow ${can ? '' : 'nolab'}"><input type="checkbox" data-cmem="${i}" data-id="${esc(id)}" ${can && c.keep.has(id) ? 'checked' : ''} ${inFn || !can ? 'disabled' : ''}>`
-        + `<span class="tag">${esc(this._tagOf(id))}</span><span class="mn"><b>${esc(name)}</b>`
-        + `<small>${esc(id)}${can ? '' : T('can_t_be_added_no')}${other.length ? ` ${T('already_in', { other: esc(other.join(', ')) })}` : ''}</small></span></label>`;
-    }
-    // only items in the entity or device registry can carry a label (a YAML automation without id: can't)
-    _canLabel(id) { return id.startsWith('device:') || this._entMap.has(id); }
-
-    async _scanFunctions() {
-      const g = this._mgr;
-      g.scanning = true; g.error = null; g.sel = new Set(); g.expanded = new Set();
-      this._renderManager();
-      try {
-        await this._loadRegistries();
-        const ids = this._logicIds();
-        const cfgs = await Promise.all(ids.map((e) => this._fetchConfig(e)));
-        const an = ids.map((id, i) => (cfgs[i] ? analyze(cfgs[i], id.startsWith('script.'), (x) => this._known(x)) : null));
-        await this._resolveTargets(an.flatMap((a) => (a ? a.refs.map((r) => r.ref).filter((r) => TGT_RE.test(r)) : [])));
-        const roles = new Map();
-        ids.forEach((id, i) => {
-          if (!an[i]) return;
-          const m = new Map(), put = (ref, role) => { if (ref === id) return; if (!m.has(ref)) m.set(ref, new Set()); m.get(ref).add(role); };
-          // an area, floor or label target groups by the entities it covers, not the target itself (2.2)
-          an[i].refs.forEach((r) => { if (TGT_RE.test(r.ref)) this._targetEntities(r.ref, r).forEach((e) => put(e, r.role)); else put(r.ref, r.role); });
-          roles.set(id, m);
-        });
-        const cats = await this._catGroups();
-        g.roles = roles; g.catList = cats; g.ids = ids;
-        this._mgrRecluster();
-      } catch (e) { g.error = (e && (e.message || e.code)) || String(e); g.cands = null; }
-      g.scanning = false;
-      if (this._mgr === g && !this._$.modal.hidden && this._$.modal.querySelector('.mgr')) this._renderManager();
-    }
-    _mgrRecluster() {
-      const g = this._mgr, ids = g.ids;
-      g.cands = this._cluster(g.roles, g.catList, { devices: !!g.devices });
-      // what ended up in no group and no function (3.2)
-      const fset = new Set(this._data.functions), grouped = new Set(g.cands.flatMap((c) => c.members));
-      const inFn = (id) => ((this._entMap.get(id) || {}).labels || []).some((l) => fset.has(l));
-      g.left = ids.filter((id) => !grouped.has(id) && !inFn(id)).sort((x, y) => this._nameOf(x).localeCompare(this._nameOf(y)));
-      const count = (pre) => { const all = ids.filter((x) => x.startsWith(pre)); return [all.length - all.filter((x) => g.left.includes(x)).length, all.length]; };
-      g.stats = { automations: ids.filter((x) => x.startsWith('automation.')).length, scripts: ids.filter((x) => x.startsWith('script.')).length, cover: { a: count('automation.'), s: count('script.') } };
-    }
-    async _catGroups() {
-      const scopes = ['automation', 'script', 'helpers'];
-      const lists = await Promise.all(scopes.map((s) => this._ws({ type: 'config/category_registry/list', scope: s }, { fallback: [] })));
-      const byId = new Map();
-      scopes.forEach((s, i) => (lists[i] || []).forEach((c) => byId.set(s + ':' + c.category_id, c)));
-      const byName = new Map();
-      this._ents.forEach((e) => Object.entries(e.categories || {}).forEach(([scope, cid]) => {
-        const c = byId.get(scope + ':' + cid);
-        if (!c) return;
-        const k = String(c.name).toLowerCase();
-        if (!byName.has(k)) byName.set(k, { name: c.name, icon: c.icon || null, members: new Set() });
-        byName.get(k).members.add(e.entity_id);
-      }));
-      return [...byName.values()];
-    }
-    _cluster(roles, cats, opt = {}) {
-      // Glue = helpers and scripts. Two pieces belong together when one triggers on, changes or calls the
-      // other; helpers only read as conditions don't join groups (mode flags), and helpers/scripts that a
-      // lot of automations drive are treated as shared hubs.
-      const isGlue = (id) => !id.includes(':') && (id.startsWith('script.') || this._scopeOf(id) === 'helpers');
-      const causal = new Map(), reads = new Map();
-      roles.forEach((m, L) => m.forEach((rs, ref) => {
-        if (!isGlue(ref)) return;
-        const map = [...rs].some((r) => r !== 'condition') ? causal : reads;
-        if (!map.has(ref)) map.set(ref, new Set());
-        map.get(ref).add(L);
-      }));
-      const hub = (gl) => { const n = causal.has(gl) ? causal.get(gl).size : 0; return gl.startsWith('script.') ? n > 6 : n > 12; };
-      const parent = new Map();
-      const find = (x) => {
-        if (!parent.has(x)) parent.set(x, x);
-        let r = x;
-        while (parent.get(r) !== r) r = parent.get(r);
-        while (parent.get(x) !== r) { const nx = parent.get(x); parent.set(x, r); x = nx; }
-        return r;
-      };
-      const union = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent.set(ra, rb); };
-      roles.forEach((_, L) => find(L));
-      // Category fences: when a shared helper/script links automations you filed under different categories,
-      // it only joins the side whose category it belongs to (plus uncategorised pieces). Your own organisation
-      // decides where one system ends and the next begins; wiring fills in everything you haven't filed.
-      const catOf = new Map();
-      cats.forEach((c) => c.members.forEach((id) => catOf.set(id, String(c.name).toLowerCase())));
-      causal.forEach((Ls, gl) => {
-        if (hub(gl)) return;
-        const byCat = new Map();
-        Ls.forEach((L) => { const c = catOf.get(L) || ''; if (!byCat.has(c)) byCat.set(c, []); byCat.get(c).push(L); });
-        const named = [...byCat.keys()].filter(Boolean);
-        if (named.length < 2) { Ls.forEach((L) => union(L, gl)); return; }
-        const own = catOf.get(gl) || named.sort((x, y) => byCat.get(y).length - byCat.get(x).length)[0];
-        (byCat.get(own) || []).concat(byCat.get('') || []).forEach((L) => union(L, gl));
-      });
-      if (opt.devices) {
-        // a device entity that one or two pieces change and one or two trigger on joins them, like the kitchen
-        // light the morning routine turns on and the kitchen speaker automation starts from (3.3)
-        const changers = new Map(), triggers = new Map();
-        const put = (m, k, L) => (m.get(k) || m.set(k, new Set()).get(k)).add(L);
-        roles.forEach((m, L) => m.forEach((rs, ref) => {
-          if (isGlue(ref) || ref.includes(':') || /^(automation|script)\./.test(ref)) return;
-          if (rs.has('action')) put(changers, ref, L);
-          if (rs.has('trigger')) put(triggers, ref, L);
-        }));
-        changers.forEach((cs, ref) => {
-          const ts = triggers.get(ref);
-          if (!ts || cs.size > 2 || ts.size > 2) return;
-          const all = [...new Set([...cs, ...ts])];
-          if (all.length < 2) return;
-          const byCat = new Map();
-          all.forEach((L) => { const c = catOf.get(L) || ''; if (!byCat.has(c)) byCat.set(c, []); byCat.get(c).push(L); });
-          const named = [...byCat.keys()].filter(Boolean);
-          const join = named.length < 2 ? all : (byCat.get(named.sort((x, y) => byCat.get(y).length - byCat.get(x).length)[0]) || []).concat(byCat.get('') || []);
-          for (let i = 1; i < join.length; i++) union(join[0], join[i]);
-        });
-      }
-      const comps = new Map();
-      [...parent.keys()].forEach((x) => { const r = find(x); if (!comps.has(r)) comps.set(r, new Set()); comps.get(r).add(x); });
-      const wiring = [...comps.values()].filter((s) => s.size >= 2 && [...s].some((id) => id.startsWith('automation.')));
-      reads.forEach((Ls, gl) => {
-        if (causal.has(gl)) return;
-        const owners = new Set([...Ls].map((L) => find(L)));
-        if (owners.size !== 1) return;
-        const w = wiring.find((s) => s.has([...Ls][0]));
-        if (w) w.add(gl);
-      });
-      // a lone automation that only checks helpers belonging to one group (and few others check them) joins it,
-      // e.g. "notify when the filter counter reaches 0"; mode flags checked by many automations don't pull anything in
-      const groupOf = (id) => wiring.find((s) => s.has(id));
-      roles.forEach((m, L) => {
-        if (!L.startsWith('automation.') || groupOf(L)) return;
-        const rd = [...m.entries()].filter(([ref, rs]) => isGlue(ref) && [...rs].every((r) => r === 'condition')).map(([ref]) => ref);
-        if (!rd.length) return;
-        const gs = new Set(rd.map((ref) => groupOf(ref)));
-        if (gs.size !== 1 || gs.has(undefined)) return;
-        if (rd.some((ref) => (reads.get(ref) || new Set()).size > 3)) return;
-        [...gs][0].add(L);
-      });
-      const fset = new Set(this._data.functions);
-      const fnOf = (id) => { const e = this._entMap.get(id); return ((e && e.labels) || []).filter((l) => fset.has(l)); };
-      // 1. wiring groups that are mostly an existing function become that function (with any missing pieces)
-      const out = [], fnOut = new Map(), rest = [];
-      wiring.forEach((w) => {
-        const tally = new Map();
-        w.forEach((id) => fnOf(id).forEach((l) => tally.set(l, (tally.get(l) || 0) + 1)));
-        let best = null, bn = 0;
-        tally.forEach((n, l) => { if (n > bn) { bn = n; best = l; } });
-        if (best && bn >= w.size / 2) {
-          if (!fnOut.has(best)) { const o = { fn: best, members: new Set(), source: 'function' }; fnOut.set(best, o); out.push(o); }
-          w.forEach((id) => fnOut.get(best).members.add(id));
-        } else rest.push(w);
-      });
-      fnOut.forEach((o, l) => this._ents.forEach((e) => { if ((e.labels || []).includes(l)) o.members.add(e.entity_id); }));
-      // 2. remaining wiring groups merge with the category they mostly sit in
-      const catC = cats.filter((c) => c.members.size >= 2 && [...c.members].some((id) => id.startsWith('automation.') || id.startsWith('script.')));
-      const catOut = new Map();
-      rest.forEach((w) => {
-        let bi = -1, bestOv = 0;
-        catC.forEach((c, ci) => { let ov = 0; w.forEach((id) => { if (c.members.has(id)) ov++; }); if (ov > bestOv) { bestOv = ov; bi = ci; } });
-        if (bi >= 0 && (bestOv >= w.size / 2 || bestOv >= catC[bi].members.size / 2)) {
-          if (catOut.has(bi)) { const o = catOut.get(bi); w.forEach((id) => o.members.add(id)); }
-          else { const c = catC[bi], o = { name: c.name, cat: c.name, icon: c.icon, members: new Set([...c.members, ...w]), source: 'both' }; catOut.set(bi, o); out.push(o); }
-        } else out.push({ name: null, icon: null, members: w, source: 'wiring' });
-      });
-      catC.forEach((c, ci) => { if (!catOut.has(ci)) out.push({ name: c.name, cat: c.name, icon: c.icon, members: new Set(c.members), source: 'category' }); });
-      // 3. finalize: names, icons, which existing function a group already is, what overlaps
-      const names = new Set(this._data.functions.map((l) => this._fnName(l).toLowerCase()));
-      const rank = (id) => { const t = this._scopeOf(id); return t === 'automation' ? 0 : t === 'script' ? 1 : t === 'helpers' ? 2 : 3; };
-      const can = (id) => this._canLabel(id);
-      const res = out.map((o) => {
-        const members = [...o.members].filter((id) => this._hass.states[id] || this._entMap.has(id)).sort((x, y) => rank(x) - rank(y) || x.localeCompare(y));
-        const tally = new Map();
-        members.forEach((id) => fnOf(id).forEach((l) => tally.set(l, (tally.get(l) || 0) + 1)));
-        let fn = o.fn || null;
-        if (!fn) tally.forEach((n, l) => { if (!fn && n >= members.length * 0.8) fn = l; });
-        if (!fn && o.name) this._data.functions.forEach((l) => { if (!fn && this._fnName(l).toLowerCase() === o.name.toLowerCase()) fn = l; });
-        const missing = fn ? members.filter((id) => can(id) && !fnOf(id).includes(fn)) : [];
-        let name;
-        if (fn) name = this._fnName(fn);
-        else {
-          name = o.name || this._suggestName(members);
-          const base = name;
-          for (let k = 2; names.has(name.toLowerCase()); k++) name = base + ' ' + k;
-          names.add(name.toLowerCase());
-        }
-        const lab = fn ? this._labelMap.get(fn) : null;
-        return {
-          name, cat: o.cat || null, fn, missing, members, keep: new Set(members.filter(can)), source: fn && o.source === 'function' ? 'function' : o.source,
-          icon: (lab && lab.icon) || o.icon || this._pickIcon(members),
-          overlap: fn ? [] : [...tally.entries()].map(([l, n]) => ({ l, n })).sort((x, y) => y.n - x.n),
-        };
-      });
-      // groups that turn out to be the same existing function (wiring + category) merge into one row
-      const byFn = new Map();
-      let list = [];
-      res.forEach((c) => {
-        if (!c.fn) { list.push(c); return; }
-        const t = byFn.get(c.fn);
-        if (!t) { byFn.set(c.fn, c); list.push(c); return; }
-        c.members.forEach((id) => { if (!t.members.includes(id)) { t.members.push(id); if (can(id)) t.keep.add(id); } });
-        t.members.sort((x, y) => rank(x) - rank(y) || x.localeCompare(y));
-        t.missing = t.members.filter((id) => can(id) && !fnOf(id).includes(t.fn));
-      });
-      list = list.filter((c) => c.members.length >= 2);
-      const order = (c) => (!c.fn ? 0 : c.missing.length ? 1 : 2);
-      list.sort((x, y) => order(x) - order(y) || y.members.length - x.members.length);
-      // identity colours only: red, orange, amber and yellow are kept for alarm and warning states
-      const SAFE = ['indigo', 'teal', 'purple', 'blue', 'green', 'cyan', 'deep-purple', 'light-blue', 'light-green', 'pink', 'brown', 'blue-grey', 'lime'];
-      list.forEach((c, i) => { c.color = SAFE[i % SAFE.length]; });
-      return list;
-    }
-    _suggestName(members) {
-      const STOP = new Set(['the', 'a', 'an', 'of', 'on', 'off', 'to', 'and', 'for', 'in', 'at', 'by', 'with', 'is', 'when', 'if', 'then',
-        'set', 'turn', 'new', 'auto', 'automation', 'script', 'input', 'boolean', 'number', 'text', 'select', 'button', 'counter', 'timer',
-        'sensor', 'binary', 'switch', 'notify', 'notification', 'run', 'do', 'my']);
-      const ACR = new Set(['led', 'ups', 'hvac', 'tv', 'ac', 'pc', 'ha', 'mqtt', 'ir', 'rf', 'ev', 'pv', 'dns', 'vpn', 'wan', 'lan', 'usb', 'nas', 'erv', 'co2', 'voc', 'ai']);
-      // 1. the user's own system name: "Garage: left open", "Garage - close", "[Garage] lights"
-      const fname = (id) => { const e = this._entMap.get(id), st = this._hass.states[id]; return ((e && e.name) || (st && st.attributes.friendly_name) || '').trim(); };
-      const logic = members.filter((id) => /^(automation|script)\./.test(id)).map(fname).filter(Boolean);
-      const pre = new Map();
-      logic.forEach((n) => {
-        const m = n.match(/^\[([^\]]{2,40})\]/) || n.match(/^(.{2,40}?)\s*(?::|\s[-\u2013\u2014|]\s)/);
-        if (!m || !/[a-z]{2}/i.test(m[1])) return;
-        const k = m[1].trim().toLowerCase(), p = pre.get(k) || { name: m[1].trim(), n: 0 };
-        p.n++; pre.set(k, p);
-      });
-      const best = [...pre.values()].sort((a, b) => b.n - a.n)[0];
-      if (best && best.n >= 2 && best.n >= logic.length / 2) return best.name;
-      // 2. leading words every automation and script name shares: "Morning lights...", "Morning briefing"
-      if (logic.length >= 2) {
-        const words = logic.map((n) => n.replace(/[:|\[\]\u2013\u2014]|\s-\s/g, ' ').split(/\s+/).filter(Boolean));
-        let k = 0;
-        while (k < 4 && words.every((w) => w[k] && w[k].toLowerCase() === words[0][k].toLowerCase())) k++;
-        const lead = words[0].slice(0, k).join(' ').replace(/[,.;]+$/, '');
-        if (k && /[a-z]{3}/i.test(lead) && !STOP.has(lead.toLowerCase())) return lead;
-      }
-      // 3. words the entity ids share
-      const counts = new Map(), first = new Map();
-      members.forEach((id, idx) => {
-        const obj = id.split('.')[1] || id;
-        new Set(obj.split('_').filter((t) => t.length > 1 && !STOP.has(t) && !/^\d+$/.test(t))).forEach((t) => {
-          counts.set(t, (counts.get(t) || 0) + 1);
-          if (!first.has(t)) first.set(t, idx * 1000 + obj.indexOf(t));
-        });
-      });
-      const need = Math.max(2, Math.ceil(members.length * 0.34));
-      const top = [...counts.entries()].filter(([, c]) => c >= need).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([t]) => t);
-      if (top.length) {
-        const ref = members.find((id) => top.every((t) => id.includes(t)));
-        top.sort((a, b) => (ref ? ref.indexOf(a) - ref.indexOf(b) : first.get(a) - first.get(b)));
-        return top.map((t) => (ACR.has(t) ? t.toUpperCase() : t[0].toUpperCase() + t.slice(1))).join(' ');
-      }
-      const lead = members.find((id) => this._scopeOf(id) === 'helpers') || members[0];
-      const st = this._hass.states[lead];
-      return (st && st.attributes.friendly_name) || lead;
-    }
-    _pickIcon(members) {
-      for (const id of members) {
-        if (this._scopeOf(id) !== 'helpers') continue;
-        const e = this._entMap.get(id), st = this._hass.states[id], ic = (e && e.icon) || (st && st.attributes.icon);
-        if (ic) return ic;
-      }
-      return 'mdi:puzzle-outline';
-    }
-    async _mgrImport(list) {
-      const g = this._mgr;
-      if (!g || g.busy) return;
-      g.busy = true;
-      this._renderManager();
-      const done = [], skipped = [], failed = [];
-      for (const i of list) {
-        const c = g.cands && g.cands[i];
-        if (!c || (c.fn && !c.missing.length)) continue;
-        try {
-          if (c.fn) {
-            const ids = c.missing.filter((id) => c.keep.has(id));
-            this._toast(T('adding_to', { count: P('n_pieces', ids.length), name: c.name }));
-            const r = await this._labelMany(ids, c.fn, g.cats);
-            c.missing = c.missing.filter((id) => !r.done.includes(id));
-            skipped.push(...r.skipped);
-            done.push(c.fn);
-          } else {
-            const ids = c.members.filter((id) => c.keep.has(id)), name = String(c.name || '').trim();
-            if (!ids.length || !name) continue;
-            this._toast(T('importing', { name }));
-            const r = await this._importGroup(name, c.icon, c.color, ids, g.cats, c.cat);
-            c.fn = r.label; c.members = ids; c.keep = new Set(ids); c.missing = r.skipped.map((x) => x.id);
-            c.source = 'function';
-            skipped.push(...r.skipped);
-            done.push(c.fn);
-          }
-        } catch (e) { failed.push(c.name); this._toast(T('could_not_import', { name: c.name, message: e.message || e.code })); }
-      }
-      g.busy = false; g.sel = new Set();
-      // an import lays each function out again (Auto-arrange), leaving only boxes kept in place where they are
-      if (done.length) { done.forEach((l) => this._arrangeData(l)); this._save(); }
-      await this._loadRegistries();
-      this._renderList();
-      if (this._$.modal.querySelector('.mgr')) this._renderManager();
-      if (done.length) {
-        const names = done.map((l) => this._fnName(l));
-        const msg = (done.length === 1 ? T('imported_2', { names: names[0] }) : T('imported', { count: P('n_functions', done.length) }))
-          + (skipped.length ? T('skipped', { count: P('n_pieces', skipped.length), why: skipped[0].why }) : '')
-          + (failed.length ? T('failed', { failed: failed.join(', ') }) : '');
-        this._toast(msg, [{ text: T('undo'), fn: () => this._undo() }]);
-        if (!this._model) this._open(done[0]);
-        else if (done.includes(this._data.ui.current)) this._open(this._data.ui.current, true);
-      }
-    }
-    // Create (or reuse) the label, file under categories, label every piece that can take a label, and put the
-    // function on the board even when some pieces are skipped. Returns { label, done, skipped }.
-    async _importGroup(name, icon, color, ids, withCats, catName, opt = {}) {
-      let label = this._labels.find((l) => String(l.name).toLowerCase() === name.toLowerCase()), made = false;
-      if (!label) {
-        const msg = { type: 'config/label_registry/create', name, icon: icon || 'mdi:puzzle-outline' };
-        if (color) msg.color = color;
-        label = await this._ws(msg);
-        this._labels.push(label); this._labelMap.set(label.label_id, label);
-        made = true;
-      }
-      const lid = label.label_id;
-      if (opt.layout && !this._data.layouts[lid]) this._data.layouts[lid] = opt.layout;
-      const L = this._layout(lid);
-      let madeCats = [];
-      if (withCats && !L.categories) {
-        const scopes = [...new Set(ids.map((id) => this._scopeOf(id)).filter(Boolean))];
-        const r = await this._categories(catName || name, icon || 'mdi:puzzle-outline', scopes);
-        L.categories = r.ids; madeCats = r.made;
-      }
-      const recs = [], skipped = [];
-      for (const id of ids) {
-        try { recs.push(await this._label(id, lid, true, withCats)); }
-        catch (e) { skipped.push({ id, why: this._noLabelWhy(id, e) }); }
-      }
-      const wasOn = this._data.functions.includes(lid);
-      if (!wasOn) this._data.functions.push(lid);
-      this._save();
-      const st = { lid, made, madeCats, recs, wasOn, layout: null };
-      if (!opt.quiet) {
-        this._history({
-          label: lid, text: T('import', { name }),
-          check: async (dir) => dir !== 'undo' || !st.made || (await this._labelCount(st.lid)) <= st.recs.filter((u) => !u.had).length,
-          undo: async () => {
-            for (const u of st.recs) await this._ha.quiet(this._unlabel(u), 'its calls to Home Assistant report their own failures');
-            if (!st.wasOn) this._takeOff(st.lid);
-            await this._dropCategories(st.madeCats);
-            if (st.made) {
-              st.layout = this._data.layouts[st.lid] || null;
-              delete this._data.layouts[st.lid];
-              await this._ws({ type: 'config/label_registry/delete', label_id: st.lid });
-            }
-            this._save();
-          },
-          redo: async () => {
-            await this._loadRegistries();
-            const r = await this._importGroup(name, icon, color, ids, withCats, catName, { quiet: true, layout: st.layout });
-            Object.assign(st, r.state);
-          },
-        });
-      }
-      return { label: lid, done: recs.map((u) => u.id), skipped, state: st };
-    }
-    // take a function off the list (the label stays); opens another one if it was on screen
-    _takeOff(label) {
-      this._data.functions = this._data.functions.filter((f) => f !== label);
-      if (this._data.ui.current === label) {
-        this._data.ui.current = this._data.functions[0] || null;
-        this._model = null; this._clearWorld();
-      }
-      this._save();
-    }
-
-    _mgrLabels() {
-      const avail = this._labels.filter((l) => !this._data.functions.includes(l.label_id)).sort((a, b) => a.name.localeCompare(b.name));
-      if (!avail.length) return `<div class="muted pad">${T('every_label_is_already_on')}</div>`;
-      const count = (lid) => this._ents.filter((e) => (e.labels || []).includes(lid)).length + this._devs.filter((d) => (d.labels || []).includes(lid)).length;
-      return `<div class="hint mintro">${T('labels_you_already_use_adding')}</div>${avail.map((l) => `<label class="lrow"><input type="checkbox" data-lsel="${esc(l.label_id)}" ${this._mgr.lsel.has(l.label_id) ? 'checked' : ''}>`
-          + `<ha-icon icon="${esc(l.icon || 'mdi:label-outline')}" style="color:${cssColor(l.color)}"></ha-icon><span class="mn"><b>${esc(l.name)}</b>`
-          + `<small>${P('n_items', count(l.label_id))}${l.description ? ' · ' + esc(l.description) : ''}</small></span></label>`).join('')}`;
-    }
-    _mgrLabelsAdd() {
-      const g = this._mgr, ids = [...g.lsel].filter((l) => !this._data.functions.includes(l));
-      ids.forEach((l) => this._data.functions.push(l));
-      g.lsel = new Set();
-      this._save(); this._renderList(); this._renderManager();
-      if (!ids.length) return;
-      this._history({ label: null, text: T('add_as_functions', { count: P('n_labels', ids.length) }), undo: async () => ids.forEach((l) => this._takeOff(l)), redo: async () => { ids.forEach((l) => { if (!this._data.functions.includes(l)) this._data.functions.push(l); }); this._save(); } });
-      this._toast(T('added', { count: P('n_functions', ids.length) }), [{ text: T('undo'), fn: () => this._undo() }]);
-      if (!this._model) this._open(ids[0]);
-    }
-
-    _mgrPick() {
-      const g = this._mgr;
-      const opts = `${this._data.functions.map((f) => `<option value="${esc(f)}" ${g.target === f ? 'selected' : ''}>${esc(this._fnName(f))}</option>`).join('')}<option value="__new" ${g.target === '__new' ? 'selected' : ''}>${T('new_function')}</option>`;
-      return `<div class="ptop"><label>${T('add_to_2')}<select data-ptarget>${opts}</select></label>${g.target === '__new' ? `<label>${T('new_function_name')}<input data-pnew value="${esc(g.newName || '')}" placeholder="${T('e_g_garage_door')}"></label>` : ''}</div><input class="search" placeholder="${T('search_by_name_entity_id')}"><div class="pchips"></div><div class="picks"></div><div class="hint">${T('adding_gives_each_item_the')}</div>`;
-    }
-    _pickIndex() {
-      if (this._pidx && this._pidxAt === this._regAt) return this._pidx;
-      const area = (id) => (id && this._areaMap && this._areaMap.get(id) ? this._areaMap.get(id).name : '');
-      const devCount = new Map();
-      this._ents.forEach((e) => { if (e.device_id && !e.disabled_by) devCount.set(e.device_id, (devCount.get(e.device_id) || 0) + 1); });
-      const rows = [];
-      for (const e of this._ents) {
-        if (e.disabled_by) continue;
-        const st = this._hass.states[e.entity_id], dev = e.device_id ? this._devMap.get(e.device_id) : null;
-        const devName = dev ? String(dev.name_by_user || dev.name || '') : '';
-        const name = String((st && st.attributes.friendly_name) || e.name || e.original_name || e.entity_id);
-        const ar = area(e.area_id || (dev && dev.area_id));
-        const sc = this._scopeOf(e.entity_id);
-        const type = sc === 'automation' ? 'automation' : sc === 'script' ? 'script' : sc === 'helpers' ? 'helpers' : 'entities';
-        const lbl = (e.labels || []).map((l) => (this._labelMap.get(l) || {}).name || l);
-        rows.push({
-          key: e.entity_id, type, tag: this._tagOf(e.entity_id), name, labels: e.labels || [], diag: !!e.entity_category,
-          sub: [e.entity_id, ar, devName && devName !== name ? devName : ''].filter(Boolean).join(' · '),
-          hay: [name, e.entity_id, ar, devName, e.platform, e.original_name || '', ...lbl].join(' ').toLowerCase(),
-        });
-      }
-      for (const d of this._devs) {
-        if (d.disabled_by) continue;
-        const name = String(d.name_by_user || d.name || T('device')), ar = area(d.area_id), n = devCount.get(d.id) || 0;
-        const model = [d.manufacturer, d.model].filter(Boolean).join(' ');
-        const lbl = (d.labels || []).map((l) => (this._labelMap.get(l) || {}).name || l);
-        rows.push({
-          key: 'device:' + d.id, type: 'devices', tag: T('device'), name, labels: d.labels || [], diag: false,
-          sub: [ar, model, P('n_entities', n)].filter(Boolean).join(' · '),
-          hay: [name, d.name || '', ar, model, ...lbl].join(' ').toLowerCase(),
-        });
-      }
-      this._pidx = rows; this._pidxAt = this._regAt;
-      return rows;
-    }
-    _renderPicks(q) {
-      const g = this._mgr, m = this._$.modal, box = m.querySelector('.picks'), chips = m.querySelector('.pchips');
-      if (!box || !g) return;
-      if (q != null) g.q = q;
-      const target = g.target !== '__new' ? g.target : null;
-      const terms = String(g.q || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
-      const all = this._pickIndex();
-      const match = terms.length ? all.filter((r) => terms.every((t) => r.hay.includes(t))) : all;
-      const diagHidden = g.pdiag ? 0 : match.filter((r) => r.diag).length;
-      const base = g.pdiag ? match : match.filter((r) => !r.diag);
-      const counts = { all: base.length, automation: 0, script: 0, helpers: 0, devices: 0, entities: 0 };
-      base.forEach((r) => { counts[r.type]++; });
-      const types = [['all', T('all')], ['automation', T('automations')], ['script', T('scripts')], ['helpers', T('helpers')], ['devices', T('devices')], ['entities', T('entities')]];
-      if (chips) {
-        chips.innerHTML = `${types.map(([k, t]) => `<button class="chip ${g.ptype === k ? 'on' : ''}" data-act="mgr-ptype" data-ptype="${k}">${t}<span>${counts[k].toLocaleString()}</span></button>`).join('')}<button class="chip ${g.ptype === 'selected' ? 'on' : ''}" data-act="mgr-ptype" data-ptype="selected">${T('selected')}<span>${this._pick.size}</span></button><button class="chip" data-act="mgr-pickall" title="${T('tick_everything_currently_listed')}">${T('select_all_shown')}</button><label class="tg2"><input type="checkbox" data-pdiag ${g.pdiag ? 'checked' : ''}>${T('device_settings_and_diagnostics', { extra: diagHidden ? T('hidden', { diagHidden: diagHidden.toLocaleString() }) : '' })}</label>`;
-      }
-      const RANK = { automation: 0, script: 1, helpers: 2, devices: 3, entities: 4 };
-      let rows = g.ptype === 'selected' ? all.filter((r) => this._pick.has(r.key)) : g.ptype === 'all' ? base : base.filter((r) => r.type === g.ptype);
-      const score = (r) => {
-        if (!terms.length) return 0;
-        const n = r.name.toLowerCase();
-        return terms.every((t) => n.includes(t)) ? (n.startsWith(terms[0]) ? 0 : 1) : 2;
-      };
-      rows = rows.map((r) => ({ r, s: score(r) })).sort((x, y) => x.s - y.s || RANK[x.r.type] - RANK[y.r.type] || x.r.name.localeCompare(y.r.name)).map((x) => x.r);
-      const shown = rows.slice(0, g.pshow || 200);
-      g.pshownKeys = shown.filter((r) => !(target && r.labels.includes(target))).map((r) => r.key);
-      const html = shown.map((r) => {
-        const inFn = !!target && r.labels.includes(target);
-        return `<label class="pick ${inFn ? 'infn' : ''}"><input type="checkbox" data-pick="${esc(r.key)}" ${inFn || this._pick.has(r.key) ? 'checked' : ''} ${inFn ? 'disabled' : ''}>`
-          + `<span class="tag">${esc(r.tag)}</span><span class="mn"><b>${esc(r.name)}</b><small>${esc(r.sub)}${inFn ? T('already_in_this_function') : ''}</small></span></label>`;
-      }).join('');
-      const more = rows.length - shown.length;
-      box.innerHTML = (html || `<div class="muted pad">${T('nothing_matches')}</div>`)
-        + (more > 0 ? `<button class="more" data-act="mgr-more">${T('show_more_not_shown', { min: Math.min(200, more).toLocaleString(), more: more.toLocaleString() })}</button>` : '');
-    }
-    async _mgrPickAdd() {
-      const g = this._mgr, ids = [...this._pick];
-      if (!ids.length || g.busy) return;
-      let label = g.target, res;
-      g.busy = true;
-      try {
-        if (label === '__new') {
-          const name = String(g.newName || '').trim();
-          if (!name) { this._toast(T('give_the_new_function_a')); g.busy = false; return; }
-          res = await this._importGroup(name, 'mdi:puzzle-outline', 'indigo', ids, g.cats);
-          label = res.label;
-        } else {
-          res = await this._labelMany(ids, label, true);
-        }
-      } catch (e) { g.busy = false; this._toast(T('could_not_add', { message: e.message || e.code })); return; }
-      g.busy = false;
-      this._pick = new Set();
-      this._closeModal();
-      await this._loadRegistries();
-      this._renderList();
-      const here = label === this._data.ui.current;
-      const msg = T('added_to', { count: P('n_items', res.done.length), fnName: this._fnName(label), extra: res.skipped.length ? T('skipped', { count: P('n_items', res.skipped.length), why: res.skipped[0].why }) : '' });
-      const acts = [];
-      if (res.done.length) acts.push({ text: T('undo'), fn: () => this._undo() });
-      if (!here || !this._model) acts.push({ text: T('go_there'), fn: () => this._open(label) });
-      if (!this._model) this._open(label);
-      else if (here) this._open(label, true);
-      this._toast(msg, acts);
-    }
-    // label several items, carrying on past ones that can't take a label; one undo step for all of them
-    async _labelMany(ids, label, withCat) {
-      const done = [], skipped = [], undo = [];
-      for (const id of ids) {
-        try { undo.push(await this._label(id, label, true, withCat)); done.push(id); }
-        catch (e) { skipped.push({ id, why: this._noLabelWhy(id, e) }); }
-      }
-      if (done.length) this._labelStep(T('add_to', { count: P('n_items', done.length), fnName: this._fnName(label) }), label, undo);
-      return { done, skipped };
-    }
-    _noLabelWhy(id, e) {
-      if (!this._canLabel(id)) return T('no_unique_id_add_id');
-      return (e && (e.message || e.code)) || T('could_not_be_labelled');
     }
   }
 

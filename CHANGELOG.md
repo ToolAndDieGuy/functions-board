@@ -23,6 +23,9 @@ something was deleted in Home Assistant sees the deletion.
 The board now redraws its list, header, boxes and side drawer by updating what's on the screen rather than
 replacing it, so the keyboard focus stays where it was when they change.
 
+Fixed: an automation turned off (or a device gone unavailable) after a function was opened didn't show as a problem
+until the function was opened again. The board now notices and redraws the function's problems.
+
 ## 0.9.2 (2026-11-19)
 
 Fixed: a function another admin made could be deleted from the shared store. If you left the board and came back to

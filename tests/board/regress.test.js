@@ -823,4 +823,17 @@ test('0.10.0 a restore planned just after an automation was deleted makes it aga
   check('0.10.0 restore plan: no errors', page.logs.length === 0, page.logs);
 });
 
+test('0.10.0 an automation turned off after the board was built becomes a warning without opening it again', async ({ browser, fake }) => {
+  const { page } = await imported(browser);
+  await openFn(page, /garage/i);
+  const K = 'automation.garage_left_open';
+  const off = () => el(page, (b, k) => (b._model.problems || []).some((p) => p.kind === 'm_off' && p.ref === k), K);
+  check('0.10.0 on to start with: no warning', !(await off()));
+  // turned off elsewhere, with Home Assistant's word of it coming late (as on a busy one)
+  await fake.setState(K, 'off', undefined, 400);
+  const w = await until(async () => (await off()) || null, 8000);
+  check('0.10.0 turned off, its warning shows, with no reopening', !!w);
+  check('0.10.0 turned off later: no errors', page.logs.length === 0, page.logs);
+});
+
 pwTest.afterAll(() => done());
