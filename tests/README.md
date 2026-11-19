@@ -51,6 +51,13 @@ parallel (`tests/board.config.js`, one worker per CPU).
   `fake.calls` lists every call; anything it doesn't know goes in `fake.unknown` and fails the test.
 - `fake.push()`, `fake.emit()`, `fake.setState()` and `fake.notifyStore()` change things under the board as Home
   Assistant would; `fake.idle()` waits until the board has gone quiet.
+- **Jitter** (`FB_JITTER=<seed>`, `FB_JITTER_MS`, default 120): every answer comes up to that much later, and every
+  message to a page (events, store changes, a new `hass`) is due up to that much later but never before the one
+  sent ahead of it, so an event reaches the board before or after the answer it goes with, as on a busy Home
+  Assistant. Seeded by the seed and the test's name, so a failure runs again exactly. `smoke.test.js` (J1, J2)
+  proves the shaking happens; the weekly jitter job runs every board suite under it with a new seed.
+- A page's clock (`session(browser, 'owner', { clock })`) is the fake's too: the times it gives state changes and
+  events keep to the page's clock. `init` runs a test's own script in the page before anything else.
 - `tests/board/helpers.js` has the same API as `tests/e2e/lib.js` (`session`, `importAll`, `openFn`, `suite`,
   `done`), so a suite moves between layers by changing one `require`.
 - **The contract** (`tests/e2e/contract.test.js`, in layer 4) keeps the fake honest: it asks the real Home
@@ -64,6 +71,8 @@ parallel (`tests/board.config.js`, one worker per CPU).
 | `board/a11y.test.js` | axe-core (WCAG 2.2 AA) on every view in dark and light, the keyboard, spoken names, less motion |
 | `board/layout.test.js` | large synthetic functions in both directions: no overlap, arrow spacing, no arrow through a box, hops, wrapping |
 | `board/regress.test.js` | the regress cases that need only the board (named by version, like `e2e/regress.test.js`) |
+| `board/snapshots.test.js` | every view's shadow DOM as text, compared with `board/snapshots/<view>.txt` (taken from 0.9.1, before the rebuild); `FB_SNAP_UPDATE=1` records them again, on purpose, in the commit that changes what's shown |
+| `board/leak.test.js` | the board taken off the page and put back 50 times: no subscription, interval, running timer or window listener left, every board let go (garbage collected), the 50th asking no more than the 2nd |
 
 ### Layer 4: a real Home Assistant
 
@@ -122,8 +131,8 @@ The two real-HA jobs split the suites between them (a rule in `static.test.js` c
 one). uv's downloads, npm's and Playwright's Chromium are cached between runs. Each job's summary shows the report
 (`summary.md`: results, times, flaky tests, quarantined checks), and its `tests/.results/` is kept as an artifact.
 
-`.github/workflows/weekly.yml` runs once a week (and by hand): the beta, mutants, strict (with the size test) and
-README pictures jobs. None is a required check; a failure opens or adds to an issue.
+`.github/workflows/weekly.yml` runs once a week (and by hand): the beta, mutants, strict (with the size test),
+jitter (every board suite on shaken fakes, a new seed each week, no retries) and README pictures jobs. None is a required check; a failure opens or adds to an issue.
 
 ## Adding a test
 

@@ -47,7 +47,7 @@ if want backend; then
 fi
 
 # the board on the fake Home Assistant (layer 3): every suite at once, one test per core
-BOARD="smoke a11y layout regress"
+BOARD="smoke a11y layout regress snapshots leak"
 BW=""
 for b in $BOARD; do want "board-$b" && BW="$BW board-$b"; done
 if [ -n "$BW" ]; then

@@ -1,0 +1,188 @@
+style {57719 chars, #783270f4}
+div.board.firstrun.m-panel
+  aside.list
+    div.lhead
+      span | Functions
+      span
+        button data-act="import" title="Import: find the functions already in your setup, or add labels and items"
+          ha-icon icon="mdi:import"
+        button data-act="newfn" title="New empty function"
+          ha-icon icon="mdi:plus"
+    div.lfind
+      ha-icon icon="mdi:magnify"
+      input.find aria-label="Find anything" placeholder="Find an automation, helper, device…" value ·value=""
+    div.fns
+      div.muted.pad | No functions yet. Press Import to find the ones already in your setup.
+    div.lfoot
+      button.lbtn data-act="import" | Import manager
+        ha-icon icon="mdi:import"
+      div.ver
+        span | Functions board v<version> · prototype
+        button.ib data-act="about" title="About, and what the board changes"
+          ha-icon icon="mdi:help-circle-outline"
+  div.scrim data-act="togglelist"
+  section.main
+    header.bar
+      button.hamenu.ib data-act="hamenu" title="Home Assistant menu"
+        ha-icon icon="mdi:menu"
+      button.ib data-act="togglelist" title="Show or hide the list of functions"
+        ha-icon icon="mdi:format-list-bulleted"
+      div.title
+        span.muted | Functions
+      div.tools aria-label="Function tools" hidden role="toolbar"
+        button data-act="new-automation" title="New automation in this function"
+          ha-icon icon="mdi:robot-outline"
+          span | Automation
+        button data-act="new-script" title="New script in this function"
+          ha-icon icon="mdi:script-text-outline"
+          span | Script
+        button data-act="new-helper" title="New helper in this function"
+          ha-icon icon="mdi:tune-variant"
+          span | Helper
+        button data-act="add-existing" title="Bring automations, scripts, helpers or entities you already have into this function"
+          ha-icon icon="mdi:link-variant-plus"
+          span | Existing
+        span.sep
+        button.ib data-act="undo" disabled title="Undo"
+          ha-icon icon="mdi:undo"
+        button.ib data-act="redo" disabled title="Redo"
+          ha-icon icon="mdi:redo"
+        button.sec data-act="frame" title="Draw a frame to group part of the system"
+          ha-icon icon="mdi:selection"
+          span | Frame
+        button.sec data-act="note" title="Add a note"
+          ha-icon icon="mdi:note-plus-outline"
+          span | Note
+        button.sec data-act="arrange" title="Lay this function out automatically, boxes you moved too. Boxes you keep in place (in their bar) stay where they are. Undo puts your own arrangement back."
+          ha-icon icon="mdi:auto-fix"
+          span | Auto-arrange
+        button.sec data-act="hl" title="Arrows: what lights up around a selected box, and which arrows show"
+          ha-icon icon="mdi:vector-polyline"
+          span | Arrows
+        span.sep
+        button.sec data-act="runs" title="Every run of every automation and script in this function, newest first"
+          ha-icon icon="mdi:timeline-clock-outline"
+          span | Runs
+        button.sec data-act="debug" title="Debugger: what happens in this function, live, what caused each step, and why something did or didn't run"
+          ha-icon icon="mdi:bug-outline"
+          span | Debug
+        button.sec data-act="sandbox" title="Sandbox: try the function on a copy of its states. Nothing is sent to your devices."
+          ha-icon icon="mdi:flask-outline"
+          span | Sandbox
+        button.sec.vonly data-act="versions" title="Versions: save this function as it is, compare, try a saved version in the sandbox, and restore one"
+          ha-icon icon="mdi:history"
+          span | Versions
+        button.pause.sec data-act="pause" hidden
+    div.stage
+      div.vp
+        div.world
+          div.frames
+          svg.edges aria-hidden="true"
+          svg.flowx aria-hidden="true"
+          div.nodes aria-label="Boxes: arrow keys follow the arrows, Enter opens, Space shows the actions" role="group"
+          div.flow
+          div.notes
+          svg.links aria-hidden="true"
+        div.empty.wel
+          div.welcome
+            ha-icon icon="mdi:sitemap-outline"
+            h2 | Welcome to Functions
+            p | A function is everything that makes one job work: its automations, scripts, helpers and devices, on one board and wired together from their own configs.
+            ol
+              li | finds the functions already in your setup: automations, scripts and helpers that trigger, change or call each other, plus your categories and labels.
+                b | Import
+              li | Or start a and build it with Home Assistant's own editors.
+                b | new function
+              li | Open a function to see what drives what. Click a box to light up its chain; double-click it to edit.
+            div.wbtns
+              button.primary data-act="import" | Import from my setup
+              button data-act="newfn" | New function
+            p.safe
+              ha-icon icon="mdi:shield-check-outline"
+              span | A function is a Home Assistant label; the board adds and removes labels and categories, and Pause turns a function's automations off until you resume them. It doesn't edit or delete your automations, scripts or helpers.
+        div.cardhint hidden
+          ha-icon icon="mdi:information-outline"
+          span | This card works best in a panel view. For a full page in the sidebar, install the Functions Board integration.
+          button data-act="hint-x" title="Dismiss" | ×
+        div.nodebar hidden role="toolbar"
+        div.lh hidden title="Drag onto another box to connect them, or click and then click the other box"
+        div.edgebar hidden
+        div.zoom
+          button data-act="zoomout" title="Zoom out" | −
+          button data-act="fit" title="Fit everything"
+            ha-icon icon="mdi:fit-to-screen-outline"
+          button data-act="zoomin" title="Zoom in" | +
+        div.legend
+          button.lgt data-act="legend" | Hide key
+            ha-icon icon="mdi:map-legend"
+          div.lg
+            svg height="10" width="38"
+              path.role-trigger d="M4,5 L30,5"
+              path.ah.role-trigger d="M30,1 L37,5 L30,9 z"
+              circle.ah.trig cx="4" cy="5" r="3.5"
+            span | triggers
+            svg height="10" width="38"
+              path.role-condition d="M4,5 L30,5"
+              path.ah.role-condition d="M30,1 L37,5 L30,9 z"
+            span | is checked or read by
+            svg height="10" width="38"
+              path.role-action d="M4,5 L30,5"
+              path.ah.role-action d="M30,1 L37,5 L30,9 z"
+            span | changes
+            svg height="10" width="38"
+              path.role-call d="M4,5 L30,5"
+              path.ah.role-call d="M30,1 L37,5 L30,9 z"
+            span | runs (script call)
+            svg height="10" width="38"
+              path.role-source d="M4,5 L30,5"
+              path.ah.role-source d="M30,1 L37,5 L30,9 z"
+            span | is read by (a helper's inputs)
+            svg height="10" width="38"
+              path.loop d="M4,5 L30,5"
+              path.ah.loop d="M30,1 L37,5 L30,9 z"
+            span | loop: can retrigger itself
+            svg height="10" width="38"
+              path.role-tool d="M4,5 L30,5"
+              path.ah.role-tool d="M30,1 L37,5 L30,9 z"
+            span | a test button or a monitor
+            svg height="14" width="38"
+              path d="M4,3 L16,3 L16,11 L30,11"
+              path d="M16,3 L30,3"
+              circle cx="16" cy="3" r="2.6" style="fill:var(--fb-edge)"
+            span | a shared line: a dot where an arrow branches off; point at a box, or select it, to trace its arrows
+            svg height="14" width="38"
+              path d="M19,1 L19,13"
+              path d="M4,8 L15,8 A4,4 0 0 1 23,8 L34,8"
+            span | crosses another without meeting it
+            svg height="14" width="38"
+              path d="M4,7 L34,7"
+              path.ah d="M15,7 L23,2.5 L23,11.5 z"
+            span | an arrow running back, right to left
+          div.lgn | related, not in this functionoutside item it touchesunavailable last run failed running a check passes or fails right nowsimulated state
+            span.dashed.sw
+            br
+            span.pill.sw
+            br
+            span.amber.st.sw
+            span.red.st.sw
+            span.blue.st.sw
+            br
+            span.cres-k.ok | ✓
+            span.bad.cres-k | ✕
+            br
+            span.dashed2.sw
+          label.tg | Show outside items
+            input checked data-tog="outside" type="checkbox" ·value="on" ·checked=true
+          label.tg | Show related suggestions
+            input checked data-tog="suggest" type="checkbox" ·value="on" ·checked=true
+          label.tg title="Reads your Node-RED app's flows in your browser, through the Node-RED page Home Assistant opens for you, to draw what they trigger on, read and change. The flows last read are kept by the integration, so every board shows them until the next read." | Show Node-RED flows
+            input data-nr type="checkbox" ·value="on" ·checked=false
+        div.loading hidden | Reading configs…
+        div.vtabs hidden
+        div.sbxpill hidden | Sandbox: nothing here changes your home
+          ha-icon icon="mdi:flask-outline"
+        div.litbar hidden
+        div.ttip hidden
+        div.toast aria-live="polite" hidden role="status"
+      div.drawer hidden role="complementary"
+  div.modal hidden

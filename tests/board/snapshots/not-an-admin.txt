@@ -1,0 +1,6 @@
+style {57719 chars, #783270f4}
+div.board.m-panel
+  div.noadmin
+    ha-icon icon="mdi:shield-account-outline"
+    b | The Functions board needs an administrator account
+    span | It reads automation and script configs and changes labels and categories, which Home Assistant only lets administrators do.

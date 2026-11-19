@@ -278,6 +278,62 @@
   "expect": "manifest/list answers in the same shape"
  },
  {
+  "name": "board: a box's last run reads differently (a dash for the dot)",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "ran_3: '{n} · ran {last_triggered}',",
+  "replace": "ran_3: '{n} - ran {last_triggered}',",
+  "suite": "board-snapshots",
+  "expect": "S1 garage: as in its snapshot"
+ },
+ {
+  "name": "board: a style changes (a live arrow drawn red)",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": ".edges path.live{stroke:var(--fb-blue);",
+  "replace": ".edges path.live{stroke:var(--fb-red);",
+  "suite": "board-snapshots",
+  "expect": "S1 garage: as in its snapshot"
+ },
+ {
+  "name": "board: taken off the page, it keeps its subscriptions",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      const u = this._unsubs; this._unsubs = [];\n      u.forEach((p) => Promise.resolve(p).then((f) => f && f()).catch(() => {}));",
+  "replace": "      const u = this._unsubs; this._unsubs = [];\n      u.forEach((p) => Promise.resolve(p).then((f) => f).catch(() => {}));",
+  "suite": "board-leak",
+  "expect": "L1 taken off for good"
+ },
+ {
+  "name": "board: taken off the page, its condition check keeps running",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      clearInterval(this._condTick); this._condTick = null;\n    }",
+  "replace": "      this._condTick = null;\n    }",
+  "suite": "board-leak",
+  "expect": "L2 taken off for good, no interval"
+ },
+ {
+  "name": "board: taken off the page, it leaves its key listener on window",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "    disconnectedCallback() {\n      window.removeEventListener('keydown', this._winKeyFn);",
+  "replace": "    disconnectedCallback() {",
+  "suite": "board-leak",
+  "expect": "L3 taken off for good"
+ },
+ {
+  "name": "board: something holds on to every board taken off the page",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "    connectedCallback() {\n      if (this._data) {",
+  "replace": "    connectedCallback() {\n      (window.__fbHeld = window.__fbHeld || []).push(this);\n      if (this._data) {",
+  "suite": "board-leak",
+  "expect": "L4 the \\d+ boards taken off are all let go"
+ },
+ {
+  "name": "rules: a board test file left out of run.sh's board suites",
+  "file": "tests/run.sh",
+  "find": "BOARD=\"smoke a11y layout regress snapshots leak\"",
+  "replace": "BOARD=\"smoke a11y layout regress snapshots\"",
+  "suite": "static",
+  "expect": "every test file in tests/board is a board suite"
+ },
+ {
   "name": "board: starts on another board's registries without checking they know every function",
   "file": "custom_components/functions_board/frontend/functions-board.js",
   "find": "if (this._data.functions.concat(Object.keys(this._data.layouts)).some((l) => !known.has(l))) keep = null;",

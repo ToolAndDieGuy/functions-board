@@ -212,4 +212,7 @@ check('A4 MQTT: the board listens; a message is published only by the person\'s 
   const board = ((runsh.match(/^BOARD="([^"]+)"/m) || [])[1] || '').split(/\s+/).filter(Boolean).map((x) => 'board-' + x);
   const bpats = [...wf.matchAll(/sh tests\/run\.sh --only '([^']+)'/g)].map((m) => new RegExp(m[1]));
   check('every board suite runs in CI', board.length >= 4 && board.every((x) => bpats.some((p) => p.test(x))), { board, bpats: bpats.map(String) });
+  // 0.10.0: and every board test file is one of run.sh's board suites (a file left out would never run)
+  const files = fs.readdirSync(path.join(root, 'tests', 'board')).filter((f) => f.endsWith('.test.js')).map((f) => 'board-' + f.replace(/\.test\.js$/, ''));
+  check('every test file in tests/board is a board suite in run.sh', files.every((f) => board.includes(f)) && board.every((b) => files.includes(b)), { files, board });
 }
