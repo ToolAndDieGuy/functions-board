@@ -760,4 +760,29 @@ test('0.10.0 the same board taken off the page and put back carries on', async (
   check('0.10.0 put back: no errors', page.logs.length === 0, page.logs);
 });
 
+test('0.10.0 a call that fails is reported: in the Diagnostics file, anonymised or not', async ({ browser, fake }) => {
+  const fs = require('fs');
+  // the board's first read of this user's data fails (it carries on without it, as before)
+  let failed = 0;
+  fake.answers = { 'frontend/get_user_data': (m) => { if (m.key === 'functions_board' && !failed++) throw Object.assign(new Error('planted: light.someones_lamp is gone'), { code: 'planted_failure' }); return { value: null }; } };
+  const { page } = await imported(browser);
+  await openFn(page, /garage/i);
+  const file = async (anon) => {
+    await fbq(page, '[data-act="about"]').first().click();
+    await fbq(page, '.modal [data-act="diag"]').click();
+    await fbq(page, '.modal .dlg.diag').waitFor({ timeout: 8000 });
+    await fbq(page, `.modal input[name="${anon ? 'danon' : 'dreal'}"]`).check();
+    const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 20000 }), fbq(page, '.modal [data-act="diag-go"]').click()]);
+    const text = fs.readFileSync(await dl.path(), 'utf8');
+    return { text, json: JSON.parse(text) };
+  };
+  const anon = await file(true);
+  const e = (anon.json.board_errors || []).find((x) => x.code === 'planted_failure');
+  check('0.10.0 a failed call is in the Diagnostics file: the kind of call, its type, its code', failed === 1 && !!e && e.kind === 'ws' && e.type === 'frontend/get_user_data', anon.json.board_errors);
+  check('0.10.0 ... anonymised, without the failure\'s message (it can name things in a home)', !/someones_lamp/.test(anon.text));
+  const real = await file(false);
+  check('0.10.0 ... with real names, with its message', /light\.someones_lamp is gone/.test(real.text));
+  check('0.10.0 failure reported: no errors', page.logs.length === 0, page.logs);
+});
+
 pwTest.afterAll(() => done());

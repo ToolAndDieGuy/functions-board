@@ -11,6 +11,11 @@ Fixed: a board taken off the page (another sidebar entry opened, a dashboard vie
 in the background, and could show a message, for up to a minute afterwards. Now everything the board waits on
 stops when it leaves the page, and starts again when it's back.
 
+Every call the board makes to Home Assistant now has a time limit, and a failure is no longer dropped without a
+trace: the Diagnostics file lists what failed since the board opened (anonymised, only the kind of call and the
+error code). When the board asks the same question twice and the answers come back out of order, the older one no
+longer wins.
+
 ## 0.9.2 (2026-11-19)
 
 Fixed: a function another admin made could be deleted from the shared store. If you left the board and came back to

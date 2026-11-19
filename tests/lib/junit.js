@@ -16,7 +16,8 @@ function write(file, suite, cases) {
 function read(file) {
   const xml = fs.readFileSync(file, 'utf8'), out = { tests: 0, failures: 0, failed: [], skipped: 0, all: [] };
   const un = (n) => n.replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
-  for (const m of xml.matchAll(/<testcase\b([^>]*?)(\/>|>([\s\S]*?)<\/testcase>)/g)) {
+  // (an attribute's value may hold a '>', as a check named after an arrow function does: skip quoted values whole)
+  for (const m of xml.matchAll(/<testcase\b((?:[^>"]|"[^"]*")*?)(\/>|>([\s\S]*?)<\/testcase>)/g)) {
     const attrs = m[1], inner = m[3] || '', name = (attrs.match(/\bname="([^"]*)"/) || [])[1] || '?';
     if (/<skipped\b/.test(inner)) { out.skipped++; continue; }
     out.tests++;

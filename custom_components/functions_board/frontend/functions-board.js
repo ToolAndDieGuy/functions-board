@@ -4798,6 +4798,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       return name;
     }
     pause(ms) { return new Promise((r) => this._env.setTimeout(r, ms)); }
+    // a time limit on a call that goes on even when the board leaves the page (its answer still comes, and a write
+    // half done finishes); the returned function cancels it. Not stopped, and not counted in size.
+    limit(ms, fn) { const id = this._env.setTimeout(fn, ms); return () => this._env.clearTimeout(id); }
     has(name) { return this._w.has(name); }
     cancel(name) {
       const w = this._w.get(name);
@@ -4825,6 +4828,126 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     get size() { return this._w.size + this._sleeps.size; }
   }
 
+  /* ---------- the link (0.10.0): every call to Home Assistant goes through one Link ----------
+     - The latest question asked for the same thing wins: a read (a list, a config, a registry entry) asked again
+       before an older answer is used hands every caller the newest answer, so an older one never lands last.
+     - Every call has a time limit (LINK_TIMEOUT, or o.timeout); past it, the call fails with code 'timeout'.
+     - A failure is reported (link.errors, the console as a warning, the Diagnostics file), never swallowed, unless
+       the call says why its failure is expected: o.optional = '<the reason>'. o.fallback answers instead of
+       throwing.
+     - Lists Home Assistant gives in no promised order are put in one on arrival (LINK_ORDER).
+     to: { ws(msg), api(method, path, body), service(domain, service, data, target), sub(msg, cb) },
+     each returning a promise; clock: a Clock (its limit()); report(entry): told of each failure reported. */
+  const LINK_TIMEOUT = 60000;
+  const LINK_KEEP = 50;
+  // lists in no promised order: by this field (other lists of helpers, `<domain>/list`, by id). Not the entity,
+  // device and area registries: Home Assistant keeps them in the order things were added, and the board's layout
+  // and words follow that order (sorting them moved boxes: the rebuild changes nothing anyone sees)
+  const LINK_ORDER = {
+    'config/floor_registry/list': 'floor_id', 'config/label_registry/list': 'label_id', 'config/category_registry/list': 'category_id',
+    'config/auth/list': 'id', 'manifest/list': 'domain',
+  };
+  const LINK_AS_GIVEN = new Set(['config/entity_registry/list', 'config/device_registry/list', 'config/area_registry/list']);
+  // a question, not a change: asked again, the newest answer is everyone's
+  const linkRead = (type) => /(^|\/)(list|get|config|list_for_display|versions|version_get|sources|nodered|get_user_data|get_translations)$/.test(type) && type !== 'functions_board/nodered_keep';
+  function linkOrder(type, r) {
+    if (!Array.isArray(r)) return r;
+    const k = LINK_ORDER[type] || (/^[a-z_]+\/list$/.test(type) && !LINK_AS_GIVEN.has(type) && !type.startsWith('trace/') && r.every((x) => x && typeof x.id === 'string') ? 'id' : null);
+    if (!k) return r;
+    return r.slice().sort((a, b) => { const x = String((a && a[k]) ?? ''), y = String((b && b[k]) ?? ''); return x < y ? -1 : x > y ? 1 : 0; });
+  }
+  // the same message written the same way whatever order its keys were set in
+  function stableJson(v) {
+    if (Array.isArray(v)) return '[' + v.map(stableJson).join(',') + ']';
+    if (v && typeof v === 'object') return '{' + Object.keys(v).sort().filter((k) => v[k] !== undefined).map((k) => JSON.stringify(k) + ':' + stableJson(v[k])).join(',') + '}';
+    return JSON.stringify(v === undefined ? null : v);
+  }
+  function linkErr(code, message) { const e = new Error(message); e.code = code; return e; }
+  class Link {
+    constructor(to, opt = {}) {
+      this.to = to;
+      this.clock = opt.clock || new Clock();
+      this.timeout = opt.timeout || LINK_TIMEOUT;
+      this.onReport = opt.report || null;
+      this.errors = [];
+      this._last = new Map();  // key → { n, p } the latest question for it
+      this._n = 0;
+    }
+    // a failure, kept (the last LINK_KEEP) and told
+    report(kind, what, e) {
+      const entry = { at: Date.now(), kind, what, code: String((e && (e.code || e.error)) || 'error'), message: String((e && (e.message || e.body)) || e || '') };
+      this.errors.push(entry);
+      if (this.errors.length > LINK_KEEP) this.errors.splice(0, this.errors.length - LINK_KEEP);
+      if (this.onReport) try { this.onReport(entry); } catch (x) { /* whoever listens can't stop the report */ }
+      return entry;
+    }
+    // the raw call with its time limit (a value, or an error)
+    _raw(what, run, ms) {
+      return new Promise((resolve, reject) => {
+        let done = false;
+        const stop = this.clock.limit(ms || this.timeout, () => fin(false, linkErr('timeout', what + ': no answer in ' + Math.round((ms || this.timeout) / 1000) + ' s')));
+        const fin = (ok, v) => { if (done) return; done = true; stop(); if (ok) resolve(v); else reject(v); };
+        let p;
+        try { p = Promise.resolve(run()); } catch (e) { p = Promise.reject(e); }
+        p.then((v) => fin(true, v), (e) => fin(false, e));
+      });
+    }
+    // the newest answer to the same question: an older call settles with a newer one's answer when there is one
+    _latest(key, start) {
+      const n = ++this._n, p = start();
+      const e = this._last.get(key) || { n: 0, p: null, open: 0 };
+      e.n = n; e.p = p; e.open++;
+      this._last.set(key, e);
+      const newer = () => (e.n !== n ? e.p : null);
+      const out = p.then(
+        async (v) => { const l = newer(); if (l) { try { return await l; } catch (x) { return v; } } return v; },
+        async (x) => { const l = newer(); if (l) return l; throw x; });
+      // the entry is kept while any call for the question is open (an older one may still need the newest answer)
+      out.then(() => {}, () => {}).then(() => { if (--e.open === 0 && this._last.get(key) === e) this._last.delete(key); });
+      return out;
+    }
+    // the caller's terms: reported unless optional, the fallback instead of throwing
+    _settle(kind, what, p, o) {
+      return p.catch((e) => {
+        if (!o.optional) this.report(kind, what, e);
+        if ('fallback' in o) return o.fallback;
+        throw e;
+      });
+    }
+    ask(msg, o = {}) {
+      const what = msg.type, run = () => this.to.ws(msg).then((r) => linkOrder(msg.type, r));
+      const p = linkRead(msg.type) ? this._latest('ws ' + stableJson(msg), () => this._raw(what, run, o.timeout)) : this._raw(what, run, o.timeout);
+      return this._settle('ws', what, p, o);
+    }
+    api(method, path, body, o = {}) {
+      const what = method + ' ' + path, run = () => this.to.api(method, path, body);
+      const p = method === 'GET' ? this._latest('api ' + path, () => this._raw(what, run, o.timeout)) : this._raw(what, run, o.timeout);
+      return this._settle('api', what, p, o);
+    }
+    service(domain, service, data, target, o = {}) {
+      const what = domain + '.' + service;
+      return this._settle('service', what, this._raw(what, () => this.to.service(domain, service, data || {}, target), o.timeout), o);
+    }
+    // a subscription: the promise of its unsubscribe function
+    sub(msg, cb, o = {}) {
+      return this._settle('sub', msg.type, this._raw(msg.type, () => this.to.sub(msg, cb), o.timeout), o);
+    }
+    // any other call out (Node-RED's flows, through its page here): its time limit and its report
+    call(what, run, o = {}) { return this._settle('call', what, this._raw(what, run, o.timeout), o); }
+    // ends a subscription (given its promise or its function): one that fails to end was already gone with the
+    // connection, so that failure isn't one
+    drop(p) { Promise.resolve(p).then((f) => (typeof f === 'function' ? f() : null)).then(() => {}, () => {}); }
+    // a task of the board's own (not a call), whose failure is reported and answered with the fallback
+    soft(p, what, fallback) { return Promise.resolve(p).catch((e) => { this.report('task', what, e); return fallback; }); }
+    // a task of the board's own whose failure is expected: why says why (the static rule asks for it)
+    quiet(p, why, fallback) { return Promise.resolve(p).catch(() => fallback); }
+    // what the Diagnostics file carries: anonymised, only the kind of call, the message type and the error code
+    // (a message or a path can name things in a home)
+    exportErrors(anonymise) {
+      return this.errors.map((x) => (anonymise ? { at: new Date(x.at).toISOString(), kind: x.kind, type: x.kind === 'ws' || x.kind === 'sub' ? x.what : undefined, code: x.code } : Object.assign({}, x, { at: new Date(x.at).toISOString() })));
+    }
+  }
+
   class FunctionsBoard extends HTMLElement {
     constructor() {
       super();
@@ -4843,7 +4966,19 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._sel = null; this._focus = null; this._focusEdges = new Set(); this._els = new Map();
       this._drag = null; this._pointers = new Map(); this._live = new Map(); this._prev = new Map();
       this._drawer = null; this._capture = null; this._runs = []; this._errKeys = new Set(); this._pick = new Set();
-      this._unsubs = []; this._clock = new Clock(); this._token = 0; this._booting = false;
+      this._unsubs = []; this._clock = new Clock(); this._token = 0;
+      // every call to Home Assistant (0.10.0): through the link, which orders, times and reports them (the only
+      // place the board reaches this._hass's own calls)
+      this._ha = new Link({
+        ws: (m) => this._hass.callWS(m),
+        api: (method, path, body) => this._hass.callApi(method, path, body),
+        service: (domain, service, data, target) => this._hass.callService(domain, service, data, target),
+        sub: (m, cb) => this._hass.connection.subscribeMessage(cb, m),
+      }, { clock: this._clock, report: (e) => console.warn(`Functions Board: ${e.kind} ${e.what} failed (${e.code}): ${e.message}`) });
+      this._haConn = {
+        subscribeMessage: (cb, m, o) => this._ha.sub(m, cb, o),
+        subscribeEvents: (cb, type, o) => this._ha.sub({ type: 'subscribe_events', event_type: type }, cb, o),
+      }; this._booting = false;
       this._watch = new Map(); this._cfgCache = new Map(); this._toastActs = [];
       this._undoStack = []; this._redoStack = [];
       this._tgt = new Map(); this._src = new Map();
@@ -4938,12 +5073,16 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     }
 
     /* ---------- small utilities ---------- */
-    _ws(msg) { return this._hass.callWS(msg); }
+    // to Home Assistant, through the link: a websocket message, a REST call, a service (o: { optional: '<why its
+    // failure is expected>', fallback, timeout })
+    _ws(msg, o) { return this._ha.ask(msg, o); }
+    _api(method, path, body, o) { return this._ha.api(method, path, body, o); }
+    _svc(domain, service, data, target, o) { return this._ha.service(domain, service, data, target, o); }
     async _loadData() {
       // The integration stores functions and layouts for everyone; without it they live in this user's data.
       let r = null;
-      try { r = await this._ws({ type: 'functions_board/get' }); } catch (e) { r = null; }
-      const ud = await this._ws({ type: 'frontend/get_user_data', key: STORE }).catch(() => null);
+      try { r = await this._ws({ type: 'functions_board/get' }, { optional: 'without the integration, the board keeps its data in this user\u2019s own data' }); } catch (e) { r = null; }
+      const ud = await this._ws({ type: 'frontend/get_user_data', key: STORE }, { fallback: null });
       const legacy = (ud && ud.value) || {};
       if (!r) { this._storeMode = 'user'; this._fbMode = 'organise'; return legacy; }
       this._storeMode = 'shared';
@@ -4952,10 +5091,10 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._revs = Object.assign({}, r.revs || {});
       this._fbMode = r.mode === 'full' ? 'full' : 'organise';
       let shared = (r && r.data) || {};
-      const uiData = await this._ws({ type: 'frontend/get_user_data', key: STORE + '_ui' }).catch(() => null);
+      const uiData = await this._ws({ type: 'frontend/get_user_data', key: STORE + '_ui' }, { fallback: null });
       if (!Array.isArray(shared.functions) && (Array.isArray(legacy.functions) || legacy.layouts)) {
         shared = { v: 1, functions: legacy.functions || [], layouts: legacy.layouts || {} };
-        await this._ws({ type: 'functions_board/set', data: shared, client: this._client() }).catch(() => {});
+        await this._ws({ type: 'functions_board/set', data: shared, client: this._client() }, { fallback: null });
         this._revs = {};
         Object.keys(shared.layouts || {}).forEach((k) => { this._revs[k] = 1; });
         this._migrated = true;
@@ -5271,8 +5410,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         this._ws({ type: 'config/label_registry/list' }),
         this._ws({ type: 'config/entity_registry/list' }),
         this._ws({ type: 'config/device_registry/list' }),
-        this._ws({ type: 'config/area_registry/list' }).catch(() => []),
-        this._ws({ type: 'config/floor_registry/list' }).catch(() => []),
+        this._ws({ type: 'config/area_registry/list' }, { fallback: [] }),
+        this._ws({ type: 'config/floor_registry/list' }, { fallback: [] }),
       ]);
       REG = { data: d, at: Date.now(), user: this._hass.user && this._hass.user.id };
       return d;
@@ -5313,7 +5452,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
 
     _subscribe() {
       if (this._unsubs.length || !this._hass) return;
-      const c = this._hass.connection;
+      const c = this._haConn;
       const reload = () => this._clock.after('reg', 1200, () => this._reload());
       this._unsubs = [
         c.subscribeEvents((ev) => this._onRegistry(ev), 'entity_registry_updated'),
@@ -5325,12 +5464,12 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         this._storeMode === 'shared' ? this._subscribeShared(c) : null,
         // saving an automation reloads it; saving a script calls script.reload (filtered by Home Assistant)
         c.subscribeEvents(() => this._configChanged(), 'automation_reloaded'),
-        c.subscribeMessage(() => this._configChanged(), { type: 'subscribe_trigger', trigger: { trigger: 'event', event_type: 'call_service', event_data: { domain: 'script', service: 'reload' } } }).catch(() => null),
+        c.subscribeMessage(() => this._configChanged(), { type: 'subscribe_trigger', trigger: { trigger: 'event', event_type: 'call_service', event_data: { domain: 'script', service: 'reload' } } }, { fallback: null }),
       ];
     }
     // changes saved by other boards: v0.4 integrations send them to subscribers; older ones fire a bus event
     async _subscribeShared(c) {
-      try { return await c.subscribeMessage((m) => this._onShared(m), { type: 'functions_board/subscribe' }); }
+      try { return await c.subscribeMessage((m) => this._onShared(m), { type: 'functions_board/subscribe' }, { optional: 'an integration before 0.4 tells boards of changes with an event instead' }); }
       catch (e) { return c.subscribeEvents((ev) => this._onShared(Object.assign({ what: 'all' }, (ev && ev.data) || {})), 'functions_board_updated'); }
     }
     // configs changed: forget the cached ones and redraw the open function, at most once a second
@@ -5345,7 +5484,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     }
     _unsubscribe() {
       const u = this._unsubs; this._unsubs = [];
-      u.forEach((p) => Promise.resolve(p).then((f) => f && f()).catch(() => {}));
+      u.forEach((p) => this._ha.drop(p));
       // and the developer tools' own subscriptions (Phase 9)
       this._stopWatches(); this._stopMonitors(); this._edgeHoverEnd(); this._dbgStop(true);
       this._clock.cancel('conds-tick');
@@ -5388,13 +5527,13 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     async _rewatch(id) {
       const w = this._watch.get(id);
       if (!w || Date.now() > w.until) { this._watch.delete(id); return; }
-      const reg = await this._ws({ type: 'config/entity_registry/get', entity_id: id }).catch(() => null);
+      const reg = await this._ws({ type: 'config/entity_registry/get', entity_id: id }, { optional: 'an entity set up in YAML has no registry entry', fallback: null });
       if (!reg) return;
       const labels = reg.labels || [], cats = reg.categories || {};
       const msg = { type: 'config/entity_registry/update', entity_id: id };
       if (!labels.includes(w.label)) msg.labels = labels.concat([w.label]);
       if (w.cat && !cats[w.cat[0]]) msg.categories = { [w.cat[0]]: w.cat[1] };
-      if (msg.labels || msg.categories) await this._ws(msg).catch(() => {});
+      if (msg.labels || msg.categories) await this._ws(msg, { fallback: null });
     }
 
     async _open(label, keep, opt = {}) {
@@ -5679,8 +5818,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (DESC) { [this._trigDesc, this._condDesc] = DESC; return; }
       const get = (type) => new Promise((resolve) => {
         let done = false, unsub = null;
-        const fin = (v) => { if (done) return; done = true; this._clock.cancel(to); resolve(v || {}); Promise.resolve(unsub).then((f) => f && f()).catch(() => {}); };
-        unsub = this._hass.connection.subscribeMessage((m) => fin(m), { type }).catch(() => fin({}));
+        const fin = (v) => { if (done) return; done = true; this._clock.cancel(to); resolve(v || {}); this._ha.drop(unsub); };
+        unsub = this._haConn.subscribeMessage((m) => fin(m), { type }, { fallback: null }).then((u) => { if (!u) fin({}); return u; });
         const to = this._clock.deadline(4000, () => fin({}));
       });
       [this._trigDesc, this._condDesc] = await Promise.all([get('trigger_platforms/subscribe'), get('condition_platforms/subscribe')]);
@@ -5690,7 +5829,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     async _refreshWarm() {
       if (!this._regWarm || !this.isConnected) return;
       const old = REG && REG.data;
-      const d = await this._fetchRegistries().catch(() => null);
+      const d = await this._ha.quiet(this._fetchRegistries(), 'its calls to Home Assistant report their own failures', null);
       this._regWarm = false;
       if (!d || !this.isConnected || (old && regSig(d) === regSig(old))) return;
       await this._reload(d);
@@ -6518,7 +6657,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (!p) return;
       if (this._sbxOn()) { this._toast(T('sbx_no_pause')); return; }
       const L = this._layout(label), name = this._fnName(label);
-      const call = (service, ids) => this._hass.callService('automation', service, {}, { entity_id: ids });
+      const call = (service, ids) => this._svc('automation', service, {}, { entity_id: ids });
       const done = () => { delete b.dataset.sig; this._renderPause(); };
       if (p.paused) {
         const ids = p.paused.filter((id) => this._hass.states[id]);
@@ -7275,7 +7414,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (a === 'delete') { this._deleteItemDialog(n.key); return; }
       if (a === 'toggle') {
         const st = this._hass.states[n.key];
-        if (st) this._hass.callService('automation', st.state === 'on' ? 'turn_off' : 'turn_on', {}, { entity_id: n.key });
+        if (st) this._svc('automation', st.state === 'on' ? 'turn_off' : 'turn_on', {}, { entity_id: n.key });
         return;
       }
       if (a === 'remove') {
@@ -7341,7 +7480,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (!live.length) return;
       const state = async (u, wantOn) => {
         if (u.id.startsWith('device:')) { const d = this._devMap.get(u.id.slice(7)); return !!d && (d.labels || []).includes(u.label) === wantOn; }
-        const r = await this._ws({ type: 'config/entity_registry/get', entity_id: u.id }).catch(() => null);
+        const r = await this._ws({ type: 'config/entity_registry/get', entity_id: u.id }, { optional: 'an entity set up in YAML has no registry entry', fallback: null });
         return !!r && (r.labels || []).includes(u.label) === wantOn;
       };
       this._history({
@@ -7377,8 +7516,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const anchor = this._menuAnchor;
       this._menu(anchor, [{ text: T('loading_2'), disabled: true }], T('more_helper_types'));
       let domains = [];
-      try { domains = await this._hass.callApi('GET', 'config/config_entries/flow_handlers?type=helper'); } catch (e) { domains = []; }
-      const man = domains.length ? await this._ws({ type: 'manifest/list', integrations: domains }).catch(() => []) : [];
+      try { domains = await this._api('GET', 'config/config_entries/flow_handlers?type=helper'); } catch (e) { domains = []; }
+      const man = domains.length ? await this._ws({ type: 'manifest/list', integrations: domains }, { fallback: [] }) : [];
       const names = new Map((man || []).map((x) => [x.domain, x.name]));
       const list = domains.map((d) => [d, names.get(d) || d.replace(/_/g, ' ')]).sort((a, b) => a[1].localeCompare(b[1]));
       if (this._menuAnchor !== anchor) return;
@@ -7459,7 +7598,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       let c = null;
       try { c = JSON.parse(sessionStorage.getItem(CAPTURE_KEY) || 'null'); sessionStorage.removeItem(CAPTURE_KEY); } catch (e) { c = null; }
       if (!c || !c.label || typeof c.since !== 'number' || Date.now() - c.at > 30 * 60000) return;
-      const ents = await this._ws({ type: 'config/entity_registry/list' }).catch(() => []);
+      const ents = await this._ws({ type: 'config/entity_registry/list' }, { fallback: [] });
       const made = (ents || []).filter((e) => (e.created_at || 0) > c.since).slice(0, 5);
       for (const e of made) if (await this._captureMatch(e.entity_id, c, e)) await this._captured(e.entity_id, c);
     }
@@ -7469,7 +7608,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (c.kind === 'automation' || c.kind === 'script' || c.kind === 'scene') return dom === c.kind;
       if (c.kind !== 'helper') return false;
       if (HELPER_DOMAINS.has(dom)) return true;
-      if (!reg) reg = await this._ws({ type: 'config/entity_registry/get', entity_id: id }).catch(() => null);
+      if (!reg) reg = await this._ws({ type: 'config/entity_registry/get', entity_id: id }, { optional: 'an entity set up in YAML has no registry entry', fallback: null });
       return !!(reg && (HELPER_PLATFORMS.has(reg.platform) || (c.domain && reg.platform === c.domain)));
     }
     _endCapture() {
@@ -7500,8 +7639,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       });
       let runs = [];
       if (map.size) {
-        const lists = await Promise.all(['automation', 'script'].map((dom) => this._ws({ type: 'trace/list', domain: dom })
-          .then((l) => (l || []).map((r) => Object.assign({}, r, { domain: dom }))).catch(() => [])));
+        const lists = await Promise.all(['automation', 'script'].map((dom) => this._ws({ type: 'trace/list', domain: dom }, { fallback: [] })
+          .then((l) => (l || []).map((r) => Object.assign({}, r, { domain: dom })))));
         runs = lists.flat().filter((r) => map.has(r.domain + ':' + r.item_id)).map((r) => Object.assign(r, { key: map.get(r.domain + ':' + r.item_id) }));
         const t = (r) => Date.parse((r.timestamp && r.timestamp.start) || '') || 0;
         runs.sort((a, b) => t(b) - t(a));
@@ -7820,13 +7959,13 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     }
     async _execTest(t) {
       const id = t.target;
-      const call = (svc, data, target) => { const i = svc.indexOf('.'); return this._hass.callService(svc.slice(0, i), svc.slice(i + 1), data || {}, target); };
+      const call = (svc, data, target) => { const i = svc.indexOf('.'); return this._svc(svc.slice(0, i), svc.slice(i + 1), data || {}, target); };
       switch (t.kind) {
         case 'action': return call(t.service, t.data, { entity_id: id });
         case 'state': {
           // Home Assistant's copy only: the next update from the device or its integration puts the real state back
           const st = this._hass.states[id];
-          const r = await this._hass.callApi('POST', 'states/' + id, { state: t.state, attributes: st ? st.attributes : {} });
+          const r = await this._api('POST', 'states/' + id, { state: t.state, attributes: st ? st.attributes : {} });
           if (r && r.context && r.context.id) { this._sim.set(id, r.context.id); this._simAt.set(id, Date.parse(r.last_updated) || Date.now()); }
           this._refreshStates();
           return r;
@@ -7849,8 +7988,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     _renderOnce(template) {
       return new Promise((resolve) => {
         let done = false, unsub = null;
-        const fin = (v) => { if (done) return; done = true; this._clock.cancel(to); resolve(v); Promise.resolve(unsub).then((f) => f && f()).catch(() => {}); };
-        unsub = this._hass.connection.subscribeMessage((msg) => fin(msg && !msg.error ? msg.result : null), { type: 'render_template', template, strict: false, report_errors: true, timeout: 3 }).catch(() => fin(null));
+        const fin = (v) => { if (done) return; done = true; this._clock.cancel(to); resolve(v); this._ha.drop(unsub); };
+        unsub = this._haConn.subscribeMessage((msg) => fin(msg && !msg.error ? msg.result : null), { type: 'render_template', template, strict: false, report_errors: true, timeout: 3 }, { fallback: null }).then((u) => { if (!u) fin(null); return u; });
         const to = this._clock.deadline(4000, () => fin(null));
       });
     }
@@ -7874,7 +8013,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (this._dbg && this._dbg.rec && this._dbg.label === (this._model && this._model.label)) this._dbgAdd(Object.assign({}, entry));
       if (err || !this._hass.services.logbook || !this._hass.services.logbook.log) return;
       const ent = !String(test.target).includes(':') && this._hass.states[test.target] ? test.target : null;
-      this._hass.callService('logbook', 'log', Object.assign({ name: 'Functions Board', message: 'test: ' + text, domain: 'functions_board' }, ent ? { entity_id: ent } : {})).catch(() => {});
+      this._svc('logbook', 'log', Object.assign({ name: 'Functions Board', message: 'test: ' + text, domain: 'functions_board' }, ent ? { entity_id: ent } : {}), undefined, { fallback: null });
     }
 
     // ---- boxes that live in the layout, not in Home Assistant: kept tests (9.2) and monitors (9.3)
@@ -7993,7 +8132,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       m.hidden = false;
       m.innerHTML = `<div class="dlg mdlg"><h3>${T('monitor_box')}</h3><div class="hint">${T('a_box_on_the_board', { extra: mq ? T('or_the_last_10_messages') : '' })}</div>${mq ? `<div class="tchoice"><button class="chip on" data-act="mon-kind" data-k="event">${T('event_type')}</button><button class="chip" data-act="mon-kind" data-k="mqtt">${T('mqtt_topic')}</button></div>` : ''}<label><span class="mlab">${T('event_type')}</span><input name="topic" list="fbevtypes" placeholder="mobile_app_notification_action"><datalist id="fbevtypes"></datalist></label><div class="btns"><button data-act="modal-cancel">${T('cancel')}</button><button class="primary" data-act="mon-make">${T('add')}</button></div></div>`;
       this._clock.after('focus', 50, () => { const i = m.querySelector('input[name=topic]'); if (i) i.focus(); });
-      const types = await this._hass.callApi('GET', 'events').catch(() => []);
+      const types = await this._api('GET', 'events', undefined, { fallback: [] });
       const dl = m.querySelector('#fbevtypes');
       if (dl) dl.innerHTML = (types || []).map((x) => x && x.event).filter((x) => x && !NO_MONITOR.has(x)).sort().map((x) => `<option value="${esc(x)}">`).join('');
     }
@@ -8012,7 +8151,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       [...this._monSubs.keys()].forEach((id) => { const t = want.get(id); if (!t || this._monSubs.get(id).sig !== t.what + '|' + t.topic) this._stopMonitor(id); });
       want.forEach((t, id) => {
         if (this._monSubs.has(id)) return;
-        const c = this._hass.connection, s = { sig: t.what + '|' + t.topic, p: null };
+        const c = this._haConn, s = { sig: t.what + '|' + t.topic, p: null };
         this._monSubs.set(id, s);
         s.p = t.what === 'mqtt'
           ? c.subscribeMessage((msg) => this._monAdd(id, { t: Date.now(), text: String(msg && msg.payload), full: msg }), { type: 'mqtt/subscribe', topic: t.topic })
@@ -8021,7 +8160,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       });
       this._renderMons();
     }
-    _stopMonitor(id) { const s = this._monSubs.get(id); this._monSubs.delete(id); if (s && s.p) Promise.resolve(s.p).then((f) => f && f()).catch(() => {}); }
+    _stopMonitor(id) { const s = this._monSubs.get(id); this._monSubs.delete(id); if (s && s.p) this._ha.drop(s.p); }
     _stopMonitors() { [...this._monSubs.keys()].forEach((id) => this._stopMonitor(id)); }
     _monAdd(id, item) {
       const list = this._monData.get(id) || [];
@@ -8054,7 +8193,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const w = { label: this._model.label, hits: 0, unsub: null };
       this._tw.set(key, w);
       try {
-        w.unsub = await this._hass.connection.subscribeMessage((msg) => this._onWatch(key, msg), { type: 'subscribe_trigger', trigger: trig, variables: {} });
+        w.unsub = await this._haConn.subscribeMessage((msg) => this._onWatch(key, msg), { type: 'subscribe_trigger', trigger: trig, variables: {} });
       } catch (e) {
         if (this._tw.get(key) === w) this._tw.delete(key);
         this._toast(T('could_not_watch_its_triggers', { e: (e && (e.message || e.code)) || e }));
@@ -8140,7 +8279,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const tpls = [...e.tpls].slice(0, 3), tt = { id, vals: tpls.map(() => '…'), unsubs: [] };
       this._tt = tt;
       tpls.forEach((t, i) => {
-        const p = this._hass.connection.subscribeMessage((msg) => {
+        const p = this._haConn.subscribeMessage((msg) => {
           if (this._tt !== tt) return;
           tt.vals[i] = msg && msg.error ? '⚠ ' + (/trigger|this\b/.test(msg.error) ? T('uses_the_data_of_what') : msg.error) : fmtValue(msg && msg.result);
           this._ttRender(e, tpls);
@@ -8167,7 +8306,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const tt = this._tt;
       if (!tt) return;
       this._tt = null;
-      tt.unsubs.forEach((p) => Promise.resolve(p).then((f) => f && f()).catch(() => {}));
+      tt.unsubs.forEach((p) => this._ha.drop(p));
       this._$.ttip.hidden = true;
     }
 
@@ -8205,7 +8344,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const g = this._dbg;
       if (!g || g.rec) return;
       g.rec = true;
-      const c = this._hass.connection, back = new Date(Date.now() - DBG_BACK).toISOString(), ents = this._dbgEntities();
+      const c = this._haConn, back = new Date(Date.now() - DBG_BACK).toISOString(), ents = this._dbgEntities();
       g.ents = new Set(ents);
       if (g.entries.length) this._dbgAdd({ kind: 'note', t: Date.now(), text: T('recording_again') });
       // this session's own tests (events have no entity, so the logbook below doesn't list them)
@@ -8235,7 +8374,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (!g || !g.rec) return;
       g.rec = false;
       this._clock.cancel('dbg-poll');
-      g.subs.forEach((p) => Promise.resolve(p).then((f) => f && f()).catch(() => {}));
+      g.subs.forEach((p) => this._ha.drop(p));
       g.subs = [];
       if (!quiet) this._dbgAdd({ kind: 'note', t: Date.now(), text: T('stopped_recording') });
     }
@@ -8366,7 +8505,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     async _dbgExplain(e) {
       if (!e || e.why || e.explaining || e.state !== 'stopped' || !(e.nt || e.exec === 'failed_conditions' || e.exec === 'error' || e.err)) return;
       e.explaining = true;
-      const tr = await this._ws({ type: 'trace/get', domain: e.run.domain, item_id: e.run.item_id, run_id: e.run.run_id }).catch(() => null);
+      const tr = await this._ws({ type: 'trace/get', domain: e.run.domain, item_id: e.run.item_id, run_id: e.run.run_id }, { optional: 'a trace can be gone: Home Assistant keeps only the last few runs', fallback: null });
       e.explaining = false;
       if (!tr) return;
       e.why = whyStopped(tr, (x) => this._nameOf(x));
@@ -8452,16 +8591,16 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     // the function as it is now, read through Home Assistant's own APIs (nothing is changed)
     async _verSnapshot(label) {
       const members = this._verMembers(label), items = {}, lists = new Map(), devices = {};
-      const list = async (dom) => { if (!lists.has(dom)) lists.set(dom, await this._ws({ type: dom + '/list' }).catch(() => null)); return lists.get(dom) || []; };
+      const list = async (dom) => { if (!lists.has(dom)) lists.set(dom, await this._ws({ type: dom + '/list' }, { optional: 'a helper domain not set up has no list of helpers', fallback: null })); return lists.get(dom) || []; };
       for (const k of members) {
         if (k.startsWith('device:')) continue;
         const dom = k.split('.')[0], name = this._nameOf(k);
         if (dom === 'automation' || dom === 'script') {
-          const r = await this._ws({ type: dom + '/config', entity_id: k }).catch(() => null), cfg = r && r.config;
+          const r = await this._ws({ type: dom + '/config', entity_id: k }, { optional: 'an automation or script without an id has no stored config', fallback: null }), cfg = r && r.config;
           if (!cfg) continue;
           const id = dom === 'automation' ? cfg.id || null : k.slice(7);
           // only what's in automations.yaml or scripts.yaml can be written back: Home Assistant's editors say the same
-          const own = id ? !!(await this._hass.callApi('GET', `config/${dom}/config/${encodeURIComponent(id)}`).catch(() => null)) : false;
+          const own = id ? !!(await this._api('GET', `config/${dom}/config/${encodeURIComponent(id)}`, undefined, { optional: 'one set up in YAML has no stored config to read', fallback: null })) : false;
           items[k] = { dom, id, name, cfg, yaml: !own };
         } else if (VER_HELPERS.has(dom)) {
           const reg = this._entMap.get(k), it = (await list(dom)).find((x) => reg && x.id === reg.unique_id);
@@ -8595,7 +8734,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         const raw = v.snapshot.layout ? JSON.parse(JSON.stringify(v.snapshot.layout)) : {};
         const layout = Object.assign({ nodes: {}, frames: [], notes: [], view: null, categories: null }, cleanLayout(raw) || {});
         this._ver = { label, id: v.id, name: v.name, at: v.at, snap: v.snapshot, layout, cfgs: new Map(), diff: null };
-        this._ver.diff = await this._verDiff(label, v.snapshot).catch(() => null);
+        this._ver.diff = await this._ha.soft(this._verDiff(label, v.snapshot), 'comparing a version with now', null);
       } else this._ver = null;
       this._$.board.classList.toggle('vview', !!v);
       try { history.replaceState(history.state, '', location.pathname + (v ? '?version=' + v.id : '')); } catch (e) { /* the link just won't carry it */ }
@@ -8610,9 +8749,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         const it = snap.items[k];
         if (!it || !it.cfg) continue;
         let now = null;
-        if (it.dom === 'automation' || it.dom === 'script') { const r = await this._ws({ type: it.dom + '/config', entity_id: k }).catch(() => null); now = r && r.config; }
+        if (it.dom === 'automation' || it.dom === 'script') { const r = await this._ws({ type: it.dom + '/config', entity_id: k }, { optional: 'an automation or script without an id has no stored config', fallback: null }); now = r && r.config; }
         else {
-          if (!lists.has(it.dom)) lists.set(it.dom, await this._ws({ type: it.dom + '/list' }).catch(() => null));
+          if (!lists.has(it.dom)) lists.set(it.dom, await this._ws({ type: it.dom + '/list' }, { optional: 'a helper domain not set up has no list of helpers', fallback: null }));
           const x = (lists.get(it.dom) || []).find((y) => y.id === it.id);
           if (x) { now = Object.assign({}, x); delete now.id; }
         }
@@ -8720,7 +8859,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       }
       // what came back, and what had left the function, wear its label again
       await this._clock.pause(plan.recreate.length ? 1500 : 200);
-      const reg = await this._ws({ type: 'config/entity_registry/list' }).catch(() => []);
+      const reg = await this._ws({ type: 'config/entity_registry/list' }, { fallback: [] });
       const findNew = (k) => { const it = snap.items[k], uid = it.newId || it.id; const e = reg.find((x) => x.platform === it.dom && x.unique_id === uid); return e ? e.entity_id : null; };
       for (const k of plan.rejoin.concat(plan.recreate)) {
         const id = plan.recreate.includes(k) ? findNew(k) : k;
@@ -8731,11 +8870,11 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         const dom = k.split('.')[0];
         try {
           if (dom === 'automation') {
-            const r = await this._ws({ type: 'automation/config', entity_id: k }).catch(() => null), aid = r && r.config && r.config.id;
-            if (extra === 'delete' && aid) await this._hass.callApi('DELETE', `config/automation/config/${encodeURIComponent(aid)}`);
-            else await this._hass.callService('automation', 'turn_off', { entity_id: k });
+            const r = await this._ws({ type: 'automation/config', entity_id: k }, { optional: 'an automation or script without an id has no stored config', fallback: null }), aid = r && r.config && r.config.id;
+            if (extra === 'delete' && aid) await this._api('DELETE', `config/automation/config/${encodeURIComponent(aid)}`);
+            else await this._svc('automation', 'turn_off', { entity_id: k });
           } else if (dom === 'script') {
-            if (extra === 'delete') await this._hass.callApi('DELETE', `config/script/config/${encodeURIComponent(k.slice(7))}`);
+            if (extra === 'delete') await this._api('DELETE', `config/script/config/${encodeURIComponent(k.slice(7))}`);
           } else if (VER_HELPERS.has(dom)) {
             const e = this._entMap.get(k);
             if (extra === 'delete' && e && e.unique_id) await this._ws({ type: dom + '/delete', [dom + '_id']: e.unique_id });
@@ -8750,7 +8889,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._ver = null;
       this._$.board.classList.remove('vview');
       try { history.replaceState(history.state, '', location.pathname); } catch (e) { /* fine */ }
-      await this._loadRegistries().catch(() => {});
+      await this._ha.quiet(this._loadRegistries(), 'its calls to Home Assistant report their own failures');
       await this._open(label, true);
       const undo = back && back.id ? [{ text: T('undo'), fn: () => this._verRestore(back.id) }] : [];
       this._toast(errs.length ? T('ver_restored_errs', { name: v.name, n: errs.length, list: errs.slice(0, 3).join('; ') }) : T('ver_restored', { name: v.name }), undo);
@@ -8870,9 +9009,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     _renderRaw(template, variables) {
       return new Promise((res, rej) => {
         let done = false, un = null;
-        const fin = (f, v) => { if (done) return; done = true; this._clock.cancel(to); f(v); if (un) un.then((u) => u && u()).catch(() => {}); };
+        const fin = (f, v) => { if (done) return; done = true; this._clock.cancel(to); f(v); if (un) this._ha.drop(un); };
         const to = this._clock.deadline(8000, () => fin(rej, new Error('timeout')));
-        un = this._hass.connection.subscribeMessage((m) => {
+        un = this._haConn.subscribeMessage((m) => {
           if (m && m.error) { if (m.level !== 'WARNING') fin(rej, new Error(String(m.error))); return; }
           fin(res, m ? m.result : null);
         }, { type: 'render_template', template, variables, strict: false, report_errors: true }).catch((e) => { fin(rej, new Error((e && (e.message || e.code)) || 'error')); return null; });
@@ -9410,12 +9549,12 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       box.hidden = false;
       const tok = this._whyTok = (this._whyTok || 0) + 1;
       box.innerHTML = `<div class="wh"><b>${esc(n.name)}</b>${T('why_did_or_didn_t')}</div><div class="muted small">${T('reading_its_traces')}</div>`;
-      const list = await this._ws({ type: 'trace/list', domain: 'automation', item_id: id }).catch(() => []);
+      const list = await this._ws({ type: 'trace/list', domain: 'automation', item_id: id }, { optional: 'an automation without an id keeps no traces', fallback: [] });
       if (tok !== this._whyTok) return;
       const recent = (list || []).slice().sort((a, b) => Date.parse(b.timestamp.start) - Date.parse(a.timestamp.start)).slice(0, 5);
       const rows = await Promise.all(recent.map(async (r) => {
         if (!(r.not_triggered || r.script_execution === 'failed_conditions' || r.error || r.script_execution === 'error')) return { r, why: '' };
-        const tr = await this._ws({ type: 'trace/get', domain: 'automation', item_id: id, run_id: r.run_id }).catch(() => null);
+        const tr = await this._ws({ type: 'trace/get', domain: 'automation', item_id: id, run_id: r.run_id }, { optional: 'a trace can be gone: Home Assistant keeps only the last few runs', fallback: null });
         return { r, why: tr ? whyStopped(tr, (x) => this._nameOf(x)) : '' };
       }));
       if (tok !== this._whyTok) return;
@@ -9575,10 +9714,10 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       await Promise.all(callers.map(async (c) => {
         const cn = m.nodes.get(c), id = cn && this._itemId(cn);
         if (!id) return;
-        const list = await this._ws({ type: 'trace/list', domain: cn.domain, item_id: id }).catch(() => []);
+        const list = await this._ws({ type: 'trace/list', domain: cn.domain, item_id: id }, { optional: 'an automation without an id keeps no traces', fallback: [] });
         const recent = (list || []).filter((r) => r.state === 'stopped').sort((a, b) => Date.parse(b.timestamp.start) - Date.parse(a.timestamp.start)).slice(0, 8);
         await Promise.all(recent.map(async (r) => {
-          const tr = await this._ws({ type: 'trace/get', domain: cn.domain, item_id: id, run_id: r.run_id }).catch(() => null);
+          const tr = await this._ws({ type: 'trace/get', domain: cn.domain, item_id: id, run_id: r.run_id }, { optional: 'a trace can be gone: Home Assistant keeps only the last few runs', fallback: null });
           Object.values((tr && tr.trace) || {}).forEach((els) => (els || []).forEach((el) => {
             const p = el && el.result && el.result.params;
             if (p && mine(p)) out.push({ t: Date.parse(el.timestamp) || Date.parse(r.timestamp.start) || 0, from: c, data: p.service_data || {}, run: { domain: cn.domain, item_id: id, run_id: r.run_id } });
@@ -9635,7 +9774,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (!n) return { err: T('it_isn_t_on_the') };
       if (!id) return { err: T('has_no_id_so_it', { name: n.name }) };
       let cfg;
-      try { cfg = await this._hass.callApi('GET', `config/${dom}/config/${encodeURIComponent(id)}`); }
+      try { cfg = await this._api('GET', `config/${dom}/config/${encodeURIComponent(id)}`); }
       catch (e) {
         const nf = e && (e.status_code === 404 || /404|not.found/i.test(String(e.message || e.body || e.error || '')));
         return { err: nf ? T('is_set_up_in_yaml', { name: n.name, dom }) : T('could_not_read_its_config', { e: (e && (e.message || e.body)) || e }), n };
@@ -9727,7 +9866,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     // what an arrow can mean, from Home Assistant's own lists for the box (get_triggers_for_target and the others)
     async _linkChoices(how) {
       const k = how.other, out = [], target = TGT_RE.test(k) ? { [{ area: 'area_id', floor: 'floor_id', label: 'label_id' }[k.slice(0, k.indexOf(':'))]]: k.slice(k.indexOf(':') + 1) } : { entity_id: k };
-      const get = (type) => (k.includes(':') && !TGT_RE.test(k) ? Promise.resolve([]) : this._ws({ type, target }).catch(() => []));
+      const get = (type) => (k.includes(':') && !TGT_RE.test(k) ? Promise.resolve([]) : this._ws({ type, target }, { optional: 'a Home Assistant before 2025.12 has no purpose-specific triggers or conditions', fallback: [] }));
       const names = await this._ptNamesFor(how.kinds);
       const ok = (desc) => !desc || Object.values(desc.fields || {}).every((f) => !f.required || f.default !== undefined);
       for (const kind of how.kinds) {
@@ -9836,13 +9975,13 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._arw = null; this._tst = null;
       this._closeModal();
       // put back exactly the config it had, unless someone has changed it since
-      const same = async (want) => { const now = await this._hass.callApi('GET', `config/${dom}/config/${encodeURIComponent(id)}`).catch(() => null); return canon(now) === canon(want); };
+      const same = async (want) => { const now = await this._api('GET', `config/${dom}/config/${encodeURIComponent(id)}`, undefined, { fallback: null }); return canon(now) === canon(want); };
       this._history({ label, text, check: (dir) => same(dir === 'undo' ? after : before), undo: () => this._saveCfg(dom, id, before), redo: () => this._saveCfg(dom, id, after) });
       this._toast(T('saved_through_home_assistant_s', { text }), [{ text: T('undo'), fn: () => this._undo() }]);
       this._configChanged();
     }
     _saveCfg(dom, id, cfg) {
-      return this._hass.callApi('POST', `config/${dom}/config/${encodeURIComponent(id)}`, cfg).then((r) => { this._cfgCache.clear(); return r; });
+      return this._api('POST', `config/${dom}/config/${encodeURIComponent(id)}`, cfg).then((r) => { this._cfgCache.clear(); return r; });
     }
 
     /* ---------- Node-RED flows (2.7, decision D1): read in the browser through the Node-RED app's own page, only
@@ -9858,7 +9997,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const done = (x) => { this._nrCache = Object.assign({ at: Date.now(), groups: [] }, x); return this._nrCache; };
       this._nrLoading = (async () => {
         try {
-          const r = await this._ws({ type: 'supervisor/api', endpoint: '/addons', method: 'get' }).catch(() => null);
+          const r = await this._ws({ type: 'supervisor/api', endpoint: '/addons', method: 'get' }, { optional: 'only a Home Assistant run by the Supervisor answers this', fallback: null });
           if (!r) return done({ err: T('this_home_assistant_has_no') });
           const app = toList(r.addons).find((a) => a && /nodered/i.test(String(a.slug)));
           if (!app) return done({ err: T('no_node_red_app_is') });
@@ -9868,10 +10007,10 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           // a path on this Home Assistant (/api/hassio_ingress/…/), never another address: the only fetch the board makes
           if (!base || !SAME_ORIGIN.test(base)) return done({ err: T('the_node_red_app_has') });
           // through the app's page in Home Assistant, as opening Node-RED from the sidebar does
-          const res = await fetch(base + 'flows', { credentials: 'same-origin', headers: { 'Node-RED-API-Version': 'v2' } }).catch(() => null);
+          const res = await this._ha.call('Node-RED flows', () => fetch(base + 'flows', { credentials: 'same-origin', headers: { 'Node-RED-API-Version': 'v2' } }), { fallback: null });
           if (!res || res.status === 401 || res.status === 403) {
             // not let in (yet, or any more): the flows last read here, if any, until Node-RED is opened
-            const kept = await this._ws({ type: 'functions_board/nodered' }).then((x) => x && x.kept).catch(() => null);
+            const kept = await this._ws({ type: 'functions_board/nodered' }, { fallback: null }).then((x) => x && x.kept);
             const ok = kept && kept.slug === app.slug && Array.isArray(kept.groups) ? kept : null;
             const when = ok ? new Date(ok.at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
             return done({ base, slug: app.slug, need: true, groups: ok ? ok.groups : [], asOf: ok ? ok.at : null,
@@ -9880,7 +10019,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           if (!res.ok) return done({ slug: app.slug, err: T('node_red_answered', { status: res.status }) });
           const body = await res.json(), flows = Array.isArray(body) ? body : (body && body.flows) || [];
           const groups = nrGroups(flows, (x) => this._known(x));
-          this._ws({ type: 'functions_board/nodered_keep', slug: app.slug, groups, client: this._client() }).catch(() => { /* shown here, just not kept */ });
+          this._ws({ type: 'functions_board/nodered_keep', slug: app.slug, groups, client: this._client() }, { fallback: null });  // (shown here, just not kept)
           return done({ base, slug: app.slug, groups });
         } catch (e) { return done({ err: T('could_not_read_the_flows', { e: (e && (e.message || e.code)) || e }) }); }
         finally { this._nrLoading = null; }
@@ -10283,10 +10422,10 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     // delete categories a step created, unless something else has been filed under them since
     async _dropCategories(made) {
       if (!made || !made.length) return;
-      const ents = await this._ws({ type: 'config/entity_registry/list' }).catch(() => null);
+      const ents = await this._ws({ type: 'config/entity_registry/list' }, { fallback: null });
       for (const [scope, cid] of made) {
         if (!ents || ents.some((e) => (e.categories || {})[scope] === cid)) continue;
-        await this._ws({ type: 'config/category_registry/delete', scope, category_id: cid }).catch(() => {});
+        await this._ws({ type: 'config/category_registry/delete', scope, category_id: cid }, { fallback: null });
       }
     }
     // how many items carry a label right now (fresh from Home Assistant)
@@ -10366,7 +10505,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         if (label && (snap || vids.length)) msg.label = label;
         if (label && snap) msg.snapshot = await this._verSnapshot(label);
         if (vids.length) msg.version_ids = vids;
-        const text = JSON.stringify(await this._ws(msg), null, 2);
+        // with what failed on this board since it opened (anonymised: only the kind of call and the error code)
+        const text = JSON.stringify(Object.assign(await this._ws(msg), { board_errors: this._ha.exportErrors(anonymise) }), null, 2);
         if (copy) {
           await navigator.clipboard.writeText(text);
           this._toast(T('diag_copied'));
@@ -10704,7 +10844,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     async _howDelete(id) {
       if (id.startsWith('device:')) return { id, name: this._mkNode(id, 'member').name, can: false, undo: false, why: T('devices_are_never_deleted_it') };
       const st = this._hass.states[id];
-      const reg = this._entMap.has(id) ? await this._ws({ type: 'config/entity_registry/get', entity_id: id }).catch(() => null) : null;
+      const reg = this._entMap.has(id) ? await this._ws({ type: 'config/entity_registry/get', entity_id: id }, { optional: 'an entity set up in YAML has no registry entry', fallback: null }) : null;
       const name = (st && st.attributes.friendly_name) || (reg && (reg.name || reg.original_name)) || id;
       const base = { id, name, reg, can: false, undo: false };
       const dom = id.split('.')[0];
@@ -10712,18 +10852,18 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         const cid = reg && reg.unique_id;
         if (!cid) return Object.assign(base, { why: T('defined_in_yaml_without_an') });
         try {
-          const cfg = await this._hass.callApi('GET', `config/${dom}/config/${encodeURIComponent(cid)}`);
+          const cfg = await this._api('GET', `config/${dom}/config/${encodeURIComponent(cid)}`);
           return Object.assign(base, { can: true, undo: true, how: 'config', dom, cid, cfg, where: `${dom}s.yaml` });
         } catch (e) { return Object.assign(base, { why: T('defined_in_yaml_outside_s', { dom }) }); }
       }
       if (HELPER_DOMAINS.has(dom)) {
-        const items = await this._ws({ type: dom + '/list' }).catch(() => []);
+        const items = await this._ws({ type: dom + '/list' }, { optional: 'a helper domain not set up has no list of helpers', fallback: [] });
         const item = reg && (items || []).find((x) => x.id === reg.unique_id);
         if (item) return Object.assign(base, { can: true, undo: true, how: 'collection', dom, item, where: T('helpers_made_in_the_ui') });
         return Object.assign(base, { why: T('defined_in_yaml_configuration_yaml') });
       }
       if (reg && reg.config_entry_id && HELPER_PLATFORMS.has(reg.platform)) {
-        const entries = await this._ws({ type: 'config_entries/get', domain: reg.platform }).catch(() => []);
+        const entries = await this._ws({ type: 'config_entries/get', domain: reg.platform }, { fallback: [] });
         const entry = (entries || []).find((x) => x.entry_id === reg.config_entry_id);
         const siblings = this._ents.filter((e) => e.config_entry_id === reg.config_entry_id).map((e) => e.entity_id);
         return Object.assign(base, { can: true, undo: false, how: 'entry', entryId: reg.config_entry_id, where: `${reg.platform} helper${entry ? ' "' + entry.title + '"' : ''}`, siblings, why: T('deleting_a_helper_set_up') });
@@ -10792,7 +10932,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const name = this._fnName(label).toLowerCase();
       for (const scope of ['automation', 'script', 'helpers']) {
         let cid = cats[scope];
-        const list = await this._ws({ type: 'config/category_registry/list', scope }).catch(() => []);
+        const list = await this._ws({ type: 'config/category_registry/list', scope }, { fallback: [] });
         const c = (list || []).find((x) => x.category_id === cid) || (list || []).find((x) => String(x.name).toLowerCase() === name);
         if (!c) continue;
         cid = c.category_id;
@@ -10824,9 +10964,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       for (const p of plan) {
         if (!p.can) continue;
         try {
-          if (p.how === 'config') await this._hass.callApi('DELETE', `config/${p.dom}/config/${encodeURIComponent(p.cid)}`);
+          if (p.how === 'config') await this._api('DELETE', `config/${p.dom}/config/${encodeURIComponent(p.cid)}`);
           else if (p.how === 'collection') await this._ws({ type: p.dom + '/delete', [p.dom + '_id']: p.item.id });
-          else if (p.how === 'entry') await this._hass.callApi('DELETE', `config/config_entries/entry/${p.entryId}`);
+          else if (p.how === 'entry') await this._api('DELETE', `config/config_entries/entry/${p.entryId}`);
           done.push(p);
         } catch (e) { failed.push(p.name + ': ' + (e.message || e.code || e)); }
       }
@@ -10836,7 +10976,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     async _waitEntity(test, ms = 8000) {
       const end = Date.now() + ms;
       while (Date.now() < end) {
-        const ents = await this._ws({ type: 'config/entity_registry/list' }).catch(() => []);
+        const ents = await this._ws({ type: 'config/entity_registry/list' }, { fallback: [] });
         const e = ents.find(test);
         if (e) return e;
         await this._clock.pause(300);
@@ -10850,7 +10990,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         if (!p.undo) continue;
         let e = null;
         if (p.how === 'config') {
-          await this._hass.callApi('POST', `config/${p.dom}/config/${encodeURIComponent(p.cid)}`, p.cfg);
+          await this._api('POST', `config/${p.dom}/config/${encodeURIComponent(p.cid)}`, p.cfg);
           e = await this._waitEntity((x) => x.platform === p.dom && x.unique_id === p.cid);
         } else if (p.how === 'collection') {
           const settings = Object.assign({}, p.item);
@@ -10862,7 +11002,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         if (!e) continue;
         const r = p.reg || {}, msg = { type: 'config/entity_registry/update', entity_id: e.entity_id, name: r.name || null, icon: r.icon || null, area_id: r.area_id || null, labels: r.labels || [], categories: r.categories || {} };
         if (e.entity_id !== p.id) msg.new_entity_id = p.id;
-        await this._ws(msg).catch(() => this._ws(Object.assign(msg, { new_entity_id: undefined })));
+        // (an entity whose id can't be changed back is put back under the id it has now)
+        if (msg.new_entity_id) { if ((await this._ws(msg, { optional: 'Home Assistant refuses an entity id already taken', fallback: false })) === false) await this._ws(Object.assign(msg, { new_entity_id: undefined }), { fallback: null }); } else await this._ws(msg, { fallback: null });
         back.push(p);
       }
       return back;
@@ -10889,7 +11030,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const keep = { name, icon: lab && lab.icon, color: lab && lab.color, description: lab && lab.description };
       const layout = this._data.layouts[label] ? JSON.parse(JSON.stringify(this._data.layouts[label])) : null;
       const pos = this._data.functions.indexOf(label);
-      const areas = (await this._ws({ type: 'config/area_registry/list' }).catch(() => [])).filter((a) => (a.labels || []).includes(label)).map((a) => a.area_id);
+      const areas = (await this._ws({ type: 'config/area_registry/list' }, { fallback: [] })).filter((a) => (a.labels || []).includes(label)).map((a) => a.area_id);
       const st = { label, ents: d.ents, devs: d.devs, areas, cats: d.dropCats ? d.cats : [], items: [] };
       // 1. the items, when asked
       if (d.withItems && d.plan.length) {
@@ -10898,7 +11039,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         if (r.failed.length) this._toast(T('some_items_could_not_be', { failed: r.failed.join('; ') }));
       }
       // 2. the categories (Home Assistant un-files whatever is still in them)
-      for (const c of st.cats) await this._ws({ type: 'config/category_registry/delete', scope: c.scope, category_id: c.id }).catch(() => {});
+      for (const c of st.cats) await this._ws({ type: 'config/category_registry/delete', scope: c.scope, category_id: c.id }, { fallback: null });
       // 3. the label (Home Assistant takes it off every entity, device and area) and the layout
       await this._ws({ type: 'config/label_registry/delete', label_id: label });
       this._takeOff(label);
@@ -10917,25 +11058,25 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           // categories come back with the same names; whatever was filed there is filed again
           const catIds = {};
           for (const c of st.cats) {
-            const made = await this._ws({ type: 'config/category_registry/create', scope: c.scope, name: c.name, icon: c.icon || undefined }).catch(() => null);
+            const made = await this._ws({ type: 'config/category_registry/create', scope: c.scope, name: c.name, icon: c.icon || undefined }, { fallback: null });
             if (!made) continue;
             catIds[c.scope] = made.category_id;
-            for (const id of c.members) await this._ws({ type: 'config/entity_registry/update', entity_id: id, categories: { [c.scope]: made.category_id } }).catch(() => {});
+            for (const id of c.members) await this._ws({ type: 'config/entity_registry/update', entity_id: id, categories: { [c.scope]: made.category_id } }, { fallback: null });
           }
           const deleted = new Set(st.items.map((p) => p.id).filter((id) => !back.some((p) => p.id === id)));
           for (const id of st.ents) {
             if (deleted.has(id)) continue;
-            const r = await this._ws({ type: 'config/entity_registry/get', entity_id: id }).catch(() => null);
-            if (r) await this._ws({ type: 'config/entity_registry/update', entity_id: id, labels: [...new Set((r.labels || []).concat([newId]))] }).catch(() => {});
+            const r = await this._ws({ type: 'config/entity_registry/get', entity_id: id }, { optional: 'an entity set up in YAML has no registry entry', fallback: null });
+            if (r) await this._ws({ type: 'config/entity_registry/update', entity_id: id, labels: [...new Set((r.labels || []).concat([newId]))] }, { fallback: null });
           }
           await this._loadRegistries();
           for (const did of st.devs) {
             const dev = this._devMap.get(did.slice(7));
-            if (dev) await this._ws({ type: 'config/device_registry/update', device_id: dev.id, labels: [...new Set((dev.labels || []).concat([newId]))] }).catch(() => {});
+            if (dev) await this._ws({ type: 'config/device_registry/update', device_id: dev.id, labels: [...new Set((dev.labels || []).concat([newId]))] }, { fallback: null });
           }
           for (const aid of st.areas) {
             const a = (await this._ws({ type: 'config/area_registry/list' })).find((x) => x.area_id === aid);
-            if (a) await this._ws({ type: 'config/area_registry/update', area_id: aid, labels: [...new Set((a.labels || []).concat([newId]))] }).catch(() => {});
+            if (a) await this._ws({ type: 'config/area_registry/update', area_id: aid, labels: [...new Set((a.labels || []).concat([newId]))] }, { fallback: null });
           }
           if (layout) { const L = cleanLayout(layout); if (Object.keys(catIds).length) L.categories = Object.assign({}, L.categories || {}, catIds); this._data.layouts[newId] = L; }
           if (!this._data.functions.includes(newId)) this._data.functions.splice(Math.max(0, pos), 0, newId);
@@ -10957,8 +11098,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     }
     async _runFnDeleteQuiet(label, items, cats) {
       if (items.length) await this._deleteItems(items);
-      for (const c of cats) await this._ws({ type: 'config/category_registry/delete', scope: c.scope, category_id: c.id }).catch(() => {});
-      await this._ws({ type: 'config/label_registry/delete', label_id: label }).catch(() => {});
+      for (const c of cats) await this._ws({ type: 'config/category_registry/delete', scope: c.scope, category_id: c.id }, { fallback: null });
+      await this._ws({ type: 'config/label_registry/delete', label_id: label }, { fallback: null });
       this._takeOff(label);
       delete this._data.layouts[label];
       this._save();
@@ -11147,7 +11288,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     }
     async _catGroups() {
       const scopes = ['automation', 'script', 'helpers'];
-      const lists = await Promise.all(scopes.map((s) => this._ws({ type: 'config/category_registry/list', scope: s }).catch(() => [])));
+      const lists = await Promise.all(scopes.map((s) => this._ws({ type: 'config/category_registry/list', scope: s }, { fallback: [] })));
       const byId = new Map();
       scopes.forEach((s, i) => (lists[i] || []).forEach((c) => byId.set(s + ':' + c.category_id, c)));
       const byName = new Map();
@@ -11446,7 +11587,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           label: lid, text: T('import', { name }),
           check: async (dir) => dir !== 'undo' || !st.made || (await this._labelCount(st.lid)) <= st.recs.filter((u) => !u.had).length,
           undo: async () => {
-            for (const u of st.recs) await this._unlabel(u).catch(() => {});
+            for (const u of st.recs) await this._ha.quiet(this._unlabel(u), 'its calls to Home Assistant report their own failures');
             if (!st.wasOn) this._takeOff(st.lid);
             await this._dropCategories(st.madeCats);
             if (st.made) {
