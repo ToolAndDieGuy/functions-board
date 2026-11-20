@@ -315,6 +315,57 @@ const drawerWidth = (page, w) => el(page, (b, w) => { b._$.drawer.style.width = 
     await el(page, (b) => b._closeDrawer());
   }
 
+  // as a dashboard card: a sections dashboard with the garage's own tiles in a row and the board below, across the
+  // view, open on the garage (its hint about panel views dismissed, as after reading it once). A taller page, so the
+  // card (three quarters of the page's height) fits under the tiles
+  if (!only || only.test('dashboard')) {
+    const url = (await ws(page, { type: 'get_panels' })).functions.config._panel_custom.module_url;
+    const res = await ws(page, { type: 'lovelace/resources/create', res_type: 'module', url });
+    const dash = await ws(page, { type: 'lovelace/dashboards/create', url_path: 'fb-home', title: 'Home', icon: 'mdi:home', mode: 'storage', require_admin: false, show_in_sidebar: true });
+    const tile = (entity) => ({ type: 'tile', entity, grid_options: { columns: 12 } });
+    await ws(page, { type: 'lovelace/config/save', url_path: 'fb-home', config: { views: [{ title: 'Home', path: 'home', type: 'sections', max_columns: 3, sections: [
+      { type: 'grid', cards: [{ type: 'heading', heading: 'Garage' }, tile(DOOR)] },
+      { type: 'grid', cards: [{ type: 'heading', heading: 'Timer', heading_style: 'subtitle' }, tile(TIMER)] },
+      { type: 'grid', cards: [{ type: 'heading', heading: 'Auto-close', heading_style: 'subtitle' }, tile(AUTO)] },
+      { type: 'grid', column_span: 3, cards: [{ type: 'custom:functions-board' }] },
+    ] }] } });
+    await page.setViewportSize({ width: W, height: 1040 });
+    await page.goto(BASE + '/fb-home/home');
+    await ready(page);
+    await fbq(page, '.board').waitFor({ timeout: 20000 });
+    await until(() => el(page, (b) => (b._data && !b._booting) || null), 20000);
+    await el(page, (b, g) => { b._data.ui.hintOff = true; b._applyMode(); if (!b._model || b._model.label !== g) b._open(g); }, garage);
+    await until(() => el(page, (b, g) => (b._model && b._model.label === g && b._model.nodes.size) || null, garage), 15000);
+    // fitted once the card has its size (the dashboard lays out its sections after the card starts)
+    let size = '';
+    await until(async () => { const now = await el(page, (b) => b._$.vp.clientWidth + 'x' + b._$.vp.clientHeight); const same = now === size; size = now; return same || null; }, 10000, 600);
+    // every box as big as fits across the card, moved up under its header: the card is three quarters of the page
+    // tall and the garage is wide, so the picture ends a little below the boxes, as the board's own picture does
+    const boxes = await allBoxes(page);
+    await frame(page, boxes, 1.2);
+    const below = await el(page, (b, keys) => {
+      const ns = keys.map((x) => b._model.nodes.get(x)).filter(Boolean), k = b._view.k;
+      const y0 = Math.min(...ns.map((n) => n.y)), y1 = Math.max(...ns.map((n) => n.y + n.h));
+      b._view.y = 90 - y0 * k;
+      b._applyView();
+      return b._$.vp.getBoundingClientRect().y + 90 + (y1 - y0) * k + 90;
+    }, boxes);
+    await page.waitForTimeout(1200);
+    // the dashboard beside the sidebar: its toolbar, the tiles and the card, down to a little below the boxes
+    const dashRect = await page.evaluate(() => {
+      const find = (root) => { const x = root.querySelector('hui-root'); if (x) return x; for (const e of root.querySelectorAll('*')) if (e.shadowRoot) { const f = find(e.shadowRoot); if (f) return f; } return null; };
+      const r = find(document).getBoundingClientRect();
+      return { x: r.x, y: r.y, width: r.width, height: r.height };
+    });
+    await shot(page, 'dashboard', Object.assign(dashRect, { height: Math.min(dashRect.height, below - dashRect.y) }));
+    await ws(page, { type: 'lovelace/dashboards/delete', dashboard_id: dash.id });
+    await ws(page, { type: 'lovelace/resources/delete', resource_id: res.id });
+    await page.setViewportSize({ width: W, height: H });
+    await page.goto(BASE + '/functions/' + garage);
+    await ready(page);
+    await fbq(page, '.nodes .node').first().waitFor({ timeout: 15000 });
+  }
+
   // put the garage back at rest, and the integration in its default mode
   await list(page, true);
   await rest(page);

@@ -37,6 +37,10 @@ const raw = async (f) => { const { data, info } = await sharp(f).ensureAlpha().r
     if (!ok) await sharp(diff, { raw: { width: a.w, height: a.h, channels: 4 } }).png().toFile(path.join(neu, 'diff-' + f));
     cases.push({ name, ok, detail: ok ? '' : `${(share * 100).toFixed(1)}% of its pixels differ: retake it (node tests/e2e/screens.js), or look at diff-${f}` });
   }
+  // and a picture screens.js makes that the README doesn't have yet: new, so it goes to docs/images like a changed one
+  for (const f of fs.readdirSync(neu).filter((x) => x.endsWith('.png') && !x.startsWith('diff-') && x !== 'failed-here.png').sort()) {
+    if (!fs.existsSync(path.join(old, f))) cases.push({ name: `${f}: a new picture, in docs/images`, ok: false, detail: 'new: not in docs/images yet' });
+  }
   write(path.join(R, 'e2e-shots.xml'), 'shots', cases);
   cases.forEach((c) => console.log((c.ok ? 'PASS ' : 'FAIL ') + c.name + (c.ok ? '' : '  -- ' + c.detail)));
   process.exit(cases.every((c) => c.ok) ? 0 : 1);

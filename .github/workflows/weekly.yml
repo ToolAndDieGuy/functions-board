@@ -236,7 +236,8 @@ jobs:
         id: branch
         if: failure() && steps.shots.outcome == 'failure' && hashFiles('tests/.results/shots/board.png') != ''
         run: |
-          for f in docs/images/*.png; do n=$(basename "$f"); [ -f "tests/.results/shots/$n" ] && cp "tests/.results/shots/$n" "$f"; done
+          # every picture taken (a new one too), not the differences
+          for f in tests/.results/shots/*.png; do n=$(basename "$f"); case "$n" in diff-*|failed-here.png) ;; *) cp "$f" "docs/images/$n" ;; esac; done
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -B readme-pictures
