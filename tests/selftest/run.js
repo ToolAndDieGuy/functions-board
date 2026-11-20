@@ -74,6 +74,23 @@ cases.push({ name: 'the weekly run fails on a flaky test', ok: strict.status ===
 fs.writeFileSync(qf, JSON.stringify([{ suite: 'self-held', check: 'planted, quarantined', why: 'planted by the self-test', since: '2020-01-01' }]));
 const stale = spawnSync(process.execPath, [path.join(__dirname, '..', 'lib', 'report.js'), self, 'self-held'], { encoding: 'utf8', env: Object.assign({}, process.env, { FB_QUARANTINE: qf, FB_STRICT: '1', GITHUB_STEP_SUMMARY: '' }) });
 cases.push({ name: 'the weekly run fails on a check quarantined for more than 30 days', ok: stale.status === 1 && /more than 30 days/.test(stale.stdout), detail: stale.stdout });
+// the board layer: its suites run as one Playwright run with one exit code (board.exit). A quarantined check failing
+// in one board suite exits it 1, and that mustn't fail the board suites beside it; but the layer exiting 1 with every
+// board suite passing is a crash part way, and fails the run
+{
+  const lay = path.join(self, 'layer');
+  fs.mkdirSync(lay, { recursive: true });
+  write(path.join(lay, 'board-one.xml'), 'board-one', [{ name: 'ok', ok: true }, { name: 'planted, quarantined', ok: false }]);
+  write(path.join(lay, 'board-two.xml'), 'board-two', [{ name: 'ok', ok: true }]);
+  fs.writeFileSync(path.join(lay, 'board.exit'), '1');
+  const lq = path.join(lay, 'quarantine.json');
+  fs.writeFileSync(lq, JSON.stringify([{ suite: 'board-one', check: 'planted, quarantined', why: 'planted by the self-test', since: today }]));
+  const rep3 = (names, q) => spawnSync(process.execPath, [path.join(__dirname, '..', 'lib', 'report.js'), lay, ...names], { encoding: 'utf8', env: Object.assign({}, process.env, { FB_QUARANTINE: q, FB_STRICT: '', GITHUB_STEP_SUMMARY: '' }) });
+  const held = rep3(['board-one', 'board-two'], lq);
+  cases.push({ name: 'a quarantined check failing in one board suite fails neither it nor the board suites beside it', ok: held.status === 0 && /board-two .*1\/1 passed/.test(held.stdout), detail: held.stdout });
+  const crash = rep3(['board-two'], path.join(lay, 'none.json'));
+  cases.push({ name: 'the board layer exiting 1 with every board suite passing fails the run', ok: crash.status === 1 && /board layer +FAILED: exited 1/.test(crash.stdout), detail: crash.stdout });
+}
 write(path.join(out, 'selftest.xml'), 'selftest', cases);
 cases.forEach((c) => console.log((c.ok ? 'PASS ' : 'FAIL ') + c.name + (c.ok ? '' : '  -- ' + c.detail)));
 process.exit(cases.every((c) => c.ok) ? 0 : 1);

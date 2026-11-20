@@ -119,7 +119,7 @@ class Anonymiser:
             # a helper's or automation's own ID (bramblewood_test_switch, 1700000000001) and the entity's object ID;
             # only ones that can't be an ordinary word or a small number
             for ident in (e.unique_id, e.entity_id.split(".", 1)[1]):
-                if isinstance(ident, str) and len(ident) >= 6 and ident.lower() not in STRUCTURE and (("_" in ident) or any(c.isalpha() for c in ident) and any(c.isdigit() for c in ident) or ident.isdigit()):
+                if isinstance(ident, str) and len(ident) >= 6 and ident.lower() not in STRUCTURE and ("_" in ident or (any(c.isalpha() for c in ident) and any(c.isdigit() for c in ident)) or ident.isdigit()):
                     self._learn(ident, "id")
             for n in (e.name, e.original_name):
                 self._learn_name(n)
@@ -270,9 +270,9 @@ async def async_build(
     if anonymise:
         about = out.pop("about")
         data = board.data
-        labels = set(data.get("layouts") or {}) | set(data.get("functions") or []) | set(board.revs) | (set(versions.by_label) if versions else set())
-        if label:
-            labels.add(label)
+        # (whatever the store holds: functions_board/set takes any data, so only strings are labels)
+        found: list[Any] = [*(data.get("layouts") or {}), *(data.get("functions") or []), *board.revs, *(versions.by_label if versions else ()), label]
+        labels = {x for x in found if isinstance(x, str) and x}
         out = Anonymiser(hass, await hass.auth.async_get_users(), labels).value(out)
         out = {"about": about, **out}
     return out

@@ -16,7 +16,8 @@ lib.hooks.trace = true;
 const test = base.test.extend({
   isolate: [async ({}, use, testInfo) => {
     const snap = await ha.snapshot();
-    lib.hooks.mark = lib.hooks.suite ? lib.hooks.suite.results.length : 0;
+    const own = lib.suiteOf(testInfo.file);
+    lib.hooks.mark = own ? own.results.length : 0;
     lib.hooks.traces = [];
     lib.hooks.attempt = { test: testInfo.titlePath.slice(1).join(' › '), retry: testInfo.retry };
     await use();
@@ -35,8 +36,10 @@ const test = base.test.extend({
 // a test that ended early (an error, a timeout) counts as a failed check in the suite's own report too
 test.afterEach(async ({}, testInfo) => {
   // (a failed check fails the test too; that's already in the report, so only a test that stopped counts here)
-  if (testInfo.status !== testInfo.expectedStatus && testInfo.error && lib.hooks.suite && !lib.hooks.suite.results.slice(lib.hooks.mark || 0).some((r) => !r.ok)) {
-    lib.hooks.suite.check(testInfo.title + ' (ran to the end)', false, String(testInfo.error.message || testInfo.error).split('\n')[0]);
+  // (the test's own suite: a worker runs tests from several files, and the last one loaded may be another's)
+  const own = lib.suiteOf(testInfo.file);
+  if (testInfo.status !== testInfo.expectedStatus && testInfo.error && own && !own.results.slice(lib.hooks.mark || 0).some((r) => !r.ok)) {
+    own.check(testInfo.title + ' (ran to the end)', false, String(testInfo.error.message || testInfo.error).split('\n')[0]);
   }
 });
 

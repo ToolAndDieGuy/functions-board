@@ -35,7 +35,7 @@ tests of its logic in Node (layer 2) and mutants that break each rule (`tests/mu
 | Part | Where | Its rules | Its tests |
 |---|---|---|---|
 | The clock | `class Clock`, `this._clock` | no timer of the board's own outside it; all stopped when the board leaves the page | `clock.test.js`; `board/leak.test.js` |
-| The link | `class Link`, `this._ha` | every call to Home Assistant through it; the newest answer wins; time limits; no error dropped without a reason (`optional: '…'`, `quiet(…, '…')`) | `link.test.js`; a regress case for the Diagnostics file |
+| The link | `class Link`, `this._ha` | every call to Home Assistant through it; the newest answer wins; time limits; no error dropped without a reason (`optional: '…'`, `quiet(…, '…')`); told when the connection comes back | `link.test.js`; a regress case for the Diagnostics file; in the board layer, a failure the board reports fails the test unless the test expects it |
 | The store | `class Store`, `this._store` | an older answer never replaces a newer one; nothing deleted on registries older than the board data | `store.test.js`; regress cases (configs, the restore plan, 0.9.2) |
 | Actions | `_actionTables()` | every action named by a button has a handler, every handler is named, none in two tables; one place makes undo steps | the rules; the snapshots |
 | Drawing | `morph()`, `this._put` | the working views drawn in place | `board/draw.test.js`; the focus regress cases |
@@ -50,13 +50,17 @@ text, against 0.9.1) and the jitter mode, under which every board suite must pas
 ### Honest results
 
 Every runner writes JUnit into `tests/.results/`, its screen output to `<suite>.log` and its exit code to
-`<suite>.exit`. `tests/lib/report.js` decides the result from those: a failure, a missing or empty report, or a
-non-zero exit fails the run, whatever the runner printed. `tests/selftest/` plants a failure of each kind (a
+`<suite>.exit` (the board layer, one Playwright run for all its suites, to `board.exit`, judged with all of them at
+once, so a quarantined check in one board suite doesn't fail the others). `tests/lib/report.js` decides the result
+from those: a failure, a missing or empty report, or a non-zero exit fails the run, whatever the runner printed. `tests/selftest/` plants a failure of each kind (a
 failing node test, a failing pytest, a failing browser check, a crash, a report that says pass with a failure in
 it, an exit 1 with an all-pass report) and checks the report catches every one. If a guard in `report.js` is
 broken, the self-test fails.
 
 ### Layer 3: the board on a fake Home Assistant
+
+A call the board reports as failed (its link warns of each) is an error in a board test, as a failed answer on the
+websocket is in layer 4, unless the test expects that call to fail (`page.allowFail`): `smoke.test.js` J3 proves it.
 
 `tests/board/fake-ha.js` is a Home Assistant small enough to run inside the test: the page gets a `hass` object
 whose calls go through one Playwright binding to the fake in Node, and the board's script is served straight from
@@ -102,7 +106,9 @@ parallel (`tests/board.config.js`, one worker per CPU).
 `ha/hass.log`), as CI does; `tests/e2e/hasetup.js` onboards it and logs in the test users. The suites run on
 Playwright Test (`tests/playwright.config.js`), one at a time on one worker, because they share the Home
 Assistant. `tests/e2e/fixtures.js` takes a snapshot of everything a test may change before each test and puts it
-back afterwards, even when the test fails (`snapshot()` and `restore()` in `tests/e2e/ha-api.js`;
+back afterwards, even when the test fails: UI automations and scripts and which are on, UI helpers and scenes,
+areas, the registries' labels, areas, names and icons of entities and devices, and the board's own data
+(`snapshot()` and `restore()` in `tests/e2e/ha-api.js`;
 `isolation.test.js` plants a failing test half way through a change and proves nothing is left). So no test may
 count on what an earlier one left. Setup details, screenshots and the size test are in `tests/e2e/README.md`.
 

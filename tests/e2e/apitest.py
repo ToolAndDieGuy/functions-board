@@ -1,5 +1,5 @@
 """End-to-end API test of the functions_board integration against a local HA."""
-import asyncio, json, os, secrets, sys, time
+import asyncio, json, os, secrets, time
 import aiohttp
 
 BASE = os.environ.get("FB_HA_URL") or "http://127.0.0.1:8123"

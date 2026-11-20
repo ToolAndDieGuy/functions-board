@@ -51,9 +51,24 @@ async function ws(...msgs) {
 }
 
 // What a browser test may change, as it is now: the configs of every UI-made automation and script, which
-// automations are on, and the labels, categories, board data and test dashboards.
+// automations are on, the helpers and scenes made in the UI, the areas, what the registries say of each entity and
+// device (labels, area, name, icon), and the labels, categories, board data and test dashboards.
+const HELPERS = ['input_boolean', 'input_number', 'input_select', 'input_text', 'input_datetime', 'input_button', 'counter', 'timer', 'schedule'];
+const ENT_FIELDS = ['labels', 'area_id', 'name', 'icon'], DEV_FIELDS = ['labels', 'area_id', 'name_by_user'];
+const fields = (x, keys) => Object.fromEntries(keys.map((k) => [k, Array.isArray(x[k]) ? [...x[k]].sort() : x[k] == null ? null : x[k]]));
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+// a helper domain this Home Assistant hasn't loaded has no list: none of it
+const helperIds = async () => Object.fromEntries(await Promise.all(HELPERS.map(async (d) => [d, ((await ws({ type: d + '/list' }).catch(() => [])) || []).map((h) => h.id)])));
 async function snapshot() {
   const states = await rest('GET', 'states');
+  const [ents, devs, areas] = await ws({ type: 'config/entity_registry/list' }, { type: 'config/device_registry/list' }, { type: 'config/area_registry/list' });
+  const reg = {
+    ents: Object.fromEntries(ents.map((e) => [e.entity_id, fields(e, ENT_FIELDS)])),
+    devs: Object.fromEntries(devs.map((d) => [d.id, fields(d, DEV_FIELDS)])),
+    areas: areas.map((a) => a.area_id),
+    helpers: await helperIds(),
+    scenes: states.filter((x) => x.entity_id.startsWith('scene.') && x.attributes.id).map((x) => x.attributes.id),
+  };
   const autos = {}, scripts = {}, on = {};
   for (const s of states) {
     if (s.entity_id.startsWith('automation.') && s.attributes.id) {
@@ -63,7 +78,7 @@ async function snapshot() {
       try { scripts[oid] = await rest('GET', 'config/script/config/' + encodeURIComponent(oid)); } catch (e) { /* not UI-editable */ }
     }
   }
-  return { autos, scripts, on };
+  return { autos, scripts, on, reg };
 }
 
 // Back to a snapshot: what a test added goes, what it changed or deleted comes back, the same automations on and
@@ -93,6 +108,23 @@ async function restore(snap) {
     let cur = null;
     try { cur = await rest('GET', 'config/script/config/' + encodeURIComponent(oid)); } catch (e) { /* deleted */ }
     if (JSON.stringify(cur) !== JSON.stringify(cfg)) { await rest('POST', 'config/script/config/' + encodeURIComponent(oid), cfg); done.push('restored script ' + oid); }
+  }
+  // helpers and scenes it made go; what it changed in the registries comes back; then the areas it made go
+  const R = snap.reg;
+  if (R) {
+    const nowHelpers = await helperIds();
+    for (const d of HELPERS) for (const id of nowHelpers[d]) if (!R.helpers[d].includes(id)) { await ws({ type: d + '/delete', [d + '_id']: id }).catch(() => {}); done.push(`deleted ${d} ${id}`); }
+    for (const x of states) if (x.entity_id.startsWith('scene.') && x.attributes.id && !R.scenes.includes(x.attributes.id)) { await rest('DELETE', 'config/scene/config/' + encodeURIComponent(x.attributes.id)).catch(() => {}); done.push('deleted scene ' + x.attributes.id); }
+    const [ents, devs] = await ws({ type: 'config/entity_registry/list' }, { type: 'config/device_registry/list' });
+    for (const e of ents) {
+      const was = R.ents[e.entity_id];
+      if (was && !same(fields(e, ENT_FIELDS), was)) { await ws(Object.assign({ type: 'config/entity_registry/update', entity_id: e.entity_id }, was)).catch(() => {}); done.push('put back the registry entry of ' + e.entity_id); }
+    }
+    for (const d of devs) {
+      const was = R.devs[d.id];
+      if (was && !same(fields(d, DEV_FIELDS), was)) { await ws(Object.assign({ type: 'config/device_registry/update', device_id: d.id }, was)).catch(() => {}); done.push('put back device ' + d.id); }
+    }
+    for (const a of await ws({ type: 'config/area_registry/list' })) if (!R.areas.includes(a.area_id)) { await ws({ type: 'config/area_registry/delete', area_id: a.area_id }).catch(() => {}); done.push('deleted area ' + a.area_id); }
   }
   // on and off as they were (an automation saved again comes back on)
   if (done.length) await new Promise((r) => setTimeout(r, 1500));

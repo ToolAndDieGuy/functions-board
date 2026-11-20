@@ -17,6 +17,9 @@ const { write, read } = require('./lib/junit');
 
 const root = path.join(__dirname, '..');
 const args = process.argv.slice(2), ha = args.includes('--ha'), pat = args.find((a) => !a.startsWith('--'));
+// an option it doesn't know is a mistake, not a reason to run every mutant (each run breaks the code for minutes)
+const odd = args.filter((a) => a.startsWith('--') && a !== '--ha');
+if (odd.length) { console.error(`mutants.js: no option ${odd.join(', ')} (usage: node tests/mutants.js [--ha] [pattern])`); process.exit(2); }
 const R = process.env.FB_RESULTS || path.join(__dirname, '.results');
 const work = path.join(R, 'mutants'), keep = path.join(work, 'originals');
 fs.mkdirSync(keep, { recursive: true });

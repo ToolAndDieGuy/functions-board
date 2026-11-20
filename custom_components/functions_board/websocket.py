@@ -30,6 +30,7 @@ from .versions import meta as version_meta
 
 if TYPE_CHECKING:
     from . import BoardData
+    from .versions import Versions
 
 ITEM_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 CLIENT = vol.All(str, vol.Length(max=MAX_CLIENT_LEN))
@@ -302,7 +303,7 @@ VTEXT = vol.All(str, vol.Length(max=MAX_VERSION_TEXT))
 VID = vol.All(str, vol.Match(r"^[0-9a-f]{32}$"))
 
 
-def _versions_or_error(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg_id: int):
+def _versions_or_error(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg_id: int) -> Versions | None:
     board = _board(hass)
     if board.versions is None:
         connection.send_error(msg_id, "not_ready", "Versions aren't loaded")

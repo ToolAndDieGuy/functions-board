@@ -17,6 +17,11 @@ Fixed: a board you'd left (another sidebar entry opened, a dashboard view left) 
 background, and could show a message, for up to a minute afterwards. Everything it waits on now stops when you
 leave and starts again when you're back.
 
+Fixed: a dashboard card you came back to, or a board left open while Home Assistant restarted or the connection
+dropped, didn't hear what changed meanwhile: an automation saved in the meantime kept its old arrows, and a
+function made or deleted on another board didn't show, until something else changed. It now reads it all again
+when it's back.
+
 When the board asks Home Assistant the same thing twice and the answers come back out of order, the older one no
 longer wins. Every call now has a time limit, and a call that fails is no longer dropped without a trace: the
 Diagnostics file lists what failed since the board opened (anonymised, only the kind of call and the error code).

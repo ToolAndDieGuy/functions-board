@@ -226,7 +226,10 @@ check('A4 MQTT: the board listens; a message is published only by the person\'s 
   const quiet = [...cls.matchAll(/this\._ha\.quiet\(/g)].map((m) => cls.slice(m.index, m.index + 400)).filter((t) => !/^this\._ha\.quiet\([\s\S]*?,\s*'[^']{12,}'/.test(t.split('\n')[0]));
   check('every quiet task gives its reason, in words', quiet.length === 0, quiet.map((t) => t.split('\n')[0].slice(0, 120)));
   const direct = [...cls.matchAll(/this\._hass\.(callWS|callApi|callService|connection)\b/g)].map((m) => m[1] + ' at line ' + at(m.index));
-  check('the board reaches Home Assistant\'s calls only through the link (its wiring in _init)', direct.length === 4 && /this\._ha = new Link\(\{\s*ws: \(m\) => this\._hass\.callWS\(m\),/.test(cls), direct);
+  // (all of them in the link's wiring: from "this._ha = new Link({" to its options)
+  const wire = cls.indexOf('this._ha = new Link({'), wireEnd = cls.indexOf('}, { clock: this._clock', wire);
+  const outside = [...cls.matchAll(/this\._hass\.(callWS|callApi|callService|connection)\b/g)].filter((m) => wire < 0 || m.index < wire || m.index > wireEnd).map((m) => m[1] + ' at line ' + at(m.index));
+  check('the board reaches Home Assistant\'s calls only through the link (its wiring in _init)', direct.length >= 4 && outside.length === 0 && /this\._ha = new Link\(\{\s*ws: \(m\) => this\._hass\.callWS\(m\),/.test(cls), { outside, direct });
   const empty = [...cls.matchAll(/catch \((e|err|x)\) \{\s*\}/g)].map((m) => 'line ' + at(m.index));
   check('no empty catch block in the board: one that ignores an error says why in a comment', empty.length === 0, empty);
 }
@@ -329,4 +332,12 @@ check('A4 MQTT: the board listens; a message is published only by the person\'s 
   const quick = ((runsh.match(/^for s in ([\w ]+); do want "\$s" && nodetest/m) || [])[1] || '').split(/\s+/).filter(Boolean);
   const qpat = (wf.match(/run: sh tests\/run\.sh --only '(selftest\|static[^']*)'/) || [])[1];
   check('every quick node suite runs in CI', quick.length >= 5 && !!qpat && quick.every((q) => new RegExp('^(' + qpat + ')$').test(q)), { quick, qpat });
+  // and a browser test file's suite is named after it (board-<x> in tests/board, <x> in tests/e2e): a fixture finds a
+  // test's own suite by its file (suiteOf in tests/e2e/lib.js), since one worker runs tests from several files
+  const named = [['board', 'board-'], ['e2e', '']].flatMap(([dir, pre]) => fs.readdirSync(path.join(root, 'tests', dir)).filter((f) => f.endsWith('.test.js')).map((f) => {
+    const src = fs.readFileSync(path.join(root, 'tests', dir, f), 'utf8'), m = src.match(/\bsuite\('([^']+)'\)/);
+    return { file: dir + '/' + f, want: pre + f.replace(/\.test\.js$/, ''), got: m ? m[1] : null };
+  }));
+  const misnamed = named.filter((x) => x.got !== x.want);
+  check('every browser suite is named after its test file', named.length >= 15 && misnamed.length === 0, misnamed);
 }
