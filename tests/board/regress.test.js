@@ -1130,46 +1130,69 @@ test('0.11.0 restoring a version never turns off or deletes what was added since
   check('0.11.0 restoring with what\'s shared: no errors', page.logs.length === 0, page.logs);
 });
 
-test('0.11.1 a scene shows what it sets as chosen: no arrows by default, arrows to what\'s on the board, or everything in a box of its own', async ({ browser, fake }) => {
+test('0.11.1 a scene shows what it sets as chosen: no arrows by default, arrows to what\'s on the board, or everything, listed beside it while it\'s selected', async ({ browser, fake }) => {
   const { page } = await imported(browser);
-  const SC = 'scene.fb_sleep', SET = 'set:scene.fb_sleep';
+  const SC = 'scene.fb_sleep', BIG = 'scene.fb_all_off';
   const members = ['light.bed_light', 'light.ceiling_lights', 'light.kitchen_lights', 'light.office_rgbw_lights', 'light.living_room_rgbww_lights', 'light.entrance_color_white_lights', 'cover.living_room_window', 'lock.front_door', 'switch.decorative_lights', 'fan.ceiling_fan', 'climate.hvac', 'media_player.bedroom'];
   await fake.setState(SC, '2026-11-20T03:00:00+00:00', { friendly_name: 'Sleep', entity_id: members });
-  await addPiece(page, fake, 'automation.fb_sleep_at_night', { alias: 'Morning: sleep scene at night', triggers: [{ trigger: 'time', at: '22:30:00' }], conditions: [], actions: [{ action: 'scene.turn_on', target: { entity_id: SC } }] });
+  // a scene that sets more than fifteen things nothing else on the board has
+  const many = [...fake.states.keys()].filter((k) => /^(light|switch|sensor|binary_sensor|cover|fan|lock|climate|input_boolean|input_number)\./.test(k) && !members.includes(k)).slice(0, 22);
+  await fake.setState(BIG, '2026-11-20T03:00:00+00:00', { friendly_name: 'All off', entity_id: many });
+  await addPiece(page, fake, 'automation.fb_sleep_at_night', { alias: 'Morning: sleep scene at night', triggers: [{ trigger: 'time', at: '22:30:00' }], conditions: [], actions: [{ action: 'scene.turn_on', target: { entity_id: [SC, BIG] } }] });
   const morning = await el(page, (b) => b._data.functions.find((l) => /morning/i.test(b._fnName(l))));
   await ws(page, { type: 'config/entity_registry/update', entity_id: 'automation.fb_sleep_at_night', labels: [morning] });
   await el(page, (b) => b._store.changed('reg'));
   await openFn(page, /morning/i);
   await until(() => el(page, (b, [sc, l]) => { if (b._model && b._model.nodes.get(sc)) return true; b._open(l, true); return null; }, [SC, morning]), 10000, 600);
-  const look = () => el(page, (b, [sc, set]) => {
-    const m = b._model, n = m.nodes.get(sc), box = m.nodes.get(set);
-    return { to: m.edges.filter((e) => e.from === sc).map((e) => e.to).sort(), box: box ? box.items.length : 0, mode: n && n.setMode, status: n ? b._status(n).text : '',
-      badge: (b.shadowRoot.querySelector(`.node[data-key="${sc}"] .wr.sets`) || {}).textContent || '',
-      rows: [...b.shadowRoot.querySelectorAll(`.node[data-key="${set}"] .srow`)].map((r) => r.querySelector('.sn').textContent + '=' + r.querySelector('.sv').textContent) };
-  }, [SC, SET]);
+  const look = (k = SC) => el(page, (b, sc) => {
+    const m = b._model, n = m.nodes.get(sc), pop = b.shadowRoot.querySelector(`.setpop[data-key="${sc}"]`), rows = pop && pop.querySelector('.srows');
+    return { to: m.edges.filter((e) => e.from === sc).map((e) => e.to).sort(), mode: n && n.setMode, status: n ? b._status(n).text : '', boxes: [...m.nodes.keys()].filter((x) => x.startsWith('set:')).length,
+      badge: (b.shadowRoot.querySelector(`.node[data-key="${sc}"] .wr.sets`) || {}).textContent || '', pop: !!pop,
+      rows: pop ? [...pop.querySelectorAll('.srow')].map((r) => r.querySelector('.sn').textContent + '=' + r.querySelector('.sv').textContent) : [],
+      scroll: rows ? { h: rows.clientHeight, sh: rows.scrollHeight, top: rows.scrollTop } : null };
+  }, k);
   const a = await look();
-  check('0.11.1 by default a scene draws no arrows to what it sets', a.to.length === 0 && a.box === 0 && a.mode === 'none', a);
+  check('0.11.1 by default a scene draws no arrows to what it sets', a.to.length === 0 && !a.pop && a.mode === 'none', a);
   check('0.11.1 ... and its box says how many it sets', a.badge === '⇉12' && /sets 12 entities/.test(a.status), a);
-  const pick = async (mode) => {
-    await fbq(page, `.node[data-key="${SC}"]`).click();
+  const pick = async (mode, k = SC) => {
+    await fbq(page, `.node[data-key="${k}"]`).click();
     await fbq(page, '.nodebar [data-act="sets"]').click();
     await fbq(page, `.menu [data-act="sets-mode"][data-mode="${mode}"]`).click();
-    await until(() => el(page, (b, [sc, md]) => { const n = b._model && b._model.nodes.get(sc); return !!(n && n.setMode === md); }, [SC, mode]), 8000);
+    await until(() => el(page, (b, [sc, md]) => { const n = b._model && b._model.nodes.get(sc); return !!(n && n.setMode === md); }, [k, mode]), 8000);
     await fake.idle(300);
   };
   await pick('board');
   const b1 = await look();
-  check('0.11.1 "Only to what\'s on the board": arrows to the members already there, no box', JSON.stringify(b1.to) === JSON.stringify(['cover.living_room_window', 'light.kitchen_lights']) && b1.box === 0 && !b1.badge, b1);
+  check('0.11.1 "Only to what\'s on the board": arrows to the members already there, and nothing listed', JSON.stringify(b1.to) === JSON.stringify(['cover.living_room_window', 'light.kitchen_lights']) && !b1.pop && !b1.badge, b1);
   await pick('all');
+  await page.keyboard.press('Escape');
+  await until(() => el(page, (b) => !b._sel || null), 4000);
+  const c0 = await look();
+  check('0.11.1 "Everything", not selected: a box like the rest, its arrows to what\'s on the board, nothing opened, no box added', JSON.stringify(c0.to) === JSON.stringify(['cover.living_room_window', 'light.kitchen_lights']) && !c0.pop && c0.boxes === 0, c0);
+  await fbq(page, `.node[data-key="${SC}"]`).click();
   const c = await look();
-  check('0.11.1 "Everything": those arrows, and the rest in a box of its own with an arrow to it', c.to.includes(SET) && c.to.includes('light.kitchen_lights') && c.box === 10, c);
-  check('0.11.1 ... the box lists each with its state', c.rows.length === 10 && c.rows.includes('Front Door=locked') && c.rows.includes('Bed Light=off'), c.rows);
+  check('0.11.1 "Everything", selected: the rest listed beside it, each with its state', c.pop && c.rows.length === 10 && c.rows.includes('Front Door=locked') && c.rows.includes('Bed Light=off'), c);
+  check('0.11.1 ... ten rows show whole, no scrolling', c.scroll && c.scroll.sh <= c.scroll.h + 1, c.scroll);
+  await page.keyboard.press('Escape');
+  await until(() => el(page, (b) => !b._sel || null), 4000);
+  check('0.11.1 ... and closes when it isn\'t selected', !(await look()).pop);
+  // more than fifteen: the list scrolls, and the wheel scrolls it, not the board
+  await pick('all', BIG);
+  const g = await look(BIG);
+  check('0.11.1 past fifteen rows the list scrolls', g.pop && g.rows.length > 15 && g.scroll.h <= 15 * 26 + 1 && g.scroll.sh > g.scroll.h, g.scroll);
+  const k0 = await el(page, (b) => b._view.k);
+  const box = await fbq(page, `.setpop[data-key="${BIG}"] .srows`).boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.wheel(0, 300);
+  await page.waitForTimeout(400);
+  const g2 = await look(BIG), k1 = await el(page, (b) => b._view.k);
+  check('0.11.1 ... the wheel over it scrolls the list and leaves the board\'s zoom alone', g2.scroll.top > 0 && k1 === k0, { top: g2.scroll.top, k0, k1 });
   await el(page, (b, l) => b._open(l), morning);
-  await until(() => el(page, (b, set) => !!(b._model && b._model.nodes.get(set)), SET), 8000);
-  check('0.11.1 the choice is kept with the function', (await look()).box === 10);
+  await until(() => el(page, (b, sc) => { const n = b._model && b._model.nodes.get(sc); return !!(n && n.setMode === 'all'); }, SC), 8000);
+  check('0.11.1 the choice is kept with the function', true);
   await fbq(page, '[data-act="undo"]').click();
-  await until(() => el(page, (b, sc) => { const n = b._model && b._model.nodes.get(sc); return !!(n && n.setMode === 'board'); }, SC), 8000);
-  check('0.11.1 Undo goes back to the choice before', (await look()).box === 0);
+  await until(() => el(page, (b, sc) => { const n = b._model && b._model.nodes.get(sc); return !!(n && n.setMode === 'none'); }, BIG), 8000);
+  check('0.11.1 Undo goes back to the choice before', (await look(BIG)).mode === 'none');
   check('0.11.1 what a scene sets: no errors', page.logs.length === 0, page.logs);
 });
 

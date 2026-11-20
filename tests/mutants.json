@@ -1118,31 +1118,13 @@
   "expect": "by default a scene draws no arrows"
  },
  {
-  "name": "scenes: what's on the board brings the box too",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "if (mode !== 'all' || !rest.length) return;",
-  "replace": "if (!rest.length) return;",
-  "suite": "board-regress",
-  "only": "0.11.1",
-  "expect": "Only to what's on the board"
- },
- {
-  "name": "scenes: no arrow to the box of the rest",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "        this._link(edges, k, key, r);\n",
-  "replace": "",
-  "suite": "board-regress",
-  "only": "0.11.1",
-  "expect": "Everything"
- },
- {
-  "name": "scenes: the box's rows show no state",
+  "name": "scenes: the list's rows show no state",
   "file": "custom_components/functions_board/frontend/functions-board.js",
   "find": "if (sv.textContent !== v) sv.textContent = v;",
   "replace": "void v;",
   "suite": "board-regress",
   "only": "0.11.1",
-  "expect": "lists each with its state"
+  "expect": "each with its state"
  },
  {
   "name": "scenes: no count on a scene drawing nothing",
@@ -1169,5 +1151,41 @@
   "replace": "if (false) out.sets =",
   "suite": "wiring",
   "expect": "choice of what it shows is kept"
+ },
+ {
+  "name": "scenes: what's on the board lists the rest too",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "        if (mode === 'all') n.setRest = list.filter((x) => !nodes.has(x));",
+  "replace": "        n.setRest = list.filter((x) => !nodes.has(x));",
+  "suite": "board-regress",
+  "only": "0.11.1",
+  "expect": "Only to what's on the board"
+ },
+ {
+  "name": "scenes: the list stays open when not selected",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "const m = this._model, n = m && this._sel ? m.nodes.get(this._sel) : null, el = n && this._els.get(n.key);\n      let pop",
+  "replace": "const m = this._model, n = m && (this._sel || [...m.nodes.keys()].find((k) => (m.nodes.get(k).setRest || []).length)) ? m.nodes.get(this._sel || [...m.nodes.keys()].find((k) => (m.nodes.get(k).setRest || []).length)) : null, el = n && this._els.get(n.key);\n      let pop",
+  "suite": "board-regress",
+  "only": "0.11.1",
+  "expect": "nothing opened|closes when it isn't selected"
+ },
+ {
+  "name": "scenes: the list never scrolls",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "style=\"max-height:${SET_ROWS * 26}px\"",
+  "replace": "style=\"\"",
+  "suite": "board-regress",
+  "only": "0.11.1",
+  "expect": "past fifteen rows the list scrolls"
+ },
+ {
+  "name": "scenes: the wheel over the list zooms the board",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "if (r && r.scrollHeight > r.clientHeight) e.stopPropagation();",
+  "replace": "void r;",
+  "suite": "board-regress",
+  "only": "0.11.1",
+  "expect": "the wheel over it scrolls the list"
  }
 ]

@@ -35,8 +35,9 @@
   const regSig = (d) => d.map((list) => (list || []).length + ':' + (list || []).reduce((m, x) => Math.max(m, x.modified_at || x.created_at || 0), 0)).join('|');  // a create that left the board (phone app), in sessionStorage
   const NW = 240, NH = 62, XW = 204, XH = 40, COLG = 100, ROWG = 24;
   // what a scene or group box shows of what it sets (0.11.1): nothing (the default), arrows to what's on the board for
-  // other reasons, or all of it (the rest in a box of its own); a set box's rows
-  const SET_MODES = ['none', 'board', 'all'], SET_HEAD = 30, SET_ROW = 26;
+  // other reasons, or all of it (those arrows, and the rest listed beside it while it's selected); rows shown before
+  // that list scrolls
+  const SET_MODES = ['none', 'board', 'all'], SET_ROWS = 15;
 
   /* ---------- the board's words (4.9) ---------- */
   // Every text the board shows is in STR (at the end of this section): one table per language, keyed like
@@ -2137,14 +2138,14 @@ button{font:inherit;color:inherit}
 .node.outside .ic{--mdc-icon-size:16px}
 .node.outside .name{font-weight:400;font-size:12px;color:var(--secondary-text-color)}
 .node.suggest{border-style:dashed;box-shadow:none;background:var(--primary-background-color)}
-.node.set{flex-direction:column;align-items:stretch;justify-content:flex-start;padding:0;border-style:dashed;background:color-mix(in srgb,var(--card-background-color) 80%,transparent)}
-.node.set .shead{display:flex;align-items:center;gap:8px;height:30px;padding:0 10px;flex:none}
-.node.set .shead .name{font-size:12.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.node.set .srows{display:flex;flex-direction:column;gap:2px;padding:0 6px 6px}
-.node.set .srow{display:flex;align-items:center;gap:8px;height:24px;padding:0 6px;border-radius:6px;border:1px solid var(--divider-color);background:var(--card-background-color);font-size:12px}
-.node.set .srow ha-icon{--mdc-icon-size:15px;color:var(--secondary-text-color);flex:none}
-.node.set .srow .sn{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.node.set .srow .sv{color:var(--secondary-text-color);white-space:nowrap;font-size:11px}
+.setpop{position:absolute;z-index:6;width:260px;display:flex;flex-direction:column;border:1px dashed var(--divider-color);border-radius:12px;background:var(--card-background-color);box-shadow:0 6px 18px rgba(0,0,0,.28)}
+.setpop .shead{display:flex;align-items:center;gap:8px;height:32px;padding:0 10px;flex:none}
+.setpop .shead .name{font-size:12.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.setpop .srows{display:flex;flex-direction:column;gap:2px;padding:0 6px 6px;overflow-y:auto;overscroll-behavior:contain}
+.setpop .srow{display:flex;align-items:center;gap:8px;min-height:24px;padding:0 6px;border-radius:6px;border:1px solid var(--divider-color);background:var(--primary-background-color);font-size:12px;flex:none}
+.setpop .srow ha-icon{--mdc-icon-size:15px;color:var(--secondary-text-color);flex:none}
+.setpop .srow .sn{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.setpop .srow .sv{color:var(--secondary-text-color);white-space:nowrap;font-size:11px}
 .node.off .ic{opacity:.55}.node.off .name{color:var(--secondary-text-color)}
 .node.warn{border-left:4px solid var(--fb-amber)}
 .node.err{border-left:4px solid var(--fb-red)}
@@ -6309,12 +6310,13 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     }
     // scenes and groups set (or read) their members (2.4). What a box shows of them is its own choice (0.11.1): no
     // arrows (the default: arrows to only some of a scene's lights read as if that were all it does), arrows to the
-    // members on the board for other reasons, or everything: those arrows, and the rest in one box of its own
+    // members on the board for other reasons, or everything: those arrows, and the rest listed beside the box while
+    // it's selected (a list, not boxes: opening and closing it moves nothing on the board)
     _wireGroups(nodes, edges, label) {
       const READ_ONLY = new Set(['binary_sensor', 'sensor', 'event', 'notify']), sets = (label && this._layout(label).sets) || {};
       [...nodes.keys()].forEach((k) => {
         const st = this._hass.states[k], n = nodes.get(k);
-        if (!st || k.includes(':') || n.kind === 'set') return;
+        if (!st || k.includes(':')) return;
         const dom = k.split('.')[0], reg = this._entMap.get(k);
         const isGroup = dom === 'scene' || dom === 'group' || (reg && reg.platform === 'group');
         const list = isGroup ? [...new Set(toList(st.attributes.entity_id).filter((x) => typeof x === 'string' && x !== k))] : [];
@@ -6325,12 +6327,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         if (mode === 'none') return;
         const r = READ_ONLY.has(dom) ? { role: 'source', svc: '' } : { role: 'action', svc: dom === 'scene' ? 'activate' : '' };
         list.forEach((x) => { if (nodes.has(x)) this._link(edges, k, x, r); });
-        const rest = list.filter((x) => !nodes.has(x));
-        if (mode !== 'all' || !rest.length) return;
-        const key = 'set:' + k;
-        nodes.set(key, { key, kind: 'set', domain: 'set', of: k, items: rest, name: T('set_box_name', { name: n.name }), icon: dom === 'scene' ? 'mdi:palette-outline' : 'mdi:google-circles-communities',
-          badges: new Set(), writers: 0, x: 0, y: 0, w: NW, h: SET_HEAD + rest.length * SET_ROW + 8 });
-        this._link(edges, k, key, r);
+        if (mode === 'all') n.setRest = list.filter((x) => !nodes.has(x));
       });
     }
     async _wireSources(nodes, edges) {
@@ -6545,7 +6542,6 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
 
     _nodeHTML(n) {
       if (n.kind === 'tool') return this._toolHTML(n);
-      if (n.kind === 'set') return this._setHTML(n);
       const b = [...n.badges].filter((x) => BADGES[x]).map((x) => `<ha-icon icon="${BADGES[x][0]}" title="${BADGES[x][1]}"></ha-icon>`).join('')
         + (n.writers > 1 ? `<span class="wr" title="${T('changed_by_automations_or_scripts', { writers: n.writers })}">&#9998;${n.writers}</span>` : '')
         + (n.prob ? `<ha-icon class="prob p-${n.prob}" icon="${n.prob === 'error' ? 'mdi:alert-circle' : 'mdi:alert'}" title="${esc(this._probTitle(n.key))}"></ha-icon>` : '')
@@ -6564,18 +6560,42 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         + (PROTO().ortho ? (() => { const V = this._vert(), at = V ? 'left' : 'top'; return portYs(V ? n.w : n.h).map((y) => `<span class="port pl" data-y="${y - 4}" style="${at}:${y - 4}px"></span><span class="port pr" data-y="${y - 4}" style="${at}:${y - 4}px"></span>`).join(''); })() : '') + '</div>';
     }
 
-    // a scene's or group's members that aren't on the board for other reasons, as tiles in one box (0.11.1)
-    _setHTML(n) {
-      const rows = n.items.map((e) => {
-        const st = this._hass.states[e], reg = this._entMap.get(e), dom = e.split('.')[0];
-        const name = (st && st.attributes.friendly_name) || (reg && (reg.name || reg.original_name)) || e, icon = (reg && reg.icon) || (st && st.attributes.icon) || ICONS[dom] || 'mdi:shape-outline';
-        return `<div class="srow" data-e="${esc(e)}" title="${esc(name + ' · ' + e)}"><ha-icon icon="${esc(icon)}"></ha-icon><span class="sn">${esc(name)}</span><span class="sv"></span></div>`;
-      }).join('');
-      const V = this._vert(), at = V ? 'left' : 'top';
-      return `<div class="node set" data-key="${esc(n.key)}" role="button" tabindex="-1" style="left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${n.h}px">`
-        + `<div class="shead"><span class="tag">${esc(this._tagOf(n.key))}</span><span class="name">${esc(n.name)}</span></div><div class="srows">${rows}</div>`
-        + (PROTO().ortho ? portYs(V ? n.w : n.h).map((y) => `<span class="port pl" data-y="${y - 4}" style="${at}:${y - 4}px"></span><span class="port pr" data-y="${y - 4}" style="${at}:${y - 4}px"></span>`).join('') : '')
-        + '</div>';
+    // what a selected scene or group set to show everything sets beyond the board: a list beside its box, as many rows
+    // as SET_ROWS before it scrolls (the wheel scrolls the list, not the board); gone when it isn't selected (0.11.1)
+    _renderSetPop() {
+      const m = this._model, n = m && this._sel ? m.nodes.get(this._sel) : null, el = n && this._els.get(n.key);
+      let pop = this._$.world.querySelector('.setpop');
+      if (!n || !el || !n.setRest || !n.setRest.length) { if (pop) pop.remove(); return; }
+      if (!pop || pop.dataset.key !== n.key) {
+        if (pop) pop.remove();
+        pop = document.createElement('div');
+        pop.className = 'setpop';
+        pop.dataset.key = n.key;
+        pop.setAttribute('role', 'region');
+        pop.setAttribute('aria-label', T('set_box_name', { name: n.name }));
+        // the wheel scrolls a list that scrolls; a press here isn't a press on the board
+        pop.addEventListener('wheel', (e) => { const r = pop.querySelector('.srows'); if (r && r.scrollHeight > r.clientHeight) e.stopPropagation(); });
+        pop.addEventListener('pointerdown', (e) => e.stopPropagation());
+        const rows = n.setRest.map((e) => {
+          const st = this._hass.states[e], reg = this._entMap.get(e), dom = e.split('.')[0];
+          const name = (st && st.attributes.friendly_name) || (reg && (reg.name || reg.original_name)) || e, icon = (reg && reg.icon) || (st && st.attributes.icon) || ICONS[dom] || 'mdi:shape-outline';
+          return `<div class="srow" data-e="${esc(e)}" title="${esc(name + ' · ' + e)}"><ha-icon icon="${esc(icon)}"></ha-icon><span class="sn">${esc(name)}</span><span class="sv"></span></div>`;
+        }).join('');
+        pop.innerHTML = `<div class="shead"><span class="tag">${esc(P('n_more', n.setRest.length))}</span><span class="name">${esc(T('set_box_name', { name: n.name }))}</span></div>`
+          + `<div class="srows" tabindex="0" style="max-height:${SET_ROWS * 26}px">${rows}</div>`;
+        this._$.world.appendChild(pop);
+      }
+      // beside the box: right of it, or under it top to bottom
+      const V = this._vert();
+      pop.style.left = (el.offsetLeft + (V ? 0 : el.offsetWidth + 18)) + 'px';
+      pop.style.top = (el.offsetTop + (V ? el.offsetHeight + 18 : 0)) + 'px';
+      this._setPopStates(pop);
+    }
+    _setPopStates(pop) {
+      (pop || this._$.world.querySelector('.setpop') || { querySelectorAll: () => [] }).querySelectorAll('.srow').forEach((r) => {
+        const so = this._stOf(r.dataset.e), v = so ? this._fmtState(r.dataset.e, so.state) : T('not_found_2'), sv = r.querySelector('.sv');
+        if (sv.textContent !== v) sv.textContent = v;
+      });
     }
     _renderFrames() {
       if (!this._model) return;
@@ -6594,7 +6614,6 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
 
     _status(n) {
       if (n.kind === 'tool') return { text: n.tool.type === 'inject' ? (this._full() ? T('test_button') : T('test_button_full_manager_only')) : T('monitor') };
-      if (n.kind === 'set') return { text: '' };
       if (n.kind === 'nodered') {
         const tabLabel = n.nr.tabLabel, count = P('n_nodes', n.nr.size);
         return n.nr.off ? { text: T('node_red_off', { tabLabel, count }), off: true } : { text: T('node_red_3', { tabLabel, count }) };
@@ -6659,6 +6678,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     }
 
     _refreshStates() {
+      this._setPopStates();
       if (!this._model || !this._els) return;
       const m = this._model;
       // a box turned off, gone or unavailable since the board was built changes its problems: build it again
@@ -6667,7 +6687,6 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         const n = m.nodes.get(k);
         if (!n) return;
         const s = this._status(n);
-        if (n.kind === 'set') el.querySelectorAll('.srow').forEach((r) => { const so = this._stOf(r.dataset.e), v = so ? this._fmtState(r.dataset.e, so.state) : T('not_found_2'), sv = r.querySelector('.sv'); if (sv.textContent !== v) sv.textContent = v; });
         const sub = el.querySelector('.sub');
         if (sub && sub.textContent !== s.text) sub.textContent = s.text;
         const tip = n.name + (s.text ? ' — ' + s.text : '') + (n.kind === 'suggest' ? T('related_not_in_this_function_3') : n.kind === 'outside' ? T('outside_this_function_2') : '');
@@ -6900,6 +6919,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       });
       this._drawEdges();
       this._renderNodebar();
+      this._renderSetPop();
     }
     _hover(key) {
       if (this._hov === key) return;
@@ -8688,7 +8708,6 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (key.startsWith('mqtt:')) return T('mqtt');
       if (key.startsWith('nact:')) return T('button');
       if (key.startsWith('nr:')) return T('node_red');
-      if (key.startsWith('set:')) return P('n_more', ((this._model && this._model.nodes.get(key)) || { items: [] }).items.length);
       if (TGT_RE.test(key)) return TYPE[key.slice(0, key.indexOf(':'))];
       const s = this._scopeOf(key);
       if (s === 'automation') return T('automation');
