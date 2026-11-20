@@ -909,4 +909,123 @@ test('0.10.0 an automation in the registry that isn\'t loaded: no config asked, 
   check('0.10.0 not loaded: no errors', page.logs.length === 0, page.logs);
 });
 
+// an automation or script added to the fake Home Assistant, as its editor would make it
+async function addPiece(page, fake, id, config) {
+  const [dom, oid] = id.split('.'), uid = 'fb' + oid;
+  fake.entities.set(id, { entity_id: id, id: 'fbid' + oid, platform: dom, unique_id: dom === 'automation' ? uid : oid, labels: [], area_id: null, device_id: null, disabled_by: null, hidden_by: null, name: null, original_name: config.alias, icon: null, categories: {}, config_entry_id: null, has_entity_name: false, entity_category: null, options: {} });
+  if (dom === 'automation') { fake.autos[uid] = Object.assign({ id: uid }, config); await fake.setState(id, 'on', { friendly_name: config.alias, id: uid, last_triggered: null, mode: 'single', current: 0 }); }
+  else { fake.scripts[oid] = config; await fake.setState(id, 'off', { friendly_name: config.alias, last_triggered: null, mode: 'single', current: 0 }); }
+  await el(page, (b) => b._store.changed('reg'));
+}
+const rows = (page) => el(page, (b) => b._mgr.cands.map((c) => ({ name: c.name, key: c.key, members: c.members, parts: c.parts.length, offers: c.offers.length, fn: c.fn })));
+const rowWith = async (page, id) => (await rows(page)).find((c) => c.members.includes(id));
+const card = (page, r) => fbq(page, `.modal .cand[data-key="${r.key}"]`);
+async function openImport(page) {
+  await fbq(page, '.empty.wel [data-act="import"]').click();
+  await fbq(page, '.modal [data-act="mgr-import-one"]').first().waitFor({ timeout: 20000 });
+}
+
+test('0.11.0 the import offers to merge groups that may be one system, says why, and separates them again', async ({ browser, fake }) => {
+  const { page } = await session(browser, 'owner');
+  // a bedtime system that also switches the garage's left-open alert on and off
+  await addPiece(page, fake, 'automation.fb_bedtime_lights_out', { alias: 'Bedtime: lights out', triggers: [{ trigger: 'time', at: '22:30:00' }], conditions: [], actions: [
+    { action: 'light.turn_off', target: { entity_id: 'light.bed_light' } }, { action: 'lock.lock', target: { entity_id: 'lock.front_door' } },
+    { action: 'automation.turn_on', target: { entity_id: 'automation.garage_left_open' } }] });
+  await addPiece(page, fake, 'automation.fb_bedtime_lamp', { alias: 'Bedtime: bedside glow', triggers: [{ trigger: 'state', entity_id: 'light.bed_light', to: 'off' }], conditions: [],
+    actions: [{ action: 'light.turn_on', target: { entity_id: 'light.ceiling_lights' }, data: { brightness_pct: 5 } }] });
+  await openImport(page);
+  const bed = await rowWith(page, 'automation.fb_bedtime_lights_out');
+  check('0.11.0 Bedtime is a group of its own', bed && bed.members.includes('automation.fb_bedtime_lamp') && !bed.members.includes('automation.garage_left_open'), bed);
+  const offer = bed && (await card(page, bed).locator('.coffer').count()) ? await card(page, bed).locator('.coffer').innerText() : '';
+  check('0.11.0 it offers to merge with the garage, and says why', /Merge with Garage/.test(offer) && /Bedtime: lights out turns Garage: left open on and off/.test(offer), offer);
+  if (!offer) return;
+  await card(page, bed).locator('[data-act="mgr-merge"]').click();
+  const m = await rowWith(page, 'automation.fb_bedtime_lights_out');
+  check('0.11.0 merged: one group with both, named after both', m.parts === 2 && m.members.includes('automation.garage_left_open') && m.name === 'Garage & Bedtime', m);
+  const made = (await card(page, m).locator('.cmade').count()) ? await card(page, m).locator('.cmade').innerText() : '';
+  check('0.11.0 merged: it says what it\'s made from', /Made from/.test(made) && /Garage/.test(made) && /Bedtime/.test(made) && /Separate/.test(made), made);
+  check('0.11.0 merged: focus is on the merged group', await el(page, (b, k) => { const a = b.shadowRoot.activeElement; return !!(a && a.closest(`.cand[data-key="${k}"]`)); }, m.key));
+  if (!/Separate/.test(made)) return;
+  await card(page, m).locator('[data-act="mgr-split"]').click();
+  const apart = (await rows(page)).filter((c) => c.members.includes('automation.fb_bedtime_lights_out') || c.members.includes('automation.garage_left_open'));
+  check('0.11.0 Separate: the two groups again', apart.length === 2 && apart.every((c) => c.parts === 1), apart);
+  // Merge into…: any other group
+  const b2 = await rowWith(page, 'automation.fb_bedtime_lights_out');
+  await card(page, b2).locator('[data-act="mgr-merge-menu"]').click();
+  const items = await page.locator('functions-board .menu [data-act="mgr-merge-to"]').allInnerTexts();
+  check('0.11.0 Merge into lists the other groups', items.some((t) => /Morning/.test(t)) && items.some((t) => /Garage/.test(t)) && !items.some((t) => /Bedtime/.test(t)), items);
+  await page.locator('functions-board .menu [data-act="mgr-merge-to"]', { hasText: 'Morning' }).click();
+  const bm = await rowWith(page, 'automation.fb_bedtime_lights_out');
+  check('0.11.0 Merge into: Bedtime and Morning are one group', bm.parts === 2 && bm.members.includes('automation.morning_lights_and_blinds'), bm);
+  if (bm.parts !== 2) return;
+  await card(page, bm).locator('[data-act="mgr-split"]').click();
+  // merged with the garage again, renamed, ticked kept through it, imported as one function
+  const b3 = await rowWith(page, 'automation.fb_bedtime_lights_out');
+  await card(page, b3).locator('[data-act="mgr-expand"]').click();
+  await card(page, b3).locator('input[data-id="automation.fb_bedtime_lamp"]').uncheck();
+  await card(page, b3).locator('[data-act="mgr-merge"]').click();
+  const m2 = await rowWith(page, 'automation.fb_bedtime_lights_out');
+  check('0.11.0 a piece unticked stays unticked when its group is merged', !(await card(page, m2).locator('input[data-id="automation.fb_bedtime_lamp"]').isChecked()));
+  await card(page, m2).locator('input.cname').fill('Evening');
+  await card(page, m2).locator('[data-act="mgr-import-one"]').click();
+  await until(() => el(page, (b) => !b._mgr.busy && b._data.functions.some((l) => b._fnName(l) === 'Evening')), 15000);
+  await fake.idle(400);
+  const lid = await el(page, (b) => b._data.functions.find((l) => b._fnName(l) === 'Evening'));
+  check('0.11.0 the merged group is one function with both systems in it', !!lid && await hasLabel(page, 'automation.fb_bedtime_lights_out', lid) && await hasLabel(page, 'automation.garage_left_open', lid), lid);
+  check('0.11.0 ... without the piece left unticked', !!lid && !(await hasLabel(page, 'automation.fb_bedtime_lamp', lid)));
+  const done = await rowWith(page, 'automation.fb_bedtime_lights_out');
+  check('0.11.0 imported: it can\'t be separated any more', done && done.fn === lid && !(await card(page, done).locator('[data-act="mgr-split"]').count()), done);
+  check('0.11.0 merging: no errors', page.logs.length === 0, page.logs);
+});
+
+test('0.11.0 a category over two groups is an offer to merge them; one over a single group still brings in what\'s filed there', async ({ browser, fake }) => {
+  const { page } = await session(browser, 'owner');
+  fake.categories.automation = [{ category_id: 'CATDAILY', name: 'Daily', icon: 'mdi:calendar' }, { category_id: 'CATUPKEEP', name: 'Upkeep', icon: 'mdi:wrench' }];
+  const file = (id, cid) => { fake.entities.get(id).categories = { automation: cid }; };
+  file('automation.garage_left_open', 'CATDAILY'); file('automation.morning_lights_and_blinds', 'CATDAILY');
+  ['automation.furnace_filter_count_down_daily', 'automation.furnace_filter_due_alert', 'automation.backyard_motion_light'].forEach((id) => file(id, 'CATUPKEEP'));
+  await el(page, (b) => b._store.changed('reg'));
+  await openImport(page);
+  const g = await rowWith(page, 'automation.garage_left_open');
+  const offer = g && (await card(page, g).locator('.coffer').count()) ? await card(page, g).locator('.coffer').innerText() : '';
+  check('0.11.0 the garage and the morning are filed under one category: an offer to merge them', /Merge with Morning/.test(offer) && /Filed under Daily/.test(offer) && !g.members.includes('automation.morning_lights_and_blinds'), { offer, g });
+  if (!offer) return;
+  await card(page, g).locator('[data-act="mgr-merge"]').click();
+  const m = await rowWith(page, 'automation.garage_left_open');
+  check('0.11.0 merged by their category, it\'s named after it', m && m.parts === 2 && m.name === 'Daily' && m.members.includes('automation.morning_lights_and_blinds'), m);
+  const u = await rowWith(page, 'automation.furnace_filter_due_alert');
+  const src = u ? await card(page, u).locator('.csrc').last().innerText() : '';
+  check('0.11.0 a category over one group brings in what else is filed there, named after it', u && u.name === 'Upkeep' && u.members.includes('automation.backyard_motion_light') && /category \+ wiring/.test(src), { u, src });
+  check('0.11.0 categories: no errors', page.logs.length === 0, page.logs);
+});
+
+test('0.11.0 the import reads Node-RED flows while the board does: a flow\'s scripts are one group, the flow listed; a disabled tab is marked on its box', async ({ browser, fake }) => {
+  const { page } = await session(browser, 'owner');
+  await addPiece(page, fake, 'script.fb_pond_fill_on', { alias: 'Pond fill on', sequence: [{ action: 'switch.turn_on', target: { entity_id: 'switch.decorative_lights' } }] });
+  await addPiece(page, fake, 'script.fb_pond_fill_off', { alias: 'Pond fill off', sequence: [{ action: 'switch.turn_off', target: { entity_id: 'switch.decorative_lights' } }] });
+  const nrGroup = { id: 't1:a1', tab: 't1', tabLabel: 'Pond flows', name: 'Pond level', size: 5, trig: ['binary_sensor.basement_floor_wet'], read: [], change: [], calls: ['script.fb_pond_fill_on', 'script.fb_pond_fill_off'], events: [], off: true };
+  await openImport(page);
+  check('0.11.0 Node-RED off: the scripts no flow of Home Assistant\'s runs are in no group', !(await rowWith(page, 'script.fb_pond_fill_on')));
+  // the board reads Node-RED (its switch on), and a flow runs both scripts
+  await el(page, (b, g) => { b._data.ui.nodered = true; b._nrCache = { at: Date.now() + 3600000, base: '/api/hassio_ingress/abc/', slug: 'abc_nodered', groups: [g] }; }, nrGroup);
+  await fbq(page, '.modal [data-act="mgr-rescan"]').click();
+  await fbq(page, '.modal [data-act="mgr-import-one"]').first().waitFor({ timeout: 20000 });
+  const r = await rowWith(page, 'script.fb_pond_fill_on');
+  check('0.11.0 Node-RED on: the two scripts the flow runs are one group', r && r.members.includes('script.fb_pond_fill_off') && !r.members.some((x) => x.startsWith('nr:')), r);
+  if (!r) return;
+  await card(page, r).locator('[data-act="mgr-expand"]').click();
+  const flow = (await card(page, r).locator('.mrow2').count()) ? await card(page, r).locator('.mrow2').innerText() : '';
+  check('0.11.0 the flow is listed with the group, and its tab is disabled', /Pond level/.test(flow) && /Pond flows, which is disabled/.test(flow), flow);
+  await card(page, r).locator('[data-act="mgr-import-one"]').click();
+  await until(() => el(page, (b) => !b._mgr.busy && b._data.functions.length >= 1), 15000);
+  await fbq(page, '.modal [data-act="modal-cancel"]').first().click();
+  await fake.idle(400);
+  const box = await until(() => el(page, (b) => {
+    const n = b._model && b._model.nodes.get('nr:t1:a1'), d = b.shadowRoot.querySelector('.node[data-key="nr:t1:a1"]');
+    return n && d ? { text: b._status(n).text, off: d.classList.contains('off') } : null;
+  }), 8000);
+  check('0.11.0 the flow\'s box says its tab is disabled, and is drawn off', box && /its tab is disabled/.test(box.text) && box.off, box);
+  check('0.11.0 Node-RED in the import: no errors', page.logs.length === 0, page.logs);
+});
+
 pwTest.afterAll(() => done());

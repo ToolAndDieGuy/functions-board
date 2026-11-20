@@ -38,7 +38,7 @@ The two get along. If you use Node-RED as well, the board can show your flows ne
 - **Laid out for you:** arrows are coloured by what they do (orange sets something off, blue changes it, aqua runs a script) and run square-cornered from left to right in their own lanes, never alongside each other, from three points on each side of a box. Lines that share a point branch off it at a dot; point at a box (or select it) and its arrows are traced end to end through the shared line while the others fade; lines that cross without meeting hop over each other; arrows running back carry arrowheads along the way. A function flows left to right, or top to bottom if you choose. Boxes line up with what they connect to, separate chains are packed together, and **Auto-arrange** lays out a function again at any time, and runs on every import; **Keep in place** in a box's bar leaves that box where you put it, and Undo puts your own arrangement back. **Arrows → Style → Curved arrows** brings back curved arrows.
 - **Click a box** to light up its chain; the **Arrows** menu chooses how far (upstream, downstream, both) and which kinds of arrow show. **Edit** in a box's bar, or a double-click, opens it in Home Assistant's own editor without leaving the board: an automation's or script's editor, a helper's settings, a scene's editor.
 - **Live:** states on every box, runs pulse as they happen, last-run failures and unavailable entities are flagged, and **Runs** lists every run in the function; picking one lights the arrows it actually used.
-- **Import** finds the functions already in your setup. It traces every automation and script and groups the ones that trigger, change or call each other, merged with the categories you already use, and shows what is left over. Import them all or one at a time, start from labels you already have, or pick items by hand.
+- **Import** finds the functions already in your setup. It traces every automation and script (and your Node-RED flows, while the board reads them) and groups the ones that trigger, change or call each other, start from the same device, or are named as one system, with the categories you already use, and shows what is left over. Where two groups may be one system it offers to merge them and says why; a merged group shows what it's made from and can be separated again, so you decide where one system ends. Import them all or one at a time, start from labels you already have, or pick items by hand.
 - **Build from the board:** new automations, scripts and helpers open in Home Assistant's editors and land in the function by themselves.
 - **Frames and notes** to annotate a system, **Pause** to turn a function's automations off while you work on it, **Undo** for everything the board changes, and **Find** for anything in any function.
 - **Developer tools:**
@@ -234,7 +234,7 @@ Copy `custom_components/functions_board` into the `custom_components` folder of 
 
 ### First run
 
-The page opens on a short welcome. **Import from my setup** lists the systems it found; open a group to untick pieces that don't belong, rename it, and import it. Or start a **New function** and build it from the board.
+The page opens on a short welcome. **Import from my setup** lists the systems it found; open a group to untick pieces that don't belong, rename it, merge it with another (the import offers where two may be one system, and says why) or separate it again, and import it. Or start a **New function** and build it from the board.
 
 ## As a dashboard card
 

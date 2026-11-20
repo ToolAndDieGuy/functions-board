@@ -393,7 +393,7 @@ test('Phase 2: area targets, purpose-specific triggers, helper inputs, scenes', 
   await ctx.close();
 });
 
-test('3.2 leftovers and coverage; 3.3 device chains (off by default)', async ({ browser }) => {
+test('3.2 leftovers and coverage; 3.3 device chains (0.11.0: a name that says the system joins them)', async ({ browser }) => {
   const { ctx, page } = await session(browser, 'owner');
   await page.goto(BASE + '/'); await ready(page); await reset(page);
   await page.goto(BASE + '/functions');
@@ -403,15 +403,11 @@ test('3.2 leftovers and coverage; 3.3 device chains (off by default)', async ({ 
   check('3.2 coverage line', /\d+ of \d+ automations and \d+ of \d+ scripts are in a group or a function/.test(intro), intro);
   await fbq(page, '.modal [data-act="mgr-left"]').click();
   const left = await page.locator('functions-board .modal .lrow2').allInnerTexts();
-  check('3.2 the lone automations are listed', left.some((t) => /Backyard motion light/.test(t)) && left.some((t) => /kitchen speaker/i.test(t)), left);
+  check('3.2 the lone automation is listed (the kitchen speaker is Morning\'s, by its name, since 0.11.0)', left.some((t) => /Backyard motion light/.test(t)) && !left.some((t) => /kitchen speaker/i.test(t)), left);
+  // 0.11.0: no device checkbox; "Morning: …" says both are one system (a device alone is an offer to merge, on the fake)
   const g0 = await el(page, (b) => b._mgr.cands.find((c) => c.members.includes('automation.morning_lights_and_blinds')).members);
-  check('3.3 off by default: the speaker automation is not in the Morning group', !g0.includes('automation.morning_kitchen_speaker_on_with_the_lights'), g0);
-  await fbq(page, '.modal [data-mdev]').check();
-  await page.waitForTimeout(300);
-  const g1 = await el(page, (b) => b._mgr.cands.find((c) => c.members.includes('automation.morning_lights_and_blinds')).members);
-  check('3.3 on: the light joins both automations into one Morning group', g1.includes('automation.morning_kitchen_speaker_on_with_the_lights'), g1);
-  await fbq(page, '.modal [data-mdev]').uncheck();
-  await page.waitForTimeout(300);
+  check('3.3 the speaker automation is in the Morning group: both names say Morning', g0.includes('automation.morning_kitchen_speaker_on_with_the_lights'), g0);
+  check('3.3 no device checkbox any more', !(await fbq(page, '.modal [data-mdev]').count()));
   // import everything, then add the blueprint automation from the leftovers in two clicks
   await fbq(page, '.modal [data-act="mgr-selall"]').click();
   await fbq(page, '.modal [data-act="mgr-import-sel"]').click();

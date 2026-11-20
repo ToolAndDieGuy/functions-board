@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased
+
+Import finds more of the systems you've built, and lets you decide where one ends and the next begins.
+
+It now groups more than automations that share a helper or a script. It also groups automations that start from
+the same device (a garage door's sensors, a generator, a switch's buttons), with the few that operate it, and
+automations whose names say they belong together ("Generator: …", "Mailbox opened", "Mailbox emptied"). An
+automation that only turns other automations on and off joins them, and a scene several automations turn on
+links them. A helper or script shared by systems with different names joins only the one named like it, as one
+filed under different categories already did.
+
+When two groups may be one system, the import offers to merge them and says why: one turns the other's
+automations on and off, uses or checks one of its helpers, changes what it starts from, both start from the
+same device, or both are filed under one category. A merged group lists the groups it's made from and can be
+separated again, and **Merge into** joins any two. Nothing is merged unless you choose it, so a bedtime button
+that also arms the night alerts can be imported with them, or on its own. The "Also join automations that meet
+at a device" checkbox is gone: that's now an offer to merge.
+
+While the board reads Node-RED, the import also reads your flows: the scripts a flow runs and the helpers it uses
+are grouped with it, and a flow's tabs named alike go together. The flow is listed with its group; it can't
+carry a label, so it isn't added to the function.
+
+A Node-RED flow on a disabled tab now shows as disabled on its box, and a disabled node no longer counts.
+
 ## 0.10.0 (2026-11-19)
 
 The board's insides are rebuilt. Nothing it shows or does is meant to look different, and your saved functions,

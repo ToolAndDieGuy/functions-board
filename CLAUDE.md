@@ -15,7 +15,7 @@ function out in a sandbox. Published through HACS. Read this before changing any
   (~10,000 lines, no build step, no dependencies). Top to bottom:
   - the **library section** (pure functions, testable in Node without a browser): the clock (`class Clock`), the link
     to Home Assistant (`class Link`), the store (`class Store`), config analysis (`analyze`,
-    `condText`), layout (`layeredOnce`, `layered`), arrow routing (`arrowGeo`, `orthoAll`, `laneSpread`,
+    `condText`), the import's grouping (`findFunctions`), layout (`layeredOnce`, `layered`), arrow routing (`arrowGeo`, `orthoAll`, `laneSpread`,
     `untangle`, `busDots`, `hopsOf`), the **sandbox engine** (`class Sandbox`, `sbxEffect`, `sbxRewrite`,
     `SBX_PRELUDE`, `SBX_ETRIG`), the English text table (`T()`, `P()` for plurals);
   - then `class FunctionsBoard extends HTMLElement`, in parts (`PARTS`): core (start and stop, data and sync, the
@@ -74,6 +74,7 @@ returns everything the library section defines.
 |---|---|
 | `tests/static.test.js` | rules on the board's source: every `T('key')` has English text and every text is used (keys must be literal, not built at runtime); runtime CSS classes only in scoped rules; no ingress sessions or cookies |
 | `tests/wiring.test.js` | `analyze()` on many automation and script shapes: which arrows, roles, loops |
+| `tests/import.test.js` | `findFunctions()` on small invented homes: helpers and hubs, name and category fences, an automation switching others, Node-RED flows, devices, actuators and buttons, names, checks; the ties it offers; `nrGroups` and disabled tabs and nodes |
 | `tests/problems.test.js` | `findProblems()`: missing, not-loaded, disabled and unavailable entities, devices, areas, actions that don't exist, the function's own pieces |
 | `tests/sandbox.test.js` | the sandbox engine with a stand-in template renderer: triggers, conditions, actions, modes, waits, MQTT, per-entity triggers, `sbxRewrite` |
 | `tests/clock.test.js` | `class Clock` on a pretend clock: `after` (the last call wins), `once` (the first wins), `every`, `frame`, `deadline`, `sleep`, `pause`, and `stop()` leaving nothing set |
@@ -180,6 +181,15 @@ returns everything the library section defines.
   `as_function` stand-ins (`SBX_PRELUDE`) that read the sandbox's states (`fb_s`) and clock (`fb_t`).
   `SBX_ETRIG` is generated from Home Assistant's own per-entity trigger classes: rerun
   `venv314/bin/python scripts/gen_sandbox_triggers.py` after moving to a newer Home Assistant.
+- **Import** (0.11.0): `findFunctions(roles, info)` in the library section makes **parts** (what belongs together on
+  any reading: helpers, scripts and scenes that link pieces, with category and name fences; an automation that only
+  switches others; Node-RED groups, a tab's and tabs named alike; pieces starting from one device, actuator or
+  switch's buttons; a family the name says; first-word pairs; helpers only checked) and **ties** between parts
+  (switches, uses, reads, starts, device), never merging them. `_cluster` adds the functions already made and the
+  categories (one over several parts is an offer too) and returns `{ parts, offers }`; the manager's `_mgrCands()`
+  makes the rows from the parts and the person's `_mgr.joins` (an offer taken, or Merge into…), keeping ticks
+  (`_mgr.drop`), names and selection with their rows. Node-RED groups are read only while the board's switch is on.
+  Its tests use small invented homes: nothing from a real home goes in the repo.
 - **Problems** (`findProblems()` in the library section, 0.9.0): from `analyze()`'s refs and the registries;
   `_buildModel` marks boxes (`n.prob`) and arrows (`e.prob`) and keeps `model.problems`; `_scanProblems()` counts
   every function for the list in the background (configs come from the cache), the open one from its model.
