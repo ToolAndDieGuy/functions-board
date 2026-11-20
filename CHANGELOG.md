@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.10.0 (2026-11-19)
 
 The board's insides are rebuilt. Nothing it shows or does is meant to look different, and your saved functions,
 layouts and versions are kept as they are (0.9.2 reads anything this version saves). What changes is how sure it
