@@ -1028,4 +1028,60 @@ test('0.11.0 the import reads Node-RED flows while the board does: a flow\'s scr
   check('0.11.0 Node-RED in the import: no errors', page.logs.length === 0, page.logs);
 });
 
+test('0.11.0 deleting a function and its items never deletes what\'s shared: it stays, in its other functions', async ({ browser, fake }) => {
+  fake.store.mode = 'full';
+  const { page } = await imported(browser);
+  const furnace = await openFn(page, /furnace/i), garage = await el(page, (b) => b._data.functions.find((l) => /garage/i.test(b._fnName(l))));
+  // in the furnace function: its due alert is also in the garage function; its reset script is run by an automation
+  // outside it; a third automation of it is read by a template helper outside it; its count-down is its own
+  const DUE = 'automation.furnace_filter_due_alert', DOWN = 'automation.furnace_filter_count_down_daily', RESET = 'script.filter_reset', CHECK = 'automation.fb_filter_monthly_check';
+  const lab = async (id, labels) => ws(page, { type: 'config/entity_registry/update', entity_id: id, labels });
+  await lab(DUE, [furnace, garage]);
+  await addPiece(page, fake, 'automation.fb_reset_on_button', { alias: 'Reset the filter from the button', triggers: [{ trigger: 'state', entity_id: 'button.push' }], conditions: [], actions: [{ action: 'script.filter_reset' }] });
+  await addPiece(page, fake, CHECK, { alias: 'Furnace filter: monthly check', triggers: [{ trigger: 'time', at: '09:00:00' }], conditions: [], actions: [] });
+  await lab(CHECK, [furnace]);
+  fake.entities.set('sensor.fb_filter_report', { entity_id: 'sensor.fb_filter_report', id: 'fbidreport', platform: 'template', unique_id: 'fbreport', labels: [], categories: {}, area_id: null, device_id: null, config_entry_id: null, disabled_by: null, hidden_by: null, name: null, original_name: 'Filter report', icon: null, has_entity_name: false, entity_category: null, options: {} });
+  fake.sources['sensor.fb_filter_report'] = { entities: [CHECK] };
+  // a group outside holds one piece; a Node-RED flow runs another; a meter helper of the function was set up with a
+  // sensor that isn't in it (deleting the helper would delete both)
+  const WEEKLY = 'automation.fb_filter_weekly', SAY = 'script.fb_filter_say', PEAK = 'sensor.fb_filter_peak', OFF = 'sensor.fb_filter_offpeak';
+  await addPiece(page, fake, WEEKLY, { alias: 'Furnace filter: weekly look', triggers: [{ trigger: 'time', at: '10:00:00' }], conditions: [], actions: [] });
+  await addPiece(page, fake, SAY, { alias: 'Furnace filter: say it', sequence: [] });
+  await lab(WEEKLY, [furnace]); await lab(SAY, [furnace]);
+  await fake.setState('group.fb_upkeep', 'on', { friendly_name: 'Upkeep rules', entity_id: [WEEKLY] });
+  await el(page, (b, s) => { b._nrCache = { at: Date.now() + 3600000, base: '/api/hassio_ingress/abc/', slug: 'abc_nodered', groups: [{ id: 't1:a1', tab: 't1', tabLabel: 'Upkeep flows', name: 'Filter talk', size: 3, trig: [], read: [], change: [], calls: [s], events: [], off: false }] }; }, SAY);
+  fake.helperEntries = [{ entry_id: 'fbmeter1', domain: 'utility_meter', title: 'Filter meter' }];
+  for (const [id, nm] of [[PEAK, 'Filter meter peak'], [OFF, 'Filter meter off-peak']]) {
+    fake.entities.set(id, { entity_id: id, id: 'fbid' + nm.length + id.length, platform: 'utility_meter', unique_id: id, labels: id === PEAK ? [furnace] : [], categories: {}, area_id: null, device_id: null, config_entry_id: 'fbmeter1', disabled_by: null, hidden_by: null, name: null, original_name: nm, icon: null, has_entity_name: false, entity_category: null, options: {} });
+    await fake.setState(id, '0', { friendly_name: nm });
+  }
+  await el(page, (b) => b._store.changed('reg'));
+  await fake.idle(400);
+  await fbq(page, '.title [data-act="fn-menu"]').click();
+  await fbq(page, '.menu [data-act="fnm-delall"]').click();
+  await fbq(page, '.modal [data-act="del-go"]').waitFor({ timeout: 10000 });
+  const rows = await page.locator('functions-board .modal .drow').evaluateAll((els) => els.map((x) => ({ text: x.innerText, on: x.querySelector('input').checked, off: x.querySelector('input').disabled })));
+  const row = (re) => rows.find((r) => re.test(r.text)) || {};
+  check('0.11.0 a piece also in another function stays, and says why', /stays: it's also in Garage/.test(row(/Furnace filter: due alert/).text) && row(/Furnace filter: due alert/).off && !row(/Furnace filter: due alert/).on, rows);
+  check('0.11.0 a script run from outside the function stays, and says by what', /stays: used outside this function by Reset the filter from the button/.test(row(/Furnace filter: reset/).text) && row(/Furnace filter: reset/).off, rows);
+  check('0.11.0 a piece a helper outside reads stays', /stays: used outside this function by Filter report/.test(row(/monthly check/).text) && row(/monthly check/).off, rows);
+  check('0.11.0 a piece a group outside holds stays', /stays: used outside this function by Upkeep rules/.test(row(/weekly look/).text) && row(/weekly look/).off, rows);
+  check('0.11.0 a script a Node-RED flow runs stays', /stays: used outside this function by Filter talk \(Node-RED\)/.test(row(/say it/).text) && row(/say it/).off, rows);
+  check('0.11.0 a helper set up with something outside the function stays', /stays: deleting it would also delete Filter meter off-peak/.test(row(/Filter meter peak/).text) && row(/Filter meter peak/).off, rows);
+  check('0.11.0 a piece nothing else has is ticked to go', row(/count down daily/).on && !row(/count down daily/).off, rows);
+  const note = await fbq(page, '.modal').innerText();
+  check('0.11.0 the dialog says what\'s shared is never deleted', /What's shared is never deleted/.test(note), note);
+  // even ticked by hand, a shared piece isn't deleted
+  await page.locator('functions-board .modal .drow', { hasText: 'due alert' }).locator('input').evaluate((x) => { x.disabled = false; x.checked = true; });
+  await fbq(page, '.modal [data-act="del-go"]').click();
+  await until(() => el(page, (b, l) => !b._data.functions.includes(l), furnace), 8000);
+  await fake.idle(400);
+  const there = (id) => page.evaluate((k) => !!document.querySelector('home-assistant').hass.states[k], id);
+  check('0.11.0 the function\'s own piece is deleted', !(await there(DOWN)));
+  const kept = {}; for (const id of [DUE, RESET, CHECK, WEEKLY, SAY, PEAK]) kept[id] = await there(id);
+  check('0.11.0 every shared piece is still there', Object.values(kept).every(Boolean) && fake.helperEntries.length === 1, kept);
+  check('0.11.0 ... and still in its other function', await hasLabel(page, DUE, garage) && !(await hasLabel(page, DUE, furnace)));
+  check('0.11.0 deleting with what\'s shared: no errors', page.logs.length === 0, page.logs);
+});
+
 pwTest.afterAll(() => done());

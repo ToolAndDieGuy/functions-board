@@ -41,6 +41,8 @@ class FakeHA {
     this.store = { data: clone((opts.store && opts.store.data) || {}), revs: clone((opts.store && opts.store.revs) || {}), mode: opts.mode || s.mode || 'organise' };
     this.versions = {};
     this.nodered = null;
+    this.sources = {};  // what a derived helper reads (functions_board/sources), as a test sets it: id → { entities }
+    this.helperEntries = [];  // helpers set up as config entries (config_entries/get by domain), as a test sets them
     this.userData = {};
     this.admin = opts.admin !== false;
     this.calls = [];
@@ -251,7 +253,7 @@ class FakeHA {
       case 'config/category_registry/create': { const c = { category_id: crypto.randomBytes(13).toString('hex').toUpperCase(), name: m.name, icon: m.icon || null, created_at: this._now() / 1000, modified_at: this._now() / 1000 }; (this.categories[m.scope] = this.categories[m.scope] || []).push(c); return c; }
       case 'config/category_registry/delete': this.categories[m.scope] = (this.categories[m.scope] || []).filter((c) => c.category_id !== m.category_id); return null;
       case 'config/auth/list': return this.users;
-      case 'config_entries/get': return m.domain === 'functions_board' ? this.entries : [];
+      case 'config_entries/get': return m.domain === 'functions_board' ? this.entries : (this.helperEntries || []).filter((e) => e.domain === m.domain);
       case 'manifest/list': return this.manifests;
       case 'frontend/get_translations': return { resources: {} };
       case 'frontend/get_user_data': return { value: this.userData[m.key] === undefined ? null : clone(this.userData[m.key]) };
@@ -302,7 +304,7 @@ class FakeHA {
         await this.notifyStore({ what: 'layout', label: m.label, rev: cur + 1, client: m.client || '' });
         return { rev: cur + 1 };
       }
-      case 'functions_board/sources': this._admin(); return { sources: {} };
+      case 'functions_board/sources': this._admin(); return { sources: Object.fromEntries((m.entity_ids || []).filter((k) => this.sources[k]).map((k) => [k, clone(this.sources[k])])) };
       case 'functions_board/nodered': this._admin(); return { kept: clone(this.nodered) };
       case 'functions_board/nodered_keep': this._admin(); this.nodered = { at: this._now(), slug: m.slug, groups: clone(m.groups) }; await this.notifyStore({ what: 'nodered', client: m.client || '' }); return null;
       case 'functions_board/versions': this._admin(); return { versions: (this.versions[m.label] || []).map(meta) };
@@ -357,7 +359,7 @@ class FakeHA {
       if (method === 'POST') { this.scripts[oid] = clone(body); await this._scriptSaved(oid); return { result: 'ok' }; }
       if (method === 'DELETE') { if (!this.scripts[oid]) throw new HAError('not_found', 'Resource not found'); delete this.scripts[oid]; this.states.delete('script.' + oid); this.entities.delete('script.' + oid); await this.push(); await this.emit('call_service', { domain: 'script', service: 'reload', service_data: {} }); return { result: 'ok' }; }
     }
-    if ((m = p.match(/^config\/config_entries\/entry\/(.+)$/)) && method === 'DELETE') { this.entries = this.entries.filter((e) => e.entry_id !== m[1]); return { require_restart: false }; }
+    if ((m = p.match(/^config\/config_entries\/entry\/(.+)$/)) && method === 'DELETE') { this.entries = this.entries.filter((e) => e.entry_id !== m[1]); this.helperEntries = (this.helperEntries || []).filter((e) => e.entry_id !== m[1]); return { require_restart: false }; }
     if (p === 'config/config_entries/options/flow' && method === 'POST') return { flow_id: 'fakeflow', type: 'form', step_id: 'init' };
     // new options apply in place and open boards are told the mode (__init__.py, the options update listener)
     if (p === 'config/config_entries/options/flow/fakeflow' && method === 'POST') { if (body && body.mode) { this.store.mode = body.mode; await this.notifyStore({ what: 'mode', mode: this.store.mode, client: '' }); } return { type: 'create_entry' }; }

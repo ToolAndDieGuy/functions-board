@@ -24,6 +24,12 @@ carry a label, so it isn't added to the function.
 
 A Node-RED flow on a disabled tab now shows as disabled on its box, and a disabled node no longer counts.
 
+**Delete function and its items** never deletes what's shared. A piece that's also in another function, that
+something outside the function uses (an automation, script, group, helper or Node-RED flow), or that was set up
+together with something outside it, stays where it is: the dialog says why, and it only leaves the function. It
+stays in its other functions until nothing else has it. Before, the dialog warned about such pieces but deleted them
+unless you unticked them.
+
 ## 0.10.0 (2026-11-19)
 
 The board's insides are rebuilt. Nothing it shows or does is meant to look different, and your saved functions,

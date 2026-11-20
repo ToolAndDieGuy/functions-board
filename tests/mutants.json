@@ -1017,5 +1017,68 @@
   "replace": "      if (Ls.length < 2) return;",
   "suite": "import",
   "expect": "F11 thirteen automations"
+ },
+ {
+  "name": "delete with items: a piece in another function goes",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "if (other.size) return T('stays_also_in'",
+  "replace": "if (false) return T('stays_also_in'",
+  "suite": "board-regress",
+  "only": "never deletes",
+  "expect": "a piece also in another function stays"
+ },
+ {
+  "name": "delete with items: a piece used outside goes",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "if (who.size) return T('stays_used_by'",
+  "replace": "if (false) return T('stays_used_by'",
+  "suite": "board-regress",
+  "only": "never deletes",
+  "expect": "a script run from outside the function stays"
+ },
+ {
+  "name": "delete with items: a helper set up with something outside goes",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "if (with_.length) return T('stays_set_up_with'",
+  "replace": "if (false) return T('stays_set_up_with'",
+  "suite": "board-regress",
+  "only": "never deletes",
+  "expect": "a helper set up with something outside the function stays"
+ },
+ {
+  "name": "delete with items: a group outside holding it isn't seen",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "x !== st.entity_id && want.has(x)) add(x, st.entity_id);",
+  "replace": "x !== st.entity_id && want.has(x)) void 0;",
+  "suite": "board-regress",
+  "only": "never deletes",
+  "expect": "a piece a group outside holds stays"
+ },
+ {
+  "name": "delete with items: a helper outside reading it isn't seen",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "((src && src.entities) || []).forEach((x) => { if (want.has(x)) add(x, k); })",
+  "replace": "((src && src.entities) || []).forEach((x) => { if (want.has(x)) void 0; })",
+  "suite": "board-regress",
+  "only": "never deletes",
+  "expect": "a piece a helper outside reads stays"
+ },
+ {
+  "name": "delete with items: a Node-RED flow using it isn't seen",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "forEach((x) => { if (want.has(x)) add(x, 'nr:' + g.name); })",
+  "replace": "forEach((x) => { if (want.has(x)) void 0; })",
+  "suite": "board-regress",
+  "only": "never deletes",
+  "expect": "a script a Node-RED flow runs stays"
+ },
+ {
+  "name": "delete with items: everything shared is deleted",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "const why = p.can && this._sharedWhy(p, label, ents, used);",
+  "replace": "const why = null;",
+  "suite": "board-regress",
+  "only": "never deletes",
+  "expect": "every shared piece is still there"
  }
 ]

@@ -3600,6 +3600,10 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       n_frames: { one: '{n} frame', other: '{n} frames' },
       n_notes: { one: '{n} note', other: '{n} notes' },
       deletes_these_from_home_assistant: 'Deletes these from Home Assistant. Devices are never deleted.',
+      stays_also_in: 'stays: it\'s also in {fns}',
+      stays_used_by: 'stays: used outside this function by {names}',
+      stays_set_up_with: 'stays: deleting it would also delete {names}, set up with it, which isn\'t in this function',
+      shared_items_stay: 'What\'s shared is never deleted: a piece also in another function, or used by something outside this one, stays where it is and only leaves this function.',
       undo_brings_back_the_function: 'Undo brings back the function and everything except helpers set up by integrations.',
       undo_brings_it_all_back: 'Undo brings it all back.',
       delete_function_and_items: 'Delete function and items',
@@ -8390,6 +8394,42 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       return out;
     }
     _nameOf(id) { const st = this._hass.states[id], e = this._entMap.get(id); return (st && st.attributes.friendly_name) || (e && (e.name || e.original_name)) || id; }
+    // what outside `mine` uses any of `ids` (0.11.0): automations and scripts, the groups and scenes that hold it,
+    // the helpers that read it (template, statistics …) and the Node-RED flows last read; id → Set of who uses it
+    async _outsideUses(ids, mine) {
+      const want = new Set(ids), skip = new Set(mine);
+      const out = await this._usedBy(ids, skip);
+      const add = (id, who) => { if (!out.has(id)) out.set(id, new Set()); out.get(id).add(who); };
+      Object.values(this._hass.states).forEach((st) => {
+        if (skip.has(st.entity_id)) return;
+        toList(st.attributes && st.attributes.entity_id).forEach((x) => { if (typeof x === 'string' && x !== st.entity_id && want.has(x)) add(x, st.entity_id); });
+      });
+      if (this._storeMode === 'shared') {
+        const ask = this._ents.filter((e) => !skip.has(e.entity_id) && HELPER_PLATFORMS.has(e.platform)).map((e) => e.entity_id).slice(0, 500);
+        const r = ask.length ? await this._ws({ type: 'functions_board/sources', entity_ids: ask }, { fallback: null }) : null;
+        Object.entries((r && r.sources) || {}).forEach(([k, src]) => ((src && src.entities) || []).forEach((x) => { if (want.has(x)) add(x, k); }));
+      }
+      const nr = this._nrState();
+      ((nr && nr.groups) || []).forEach((g) => [].concat(g.trig || [], g.read || [], g.change || [], g.calls || []).forEach((x) => { if (want.has(x)) add(x, 'nr:' + g.name); }));
+      return out;
+    }
+    // why a piece of a function deleted with its items stays (0.11.0): it's also in another function, something
+    // outside this one uses it, or deleting it would delete something that isn't in this function (a helper set up
+    // with others). It stays, and only leaves this function; null when it may go
+    _sharedWhy(p, label, mine, uses) {
+      const ids = [p.id].concat(p.siblings || []), fset = new Set(this._data.functions.filter((l) => l !== label)), other = new Set(), who = new Set();
+      ids.forEach((id) => {
+        const e = this._entMap.get(id);
+        ((e && e.labels) || []).forEach((l) => { if (fset.has(l)) other.add(this._fnName(l)); });
+        (uses.get(id) || new Set()).forEach((u) => who.add(u));
+      });
+      if (other.size) return T('stays_also_in', { fns: [...other].join(', ') });
+      const names = (list) => list.slice(0, 3).join(', ') + (list.length > 3 ? T('and_more', { n: list.length - 3 }) : '');
+      if (who.size) return T('stays_used_by', { names: names([...who].map((u) => (u.startsWith('nr:') ? T('node_red_named', { name: u.slice(3) }) : this._nameOf(u)))) });
+      const with_ = (p.siblings || []).filter((x) => x !== p.id && !mine.includes(x));
+      if (with_.length) return T('stays_set_up_with', { names: names(with_.map((x) => this._nameOf(x))) });
+      return null;
+    }
     _usedHtml(id, used) {
       const u = used.get(id);
       if (!u || !u.size) return '';
@@ -9185,12 +9225,14 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       let plan = [], used = new Map();
       if (withItems) {
         for (const id of ents.concat(devs)) plan.push(await this._howDelete(id));
-        used = await this._usedBy(ents, new Set(ents));
+        // what's shared is never deleted (0.11.0): it stays, in its other functions, until nothing else has it
+        used = await this._outsideUses([...new Set(ents.concat(plan.flatMap((p) => p.siblings || [])))], ents);
+        plan.forEach((p) => { const why = p.can && this._sharedWhy(p, label, ents, used); if (why) Object.assign(p, { can: false, kept: true, why }); });
       }
       this._pendingDelete = { kind: 'function', label, withItems, plan, cats, ents, devs };
       const box = (L.frames || []).length, notes = (L.notes || []).length;
       const items = withItems ? `<div class="dlist">${plan.map((p, i) => `<label class="drow ${p.can ? '' : 'dcant'}"><input type="checkbox" data-delpick="${i}" ${p.can ? 'checked' : 'disabled'}>`
-        + `<span class="tag">${esc(this._tagOf(p.id))}</span><span class="mn"><b>${esc(p.name)}</b><small>${esc(p.id.startsWith('device:') ? 'device' : p.id)}${p.can ? (p.undo ? '' : T('can_t_be_undone')) : ' · ' + esc(p.why)}</small>${this._usedHtml(p.id, used)}</span></label>`).join('')}</div>` : '';
+        + `<span class="tag">${esc(this._tagOf(p.id))}</span><span class="mn"><b>${esc(p.name)}</b><small>${esc(p.id.startsWith('device:') ? 'device' : p.id)}${p.can ? (p.undo ? '' : T('can_t_be_undone')) : ' · ' + esc(p.why)}</small>${p.kept ? '' : this._usedHtml(p.id, used)}</span></label>`).join('')}</div>${plan.some((p) => p.kept) ? `<p class="dtext">${T('shared_items_stay')}</p>` : ''}` : '';
       const catLine = cats.length ? `<label class="chk"><input type="checkbox" data-delcats ${cats.every((c) => c.free) ? 'checked' : ''}>${T('also_delete_the_named', { count: esc(P('n_categories', cats.length)), name: esc(name), cats: esc(cats.map((c) => c.scope === 'helpers' ? 'helpers' : c.scope + 's').join(', ')), extra: cats.some((c) => !c.free) ? T('other_items_are_filed_there') : withItems ? '' : T('only_this_function_s_items') })}</label>` : '';
       m.innerHTML = `<div class="dlg wide"><h3>${T('delete_2', { name: esc(name) })}</h3><p class="dtext">${T('deletes_the_label')} <b>${esc(name)}</b>${T('home_assistant_removes_it_from', { n: esc(P('n_items', ents.length + devs.length)), extra: withItems ? '' : T('the_items_themselves_stay_where') })}</p><p class="dtext">${T('deletes_the_board_s_layout', { extra: box ? ', ' + P('n_frames', box) : '', extra2: notes ? ', ' + P('n_notes', notes) : '' })}</p>${withItems ? `<p class="dtext">${T('deletes_these_from_home_assistant')}</p>${items}` : ''}${catLine}<p class="dtext">${withItems && plan.some((p) => p.can && !p.undo) ? T('undo_brings_back_the_function') : T('undo_brings_it_all_back')}</p><div class="btns"><button data-act="modal-cancel">${T('cancel')}</button><button class="danger" data-act="del-go">${withItems ? T('delete_function_and_items') : T('delete_function')}</button></div></div>`;
     }
