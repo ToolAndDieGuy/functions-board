@@ -244,7 +244,9 @@ Switch on **Make the Functions card available on dashboards** in the integration
 type: custom:functions-board
 ```
 
-It needs room, so a **panel** view works best. Without the option, a dashboard resource still works: **Settings → Dashboards → ⋮ → Resources**, the URL `/functions_board_static/functions-board.js` as a JavaScript module.
+It needs room: a **panel** view gives it the whole page, or in a **sections** view give it a section as wide as the view (`column_span`), as here, below a row of the garage's own tiles. Without the option, a dashboard resource still works: **Settings → Dashboards → ⋮ → Resources**, the URL `/functions_board_static/functions-board.js` as a JavaScript module.
+
+![A dashboard called Home: tiles for the garage door, its open timer and auto-close in a row, and below them the Functions card across the view, open on the Garage function with its boxes and arrows](https://raw.githubusercontent.com/ToolAndDieGuy/functions-board/main/docs/images/dashboard.png)
 
 ## How the arrows are worked out
 

@@ -2,6 +2,7 @@
 // a folder of their own; this compares each with the one in docs/images and writes JUnit (e2e-shots), so a change
 // that alters what the README shows, without new pictures, is noticed.
 //   node tests/e2e/shotcompare.js <new folder> [<old folder: docs/images>]
+// The ones that don't match, and new ones, are listed in <new folder>/changed.txt: the weekly job takes those.
 // Two pictures match when they are the same size and few of their pixels differ by more than a little (anti-aliasing
 // and font hinting move a few). For each that doesn't, a picture of the difference goes to <new folder>/diff-<name>.png.
 const fs = require('fs');
@@ -37,7 +38,12 @@ const raw = async (f) => { const { data, info } = await sharp(f).ensureAlpha().r
     if (!ok) await sharp(diff, { raw: { width: a.w, height: a.h, channels: 4 } }).png().toFile(path.join(neu, 'diff-' + f));
     cases.push({ name, ok, detail: ok ? '' : `${(share * 100).toFixed(1)}% of its pixels differ: retake it (node tests/e2e/screens.js), or look at diff-${f}` });
   }
+  // and a picture screens.js makes that the README doesn't have yet: new, so it goes to docs/images like a changed one
+  for (const f of fs.readdirSync(neu).filter((x) => x.endsWith('.png') && !x.startsWith('diff-') && x !== 'failed-here.png').sort()) {
+    if (!fs.existsSync(path.join(old, f))) cases.push({ name: `${f}: a new picture, in docs/images`, ok: false, detail: 'new: not in docs/images yet' });
+  }
   write(path.join(R, 'e2e-shots.xml'), 'shots', cases);
+  fs.writeFileSync(path.join(neu, 'changed.txt'), cases.filter((c) => !c.ok).map((c) => c.name.split(':')[0]).join('\n') + '\n');
   cases.forEach((c) => console.log((c.ok ? 'PASS ' : 'FAIL ') + c.name + (c.ok ? '' : '  -- ' + c.detail)));
   process.exit(cases.every((c) => c.ok) ? 0 : 1);
 })().catch((e) => { console.error(e); process.exit(1); });
