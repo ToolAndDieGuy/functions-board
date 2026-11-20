@@ -50,6 +50,11 @@ def clean_groups(groups: Any) -> list[dict[str, Any]] | None:
             if not isinstance(vals, list) or not all(isinstance(v, str) and len(v) <= 300 for v in vals):
                 return None
             item[key] = vals
+        # its tab is disabled in Node-RED (0.11.0); older boards don't say
+        off = g.get("off", False)
+        if not isinstance(off, bool):
+            return None
+        item["off"] = off
         out.append(item)
     return out
 

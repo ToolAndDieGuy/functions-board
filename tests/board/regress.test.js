@@ -909,4 +909,225 @@ test('0.10.0 an automation in the registry that isn\'t loaded: no config asked, 
   check('0.10.0 not loaded: no errors', page.logs.length === 0, page.logs);
 });
 
+// an automation or script added to the fake Home Assistant, as its editor would make it
+async function addPiece(page, fake, id, config) {
+  const [dom, oid] = id.split('.'), uid = 'fb' + oid;
+  fake.entities.set(id, { entity_id: id, id: 'fbid' + oid, platform: dom, unique_id: dom === 'automation' ? uid : oid, labels: [], area_id: null, device_id: null, disabled_by: null, hidden_by: null, name: null, original_name: config.alias, icon: null, categories: {}, config_entry_id: null, has_entity_name: false, entity_category: null, options: {} });
+  if (dom === 'automation') { fake.autos[uid] = Object.assign({ id: uid }, config); await fake.setState(id, 'on', { friendly_name: config.alias, id: uid, last_triggered: null, mode: 'single', current: 0 }); }
+  else { fake.scripts[oid] = config; await fake.setState(id, 'off', { friendly_name: config.alias, last_triggered: null, mode: 'single', current: 0 }); }
+  await el(page, (b) => b._store.changed('reg'));
+}
+const rows = (page) => el(page, (b) => b._mgr.cands.map((c) => ({ name: c.name, key: c.key, members: c.members, parts: c.parts.length, offers: c.offers.length, fn: c.fn })));
+const rowWith = async (page, id) => (await rows(page)).find((c) => c.members.includes(id));
+const card = (page, r) => fbq(page, `.modal .cand[data-key="${r.key}"]`);
+async function openImport(page) {
+  await fbq(page, '.empty.wel [data-act="import"]').click();
+  await fbq(page, '.modal [data-act="mgr-import-one"]').first().waitFor({ timeout: 20000 });
+}
+
+test('0.11.0 the import offers to merge groups that may be one system, says why, and separates them again', async ({ browser, fake }) => {
+  const { page } = await session(browser, 'owner');
+  // a bedtime system that also switches the garage's left-open alert on and off
+  await addPiece(page, fake, 'automation.fb_bedtime_lights_out', { alias: 'Bedtime: lights out', triggers: [{ trigger: 'time', at: '22:30:00' }], conditions: [], actions: [
+    { action: 'light.turn_off', target: { entity_id: 'light.bed_light' } }, { action: 'lock.lock', target: { entity_id: 'lock.front_door' } },
+    { action: 'automation.turn_on', target: { entity_id: 'automation.garage_left_open' } }] });
+  await addPiece(page, fake, 'automation.fb_bedtime_lamp', { alias: 'Bedtime: bedside glow', triggers: [{ trigger: 'state', entity_id: 'light.bed_light', to: 'off' }], conditions: [],
+    actions: [{ action: 'light.turn_on', target: { entity_id: 'light.ceiling_lights' }, data: { brightness_pct: 5 } }] });
+  await openImport(page);
+  const bed = await rowWith(page, 'automation.fb_bedtime_lights_out');
+  check('0.11.0 Bedtime is a group of its own', bed && bed.members.includes('automation.fb_bedtime_lamp') && !bed.members.includes('automation.garage_left_open'), bed);
+  const offer = bed && (await card(page, bed).locator('.coffer').count()) ? await card(page, bed).locator('.coffer').innerText() : '';
+  check('0.11.0 it offers to merge with the garage, and says why', /Merge with Garage/.test(offer) && /Bedtime: lights out turns Garage: left open on and off/.test(offer), offer);
+  if (!offer) return;
+  await card(page, bed).locator('[data-act="mgr-merge"]').click();
+  const m = await rowWith(page, 'automation.fb_bedtime_lights_out');
+  check('0.11.0 merged: one group with both, named after both', m.parts === 2 && m.members.includes('automation.garage_left_open') && m.name === 'Garage & Bedtime', m);
+  const made = (await card(page, m).locator('.cmade').count()) ? await card(page, m).locator('.cmade').innerText() : '';
+  check('0.11.0 merged: it says what it\'s made from', /Made from/.test(made) && /Garage/.test(made) && /Bedtime/.test(made) && /Separate/.test(made), made);
+  check('0.11.0 merged: focus is on the merged group', await el(page, (b, k) => { const a = b.shadowRoot.activeElement; return !!(a && a.closest(`.cand[data-key="${k}"]`)); }, m.key));
+  if (!/Separate/.test(made)) return;
+  await card(page, m).locator('[data-act="mgr-split"]').click();
+  const apart = (await rows(page)).filter((c) => c.members.includes('automation.fb_bedtime_lights_out') || c.members.includes('automation.garage_left_open'));
+  check('0.11.0 Separate: the two groups again', apart.length === 2 && apart.every((c) => c.parts === 1), apart);
+  // Merge into…: any other group
+  const b2 = await rowWith(page, 'automation.fb_bedtime_lights_out');
+  await card(page, b2).locator('[data-act="mgr-merge-menu"]').click();
+  const items = await page.locator('functions-board .menu [data-act="mgr-merge-to"]').allInnerTexts();
+  check('0.11.0 Merge into lists the other groups', items.some((t) => /Morning/.test(t)) && items.some((t) => /Garage/.test(t)) && !items.some((t) => /Bedtime/.test(t)), items);
+  await page.locator('functions-board .menu [data-act="mgr-merge-to"]', { hasText: 'Morning' }).click();
+  const bm = await rowWith(page, 'automation.fb_bedtime_lights_out');
+  check('0.11.0 Merge into: Bedtime and Morning are one group', bm.parts === 2 && bm.members.includes('automation.morning_lights_and_blinds'), bm);
+  if (bm.parts !== 2) return;
+  await card(page, bm).locator('[data-act="mgr-split"]').click();
+  // merged with the garage again, renamed, ticked kept through it, imported as one function
+  const b3 = await rowWith(page, 'automation.fb_bedtime_lights_out');
+  await card(page, b3).locator('[data-act="mgr-expand"]').click();
+  await card(page, b3).locator('input[data-id="automation.fb_bedtime_lamp"]').uncheck();
+  await card(page, b3).locator('[data-act="mgr-merge"]').click();
+  const m2 = await rowWith(page, 'automation.fb_bedtime_lights_out');
+  check('0.11.0 a piece unticked stays unticked when its group is merged', !(await card(page, m2).locator('input[data-id="automation.fb_bedtime_lamp"]').isChecked()));
+  await card(page, m2).locator('input.cname').fill('Evening');
+  await card(page, m2).locator('[data-act="mgr-import-one"]').click();
+  await until(() => el(page, (b) => !b._mgr.busy && b._data.functions.some((l) => b._fnName(l) === 'Evening')), 15000);
+  await fake.idle(400);
+  const lid = await el(page, (b) => b._data.functions.find((l) => b._fnName(l) === 'Evening'));
+  check('0.11.0 the merged group is one function with both systems in it', !!lid && await hasLabel(page, 'automation.fb_bedtime_lights_out', lid) && await hasLabel(page, 'automation.garage_left_open', lid), lid);
+  check('0.11.0 ... without the piece left unticked', !!lid && !(await hasLabel(page, 'automation.fb_bedtime_lamp', lid)));
+  const done = await rowWith(page, 'automation.fb_bedtime_lights_out');
+  check('0.11.0 imported: it can\'t be separated any more', done && done.fn === lid && !(await card(page, done).locator('[data-act="mgr-split"]').count()), done);
+  check('0.11.0 merging: no errors', page.logs.length === 0, page.logs);
+});
+
+test('0.11.0 a category over two groups is an offer to merge them; one over a single group still brings in what\'s filed there', async ({ browser, fake }) => {
+  const { page } = await session(browser, 'owner');
+  fake.categories.automation = [{ category_id: 'CATDAILY', name: 'Daily', icon: 'mdi:calendar' }, { category_id: 'CATUPKEEP', name: 'Upkeep', icon: 'mdi:wrench' }];
+  const file = (id, cid) => { fake.entities.get(id).categories = { automation: cid }; };
+  file('automation.garage_left_open', 'CATDAILY'); file('automation.morning_lights_and_blinds', 'CATDAILY');
+  ['automation.furnace_filter_count_down_daily', 'automation.furnace_filter_due_alert', 'automation.backyard_motion_light'].forEach((id) => file(id, 'CATUPKEEP'));
+  await el(page, (b) => b._store.changed('reg'));
+  await openImport(page);
+  const g = await rowWith(page, 'automation.garage_left_open');
+  const offer = g && (await card(page, g).locator('.coffer').count()) ? await card(page, g).locator('.coffer').innerText() : '';
+  check('0.11.0 the garage and the morning are filed under one category: an offer to merge them', /Merge with Morning/.test(offer) && /Filed under Daily/.test(offer) && !g.members.includes('automation.morning_lights_and_blinds'), { offer, g });
+  if (!offer) return;
+  await card(page, g).locator('[data-act="mgr-merge"]').click();
+  const m = await rowWith(page, 'automation.garage_left_open');
+  check('0.11.0 merged by their category, it\'s named after it', m && m.parts === 2 && m.name === 'Daily' && m.members.includes('automation.morning_lights_and_blinds'), m);
+  const u = await rowWith(page, 'automation.furnace_filter_due_alert');
+  const src = u ? await card(page, u).locator('.csrc').last().innerText() : '';
+  check('0.11.0 a category over one group brings in what else is filed there, named after it', u && u.name === 'Upkeep' && u.members.includes('automation.backyard_motion_light') && /category \+ wiring/.test(src), { u, src });
+  check('0.11.0 categories: no errors', page.logs.length === 0, page.logs);
+});
+
+test('0.11.0 the import reads Node-RED flows while the board does: a flow\'s scripts are one group, the flow listed; a disabled tab is marked on its box', async ({ browser, fake }) => {
+  const { page } = await session(browser, 'owner');
+  await addPiece(page, fake, 'script.fb_pond_fill_on', { alias: 'Pond fill on', sequence: [{ action: 'switch.turn_on', target: { entity_id: 'switch.decorative_lights' } }] });
+  await addPiece(page, fake, 'script.fb_pond_fill_off', { alias: 'Pond fill off', sequence: [{ action: 'switch.turn_off', target: { entity_id: 'switch.decorative_lights' } }] });
+  const nrGroup = { id: 't1:a1', tab: 't1', tabLabel: 'Pond flows', name: 'Pond level', size: 5, trig: ['binary_sensor.basement_floor_wet'], read: [], change: [], calls: ['script.fb_pond_fill_on', 'script.fb_pond_fill_off'], events: [], off: true };
+  await openImport(page);
+  check('0.11.0 Node-RED off: the scripts no flow of Home Assistant\'s runs are in no group', !(await rowWith(page, 'script.fb_pond_fill_on')));
+  // the board reads Node-RED (its switch on), and a flow runs both scripts
+  await el(page, (b, g) => { b._data.ui.nodered = true; b._nrCache = { at: Date.now() + 3600000, base: '/api/hassio_ingress/abc/', slug: 'abc_nodered', groups: [g] }; }, nrGroup);
+  await fbq(page, '.modal [data-act="mgr-rescan"]').click();
+  await fbq(page, '.modal [data-act="mgr-import-one"]').first().waitFor({ timeout: 20000 });
+  const r = await rowWith(page, 'script.fb_pond_fill_on');
+  check('0.11.0 Node-RED on: the two scripts the flow runs are one group', r && r.members.includes('script.fb_pond_fill_off') && !r.members.some((x) => x.startsWith('nr:')), r);
+  if (!r) return;
+  await card(page, r).locator('[data-act="mgr-expand"]').click();
+  const flow = (await card(page, r).locator('.mrow2').count()) ? await card(page, r).locator('.mrow2').innerText() : '';
+  check('0.11.0 the flow is listed with the group, and its tab is disabled', /Pond level/.test(flow) && /Pond flows, which is disabled/.test(flow), flow);
+  await card(page, r).locator('[data-act="mgr-import-one"]').click();
+  await until(() => el(page, (b) => !b._mgr.busy && b._data.functions.length >= 1), 15000);
+  await fbq(page, '.modal [data-act="modal-cancel"]').first().click();
+  await fake.idle(400);
+  const box = await until(() => el(page, (b) => {
+    const n = b._model && b._model.nodes.get('nr:t1:a1'), d = b.shadowRoot.querySelector('.node[data-key="nr:t1:a1"]');
+    return n && d ? { text: b._status(n).text, off: d.classList.contains('off') } : null;
+  }), 8000);
+  check('0.11.0 the flow\'s box says its tab is disabled, and is drawn off', box && /its tab is disabled/.test(box.text) && box.off, box);
+  check('0.11.0 Node-RED in the import: no errors', page.logs.length === 0, page.logs);
+});
+
+test('0.11.0 deleting a function and its items never deletes what\'s shared: it stays, in its other functions', async ({ browser, fake }) => {
+  fake.store.mode = 'full';
+  const { page } = await imported(browser);
+  const furnace = await openFn(page, /furnace/i), garage = await el(page, (b) => b._data.functions.find((l) => /garage/i.test(b._fnName(l))));
+  // in the furnace function: its due alert is also in the garage function; its reset script is run by an automation
+  // outside it; a third automation of it is read by a template helper outside it; its count-down is its own
+  const DUE = 'automation.furnace_filter_due_alert', DOWN = 'automation.furnace_filter_count_down_daily', RESET = 'script.filter_reset', CHECK = 'automation.fb_filter_monthly_check';
+  const lab = async (id, labels) => ws(page, { type: 'config/entity_registry/update', entity_id: id, labels });
+  await lab(DUE, [furnace, garage]);
+  await addPiece(page, fake, 'automation.fb_reset_on_button', { alias: 'Reset the filter from the button', triggers: [{ trigger: 'state', entity_id: 'button.push' }], conditions: [], actions: [{ action: 'script.filter_reset' }] });
+  await addPiece(page, fake, CHECK, { alias: 'Furnace filter: monthly check', triggers: [{ trigger: 'time', at: '09:00:00' }], conditions: [], actions: [] });
+  await lab(CHECK, [furnace]);
+  fake.entities.set('sensor.fb_filter_report', { entity_id: 'sensor.fb_filter_report', id: 'fbidreport', platform: 'template', unique_id: 'fbreport', labels: [], categories: {}, area_id: null, device_id: null, config_entry_id: null, disabled_by: null, hidden_by: null, name: null, original_name: 'Filter report', icon: null, has_entity_name: false, entity_category: null, options: {} });
+  fake.sources['sensor.fb_filter_report'] = { entities: [CHECK] };
+  // a group outside holds one piece; a Node-RED flow runs another; a meter helper of the function was set up with a
+  // sensor that isn't in it (deleting the helper would delete both)
+  const WEEKLY = 'automation.fb_filter_weekly', SAY = 'script.fb_filter_say', PEAK = 'sensor.fb_filter_peak', OFF = 'sensor.fb_filter_offpeak';
+  await addPiece(page, fake, WEEKLY, { alias: 'Furnace filter: weekly look', triggers: [{ trigger: 'time', at: '10:00:00' }], conditions: [], actions: [] });
+  await addPiece(page, fake, SAY, { alias: 'Furnace filter: say it', sequence: [] });
+  await lab(WEEKLY, [furnace]); await lab(SAY, [furnace]);
+  await fake.setState('group.fb_upkeep', 'on', { friendly_name: 'Upkeep rules', entity_id: [WEEKLY] });
+  await el(page, (b, s) => { b._nrCache = { at: Date.now() + 3600000, base: '/api/hassio_ingress/abc/', slug: 'abc_nodered', groups: [{ id: 't1:a1', tab: 't1', tabLabel: 'Upkeep flows', name: 'Filter talk', size: 3, trig: [], read: [], change: [], calls: [s], events: [], off: false }] }; }, SAY);
+  fake.helperEntries = [{ entry_id: 'fbmeter1', domain: 'utility_meter', title: 'Filter meter' }];
+  for (const [id, nm] of [[PEAK, 'Filter meter peak'], [OFF, 'Filter meter off-peak']]) {
+    fake.entities.set(id, { entity_id: id, id: 'fbid' + nm.length + id.length, platform: 'utility_meter', unique_id: id, labels: id === PEAK ? [furnace] : [], categories: {}, area_id: null, device_id: null, config_entry_id: 'fbmeter1', disabled_by: null, hidden_by: null, name: null, original_name: nm, icon: null, has_entity_name: false, entity_category: null, options: {} });
+    await fake.setState(id, '0', { friendly_name: nm });
+  }
+  await el(page, (b) => b._store.changed('reg'));
+  await fake.idle(400);
+  await fbq(page, '.title [data-act="fn-menu"]').click();
+  await fbq(page, '.menu [data-act="fnm-delall"]').click();
+  await fbq(page, '.modal [data-act="del-go"]').waitFor({ timeout: 10000 });
+  const rows = await page.locator('functions-board .modal .drow').evaluateAll((els) => els.map((x) => ({ text: x.innerText, on: x.querySelector('input').checked, off: x.querySelector('input').disabled })));
+  const row = (re) => rows.find((r) => re.test(r.text)) || {};
+  check('0.11.0 a piece also in another function stays, and says why', /stays: it's also in Garage/.test(row(/Furnace filter: due alert/).text) && row(/Furnace filter: due alert/).off && !row(/Furnace filter: due alert/).on, rows);
+  check('0.11.0 a script run from outside the function stays, and says by what', /stays: used outside this function by Reset the filter from the button/.test(row(/Furnace filter: reset/).text) && row(/Furnace filter: reset/).off, rows);
+  check('0.11.0 a piece a helper outside reads stays', /stays: used outside this function by Filter report/.test(row(/monthly check/).text) && row(/monthly check/).off, rows);
+  check('0.11.0 a piece a group outside holds stays', /stays: used outside this function by Upkeep rules/.test(row(/weekly look/).text) && row(/weekly look/).off, rows);
+  check('0.11.0 a script a Node-RED flow runs stays', /stays: used outside this function by Filter talk \(Node-RED\)/.test(row(/say it/).text) && row(/say it/).off, rows);
+  check('0.11.0 a helper set up with something outside the function stays', /stays: deleting it would also delete Filter meter off-peak/.test(row(/Filter meter peak/).text) && row(/Filter meter peak/).off, rows);
+  check('0.11.0 a piece nothing else has is ticked to go', row(/count down daily/).on && !row(/count down daily/).off, rows);
+  const note = await fbq(page, '.modal').innerText();
+  check('0.11.0 the dialog says what\'s shared is never deleted', /What's shared is never deleted/.test(note), note);
+  // even ticked by hand, a shared piece isn't deleted
+  await page.locator('functions-board .modal .drow', { hasText: 'due alert' }).locator('input').evaluate((x) => { x.disabled = false; x.checked = true; });
+  await fbq(page, '.modal [data-act="del-go"]').click();
+  await until(() => el(page, (b, l) => !b._data.functions.includes(l), furnace), 8000);
+  await fake.idle(400);
+  const there = (id) => page.evaluate((k) => !!document.querySelector('home-assistant').hass.states[k], id);
+  check('0.11.0 the function\'s own piece is deleted', !(await there(DOWN)));
+  const kept = {}; for (const id of [DUE, RESET, CHECK, WEEKLY, SAY, PEAK]) kept[id] = await there(id);
+  check('0.11.0 every shared piece is still there', Object.values(kept).every(Boolean) && fake.helperEntries.length === 1, kept);
+  check('0.11.0 ... and still in its other function', await hasLabel(page, DUE, garage) && !(await hasLabel(page, DUE, furnace)));
+  check('0.11.0 deleting with what\'s shared: no errors', page.logs.length === 0, page.logs);
+});
+
+test('0.11.0 restoring a version never turns off or deletes what was added since and is shared: it only leaves the function', async ({ browser, fake }) => {
+  fake.store.mode = 'full';
+  const { page } = await imported(browser);
+  const garage = await openFn(page, /garage/i), morning = await el(page, (b) => b._data.functions.find((l) => /morning/i.test(b._fnName(l))));
+  // a version of the garage, saved before anything was added
+  const snap = await el(page, (b, l) => b._verSnapshot(l), garage);
+  const v = await ws(page, { type: 'functions_board/version_save', label: garage, name: 'Before', snapshot: snap });
+  // added since: an automation also in the morning function, a script an automation outside runs, one of its own
+  const SH = 'automation.fb_garage_and_morning', RUN = 'script.fb_garage_chime', OWN = 'automation.fb_garage_only';
+  await addPiece(page, fake, SH, { alias: 'Garage and morning light', triggers: [{ trigger: 'time', at: '06:00:00' }], conditions: [], actions: [] });
+  await addPiece(page, fake, RUN, { alias: 'Garage chime', sequence: [] });
+  await addPiece(page, fake, OWN, { alias: 'Garage only check', triggers: [{ trigger: 'time', at: '07:00:00' }], conditions: [], actions: [] });
+  await addPiece(page, fake, 'automation.fb_chime_at_noon', { alias: 'Chime at noon', triggers: [{ trigger: 'time', at: '12:00:00' }], conditions: [], actions: [{ action: 'script.fb_garage_chime' }] });
+  for (const [id, labels] of [[SH, [garage, morning]], [RUN, [garage]], [OWN, [garage]]]) await ws(page, { type: 'config/entity_registry/update', entity_id: id, labels });
+  // changed since, so restore writes them back: one also in the morning function, a script an automation outside
+  // runs, and one only the garage's
+  const LEFT = 'automation.garage_left_open', STOP = 'automation.garage_closed_stop_timer', aid = (k) => fake.states.get(k).attributes.id;
+  const edit = (k, alias) => { fake.autos[aid(k)] = Object.assign({}, fake.autos[aid(k)], { alias }); if (fake.autoByEntity[k]) fake.autoByEntity[k] = Object.assign({}, fake.autoByEntity[k], { alias }); };
+  edit(LEFT, 'Garage: left open (edited)'); edit(STOP, 'Garage: closed, stop timer (edited)');
+  fake.scripts.close_garage = Object.assign({}, fake.scripts.close_garage, { alias: 'Close garage (edited)' });
+  await addPiece(page, fake, 'automation.fb_close_at_night', { alias: 'Close at night', triggers: [{ trigger: 'time', at: '23:00:00' }], conditions: [], actions: [{ action: 'script.close_garage' }] });
+  await ws(page, { type: 'config/entity_registry/update', entity_id: LEFT, labels: [garage, morning] });
+  await el(page, (b) => { b._store.changed('reg'); b._store.changed('cfg:'); });
+  await fake.idle(400);
+  await el(page, (b, id) => b._verRestore(id), v.id);
+  await fbq(page, '.modal .vrdlg').waitFor({ timeout: 15000 });
+  const text = await fbq(page, '.modal .vrdlg').innerText();
+  check('0.11.0 restore: what\'s shared is listed apart, only taken out of the function, with why', /only taken out of this function \(never turned off or deleted\)/.test(text)
+    && /Garage and morning light \(stays: it's also in Morning\)/.test(text) && /Garage chime \(stays: used outside this function by Chime at noon\)/.test(text), text);
+  const sharedLine = (text.match(/Shared with another function[^\n]*/) || [''])[0];
+  check('0.11.0 restore: what\'s only the function\'s is offered to turn off or delete, not listed as shared', !/Garage only check/.test(sharedLine) && /Garage only check[\s\S]*Turn them off/.test(text), text);
+  const warn = (await fbq(page, '.modal .vwshared').count()) ? await fbq(page, '.modal .vwshared').innerText() : '';
+  check('0.11.0 restore warns that what it writes back changes in the other function too', /restoring changes them there too/.test(warn) && /Garage: left open \(also in Morning\)/.test(warn), warn);
+  check('0.11.0 ... and where something outside uses it', /Close garage \(used outside this function by Close at night\)/.test(warn), warn);
+  check('0.11.0 ... but not for what only this function has (written back all the same)', !/stop timer/.test(warn) && /stop timer/.test(text), { warn, text });
+  await fbq(page, '.modal input[name="vextra"][value="delete"]').check();
+  await fbq(page, '.modal [data-act="ver-restore-go"]').click();
+  await until(() => el(page, (b) => b._$.modal.hidden || null), 20000);
+  await fake.idle(500);
+  const st = (id) => page.evaluate((k) => { const s = document.querySelector('home-assistant').hass.states[k]; return s ? s.state : null; }, id);
+  check('0.11.0 restore: the function\'s own piece added since is deleted', (await st(OWN)) === null);
+  check('0.11.0 restore: the shared automation is still there, still on, still in its other function, out of this one', (await st(SH)) === 'on' && await hasLabel(page, SH, morning) && !(await hasLabel(page, SH, garage)), { state: await st(SH) });
+  check('0.11.0 restore: the script used outside is still there, out of this function', (await st(RUN)) !== null && !(await hasLabel(page, RUN, garage)));
+  check('0.11.0 restoring with what\'s shared: no errors', page.logs.length === 0, page.logs);
+});
+
 pwTest.afterAll(() => done());

@@ -1,4 +1,4 @@
-style {57719 chars, #783270f4}
+style {58425 chars, #da83e5ca}
 div.board.m-panel.pc.sbx
   aside.list
     div.lhead
@@ -33,7 +33,7 @@ div.board.m-panel.pc.sbx
           ha-icon icon="mdi:airplane" style="color:var(--purple-color, purple)"
           span.fnt
             span.fnn | Morning
-            span.fnc | 1 automation · 1 script · 2 helpers
+            span.fnc | 2 automations · 1 script · 2 helpers
         button.fnmore.ib data-act="fn-menu" data-label="morning" title="Edit, hide or delete Morning"
           ha-icon icon="mdi:dots-vertical"
     div.lfoot

@@ -103,7 +103,21 @@ test('a11y', async ({ browser }) => {
     await fbq(page, '.lhead [data-act="import"]').click(); await page.waitForTimeout(1500);
     await audit(page, 'import', found);
     await fbq(page, '.modal [data-act="modal-cancel"]').first().click().catch(() => {});
+    // 0.11.0: a group the import offers to merge with the garage, then merged (what it's made from, Separate)
+    const BED = [['fba11ybed1', 'Bedtime: lights out', [{ action: 'light.turn_off', target: { entity_id: 'light.bed_light' } }, { action: 'lock.lock', target: { entity_id: 'lock.front_door' } }, { action: 'automation.turn_on', target: { entity_id: 'automation.garage_left_open' } }]],
+      ['fba11ybed2', 'Bedtime: bedside glow', [{ action: 'light.turn_on', target: { entity_id: 'light.ceiling_lights' } }]]];
+    for (const [id, alias, actions] of BED) await api(page, 'POST', `config/automation/config/${id}`, { alias, triggers: [{ trigger: 'time', at: '22:30:00' }], actions });
+    await until(() => page.evaluate(() => !!document.querySelector('home-assistant').hass.states['automation.bedtime_bedside_glow']), 10000);
+    await fbq(page, '.lhead [data-act="import"]').click();
+    await fbq(page, '.modal [data-act="mgr-rescan"]').click();
+    await fbq(page, '.modal [data-act="mgr-merge"]').first().waitFor({ timeout: 20000 });
+    await audit(page, 'import, a merge offered', found);
+    await fbq(page, '.modal [data-act="mgr-merge"]').first().click();
+    await fbq(page, '.modal .cmade').first().waitFor();
+    await audit(page, 'import, merged', found);
+    await fbq(page, '.modal [data-act="modal-cancel"]').first().click().catch(() => {});
     page.allowFail.push(/^automation\/config$/);
+    for (const [id] of BED) await api(page, 'DELETE', `config/automation/config/${id}`).catch(() => {});
     await api(page, 'DELETE', `config/automation/config/${PID}`).catch(() => {});
     check(`X1 axe finds nothing in any view, ${light ? 'light' : 'dark'} mode`, found.length === 0, found);
     check(`X1 no errors (${light ? 'light' : 'dark'})`, page.logs.length === 0, page.logs);

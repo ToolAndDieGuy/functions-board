@@ -131,7 +131,15 @@ async def test_nodered_kept_for_every_board(hass: HomeAssistant, hass_ws_client)
     await ws.send_json_auto_id({"type": "functions_board/nodered"})
     kept = (await ws.receive_json())["result"]["kept"]
     assert kept["slug"] == "x_nodered" and kept["at"] > 0
-    assert kept["groups"] == [{k: v for k, v in group.items() if k != "code"}]  # nothing but the summary
+    # nothing but the summary; a board older than 0.11.0 doesn't say whether the tab is disabled: it isn't
+    assert kept["groups"] == [{**{k: v for k, v in group.items() if k != "code"}, "off": False}]
+    # 0.11.0: a disabled tab's group is kept marked off; "off" must be true or false
+    await ws.send_json_auto_id({"type": "functions_board/nodered_keep", "slug": "x_nodered", "groups": [{**group, "off": True}]})
+    assert any(m.get("type") == "result" and m["success"] for m in [await ws.receive_json(), await ws.receive_json()])
+    await ws.send_json_auto_id({"type": "functions_board/nodered"})
+    assert (await ws.receive_json())["result"]["kept"]["groups"][0]["off"] is True
+    await ws.send_json_auto_id({"type": "functions_board/nodered_keep", "slug": "x", "groups": [{**group, "off": "yes"}]})
+    assert (await ws.receive_json())["error"]["code"] == "invalid_format"
     await ws.send_json_auto_id({"type": "functions_board/nodered_keep", "slug": "x", "groups": [{"id": 5}]})
     assert (await ws.receive_json())["error"]["code"] == "invalid_format"
     await ws.send_json_auto_id({"type": "functions_board/nodered_keep", "slug": "x", "groups": [{**group, "trig": ["a" * 200]}] * 5000})

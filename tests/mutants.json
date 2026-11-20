@@ -368,8 +368,8 @@
  {
   "name": "rules: a quick node suite left out of CI",
   "file": ".github/workflows/validate.yml",
-  "find": "--only 'selftest|static|wiring|problems|sandbox|clock|link|store'",
-  "replace": "--only 'selftest|static|wiring|problems|sandbox|clock|link'",
+  "find": "--only 'selftest|static|wiring|import|problems|sandbox|clock|link|store'",
+  "replace": "--only 'selftest|static|wiring|problems|sandbox|clock|link|store'",
   "suite": "static",
   "expect": "every quick node suite runs in CI"
  },
@@ -802,5 +802,310 @@
   "suite": "e2e-isolation",
   "expect": "a device it moved",
   "fresh": true
+ },
+ {
+  "name": "import: an automation that also does much else joins what it switches",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "ts.forEach((t) => (ts.length * 2 >= does ? union(L, t) : tie(L, t, 'switches', L, t)));",
+  "replace": "ts.forEach((t) => union(L, t));",
+  "suite": "import",
+  "expect": "F4 one that also does much else"
+ },
+ {
+  "name": "import: a mode that switches eight joins them",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "if (!ts.length || ts.length > 6) return;",
+  "replace": "if (!ts.length) return;",
+  "suite": "import",
+  "expect": "F4 one that switches eight is a mode"
+ },
+ {
+  "name": "import: any two first words fence a helper",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "if (said) [...by.keys()]",
+  "replace": "if (false) [...by.keys()]",
+  "suite": "import",
+  "expect": "F3 two automations that turn on one scene"
+ },
+ {
+  "name": "import: no name fences",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      Ls = side(Ls, gl, fam, fam(gl), like, true);\n",
+  "replace": "",
+  "suite": "import",
+  "expect": "F2 the systems that set them are parts of their own"
+ },
+ {
+  "name": "import: a switch's taps pair up before the devices claim theirs",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "const keys = [...srcs.keys()].sort((x, y) => x.startsWith('buttons:') - y.startsWith('buttons:'));",
+  "replace": "const keys = [...srcs.keys()];",
+  "suite": "import",
+  "expect": "F6 a switch's other taps pair up"
+ },
+ {
+  "name": "import: the taps go by what was grouped before the devices",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "if (k.startsWith('buttons:') && (!ki || !keys[ki - 1].startsWith('buttons:'))) part0 = snapshot();",
+  "replace": "",
+  "suite": "import",
+  "expect": "F6 a switch's other taps pair up"
+ },
+ {
+  "name": "import: names that say two systems on one device are one part",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      let heads;\n      if (named.length >= 2) {",
+  "replace": "      let heads;\n      if (false) {",
+  "suite": "import",
+  "expect": "F7 names that say two systems on one device"
+ },
+ {
+  "name": "import: two parts meeting at a device become one",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "        if (roots.length > 1) {",
+  "replace": "        if (false) {",
+  "suite": "import",
+  "expect": "F6 two parts that start from one device stay apart"
+ },
+ {
+  "name": "import: the piece that operates a device doesn't join",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      if (cs.length && cs.length <= 3) cs.filter((L) => !part0.has(L)).forEach((L) => union(Ls[0], L));",
+  "replace": "",
+  "suite": "import",
+  "expect": "F6 automations that start from one device are one part, with the tap"
+ },
+ {
+  "name": "import: no tie for checking another part's helper",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "(reads.get(gl) || new Set()).forEach((L) => tie(L, gl, 'reads', L, gl));",
+  "replace": "",
+  "suite": "import",
+  "expect": "F5 a flow that checks another part|F8 a script one part runs"
+ },
+ {
+  "name": "import: no tie for changing what another part starts from",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "cs.forEach((C) => Ls.forEach((L) => tie(C, L, 'starts', C, via.get(k))));",
+  "replace": "",
+  "suite": "import",
+  "expect": "F6 a script that changes what another part starts from"
+ },
+ {
+  "name": "import: a Node-RED tab's groups and tabs named alike stay apart",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "if (tabs.has(t)) union(tabs.get(t), L); else tabs.set(t, L);",
+  "replace": "tabs.set(t, L);",
+  "suite": "import",
+  "expect": "F5 the scripts a flow runs are one part"
+ },
+ {
+  "name": "import: a flow with one piece it uses is a part",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "ids.filter((id) => kind(id) !== 'nodered').length >= 2",
+  "replace": "ids.filter((id) => kind(id) !== 'nodered').length >= 1",
+  "suite": "import",
+  "expect": "F5 a flow with one piece it uses is no part"
+ },
+ {
+  "name": "import: a family the name says doesn't join",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "byPre.forEach((s) => { const g = [...s]; g.forEach((id) => union(g[0], id)); });",
+  "replace": "",
+  "suite": "import",
+  "expect": "F7 a family the name says"
+ },
+ {
+  "name": "import: any number of automations starting alike pair up",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "if (g.length >= 2 && g.length <= 8)",
+  "replace": "if (g.length >= 2)",
+  "suite": "import",
+  "expect": "F7 nine of them"
+ },
+ {
+  "name": "nrGroups: a disabled tab isn't marked",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "events: [...events], off: !!(tab && tab.disabled) });",
+  "replace": "events: [...events], off: false });",
+  "suite": "import",
+  "expect": "F10 a group on a disabled tab"
+ },
+ {
+  "name": "nrGroups: a disabled node still counts",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "tabs.has(n.z) && !n.d && !['tab', 'comment', 'group'].includes(n.type)",
+  "replace": "tabs.has(n.z) && !['tab', 'comment', 'group'].includes(n.type)",
+  "suite": "import",
+  "expect": "F10 a disabled node runs nothing"
+ },
+ {
+  "name": "import manager: no offers shown",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "          c.offers.push({ k, rows: others });",
+  "replace": "",
+  "suite": "board-regress",
+  "only": "0.11.0",
+  "expect": "offers to merge with the garage"
+ },
+ {
+  "name": "import manager: Separate keeps the merge",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "if (split) [...g.joins].forEach",
+  "replace": "if (false) [...g.joins].forEach",
+  "suite": "board-regress",
+  "only": "0.11.0",
+  "expect": "Separate: the two groups again"
+ },
+ {
+  "name": "import manager: a merge ticks every piece again",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "        c.keep = new Set([...c.keep].filter((id) => !g.drop.has(id)));\n",
+  "replace": "",
+  "suite": "board-regress",
+  "only": "0.11.0",
+  "expect": "a piece unticked stays unticked"
+ },
+ {
+  "name": "import manager: no offer for a category over two groups",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "if (mine.length >= 2) offers.push(",
+  "replace": "if (false) offers.push(",
+  "suite": "board-regress",
+  "only": "0.11.0",
+  "expect": "filed under one category: an offer"
+ },
+ {
+  "name": "import manager: a category over one group leaves the rest out",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "          rest.forEach((id) => o.ids.add(id));\n",
+  "replace": "",
+  "suite": "board-regress",
+  "only": "0.11.0",
+  "expect": "a category over one group brings in"
+ },
+ {
+  "name": "import manager: Node-RED flows aren't read",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "g.roles = roles; g.catList = cats; g.ids = ids; g.nr = (nr && nr.groups) || [];",
+  "replace": "g.roles = roles; g.catList = cats; g.ids = ids; g.nr = [];",
+  "suite": "board-regress",
+  "only": "0.11.0",
+  "expect": "Node-RED on: the two scripts"
+ },
+ {
+  "name": "Node-RED box: a disabled tab isn't shown",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "return n.nr.off ? { text: T('node_red_off', { tabLabel, count }), off: true } :",
+  "replace": "return false ? { text: T('node_red_off', { tabLabel, count }), off: true } :",
+  "suite": "board-regress",
+  "only": "0.11.0",
+  "expect": "box says its tab is disabled"
+ },
+ {
+  "name": "backend: a disabled Node-RED tab isn't kept",
+  "file": "custom_components/functions_board/nodered.py",
+  "find": "        item[\"off\"] = off\n",
+  "replace": "        item[\"off\"] = False\n",
+  "suite": "backend",
+  "expect": "nodered"
+ },
+ {
+  "name": "import: a device a dozen automations start from joins them",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      if (Ls.length < 2 || Ls.length > 12) return;",
+  "replace": "      if (Ls.length < 2) return;",
+  "suite": "import",
+  "expect": "F11 thirteen automations"
+ },
+ {
+  "name": "delete with items: a piece in another function goes",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "if (other.size) return plain ? T('shared_also_in'",
+  "replace": "if (false) return plain ? T('shared_also_in'",
+  "suite": "board-regress",
+  "only": "never deletes",
+  "expect": "a piece also in another function stays"
+ },
+ {
+  "name": "delete with items: a piece used outside goes",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "if (who.size) return plain ? T('shared_used_by'",
+  "replace": "if (false) return plain ? T('shared_used_by'",
+  "suite": "board-regress",
+  "only": "never deletes",
+  "expect": "a script run from outside the function stays"
+ },
+ {
+  "name": "delete with items: a helper set up with something outside goes",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "if (with_.length) return T('stays_set_up_with'",
+  "replace": "if (false) return T('stays_set_up_with'",
+  "suite": "board-regress",
+  "only": "never deletes",
+  "expect": "a helper set up with something outside the function stays"
+ },
+ {
+  "name": "delete with items: a group outside holding it isn't seen",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "x !== st.entity_id && want.has(x)) add(x, st.entity_id);",
+  "replace": "x !== st.entity_id && want.has(x)) void 0;",
+  "suite": "board-regress",
+  "only": "never deletes",
+  "expect": "a piece a group outside holds stays"
+ },
+ {
+  "name": "delete with items: a helper outside reading it isn't seen",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "((src && src.entities) || []).forEach((x) => { if (want.has(x)) add(x, k); })",
+  "replace": "((src && src.entities) || []).forEach((x) => { if (want.has(x)) void 0; })",
+  "suite": "board-regress",
+  "only": "never deletes",
+  "expect": "a piece a helper outside reads stays"
+ },
+ {
+  "name": "delete with items: a Node-RED flow using it isn't seen",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "forEach((x) => { if (want.has(x)) add(x, 'nr:' + g.name); })",
+  "replace": "forEach((x) => { if (want.has(x)) void 0; })",
+  "suite": "board-regress",
+  "only": "never deletes",
+  "expect": "a script a Node-RED flow runs stays"
+ },
+ {
+  "name": "delete with items: everything shared is deleted",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "const why = p.can && this._sharedWhy(p, label, ents, used);",
+  "replace": "const why = null;",
+  "suite": "board-regress",
+  "only": "never deletes",
+  "expect": "every shared piece is still there"
+ },
+ {
+  "name": "restore: what's shared is turned off or deleted with the rest",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "plan.shared = cand.map((k) => ({ k, why: this._sharedWhy({ id: k }, label, mine, uses) })).filter((x) => x.why);",
+  "replace": "plan.shared = [];",
+  "suite": "board-regress",
+  "only": "restoring a version never",
+  "expect": "restore: the shared automation is still there"
+ },
+ {
+  "name": "restore: what's shared stays in the function",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "        try { await this._label(x.k, label, false, false); } catch (e) {",
+  "replace": "        try { void 0; } catch (e) {",
+  "suite": "board-regress",
+  "only": "restoring a version never",
+  "expect": "restore: the shared automation is still there|restore: the script used outside"
+ },
+ {
+  "name": "restore: no warning for rewriting what's shared",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "plan.writeShared = plan.write.map((k) => ({ k, why: this._sharedWhy({ id: k }, label, mine, uses, true) })).filter((x) => x.why);",
+  "replace": "plan.writeShared = [];",
+  "suite": "board-regress",
+  "only": "restoring a version never",
+  "expect": "restore warns that what it writes back"
  }
 ]

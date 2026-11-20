@@ -1,4 +1,4 @@
-style {57719 chars, #783270f4}
+style {58425 chars, #da83e5ca}
 div.board.firstrun.m-panel
   aside.list
     div.lhead
@@ -196,35 +196,41 @@ div.board.firstrun.m-panel
         button.ib data-act="modal-cancel" title="Close"
           ha-icon icon="mdi:close"
       div.mbody
-        div.hint.mintro | Traced 9 automations and 4 scripts. Each group below is a set of automations, scripts and helpers that trigger, change or call each other, merged with any category you already filed them under. Rename a group, open it to untick pieces that don't belong, then import it on its own, or tick several and import them together. Helpers that a lot of unrelated automations use (mode flags, shared notification scripts) are left out of the grouping so they don't glue everything into one.
-          b | 7 of 9 automations and 3 of 4 scripts are in a group or a function.
-        div.cand
+        div.hint.mintro | Traced 9 automations and 4 scripts. Each group below is a set of automations, scripts and helpers that trigger, change or call each other, start from the same device or are named as one system (with the Node-RED flows that use them, while the board reads Node-RED), and what you filed under the same category. Where two groups may be one system, a group offers to merge them and says why; a merged group shows what it's made from and can be separated again. Rename a group, open it to untick pieces that don't belong, then import it, or tick several and import them together. Helpers that many unrelated automations use (mode flags, shared notification scripts) don't join groups.
+          b | 8 of 9 automations and 3 of 4 scripts are in a group or a function.
+        div.cand data-key="0"
           div.crow
             input data-csel="0" title="Select for Import selected" type="checkbox" ·value="on" ·checked=false
             ha-icon icon="mdi:garage-lock"
             input.cname data-cname="0" title="Function name (click to rename)" value="Garage" ·value="Garage"
             span.ccount | 3 automations · 1 script · 2 helpers
             span.csrc | from the wiring
+            button.ib data-act="mgr-merge-menu" data-ci="0" title="Merge into another group"
+              ha-icon icon="mdi:call-merge"
             button.ib data-act="mgr-expand" data-ci="0" title="Show the pieces"
               ha-icon icon="mdi:chevron-down"
             button.go data-act="mgr-import-one" data-ci="0" | Import
-        div.cand
+        div.cand data-key="1"
           div.crow
             input data-csel="1" title="Select for Import selected" type="checkbox" ·value="on" ·checked=false
             ha-icon icon="mdi:calendar-clock"
             input.cname data-cname="1" title="Function name (click to rename)" value="Furnace filter" ·value="Furnace filter"
             span.ccount | 2 automations · 1 script · 2 helpers
             span.csrc | from the wiring
+            button.ib data-act="mgr-merge-menu" data-ci="1" title="Merge into another group"
+              ha-icon icon="mdi:call-merge"
             button.ib data-act="mgr-expand" data-ci="1" title="Show the pieces"
               ha-icon icon="mdi:chevron-down"
             button.go data-act="mgr-import-one" data-ci="1" | Import
-        div.cand
+        div.cand data-key="2"
           div.crow
             input data-csel="2" title="Select for Import selected" type="checkbox" ·value="on" ·checked=false
             ha-icon icon="mdi:airplane"
             input.cname data-cname="2" title="Function name (click to rename)" value="Morning" ·value="Morning"
-            span.ccount | 1 automation · 1 script · 2 helpers
+            span.ccount | 2 automations · 1 script · 2 helpers
             span.csrc | from the wiring
+            button.ib data-act="mgr-merge-menu" data-ci="2" title="Merge into another group"
+              ha-icon icon="mdi:call-merge"
             button.ib data-act="mgr-expand" data-ci="2" title="Show the pieces"
               ha-icon icon="mdi:chevron-down"
             button.go data-act="mgr-import-one" data-ci="2" | Import
@@ -232,15 +238,13 @@ div.board.firstrun.m-panel
           div.crow
             ha-icon icon="mdi:help-circle-outline"
             span.cname.static | Not in any function
-            span.ccount | 2 automations · 1 script
+            span.ccount | 1 automation · 1 script
             span.csrc | no wiring or category ties them to a group
             button.ib data-act="mgr-left" title="Show them"
               ha-icon icon="mdi:chevron-down"
       div.mfoot
         label.chk.mcats | File imported pieces under a category named after their function (pieces that already have one keep it)
           input checked data-mcats type="checkbox" ·value="on" ·checked=true
-        label.chk.mcats | Also join automations that meet at a device (one turns a light on, another starts from that light)
-          input data-mdev type="checkbox" ·value="on" ·checked=false
         span.cnt | 0 of 3 selected
         button data-act="mgr-rescan" | Rescan
         button data-act="mgr-selall" | Select all

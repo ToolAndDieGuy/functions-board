@@ -1716,10 +1716,11 @@
 
   /* ---------- Node-RED flows (2.7, decision D1): one box per wired group of nodes in a flow tab ---------- */
   const NR_TRIG = new Set(['server-state-changed', 'trigger-state', 'poll-state', 'server-events', 'ha-zone', 'ha-time', 'inject']);
-  // groups of wired-together nodes and the Home Assistant entities they trigger on, read and change
+  // groups of wired-together nodes and the Home Assistant entities they trigger on, read and change; a disabled
+  // node runs nothing (it's left out), and the groups of a disabled tab are marked off (0.11.0)
   function nrGroups(flows, known) {
     const all = Array.isArray(flows) ? flows : [], tabs = new Map(all.filter((n) => n && n.type === 'tab').map((t) => [t.id, t]));
-    const nodes = all.filter((n) => n && n.z && tabs.has(n.z) && !['tab', 'comment', 'group'].includes(n.type));
+    const nodes = all.filter((n) => n && n.z && tabs.has(n.z) && !n.d && !['tab', 'comment', 'group'].includes(n.type));
     const adj = new Map(nodes.map((n) => [n.id, new Set()])), byId = new Map(nodes.map((n) => [n.id, n]));
     nodes.forEach((n) => toList(n.wires).flat().forEach((t) => { if (adj.has(t)) { adj.get(n.id).add(t); adj.get(t).add(n.id); } }));
     const ids = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? toList(v.entity) : typeof v === 'string' ? v.split(',').map((x) => x.trim()) : toList(v)).filter((x) => typeof x === 'string' && x);
@@ -1750,9 +1751,214 @@
       const first = g.find((n) => NR_TRIG.has(n.type) && n.name) || g.find((n) => n.name), tab = tabs.get(n0.z);
       const gid = n0.z + ':' + g.map((n) => n.id).sort()[0];
       out.push({ id: gid, tab: n0.z, tabLabel: (tab && tab.label) || T('flow'), name: (first && first.name) || (tab && tab.label) || T('node_red_flow'), size: g.length,
-        trig: [...trig], read: [...read].filter((x) => !trig.has(x)), change: [...change], calls: [...calls], events: [...events] });
+        trig: [...trig], read: [...read].filter((x) => !trig.has(x)), change: [...change], calls: [...calls], events: [...events], off: !!(tab && tab.disabled) });
     });
     return out;
+  }
+
+  /* ---------- the import's grouping (0.11.0): parts, and the ties a person may merge them by ---------- */
+  // words that say nothing about which system a name belongs to
+  const FF_STOP = new Set(('a an the and or of to on off in at for with from when after before is it my now up down set toggle turn turned '
+    + 'notify notification notifications alert alerts reminder automation script switch led status check reset counter decrement '
+    + 'decrementer decrementor count countdown change changed close closed open opened opening closing double tap single triple '
+    + 'hold every daily new old one time minute minutes hour hours am pm via if then else start stop run running auto').split(' '));
+  function ffWords(s) {
+    return String(s || '').toLowerCase().replace(/['’]s\b/g, '').split(/[^a-z0-9]+/)
+      .map((t) => (/^[a-z]{3,}\d+$/.test(t) ? t.replace(/\d+$/, '') : t))
+      .filter((t) => t && !FF_STOP.has(t) && !/^\d+$/.test(t)).map((t) => (t.length > 3 ? t.replace(/s$/, '') : t));
+  }
+  // the family a name says it's in: "Generator: low battery", "Router - firmware", "[Garage] lights"
+  function ffPrefix(name) {
+    const m = /^\s*\[([^\]]{2,40})\]/.exec(name || '') || /^\s*([^:—–[]{2,40}?)\s*(?::|\s[—–-]\s)\s*\S/.exec(name || '');
+    const w = m ? ffWords(m[1]) : [];
+    return w.length ? w.join(' ') : null;
+  }
+  // roles: logic id → Map(ref → Set of roles: trigger, condition, action, call), for automations, scripts and
+  // Node-RED groups ('nr:…'). info: kind(id) → 'automation' | 'script' | 'helper' | 'scene' | 'nodered' | null;
+  // name(id); cat(id) → its category in lower case, or ''; source(ref) → what a trigger on it starts from (a device's
+  // buttons 'buttons:<device>', an actuator's own state: the entity, a device 'dev:<device>') or null for things
+  // everything listens to (people, phones, zones, the sun, speakers); tab(id) → a Node-RED group's tab.
+  // Returns { parts, ties }: parts are what belongs together on any reading, each an array of ids (two or more, one
+  // an automation, or a Node-RED flow with two pieces it uses); a tie { a, b, why, by, via } is a reason parts a and
+  // b (indexes) may be one function, for the person to choose: why is switches (by turns via, an automation of the
+  // other, on or off), uses (by changes or runs via, a helper or script of the other), reads (by checks via, a helper
+  // of the other), starts (by changes via, which the other starts from) or device (both start from via's device).
+  function findFunctions(roles, info) {
+    const kind = (id) => info.kind(id), name = (id) => info.name(id) || id;
+    const logic = (id) => kind(id) === 'automation' || kind(id) === 'nodered';
+    const glue = (id) => { const k = kind(id); return k === 'script' || k === 'helper' || k === 'scene'; };
+    const pre = (id) => ffPrefix(name(id));
+    const fam = (id) => { const p = pre(id); return p ? p.split(' ')[0] : ffWords(name(id))[0] || null; };
+    const parent = new Map();
+    const find = (x) => {
+      if (!parent.has(x)) parent.set(x, x);
+      let r = x;
+      while (parent.get(r) !== r) r = parent.get(r);
+      while (parent.get(x) !== r) { const nx = parent.get(x); parent.set(x, r); x = nx; }
+      return r;
+    };
+    const union = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent.set(ra, rb); };
+    const put = (m, k, v) => (m.get(k) || m.set(k, new Set()).get(k)).add(v);
+    roles.forEach((_, L) => find(L));
+    const said = [];
+    const tie = (x, y, why, by, via) => said.push({ x, y, why, by, via });
+    // the parts so far: a piece's part, or null for a piece on its own (every id of a part, its helpers included)
+    const real = (ids) => ids.length >= 2 && ids.some(logic);
+    const snapshot = () => {
+      const comps = new Map(), part = new Map();
+      parent.forEach((_, x) => put(comps, find(x), x));
+      comps.forEach((ids, r) => { if (real([...ids])) ids.forEach((id) => part.set(id, r)); });
+      return part;
+    };
+    // 1. a helper, script or scene a piece triggers on, changes or runs links the pieces that do; one only checked (a
+    //    condition, like a mode flag) doesn't. A busy one is a hub (a notify script) and links nothing.
+    const causal = new Map(), reads = new Map();
+    roles.forEach((m, L) => m.forEach((rs, ref) => { if (ref !== L && glue(ref)) put([...rs].some((r) => r !== 'condition') ? causal : reads, ref, L); }));
+    const hub = (gl) => (causal.get(gl) || new Set()).size > (kind(gl) === 'helper' ? 12 : 6);
+    // fences: when it links pieces filed under different categories, or named as different systems, it joins only
+    // the side it belongs to (its own category or name, else the largest), and pieces with neither; the rest tie.
+    // A name says a system when it says its family ("Plants: …") or two of the pieces start with its first word.
+    const side = (Ls, gl, key, own0, like, said) => {
+      const by = new Map();
+      Ls.forEach((L) => put(by, key(L) || '', L));
+      if (said) [...by.keys()].forEach((f) => { if (f && by.get(f).size < 2 && ![...by.get(f)].some((L) => pre(L))) { by.get(f).forEach((L) => put(by, '', L)); by.delete(f); } });
+      const named = [...by.keys()].filter(Boolean);
+      if (named.length < 2) return Ls;
+      const own = by.has(own0) ? own0 : named.sort((x, y) => like(y) - like(x) || by.get(y).size - by.get(x).size)[0];
+      return [...by.get(own), ...(by.get('') || [])];
+    };
+    causal.forEach((Ls0, gl) => {
+      if (hub(gl)) return;
+      const gw = new Set(ffWords(name(gl)));
+      let Ls = side([...Ls0], gl, info.cat, info.cat(gl), () => 0);
+      const like = (f) => [...Ls].filter((L) => fam(L) === f).reduce((n, L) => n + ffWords(name(L)).filter((w) => gw.has(w)).length, 0);
+      Ls = side(Ls, gl, fam, fam(gl), like, true);
+      Ls.forEach((L) => union(L, gl));
+      Ls0.forEach((L) => { if (!Ls.includes(L)) tie(L, gl, 'uses', L, gl); });
+    });
+    // 2. Node-RED: a tab's groups are one flow, and tabs whose names start alike are one system
+    const tabs = new Map();
+    roles.forEach((_, L) => {
+      if (kind(L) !== 'nodered') return;
+      const t = ffWords(info.tab(L))[0] || String(info.tab(L));
+      if (tabs.has(t)) union(tabs.get(t), L); else tabs.set(t, L);
+    });
+    // 3. an automation that turns others on or off (or runs them) joins them when that's what it's for: they're at
+    //    least half of what it changes. Else it ties (a bedtime button that also arms the night alerts). One that
+    //    switches more than six is a mode (away, guests) and ties nothing.
+    roles.forEach((m, L) => {
+      const ts = [...m.entries()].filter(([ref, rs]) => ref !== L && kind(ref) === 'automation' && (rs.has('action') || rs.has('call'))).map(([ref]) => ref);
+      if (!ts.length || ts.length > 6) return;
+      const does = [...m.entries()].filter(([ref, rs]) => (rs.has('action') || rs.has('call')) && !/^(svc:|nact:|tts\.|notify\.|media_player\.)/.test(ref)).length;
+      ts.forEach((t) => (ts.length * 2 >= does ? union(L, t) : tie(L, t, 'switches', L, t)));
+    });
+    // 4. a helper only checked joins the one part that checks it; a piece on its own that only checks the helpers of
+    //    one part (and few others check them) joins it: "notify when the filter counter reaches 0"
+    const settle = () => {
+      const part = snapshot();
+      reads.forEach((Ls, gl) => {
+        if (causal.has(gl)) return;
+        const ps = new Set([...Ls].map((L) => part.get(L) || null));
+        if (ps.size === 1 && !ps.has(null)) { union(gl, [...Ls][0]); part.set(gl, [...ps][0]); }
+      });
+      roles.forEach((m, L) => {
+        if (!logic(L) || part.has(L)) return;
+        const rd = [...m.entries()].filter(([ref, rs]) => glue(ref) && [...rs].every((r) => r === 'condition')).map(([ref]) => ref);
+        if (!rd.length) return;
+        const ps = new Set(rd.map((ref) => part.get(ref) || null));
+        if (ps.size !== 1 || ps.has(null) || rd.some((ref) => (reads.get(ref) || new Set()).size > 3)) return;
+        union(L, rd[0]);
+      });
+    };
+    settle();
+    // 5. pieces that start from the same thing: a device (a door's sensors, a generator), an actuator's own state,
+    //    a switch's buttons. Taps nothing else has grouped pair up (each tap may do something else); two parts that
+    //    meet at a device, or names that say two systems ("Internet: …", "Router - …"), stay apart and tie. The few
+    //    pieces that change what they start from (the taps that open a door) join them. A device more than twelve
+    //    start from is a hub (an energy meter's circuits) and links nothing.
+    const srcs = new Map(), changers = new Map(), via = new Map();
+    roles.forEach((m, L) => {
+      if (!logic(L) && kind(L) !== 'script') return;
+      m.forEach((rs, ref) => {
+        const k = info.source(ref);
+        if (!k) return;
+        if (!via.has(k)) via.set(k, ref);
+        if (rs.has('trigger') && logic(L)) put(srcs, k, L);
+        if (rs.has('action') && !k.startsWith('buttons:')) put(changers, k, L);
+      });
+    });
+    let part0 = snapshot();
+    const keys = [...srcs.keys()].sort((x, y) => x.startsWith('buttons:') - y.startsWith('buttons:'));
+    keys.forEach((k, ki) => {
+      const Ls0 = srcs.get(k), Ls = [...Ls0];
+      if (k.startsWith('buttons:') && (!ki || !keys[ki - 1].startsWith('buttons:'))) part0 = snapshot();
+      if (Ls.length < 2 || Ls.length > 12) return;
+      const free = Ls.filter((L) => !part0.has(L));
+      if (k.startsWith('buttons:')) { free.forEach((L) => union(free[0], L)); return; }
+      const byPre = new Map();
+      Ls.forEach((L) => put(byPre, pre(L) || '', L));
+      const named = [...byPre.keys()].filter(Boolean);
+      let heads;
+      if (named.length >= 2) {
+        // each named family joins up; the unnamed go to the largest
+        named.forEach((p) => { const g = [...byPre.get(p)]; g.forEach((L) => union(g[0], L)); });
+        const big = named.sort((x, y) => byPre.get(y).size - byPre.get(x).size)[0];
+        (byPre.get('') || new Set()).forEach((L) => union([...byPre.get(big)][0], L));
+        heads = named.map((p) => [...byPre.get(p)][0]);
+      } else {
+        const roots = [...new Set(Ls.filter((L) => part0.has(L)).map((L) => part0.get(L)))];
+        if (roots.length > 1) {
+          // a piece on its own goes to the part named like it, else the largest
+          const size = (r) => [...part0.values()].filter((x) => x === r).length;
+          free.forEach((L) => {
+            const f = fam(L), same = roots.filter((r) => [...part0.entries()].some(([id, x]) => x === r && roles.has(id) && fam(id) === f));
+            union(L, (same.length ? same : roots).sort((x, y) => size(y) - size(x))[0]);
+          });
+          heads = roots;
+        } else Ls.forEach((L) => union(Ls[0], L));
+      }
+      if (heads) heads.forEach((h, i) => { if (i) tie(heads[0], h, 'device', null, via.get(k)); });
+      const cs = [...(changers.get(k) || [])].filter((L) => !Ls0.has(L));
+      if (cs.length && cs.length <= 3) cs.filter((L) => !part0.has(L)).forEach((L) => union(Ls[0], L));
+    });
+    // 6. a family the name says ("Generator: …"), then automations still alone whose names start with the same word
+    //    (two to eight of them: "Mailbox roadside opened", "Mailbox house side opened")
+    const byPre = new Map();
+    roles.forEach((_, id) => { const p = pre(id); if (p) put(byPre, p.split(' ')[0], id); });
+    byPre.forEach((s) => { const g = [...s]; g.forEach((id) => union(g[0], id)); });
+    const part1 = snapshot(), byFam = new Map();
+    roles.forEach((_, id) => { if (kind(id) === 'automation' && !part1.has(id) && fam(id)) put(byFam, fam(id), id); });
+    byFam.forEach((s) => { const g = [...s]; if (g.length >= 2 && g.length <= 8) g.forEach((id) => union(g[0], id)); });
+    settle();
+    // the parts: a Node-RED flow counts when it uses two pieces that can be labelled
+    const comps = new Map();
+    parent.forEach((_, x) => put(comps, find(x), x));
+    const parts = [...comps.values()].map((s) => [...s].sort())
+      .filter((ids) => ids.length >= 2 && (ids.some((id) => kind(id) === 'automation') || (ids.some((id) => kind(id) === 'nodered') && ids.filter((id) => kind(id) !== 'nodered').length >= 2)))
+      .sort((x, y) => y.length - x.length || x[0].localeCompare(y[0]));
+    const at = new Map();
+    parts.forEach((ids, i) => ids.forEach((id) => at.set(id, i)));
+    // ties found once the parts are known: a piece that checks a helper of another part (few check it), or that
+    // changes what another part starts from (few change it)
+    causal.forEach((_, gl) => {
+      if (hub(gl) || !at.has(gl) || (reads.get(gl) || new Set()).size > 3) return;
+      (reads.get(gl) || new Set()).forEach((L) => tie(L, gl, 'reads', L, gl));
+    });
+    srcs.forEach((Ls, k) => {
+      const cs = [...(changers.get(k) || [])].filter((L) => !Ls.has(L));
+      if (!cs.length || cs.length > 3 || Ls.size > 12) return;
+      cs.forEach((C) => Ls.forEach((L) => tie(C, L, 'starts', C, via.get(k))));
+    });
+    const RANK = { switches: 0, uses: 1, reads: 2, starts: 3, device: 4 }, seen = new Set(), ties = [];
+    said.sort((x, y) => RANK[x.why] - RANK[y.why]).forEach((t) => {
+      const a = at.get(t.x), b = at.get(t.y);
+      if (a == null || b == null || a === b) return;
+      const k = Math.min(a, b) + '|' + Math.max(a, b);
+      if (seen.has(k)) return;
+      seen.add(k);
+      ties.push({ a: Math.min(a, b), b: Math.max(a, b), why: t.why, by: t.by, via: t.via });
+    });
+    return { parts, ties };
   }
 
   // what the developer tools say and use (Phase 9)
@@ -2081,6 +2287,12 @@ svg path.e.prob{stroke:var(--error-color,#db4437);stroke-dasharray:5 4}
 .csrc{font-size:11px;color:var(--secondary-text-color);border:1px solid var(--divider-color);border-radius:8px;padding:1px 6px;white-space:nowrap}
 .onb{font-size:12px;color:var(--secondary-text-color);white-space:nowrap}
 .cmem{display:flex;flex-direction:column;padding:2px 12px 10px 40px;border-top:1px solid var(--divider-color)}
+/* 0.11.0: what a merged row is made from, and the offers to merge */
+.cmerge{display:flex;flex-direction:column;gap:4px;padding:0 12px 8px 40px}
+.cmade,.coffer{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:12px;color:var(--secondary-text-color)}
+.cmade .ptag{font-size:12px;padding:1px 8px;border-radius:10px;border:1px solid var(--divider-color);color:var(--primary-text-color);background:var(--primary-background-color)}
+.cmerge .chip{padding:2px 9px;font-size:12px}.cmerge .chip ha-icon{--mdc-icon-size:15px}.cmerge .chip[disabled]{opacity:.45;cursor:default}
+.mrow2{display:flex;align-items:center;gap:10px;padding:5px 0;font-size:13px}.mrow2 .tag{min-width:80px;text-align:center}
 .dlg label.mrow,.dlg label.lrow,.dlg label.pick{display:flex;flex-direction:row;align-items:center;gap:10px;padding:5px 0;cursor:pointer;color:var(--primary-text-color);font-size:13px}
 .dlg label.lrow,.dlg label.pick{padding:6px 10px;border-bottom:1px solid var(--divider-color)}
 .dlg label.lrow ha-icon{--mdc-icon-size:20px}
@@ -2580,6 +2792,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       monitor: 'Monitor',
       n_nodes: { one: '{n} node', other: '{n} nodes' },
       node_red_3: 'Node-RED · {tabLabel} · {count}',
+      node_red_off: 'Node-RED · {tabLabel} · {count} · its tab is disabled',
       device_2: 'Device{extra}',
       action_2: 'Action · {split}',
       notification_button_action: 'Notification button{extra} · action {key}',
@@ -2819,6 +3032,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       ver_active: 'active',
       ver_added_delete: 'Delete them',
       ver_added_h: 'Added since this version was saved',
+      ver_added_shared: 'Shared with another function or used elsewhere, so they\'re only taken out of this function (never turned off or deleted): {list}',
+      ver_write_shared: 'These are also in another function or used elsewhere, so restoring changes them there too: {list}',
       ver_added_off: 'Turn them off (automations; scripts and helpers stay as they are)',
       ver_added_other: 'Taken out of the function (they lose its label, nothing else changes): {list}',
       ver_auto: 'saved before a restore',
@@ -3387,6 +3602,12 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       n_frames: { one: '{n} frame', other: '{n} frames' },
       n_notes: { one: '{n} note', other: '{n} notes' },
       deletes_these_from_home_assistant: 'Deletes these from Home Assistant. Devices are never deleted.',
+      shared_also_in: 'also in {fns}',
+      shared_used_by: 'used outside this function by {names}',
+      stays_also_in: 'stays: it\'s also in {fns}',
+      stays_used_by: 'stays: used outside this function by {names}',
+      stays_set_up_with: 'stays: deleting it would also delete {names}, set up with it, which isn\'t in this function',
+      shared_items_stay: 'What\'s shared is never deleted: a piece also in another function, or used by something outside this one, stays where it is and only leaves this function.',
       undo_brings_back_the_function: 'Undo brings back the function and everything except helpers set up by integrations.',
       undo_brings_it_all_back: 'Undo brings it all back.',
       delete_function_and_items: 'Delete function and items',
@@ -3413,7 +3634,6 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       select_all: 'Select all',
       importing_2: 'Importing...',
       file_imported_pieces_under_a: 'File imported pieces under a category named after their function (pieces that already have one keep it)',
-      also_join_automations_that_meet: 'Also join automations that meet at a device (one turns a light on, another starts from that light)',
       rescan: 'Rescan',
       import_selected: 'Import selected',
       none_selected: 'None selected',
@@ -3424,7 +3644,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       the_scan_failed: 'The scan failed: {error}',
       no_groups_found_groups_show: 'No groups found. Groups show up here when automations, scripts and helpers trigger, change or call each other, or share a category.',
       of_and_of_are_in: '{a} of {a2} and {s} of {s2} are in a group or a function.',
-      traced_and_each_group_below: 'Traced {automations} and {scripts}. Each group below is a set of automations, scripts and helpers that trigger, change or call each other, merged with any category you already filed them under. Rename a group, open it to untick pieces that don\'t belong, then import it on its own, or tick several and import them together. Helpers that a lot of unrelated automations use (mode flags, shared notification scripts) are left out of the grouping so they don\'t glue everything into one.',
+      traced_and_each_group_below: 'Traced {automations} and {scripts}. Each group below is a set of automations, scripts and helpers that trigger, change or call each other, start from the same device or are named as one system (with the Node-RED flows that use them, while the board reads Node-RED), and what you filed under the same category. Where two groups may be one system, a group offers to merge them and says why; a merged group shows what it\'s made from and can be separated again. Rename a group, open it to untick pieces that don\'t belong, then import it, or tick several and import them together. Helpers that many unrelated automations use (mode flags, shared notification scripts) don\'t join groups.',
       hide: 'Hide',
       show: 'Show',
       no_unique_id_add_id_2: 'No unique ID: add id: to its YAML',
@@ -3436,6 +3656,24 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       created: 'Created {name}',
       could_not_create: 'Could not create: {message}',
       from_a_category: 'from a category',
+      wiring_node_red: 'wiring + Node-RED',
+      merged: 'merged',
+      made_from: 'Made from',
+      separate: 'Separate',
+      separate_title: 'Back to the groups it was made from',
+      merge_with: 'Merge with {name}',
+      merge_into: 'Merge into another group',
+      merge_into_2: 'Merge into',
+      names_and: '{list} & {last}',
+      tie_switches: '{by} turns {via} on and off',
+      tie_uses: '{by} uses {via}',
+      tie_reads: '{by} checks {via}',
+      tie_starts: '{by} changes {via}, which {other} starts from',
+      tie_device: 'Both start from {via}',
+      tie_category: 'Filed under {via}',
+      node_red_named: '{name} (Node-RED)',
+      node_red_flow_in: 'Node-RED flow in {tab}; it can\'t carry a label, so it isn\'t added',
+      node_red_flow_off: 'Node-RED flow in {tab}, which is disabled; it can\'t carry a label, so it isn\'t added',
       from_the_wiring: 'from the wiring',
       category_wiring: 'category + wiring',
       on_the_board_2: 'on the board',
@@ -6303,7 +6541,10 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
 
     _status(n) {
       if (n.kind === 'tool') return { text: n.tool.type === 'inject' ? (this._full() ? T('test_button') : T('test_button_full_manager_only')) : T('monitor') };
-      if (n.kind === 'nodered') return { text: T('node_red_3', { tabLabel: n.nr.tabLabel, count: P('n_nodes', n.nr.size) }) };
+      if (n.kind === 'nodered') {
+        const tabLabel = n.nr.tabLabel, count = P('n_nodes', n.nr.size);
+        return n.nr.off ? { text: T('node_red_off', { tabLabel, count }), off: true } : { text: T('node_red_3', { tabLabel, count }) };
+      }
       const tn = TYPE[n.domain] || n.domain.replace(/_/g, ' ');
       let r;
       if (n.domain === 'device') {
@@ -7150,6 +7391,10 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
             if (g.tab === 'detect' && !g.cands && !g.scanning) this._scanFunctions(); else this._renderManager();
           },
           'mgr-left': () => { this._mgr.leftOpen = !this._mgr.leftOpen; this._renderManager(); },
+          'mgr-merge': (el) => { const o = this._mgr.offers[+el.dataset.o]; if (o) this._mgrJoin(o.parts.join(',')); },
+          'mgr-merge-menu': (el) => { this._mgrMergeMenu(el, +el.dataset.ci); },
+          'mgr-merge-to': (el) => { this._closeMenu(); this._mgrJoin(el.dataset.a + ',' + el.dataset.b); },
+          'mgr-split': (el) => { const c = this._mgr.cands[+el.dataset.ci]; if (c) this._mgrJoin(c.key, true); },
           'mgr-expand': (el) => { const x = this._mgr.expanded, i = +el.dataset.ci; if (x.has(i)) x.delete(i); else x.add(i); this._renderManager(); },
           'mgr-import-one': (el) => { this._mgrImport([+el.dataset.ci]); },
           'mgr-import-sel': () => { this._mgrImport([...this._mgr.sel]); },
@@ -8153,6 +8398,45 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       return out;
     }
     _nameOf(id) { const st = this._hass.states[id], e = this._entMap.get(id); return (st && st.attributes.friendly_name) || (e && (e.name || e.original_name)) || id; }
+    // what outside `mine` uses any of `ids` (0.11.0): automations and scripts, the groups and scenes that hold it,
+    // the helpers that read it (template, statistics …) and the Node-RED flows last read; id → Set of who uses it
+    async _outsideUses(ids, mine) {
+      const want = new Set(ids), skip = new Set(mine);
+      const out = await this._usedBy(ids, skip);
+      const add = (id, who) => { if (!out.has(id)) out.set(id, new Set()); out.get(id).add(who); };
+      Object.values(this._hass.states).forEach((st) => {
+        if (skip.has(st.entity_id)) return;
+        toList(st.attributes && st.attributes.entity_id).forEach((x) => { if (typeof x === 'string' && x !== st.entity_id && want.has(x)) add(x, st.entity_id); });
+      });
+      if (this._storeMode === 'shared') {
+        const ask = this._ents.filter((e) => !skip.has(e.entity_id) && HELPER_PLATFORMS.has(e.platform)).map((e) => e.entity_id).slice(0, 500);
+        const r = ask.length ? await this._ws({ type: 'functions_board/sources', entity_ids: ask }, { fallback: null }) : null;
+        Object.entries((r && r.sources) || {}).forEach(([k, src]) => ((src && src.entities) || []).forEach((x) => { if (want.has(x)) add(x, k); }));
+      }
+      const nr = this._nrState();
+      ((nr && nr.groups) || []).forEach((g) => [].concat(g.trig || [], g.read || [], g.change || [], g.calls || []).forEach((x) => { if (want.has(x)) add(x, 'nr:' + g.name); }));
+      return out;
+    }
+    // why a piece of a function deleted with its items stays (0.11.0): it's also in another function, something
+    // outside this one uses it, or deleting it would delete something that isn't in this function (a helper set up
+    // with others). It stays, and only leaves this function; null when it may go
+    // plain: the reason alone, for a piece that stays anyway (restore rewriting what's also elsewhere)
+    _sharedWhy(p, label, mine, uses, plain) {
+      const ids = [p.id].concat(p.siblings || []), fset = new Set(this._data.functions.filter((l) => l !== label)), other = new Set(), who = new Set();
+      ids.forEach((id) => {
+        const e = this._entMap.get(id);
+        ((e && e.labels) || []).forEach((l) => { if (fset.has(l)) other.add(this._fnName(l)); });
+        (uses.get(id) || new Set()).forEach((u) => who.add(u));
+      });
+      const fns = [...other].join(', '), names = (list) => list.slice(0, 3).join(', ') + (list.length > 3 ? T('and_more', { n: list.length - 3 }) : '');
+      if (other.size) return plain ? T('shared_also_in', { fns }) : T('stays_also_in', { fns });
+      const users = names([...who].map((u) => (u.startsWith('nr:') ? T('node_red_named', { name: u.slice(3) }) : this._nameOf(u))));
+      if (who.size) return plain ? T('shared_used_by', { names: users }) : T('stays_used_by', { names: users });
+      if (plain) return null;
+      const with_ = (p.siblings || []).filter((x) => x !== p.id && !mine.includes(x));
+      if (with_.length) return T('stays_set_up_with', { names: names(with_.map((x) => this._nameOf(x))) });
+      return null;
+    }
     _usedHtml(id, used) {
       const u = used.get(id);
       if (!u || !u.size) return '';
@@ -8368,159 +8652,127 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       }));
       return [...byName.values()];
     }
+    // The import's grouping (0.11.0): the parts findFunctions makes of every automation, script and Node-RED flow,
+    // with the functions already on the board and your categories, and the offers to merge parts into one function
+    // (two parts tied, or a category several parts are filed under). Nothing is merged until the person says so.
+    // opt.nodered: Node-RED groups (nrGroups), when the board reads Node-RED.
     _cluster(roles, cats, opt = {}) {
-      // Glue = helpers and scripts. Two pieces belong together when one triggers on, changes or calls the
-      // other; helpers only read as conditions don't join groups (mode flags), and helpers/scripts that a
-      // lot of automations drive are treated as shared hubs.
-      const isGlue = (id) => !id.includes(':') && (id.startsWith('script.') || this._scopeOf(id) === 'helpers');
-      const causal = new Map(), reads = new Map();
-      roles.forEach((m, L) => m.forEach((rs, ref) => {
-        if (!isGlue(ref)) return;
-        const map = [...rs].some((r) => r !== 'condition') ? causal : reads;
-        if (!map.has(ref)) map.set(ref, new Set());
-        map.get(ref).add(L);
-      }));
-      const hub = (gl) => { const n = causal.has(gl) ? causal.get(gl).size : 0; return gl.startsWith('script.') ? n > 6 : n > 12; };
-      const parent = new Map();
-      const find = (x) => {
-        if (!parent.has(x)) parent.set(x, x);
-        let r = x;
-        while (parent.get(r) !== r) r = parent.get(r);
-        while (parent.get(x) !== r) { const nx = parent.get(x); parent.set(x, r); x = nx; }
-        return r;
-      };
-      const union = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent.set(ra, rb); };
-      roles.forEach((_, L) => find(L));
-      // Category fences: when a shared helper/script links automations you filed under different categories,
-      // it only joins the side whose category it belongs to (plus uncategorised pieces). Your own organisation
-      // decides where one system ends and the next begins; wiring fills in everything you haven't filed.
       const catOf = new Map();
       cats.forEach((c) => c.members.forEach((id) => catOf.set(id, String(c.name).toLowerCase())));
-      causal.forEach((Ls, gl) => {
-        if (hub(gl)) return;
-        const byCat = new Map();
-        Ls.forEach((L) => { const c = catOf.get(L) || ''; if (!byCat.has(c)) byCat.set(c, []); byCat.get(c).push(L); });
-        const named = [...byCat.keys()].filter(Boolean);
-        if (named.length < 2) { Ls.forEach((L) => union(L, gl)); return; }
-        const own = catOf.get(gl) || named.sort((x, y) => byCat.get(y).length - byCat.get(x).length)[0];
-        (byCat.get(own) || []).concat(byCat.get('') || []).forEach((L) => union(L, gl));
+      const all = new Map(roles), nrOf = new Map();
+      (opt.nodered || []).forEach((g) => {
+        const id = 'nr:' + g.id, m = new Map(), put = (ref, role) => (m.get(ref) || m.set(ref, new Set()).get(ref)).add(role);
+        g.trig.forEach((x) => put(x, 'trigger')); g.read.forEach((x) => put(x, 'condition')); g.change.forEach((x) => put(x, 'action')); g.calls.forEach((x) => put(x, 'call'));
+        all.set(id, m); nrOf.set(id, g);
       });
-      if (opt.devices) {
-        // a device entity that one or two pieces change and one or two trigger on joins them, like the kitchen
-        // light the morning routine turns on and the kitchen speaker automation starts from (3.3)
-        const changers = new Map(), triggers = new Map();
-        const put = (m, k, L) => (m.get(k) || m.set(k, new Set()).get(k)).add(L);
-        roles.forEach((m, L) => m.forEach((rs, ref) => {
-          if (isGlue(ref) || ref.includes(':') || /^(automation|script)\./.test(ref)) return;
-          if (rs.has('action')) put(changers, ref, L);
-          if (rs.has('trigger')) put(triggers, ref, L);
-        }));
-        changers.forEach((cs, ref) => {
-          const ts = triggers.get(ref);
-          if (!ts || cs.size > 2 || ts.size > 2) return;
-          const all = [...new Set([...cs, ...ts])];
-          if (all.length < 2) return;
-          const byCat = new Map();
-          all.forEach((L) => { const c = catOf.get(L) || ''; if (!byCat.has(c)) byCat.set(c, []); byCat.get(c).push(L); });
-          const named = [...byCat.keys()].filter(Boolean);
-          const join = named.length < 2 ? all : (byCat.get(named.sort((x, y) => byCat.get(y).length - byCat.get(x).length)[0]) || []).concat(byCat.get('') || []);
-          for (let i = 1; i < join.length; i++) union(join[0], join[i]);
-        });
-      }
-      const comps = new Map();
-      [...parent.keys()].forEach((x) => { const r = find(x); if (!comps.has(r)) comps.set(r, new Set()); comps.get(r).add(x); });
-      const wiring = [...comps.values()].filter((s) => s.size >= 2 && [...s].some((id) => id.startsWith('automation.')));
-      reads.forEach((Ls, gl) => {
-        if (causal.has(gl)) return;
-        const owners = new Set([...Ls].map((L) => find(L)));
-        if (owners.size !== 1) return;
-        const w = wiring.find((s) => s.has([...Ls][0]));
-        if (w) w.add(gl);
-      });
-      // a lone automation that only checks helpers belonging to one group (and few others check them) joins it,
-      // e.g. "notify when the filter counter reaches 0"; mode flags checked by many automations don't pull anything in
-      const groupOf = (id) => wiring.find((s) => s.has(id));
-      roles.forEach((m, L) => {
-        if (!L.startsWith('automation.') || groupOf(L)) return;
-        const rd = [...m.entries()].filter(([ref, rs]) => isGlue(ref) && [...rs].every((r) => r === 'condition')).map(([ref]) => ref);
-        if (!rd.length) return;
-        const gs = new Set(rd.map((ref) => groupOf(ref)));
-        if (gs.size !== 1 || gs.has(undefined)) return;
-        if (rd.some((ref) => (reads.get(ref) || new Set()).size > 3)) return;
-        [...gs][0].add(L);
+      const kind = (id) => {
+        if (nrOf.has(id)) return 'nodered';
+        const sc = this._scopeOf(id);
+        return sc === 'helpers' ? 'helper' : sc || (id.startsWith('scene.') ? 'scene' : null);
+      };
+      const { parts, ties } = findFunctions(all, {
+        kind, name: (id) => (nrOf.has(id) ? nrOf.get(id).tabLabel : this._nameOf(id)), cat: (id) => catOf.get(id) || '',
+        tab: (id) => (nrOf.get(id) || {}).tabLabel || '', source: (ref) => this._sourceOf(ref),
       });
       const fset = new Set(this._data.functions);
       const fnOf = (id) => { const e = this._entMap.get(id); return ((e && e.labels) || []).filter((l) => fset.has(l)); };
-      // 1. wiring groups that are mostly an existing function become that function (with any missing pieces)
-      const out = [], fnOut = new Map(), rest = [];
-      wiring.forEach((w) => {
+      // 1. a part that's mostly a function already is that function (with the rest of it); parts of one function are one
+      const out = [], byFn = new Map(), at = new Map();
+      parts.forEach((ids, pi) => {
+        const own = ids.filter((id) => !nrOf.has(id)), nr = ids.filter((id) => nrOf.has(id)).map((id) => nrOf.get(id));
         const tally = new Map();
-        w.forEach((id) => fnOf(id).forEach((l) => tally.set(l, (tally.get(l) || 0) + 1)));
+        own.forEach((id) => fnOf(id).forEach((l) => tally.set(l, (tally.get(l) || 0) + 1)));
         let best = null, bn = 0;
         tally.forEach((n, l) => { if (n > bn) { bn = n; best = l; } });
-        if (best && bn >= w.size / 2) {
-          if (!fnOut.has(best)) { const o = { fn: best, members: new Set(), source: 'function' }; fnOut.set(best, o); out.push(o); }
-          w.forEach((id) => fnOut.get(best).members.add(id));
-        } else rest.push(w);
+        if (best && bn >= own.length / 2) {
+          if (!byFn.has(best)) { byFn.set(best, out.length); out.push({ ids: new Set(), fn: best, source: 'function', nr: [] }); }
+          const o = out[byFn.get(best)];
+          own.forEach((id) => o.ids.add(id)); o.nr.push(...nr); at.set(pi, byFn.get(best));
+        } else { at.set(pi, out.length); out.push({ ids: new Set(own), source: nr.length ? 'nodered' : 'wiring', nr }); }
       });
-      fnOut.forEach((o, l) => this._ents.forEach((e) => { if ((e.labels || []).includes(l)) o.members.add(e.entity_id); }));
-      // 2. remaining wiring groups merge with the category they mostly sit in
+      byFn.forEach((oi, l) => this._ents.forEach((e) => { if ((e.labels || []).includes(l)) out[oi].ids.add(e.entity_id); }));
+      // 2. categories: a part filed under one keeps it; one category holding a single part brings the rest of what's
+      //    filed there into it, as before; a category over several parts is an offer to merge them (what's filed
+      //    there and in no part is a part of its own); a category over none is a part of its own
+      const offers = [];
       const catC = cats.filter((c) => c.members.size >= 2 && [...c.members].some((id) => id.startsWith('automation.') || id.startsWith('script.')));
-      const catOut = new Map();
-      rest.forEach((w) => {
-        let bi = -1, bestOv = 0;
-        catC.forEach((c, ci) => { let ov = 0; w.forEach((id) => { if (c.members.has(id)) ov++; }); if (ov > bestOv) { bestOv = ov; bi = ci; } });
-        if (bi >= 0 && (bestOv >= w.size / 2 || bestOv >= catC[bi].members.size / 2)) {
-          if (catOut.has(bi)) { const o = catOut.get(bi); w.forEach((id) => o.members.add(id)); }
-          else { const c = catC[bi], o = { name: c.name, cat: c.name, icon: c.icon, members: new Set([...c.members, ...w]), source: 'both' }; catOut.set(bi, o); out.push(o); }
-        } else out.push({ name: null, icon: null, members: w, source: 'wiring' });
+      const inC = new Map();
+      out.forEach((o, oi) => {
+        if (o.fn) return;
+        let bi = -1, bo = 0;
+        catC.forEach((c, ci) => { let ov = 0; o.ids.forEach((id) => { if (c.members.has(id)) ov++; }); if (ov > bo) { bo = ov; bi = ci; } });
+        if (bi >= 0 && (bo >= o.ids.size / 2 || bo >= catC[bi].members.size / 2)) inC.set(oi, bi);
       });
-      catC.forEach((c, ci) => { if (!catOut.has(ci)) out.push({ name: c.name, cat: c.name, icon: c.icon, members: new Set(c.members), source: 'category' }); });
-      // 3. finalize: names, icons, which existing function a group already is, what overlaps
-      const names = new Set(this._data.functions.map((l) => this._fnName(l).toLowerCase()));
+      const used = new Set(out.flatMap((o) => [...o.ids]));
+      catC.forEach((c, ci) => {
+        const ps = [...inC.entries()].filter(([, x]) => x === ci).map(([oi]) => oi);
+        const rest = [...c.members].filter((id) => !used.has(id) && !fnOf(id).length);
+        if (ps.length === 1) {
+          const o = out[ps[0]];
+          rest.forEach((id) => o.ids.add(id));
+          Object.assign(o, { name: c.name, cat: c.name, icon: c.icon, source: 'both' });
+          return;
+        }
+        const mine = ps.slice();
+        if (rest.length >= 2 && rest.some((id) => id.startsWith('automation.') || id.startsWith('script.'))) {
+          mine.push(out.length);
+          out.push({ ids: new Set(rest), source: 'category', name: c.name, cat: c.name, icon: c.icon, nr: [] });
+        }
+        mine.forEach((oi) => { out[oi].cat = out[oi].cat || c.name; });
+        if (mine.length >= 2) offers.push({ parts: mine.sort((x, y) => x - y), why: 'category', byPart: null, byName: '', viaName: c.name });
+      });
+      // 3. the ties between parts, except between two functions already made
+      const nm = (id) => (!id ? '' : nrOf.has(id) ? T('node_red_named', { name: nrOf.get(id).name }) : this._nameOf(id));
+      const devName = (id) => { const e = this._entMap.get(id), d = e && this._devMap.get(e.device_id); return d ? d.name_by_user || d.name || nm(id) : nm(id); };
+      ties.forEach((t) => {
+        const a = at.get(t.a), b = at.get(t.b);
+        if (a === b || (out[a].fn && out[b].fn)) return;
+        const byPart = t.by == null ? null : parts[t.a].includes(t.by) ? a : b;
+        offers.push({ parts: [a, b].sort((x, y) => x - y), why: t.why, byPart, byName: nm(t.by), viaName: t.why === 'device' ? devName(t.via) : nm(t.via) });
+      });
+      return { parts: out, offers };
+    }
+    // what a trigger on ref starts from, for the import (findFunctions): a device's buttons (its event entities, its
+    // MQTT topic), an actuator's own state (a light, a switch), or the device; nothing for what everything listens to
+    // (people, phones, zones, the sun, speakers) or for helpers (they link pieces their own way)
+    _sourceOf(ref) {
+      const mq = /^mqtt:([^/]+)\/([^/]+)/.exec(ref);
+      if (mq) { const d = this._devs.find((x) => (x.name_by_user || x.name) === mq[2]); return 'buttons:' + (d ? d.id : mq[1] + '/' + mq[2]); }
+      if (ref.includes(':') || !ref.includes('.')) return null;
+      const dom = ref.split('.')[0], e = this._entMap.get(ref);
+      if (/^(person|device_tracker|zone|sun|weather|media_player|tts|notify|calendar|scene|automation|script|conversation|stt|wake_word|assist_satellite)$/.test(dom)) return null;
+      if (!e || !e.device_id || e.platform === 'mobile_app' || this._scopeOf(ref) === 'helpers') return null;
+      if (dom === 'event') return 'buttons:' + e.device_id;
+      return /^(light|switch|fan|siren|valve)$/.test(dom) ? ref : 'dev:' + e.device_id;
+    }
+    // one row of the import from its pieces: its name, the function it already is (if any), what's missing from that
+    // function, what it overlaps; o: { fn, name, cat, icon, source }; names: the names taken so far (lower case)
+    _candOf(ids, o, names) {
+      const fset = new Set(this._data.functions);
+      const fnOf = (id) => { const e = this._entMap.get(id); return ((e && e.labels) || []).filter((l) => fset.has(l)); };
       const rank = (id) => { const t = this._scopeOf(id); return t === 'automation' ? 0 : t === 'script' ? 1 : t === 'helpers' ? 2 : 3; };
       const can = (id) => this._canLabel(id);
-      const res = out.map((o) => {
-        const members = [...o.members].filter((id) => this._hass.states[id] || this._entMap.has(id)).sort((x, y) => rank(x) - rank(y) || x.localeCompare(y));
-        const tally = new Map();
-        members.forEach((id) => fnOf(id).forEach((l) => tally.set(l, (tally.get(l) || 0) + 1)));
-        let fn = o.fn || null;
-        if (!fn) tally.forEach((n, l) => { if (!fn && n >= members.length * 0.8) fn = l; });
-        if (!fn && o.name) this._data.functions.forEach((l) => { if (!fn && this._fnName(l).toLowerCase() === o.name.toLowerCase()) fn = l; });
-        const missing = fn ? members.filter((id) => can(id) && !fnOf(id).includes(fn)) : [];
-        let name;
-        if (fn) name = this._fnName(fn);
-        else {
-          name = o.name || this._suggestName(members);
-          const base = name;
-          for (let k = 2; names.has(name.toLowerCase()); k++) name = base + ' ' + k;
-          names.add(name.toLowerCase());
-        }
-        const lab = fn ? this._labelMap.get(fn) : null;
-        return {
-          name, cat: o.cat || null, fn, missing, members, keep: new Set(members.filter(can)), source: fn && o.source === 'function' ? 'function' : o.source,
-          icon: (lab && lab.icon) || o.icon || this._pickIcon(members),
-          overlap: fn ? [] : [...tally.entries()].map(([l, n]) => ({ l, n })).sort((x, y) => y.n - x.n),
-        };
-      });
-      // groups that turn out to be the same existing function (wiring + category) merge into one row
-      const byFn = new Map();
-      let list = [];
-      res.forEach((c) => {
-        if (!c.fn) { list.push(c); return; }
-        const t = byFn.get(c.fn);
-        if (!t) { byFn.set(c.fn, c); list.push(c); return; }
-        c.members.forEach((id) => { if (!t.members.includes(id)) { t.members.push(id); if (can(id)) t.keep.add(id); } });
-        t.members.sort((x, y) => rank(x) - rank(y) || x.localeCompare(y));
-        t.missing = t.members.filter((id) => can(id) && !fnOf(id).includes(t.fn));
-      });
-      list = list.filter((c) => c.members.length >= 2);
-      const order = (c) => (!c.fn ? 0 : c.missing.length ? 1 : 2);
-      list.sort((x, y) => order(x) - order(y) || y.members.length - x.members.length);
-      // identity colours only: red, orange, amber and yellow are kept for alarm and warning states
-      const SAFE = ['indigo', 'teal', 'purple', 'blue', 'green', 'cyan', 'deep-purple', 'light-blue', 'light-green', 'pink', 'brown', 'blue-grey', 'lime'];
-      list.forEach((c, i) => { c.color = SAFE[i % SAFE.length]; });
-      return list;
+      const members = [...ids].filter((id) => this._hass.states[id] || this._entMap.has(id)).sort((x, y) => rank(x) - rank(y) || x.localeCompare(y));
+      const tally = new Map();
+      members.forEach((id) => fnOf(id).forEach((l) => tally.set(l, (tally.get(l) || 0) + 1)));
+      let fn = o.fn || null;
+      if (!fn) tally.forEach((n, l) => { if (!fn && n >= members.length * 0.8) fn = l; });
+      if (!fn && o.name) this._data.functions.forEach((l) => { if (!fn && this._fnName(l).toLowerCase() === o.name.toLowerCase()) fn = l; });
+      const missing = fn ? members.filter((id) => can(id) && !fnOf(id).includes(fn)) : [];
+      let name;
+      if (fn) name = this._fnName(fn);
+      else {
+        name = o.name || this._suggestName(members);
+        const base = name;
+        for (let k = 2; names.has(name.toLowerCase()); k++) name = base + ' ' + k;
+        names.add(name.toLowerCase());
+      }
+      const lab = fn ? this._labelMap.get(fn) : null;
+      return {
+        name, cat: o.cat || null, fn, missing, members, keep: new Set(members.filter(can)), source: fn && o.source === 'function' ? 'function' : o.source,
+        icon: (lab && lab.icon) || o.icon || this._pickIcon(members),
+        overlap: fn ? [] : [...tally.entries()].map(([l, n]) => ({ l, n })).sort((x, y) => y.n - x.n),
+      };
     }
     _suggestName(members) {
       const STOP = new Set(['the', 'a', 'an', 'of', 'on', 'off', 'to', 'and', 'for', 'in', 'at', 'by', 'with', 'is', 'when', 'if', 'then',
@@ -8980,12 +9232,14 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       let plan = [], used = new Map();
       if (withItems) {
         for (const id of ents.concat(devs)) plan.push(await this._howDelete(id));
-        used = await this._usedBy(ents, new Set(ents));
+        // what's shared is never deleted (0.11.0): it stays, in its other functions, until nothing else has it
+        used = await this._outsideUses([...new Set(ents.concat(plan.flatMap((p) => p.siblings || [])))], ents);
+        plan.forEach((p) => { const why = p.can && this._sharedWhy(p, label, ents, used); if (why) Object.assign(p, { can: false, kept: true, why }); });
       }
       this._pendingDelete = { kind: 'function', label, withItems, plan, cats, ents, devs };
       const box = (L.frames || []).length, notes = (L.notes || []).length;
       const items = withItems ? `<div class="dlist">${plan.map((p, i) => `<label class="drow ${p.can ? '' : 'dcant'}"><input type="checkbox" data-delpick="${i}" ${p.can ? 'checked' : 'disabled'}>`
-        + `<span class="tag">${esc(this._tagOf(p.id))}</span><span class="mn"><b>${esc(p.name)}</b><small>${esc(p.id.startsWith('device:') ? 'device' : p.id)}${p.can ? (p.undo ? '' : T('can_t_be_undone')) : ' · ' + esc(p.why)}</small>${this._usedHtml(p.id, used)}</span></label>`).join('')}</div>` : '';
+        + `<span class="tag">${esc(this._tagOf(p.id))}</span><span class="mn"><b>${esc(p.name)}</b><small>${esc(p.id.startsWith('device:') ? 'device' : p.id)}${p.can ? (p.undo ? '' : T('can_t_be_undone')) : ' · ' + esc(p.why)}</small>${p.kept ? '' : this._usedHtml(p.id, used)}</span></label>`).join('')}</div>${plan.some((p) => p.kept) ? `<p class="dtext">${T('shared_items_stay')}</p>` : ''}` : '';
       const catLine = cats.length ? `<label class="chk"><input type="checkbox" data-delcats ${cats.every((c) => c.free) ? 'checked' : ''}>${T('also_delete_the_named', { count: esc(P('n_categories', cats.length)), name: esc(name), cats: esc(cats.map((c) => c.scope === 'helpers' ? 'helpers' : c.scope + 's').join(', ')), extra: cats.some((c) => !c.free) ? T('other_items_are_filed_there') : withItems ? '' : T('only_this_function_s_items') })}</label>` : '';
       m.innerHTML = `<div class="dlg wide"><h3>${T('delete_2', { name: esc(name) })}</h3><p class="dtext">${T('deletes_the_label')} <b>${esc(name)}</b>${T('home_assistant_removes_it_from', { n: esc(P('n_items', ents.length + devs.length)), extra: withItems ? '' : T('the_items_themselves_stay_where') })}</p><p class="dtext">${T('deletes_the_board_s_layout', { extra: box ? ', ' + P('n_frames', box) : '', extra2: notes ? ', ' + P('n_notes', notes) : '' })}</p>${withItems ? `<p class="dtext">${T('deletes_these_from_home_assistant')}</p>${items}` : ''}${catLine}<p class="dtext">${withItems && plan.some((p) => p.can && !p.undo) ? T('undo_brings_back_the_function') : T('undo_brings_it_all_back')}</p><div class="btns"><button data-act="modal-cancel">${T('cancel')}</button><button class="danger" data-act="del-go">${withItems ? T('delete_function_and_items') : T('delete_function')}</button></div></div>`;
     }
@@ -9053,14 +9307,13 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (t.dataset.cmem != null) {
         const c = g.cands && g.cands[+t.dataset.cmem];
         if (!c) return true;
-        if (t.checked) c.keep.add(t.dataset.id); else c.keep.delete(t.dataset.id);
+        if (t.checked) { c.keep.add(t.dataset.id); g.drop.delete(t.dataset.id); } else { c.keep.delete(t.dataset.id); g.drop.add(t.dataset.id); }
         const card = t.closest('.cand'), cc = card && card.querySelector('.ccount');
         if (cc) cc.textContent = this._countText(c.members.filter((id) => c.keep.has(id)));
         return true;
       }
       if (t.dataset.lsel != null) { if (t.checked) g.lsel.add(t.dataset.lsel); else g.lsel.delete(t.dataset.lsel); this._mgrFootRefresh(); return true; }
       if (t.hasAttribute('data-mcats')) { g.cats = t.checked; return true; }
-      if (t.hasAttribute('data-mdev')) { g.devices = t.checked; if (g.roles) { g.sel = new Set(); g.expanded = new Set(); this._mgrRecluster(); this._renderManager(); } return true; }
       if (t.hasAttribute('data-pdiag')) { g.pdiag = t.checked; g.pshow = 200; this._renderPicks(); return true; }
       if (t.hasAttribute('data-ptarget')) { g.target = t.value; this._renderManager(); return true; }
       if (t.dataset.pick) {
@@ -9075,13 +9328,16 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     _mgrInput(t) {
       const g = this._mgr;
       if (t.classList.contains('search')) { if (g) g.pshow = 200; this._renderPicks(t.value); return true; }
-      if (g && t.dataset.cname != null) { const c = g.cands && g.cands[+t.dataset.cname]; if (c) c.name = t.value; return true; }
+      if (g && t.dataset.cname != null) { const c = g.cands && g.cands[+t.dataset.cname]; if (c) { c.name = t.value; g.names.set(c.key, t.value); } return true; }
       if (g && t.hasAttribute('data-pnew')) { g.newName = t.value; this._mgrFootRefresh(); return true; }
       return false;
     }
     _openManager(tab, target) {
       if (!this._mgr) {
-        this._mgr = { tab: 'detect', cands: null, scanning: false, expanded: new Set(), sel: new Set(), lsel: new Set(), cats: true, busy: false, target: null, newName: '', q: '', ptype: 'all', pshow: 200, pdiag: false };
+        // parts, offers: the import's grouping (_cluster); joins: the parts merged, as keys "i,j" (fixed: ones made because
+        // the parts are one function already); names: rows renamed, by key; drop: pieces unticked
+        this._mgr = { tab: 'detect', cands: null, parts: null, offers: [], joins: new Set(), fixed: new Set(), names: new Map(), drop: new Set(),
+          scanning: false, expanded: new Set(), sel: new Set(), lsel: new Set(), cats: true, busy: false, target: null, newName: '', q: '', ptype: 'all', pshow: 200, pdiag: false };
       }
       const g = this._mgr;
       g.tab = tab || g.tab;
@@ -9113,7 +9369,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const g = this._mgr;
       if (g.tab === 'detect') {
         const avail = (g.cands || []).filter((c) => !(c.fn && !c.missing.length)).length, n = g.sel.size;
-        return `<label class="chk mcats"><input type="checkbox" data-mcats ${g.cats ? 'checked' : ''}>${T('file_imported_pieces_under_a')}</label><label class="chk mcats"><input type="checkbox" data-mdev ${g.devices ? 'checked' : ''}>${T('also_join_automations_that_meet')}</label><span class="cnt">${g.cands ? T('of_selected', { n, avail }) : ''}</span><button data-act="mgr-rescan" ${g.scanning || g.busy ? 'disabled' : ''}>${T('rescan')}</button><button data-act="mgr-selall" ${avail && !g.busy ? '' : 'disabled'}>${n && n === avail ? T('select_none') : T('select_all')}</button><button class="primary" data-act="mgr-import-sel" ${n && !g.busy ? '' : 'disabled'}>${g.busy ? T('importing_2') : T('import_selected')}</button>`;
+        return `<label class="chk mcats"><input type="checkbox" data-mcats ${g.cats ? 'checked' : ''}>${T('file_imported_pieces_under_a')}</label><span class="cnt">${g.cands ? T('of_selected', { n, avail }) : ''}</span><button data-act="mgr-rescan" ${g.scanning || g.busy ? 'disabled' : ''}>${T('rescan')}</button><button data-act="mgr-selall" ${avail && !g.busy ? '' : 'disabled'}>${n && n === avail ? T('select_none') : T('select_all')}</button><button class="primary" data-act="mgr-import-sel" ${n && !g.busy ? '' : 'disabled'}>${g.busy ? T('importing_2') : T('import_selected')}</button>`;
       }
       if (g.tab === 'labels') {
         const n = g.lsel.size;
@@ -9169,13 +9425,18 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     }
     _candHTML(c, i) {
       const g = this._mgr, open = g.expanded.has(i), done = c.fn && !c.missing.length, lock = !!c.fn || g.busy;
-      const src = { category: T('from_a_category'), wiring: T('from_the_wiring'), both: T('category_wiring'), function: T('on_the_board_2') }[c.source] || '';
+      const src = { category: T('from_a_category'), wiring: T('from_the_wiring'), both: T('category_wiring'), function: T('on_the_board_2'), nodered: T('wiring_node_red'), merged: T('merged') }[c.source] || '';
       const over = c.overlap && c.overlap.length ? c.overlap.slice(0, 2).map((o) => T('already_in_2', { n: o.n, fnName: esc(this._fnName(o.l)) })).join(' · ') : '';
       let act;
       if (done) act = `<span class="onb">${T('on_the_board')}</span>`;
       else if (c.fn) act = `<button class="go" data-act="mgr-import-one" data-ci="${i}" ${g.busy ? 'disabled' : ''} title="${T('label_the_pieces_that_aren', { name: esc(c.name) })}">${T('add_missing', { count: c.missing.length })}</button>`;
       else act = `<button class="go" data-act="mgr-import-one" data-ci="${i}" ${g.busy ? 'disabled' : ''}>${T('import_2')}</button>`;
-      return `<div class="cand ${done ? 'done' : ''}"><div class="crow"><input type="checkbox" data-csel="${i}" ${g.sel.has(i) ? 'checked' : ''} ${done || g.busy ? 'disabled' : ''} title="${T('select_for_import_selected')}"><ha-icon icon="${esc(c.icon)}"></ha-icon><input class="cname" data-cname="${i}" value="${esc(c.name)}" ${lock ? 'disabled' : ''} title="${c.fn ? T('already_a_function') : T('function_name_click_to_rename')}"><span class="ccount">${esc(this._countText(c.members.filter((id) => c.keep.has(id))))}${c.fn && c.missing.length ? T('not_in_it_yet', { count: c.missing.length }) : ''}</span>${over ? `<span class="csrc">${over}</span>` : ''}<span class="csrc">${src}</span><button class="ib" data-act="mgr-expand" data-ci="${i}" title="${T('the_pieces', { extra: open ? T('hide') : T('show') })}"><ha-icon icon="${open ? 'mdi:chevron-up' : 'mdi:chevron-down'}"></ha-icon></button>${act}</div>${open ? `<div class="cmem">${c.members.map((id) => this._memRow(i, c, id)).join('')}</div>` : ''}</div>`;
+      // merged rows say what they're made from and can be separated; offers say why two rows may be one (0.11.0)
+      const made = c.parts.length > 1 ? `<div class="cmade"><span>${T('made_from')}</span>${c.parts.map((p) => `<span class="ptag">${esc(g.parts[p].label)}</span>`).join('')}${c.split ? `<button class="chip" data-act="mgr-split" data-ci="${i}" ${g.busy ? 'disabled' : ''} title="${T('separate_title')}"><ha-icon icon="mdi:call-split"></ha-icon>${T('separate')}</button>` : ''}</div>` : '';
+      const offers = (c.offers || []).map((x) => `<div class="coffer"><button class="chip" data-act="mgr-merge" data-o="${x.k}" ${g.busy ? 'disabled' : ''}><ha-icon icon="mdi:call-merge"></ha-icon>${esc(T('merge_with', { name: x.rows.map((r) => g.cands[r].name).join(', ') }))}</button><span>${esc(this._mgrWhy(g.offers[x.k]))}</span></div>`).join('');
+      const into = g.cands.some((x, j) => j !== i && !(x.fn && c.fn));
+      const nr = open ? c.nr.map((f) => `<div class="mrow2"><span class="tag">${T('node_red')}</span><span class="mn"><b>${esc(f.name)}</b><small>${esc(f.off ? T('node_red_flow_off', { tab: f.tabLabel }) : T('node_red_flow_in', { tab: f.tabLabel }))}</small></span></div>`).join('') : '';
+      return `<div class="cand ${done ? 'done' : ''}" data-key="${esc(c.key)}"><div class="crow"><input type="checkbox" data-csel="${i}" ${g.sel.has(i) ? 'checked' : ''} ${done || g.busy ? 'disabled' : ''} title="${T('select_for_import_selected')}"><ha-icon icon="${esc(c.icon)}"></ha-icon><input class="cname" data-cname="${i}" value="${esc(c.name)}" ${lock ? 'disabled' : ''} title="${c.fn ? T('already_a_function') : T('function_name_click_to_rename')}"><span class="ccount">${esc(this._countText(c.members.filter((id) => c.keep.has(id))))}${c.fn && c.missing.length ? T('not_in_it_yet', { count: c.missing.length }) : ''}</span>${over ? `<span class="csrc">${over}</span>` : ''}<span class="csrc">${src}</span><button class="ib" data-act="mgr-merge-menu" data-ci="${i}" ${into && !g.busy ? '' : 'disabled'} title="${T('merge_into')}"><ha-icon icon="mdi:call-merge"></ha-icon></button><button class="ib" data-act="mgr-expand" data-ci="${i}" title="${T('the_pieces', { extra: open ? T('hide') : T('show') })}"><ha-icon icon="${open ? 'mdi:chevron-up' : 'mdi:chevron-down'}"></ha-icon></button>${act}</div>${made || offers ? `<div class="cmerge">${made}${offers}</div>` : ''}${open ? `<div class="cmem">${c.members.map((id) => this._memRow(i, c, id)).join('')}${nr}</div>` : ''}</div>`;
     }
 
     async _scanFunctions() {
@@ -9197,7 +9458,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           roles.set(id, m);
         });
         const cats = await this._catGroups();
-        g.roles = roles; g.catList = cats; g.ids = ids;
+        // the Node-RED flows (only while the board reads Node-RED): what they trigger on, check, change and run
+        const nr = await this._nodered();
+        g.roles = roles; g.catList = cats; g.ids = ids; g.nr = (nr && nr.groups) || [];
         this._mgrRecluster();
       } catch (e) { g.error = (e && (e.message || e.code)) || String(e); g.cands = null; }
       g.scanning = false;
@@ -9205,13 +9468,115 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     }
     _mgrRecluster() {
       const g = this._mgr, ids = g.ids;
-      g.cands = this._cluster(g.roles, g.catList, { devices: !!g.devices });
+      const r = this._cluster(g.roles, g.catList, { nodered: g.nr });
+      Object.assign(g, { parts: r.parts, offers: r.offers, joins: new Set(), fixed: new Set(), names: new Map(), drop: new Set(), cands: null, sel: new Set(), expanded: new Set() });
+      g.parts.forEach((p) => { p.label = p.fn ? this._fnName(p.fn) : p.name || this._suggestName([...p.ids].filter((id) => this._hass.states[id] || this._entMap.has(id))); });
+      this._mgrCands();
       // what ended up in no group and no function (3.2)
       const fset = new Set(this._data.functions), grouped = new Set(g.cands.flatMap((c) => c.members));
       const inFn = (id) => ((this._entMap.get(id) || {}).labels || []).some((l) => fset.has(l));
       g.left = ids.filter((id) => !grouped.has(id) && !inFn(id)).sort((x, y) => this._nameOf(x).localeCompare(this._nameOf(y)));
       const count = (pre) => { const all = ids.filter((x) => x.startsWith(pre)); return [all.length - all.filter((x) => g.left.includes(x)).length, all.length]; };
       g.stats = { automations: ids.filter((x) => x.startsWith('automation.')).length, scripts: ids.filter((x) => x.startsWith('script.')).length, cover: { a: count('automation.'), s: count('script.') } };
+    }
+    // The import's rows (0.11.0): its parts, merged as the person chose (an offer taken, or Merge into…). Parts that
+    // turn out to be one function already are one row. What was ticked, opened or renamed stays with its row.
+    _mgrCands() {
+      const g = this._mgr, n = g.parts.length, up = [...Array(n).keys()];
+      const find = (x) => { while (up[x] !== x) x = up[x] = up[up[x]]; return x; };
+      g.joins.forEach((k) => { const ps = k.split(',').map(Number).filter((p) => p >= 0 && p < n); ps.forEach((p) => { up[find(p)] = find(ps[0]); }); });
+      const groups = new Map();
+      for (let i = 0; i < n; i++) { const r = find(i); if (!groups.has(r)) groups.set(r, []); groups.get(r).push(i); }
+      const names = new Set(this._data.functions.map((l) => this._fnName(l).toLowerCase()));
+      const rows = [...groups.values()].map((ps) => {
+        const P = ps.map((i) => g.parts[i]), key = ps.join(','), big = P.slice().sort((x, y) => y.ids.size - x.ids.size);
+        let name = g.names.has(key) ? g.names.get(key) : P.length === 1 ? P[0].name || null : null;
+        if (name == null && P.length > 1) {
+          if (P.every((p) => p.cat && p.cat === P[0].cat)) name = P[0].cat;
+          else if (P.length <= 3) name = T('names_and', { list: P.slice(0, -1).map((p) => p.label).join(', '), last: P[P.length - 1].label });
+        }
+        const c = this._candOf(new Set(P.flatMap((p) => [...p.ids])), { fn: (P.find((p) => p.fn) || {}).fn, name, cat: (big.find((p) => p.cat) || {}).cat, icon: (P.find((p) => p.icon) || {}).icon, source: P.length > 1 ? 'merged' : P[0].source }, names);
+        c.keep = new Set([...c.keep].filter((id) => !g.drop.has(id)));
+        c.missing = c.missing.filter((id) => !g.drop.has(id));
+        const mine = (k) => k.split(',').some((p) => ps.includes(+p));
+        return Object.assign(c, { key, parts: ps, nr: P.flatMap((p) => p.nr || []), split: P.some((p) => !p.fn) && [...g.joins].some((k) => !g.fixed.has(k) && mine(k)) });
+      });
+      // rows that are the same function already made become one
+      const seen = new Map();
+      let again = false;
+      rows.forEach((c) => {
+        if (!c.fn) return;
+        if (!seen.has(c.fn)) { seen.set(c.fn, c.parts[0]); return; }
+        const k = seen.get(c.fn) + ',' + c.parts[0];
+        g.joins.add(k); g.fixed.add(k); again = true;
+      });
+      if (again) return this._mgrCands();
+      const list = rows.filter((c) => c.members.length >= 2);
+      const order = (c) => (!c.fn ? 0 : c.missing.length ? 1 : 2);
+      list.sort((x, y) => order(x) - order(y) || x.parts[0] - y.parts[0]);
+      // identity colours only: red, orange, amber and yellow are kept for alarm and warning states
+      const SAFE = ['indigo', 'teal', 'purple', 'blue', 'green', 'cyan', 'deep-purple', 'light-blue', 'light-green', 'pink', 'brown', 'blue-grey', 'lime'];
+      list.forEach((c) => { c.color = SAFE[c.parts[0] % SAFE.length]; });
+      // the offers each row can take: to merge it with the rows of the offer's other parts (never two functions made)
+      const rowOf = new Map();
+      list.forEach((c, i) => c.parts.forEach((p) => rowOf.set(p, i)));
+      list.forEach((c, i) => {
+        const sigs = new Set();
+        c.offers = [];
+        g.offers.forEach((o, k) => {
+          if (!o.parts.some((p) => c.parts.includes(p))) return;
+          const others = [...new Set(o.parts.map((p) => rowOf.get(p)).filter((r) => r != null && r !== i))].sort((x, y) => x - y);
+          if (!others.length || [c].concat(others.map((r) => list[r])).filter((x) => x.fn).length > 1) return;
+          const sig = others.join(',');
+          if (sigs.has(sig)) return;
+          sigs.add(sig);
+          c.offers.push({ k, rows: others });
+        });
+      });
+      // what was ticked or opened before: a row with one of those parts
+      const had = (set) => { const ps = new Set(); set.forEach((i) => (((g.cands || [])[i] || {}).parts || []).forEach((p) => ps.add(p))); return ps; };
+      const sp = had(g.sel), ep = had(g.expanded);
+      g.sel = new Set(); g.expanded = new Set();
+      list.forEach((c, i) => {
+        if (c.parts.some((p) => sp.has(p)) && !(c.fn && !c.missing.length)) g.sel.add(i);
+        if (c.parts.some((p) => ep.has(p))) g.expanded.add(i);
+      });
+      g.cands = list;
+      return list;
+    }
+    // why an offer is made, in words: on the row it's shown on
+    _mgrWhy(o) {
+      const g = this._mgr, other = o.byPart == null ? '' : ((g.cands || []).find((c) => c.parts.includes(o.parts.find((p) => p !== o.byPart))) || {}).name || '';
+      const by = o.byName, via = o.viaName;
+      if (o.why === 'switches') return T('tie_switches', { by, via });
+      if (o.why === 'uses') return T('tie_uses', { by, via });
+      if (o.why === 'reads') return T('tie_reads', { by, via });
+      if (o.why === 'starts') return T('tie_starts', { by, via, other });
+      if (o.why === 'device') return T('tie_device', { via });
+      return T('tie_category', { via });
+    }
+    // merge rows, or take a row back to its parts; then the row is where focus goes
+    _mgrJoin(key, split) {
+      const g = this._mgr;
+      if (!g || g.busy) return;
+      const first = +String(key).split(',')[0];
+      if (split) [...g.joins].forEach((k) => { if (!g.fixed.has(k) && k.split(',').some((p) => String(key).split(',').includes(p))) g.joins.delete(k); });
+      else g.joins.add(String(key));
+      this._mgrCands();
+      this._renderManager();
+      const i = g.cands.findIndex((c) => c.parts.includes(first));
+      const el = i >= 0 && this._$.modal.querySelector(`.cand[data-key="${g.cands[i].key}"] .crow`);
+      const to = el && (el.querySelector('input.cname:not([disabled])') || el.querySelector('button'));
+      if (to) to.focus();
+    }
+    _mgrMergeMenu(btn, i) {
+      const g = this._mgr, c = g.cands[i];
+      if (!c) return;
+      const items = g.cands.map((x, j) => ({ x, j })).filter(({ x, j }) => j !== i && !(x.fn && c.fn))
+        .map(({ x }) => ({ act: 'mgr-merge-to', data: { a: c.parts[0], b: x.parts[0] }, icon: x.icon, text: x.name }));
+      this._menu(btn, items, T('merge_into_2'));
+      // the manager is a modal: show the menu above it
+      if (this._menuEl) this._menuEl.style.zIndex = 40;
     }
     _pickIcon(members) {
       for (const id of members) {
@@ -9238,6 +9603,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
             c.missing = c.missing.filter((id) => !r.done.includes(id));
             skipped.push(...r.skipped);
             done.push(c.fn);
+            c.parts.forEach((p) => { g.parts[p].fn = c.fn; }); c.split = false;
           } else {
             const ids = c.members.filter((id) => c.keep.has(id)), name = String(c.name || '').trim();
             if (!ids.length || !name) continue;
@@ -9245,6 +9611,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
             const r = await this._importGroup(name, c.icon, c.color, ids, g.cats, c.cat);
             c.fn = r.label; c.members = ids; c.keep = new Set(ids); c.missing = r.skipped.map((x) => x.id);
             c.source = 'function';
+            c.parts.forEach((p) => { g.parts[p].fn = c.fn; }); c.split = false;
             skipped.push(...r.skipped);
             done.push(c.fn);
           }
@@ -11867,6 +12234,14 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       snap.members.forEach((k) => { if (!cur.has(k) && !plan.recreate.includes(k) && (k.startsWith('device:') ? this._devMap.has(k.slice(7)) : this._entMap.has(k))) plan.rejoin.push(k); });
       plan.added = diff.added;
       plan.missing = Object.keys(snap.devices || {}).filter((d) => !this._devMap.has(d));
+      // what's shared (0.11.0): an automation, script or helper added since that's also in another function, or that
+      // something outside this one uses, only leaves this function; it's never turned off or deleted
+      const cand = plan.added.filter((k) => /^(automation|script)\./.test(k) || VER_HELPERS.has(k.split('.')[0])), mine = [...cur];
+      const uses = cand.length || plan.write.length ? await this._outsideUses(cand.concat(plan.write), mine) : new Map();
+      plan.shared = cand.map((k) => ({ k, why: this._sharedWhy({ id: k }, label, mine, uses) })).filter((x) => x.why);
+      plan.added = plan.added.filter((k) => !plan.shared.some((x) => x.k === k));
+      // and what restore writes back that's also in another function or used elsewhere: it changes there too (a warning)
+      plan.writeShared = plan.write.map((k) => ({ k, why: this._sharedWhy({ id: k }, label, mine, uses, true) })).filter((x) => x.why);
       return plan;
     }
     _verRestoreDlg() {
@@ -11879,8 +12254,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       m.hidden = false;
       m.innerHTML = `<div class="dlg wide vrdlg"><h3>${T('ver_restore_h', { name: esc(v.name) })}</h3><p class="dtext">${T('ver_restore_lead', { fnName: esc(this._fnName(p.label)), when: esc(this._verWhen(v.at)) })}</p>`
         + `<ul class="vplan">${line(plan.write, P('ver_p_write', plan.write.length))}${line(plan.recreate, P('ver_p_recreate', plan.recreate.length))}${line(plan.rejoin, P('ver_p_rejoin', plan.rejoin.length))}${line(plan.same, P('ver_p_same', plan.same.length))}${line(plan.yaml, P('ver_p_yaml', plan.yaml.length))}${snap.layout ? `<li>${T('ver_p_layout')}</li>` : ''}</ul>`
+        + ((plan.writeShared || []).length ? `<div class="dwarn vwshared"><ha-icon icon="mdi:alert-outline"></ha-icon><span>${T('ver_write_shared', { list: plan.writeShared.map((x) => nm(x.k) + ' (' + esc(x.why) + ')').join(', ') })}</span></div>` : '')
         + (plan.missing.length ? `<h4>${T('ver_dev_h')}</h4><div class="hint">${T('ver_dev_hint')}</div>${devs}` : '')
-        + (addLogic.length || addOther.length ? `<h4>${T('ver_added_h')}</h4>${addLogic.length ? `<div class="hint">${addLogic.map(nm).join(', ')}</div><label class="chk"><input type="radio" name="vextra" value="off" checked>${T('ver_added_off')}</label><label class="chk"><input type="radio" name="vextra" value="delete">${T('ver_added_delete')}</label>` : ''}${addOther.length ? `<div class="hint">${T('ver_added_other', { list: addOther.map(nm).join(', ') })}</div>` : ''}` : '')
+        + (addLogic.length || addOther.length || plan.shared.length ? `<h4>${T('ver_added_h')}</h4>${plan.shared.length ? `<div class="hint">${T('ver_added_shared', { list: plan.shared.map((x) => nm(x.k) + ' (' + esc(x.why) + ')').join(', ') })}</div>` : ''}${addLogic.length ? `<div class="hint">${addLogic.map(nm).join(', ')}</div><label class="chk"><input type="radio" name="vextra" value="off" checked>${T('ver_added_off')}</label><label class="chk"><input type="radio" name="vextra" value="delete">${T('ver_added_delete')}</label>` : ''}${addOther.length ? `<div class="hint">${T('ver_added_other', { list: addOther.map(nm).join(', ') })}</div>` : ''}` : '')
         // a backup of what's there now only when asked for: switching between saved versions shouldn't pile up copies
         + `<label class="chk vbackup"><input type="checkbox" name="vbackup">${T('ver_restore_backup')}</label><div class="hint">${p.savedAs ? T('ver_now_saved_as', { name: esc(p.savedAs.name) }) : T('ver_restore_unsaved')}</div>`
         + [...doms].filter((d) => d === 'automation' || d === 'script').map((d) => this._yamlWarn(d)).join('')
@@ -11931,6 +12307,10 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       for (const k of plan.rejoin.concat(plan.recreate)) {
         const id = plan.recreate.includes(k) ? findNew(k) : k;
         if (id) { try { await this._label(id, label, true, false); } catch (e) { errs.push(name(k) + ': ' + ((e && e.message) || e)); } }
+      }
+      // what was added since and is shared only leaves the function (0.11.0)
+      for (const x of plan.shared || []) {
+        try { await this._label(x.k, label, false, false); } catch (e) { errs.push(this._boxName(x.k) + ': ' + ((e && (e.message || e.body || e.code)) || e)); }
       }
       // what was added since: turned off or deleted, as chosen; anything else is taken out of the function
       for (const k of plan.added) {
@@ -12059,7 +12439,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         const key = 'nr:' + g.id;
         g.events.forEach((t) => { if (nodes.has('event:' + t)) links.push(['event:' + t, 'trigger']); });
         nodes.set(key, { key, kind: 'nodered', domain: 'nodered', name: g.name, icon: 'mdi:sitemap', badges: new Set(), writers: 0, x: 0, y: 0, w: NW, h: NH,
-          nr: { tabLabel: g.tabLabel, size: g.size, sub: '#flow/' + encodeURIComponent(g.tab) } });
+          nr: { tabLabel: g.tabLabel, size: g.size, sub: '#flow/' + encodeURIComponent(g.tab), off: !!g.off } });
         links.forEach(([k, role]) => {
           used.add(k);
           const inbound = role === 'trigger' || role === 'condition', from = inbound ? k : key, to = inbound ? key : k, id = from + '>' + to;
