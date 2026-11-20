@@ -2,29 +2,32 @@
 
 ## Unreleased
 
-Tests (nothing changes in the board yet): the groundwork for rebuilding the board's insides in 0.10.0. Every view
-is now kept as a snapshot, taken from 0.9.1, so a rebuilt part that draws anything differently is caught. The test
-Home Assistant can answer late and out of turn, as a busy one does, and a weekly run tries every board test that
-way. And a new test opens and closes the board 50 times and checks it leaves nothing running behind.
+The board's insides are rebuilt. Nothing it shows or does is meant to look different, and your saved functions,
+layouts and versions are kept as they are (0.9.2 reads anything this version saves). What changes is how sure it
+is of what it knows, and what it does when something goes wrong.
 
-Fixed: a board taken off the page (another sidebar entry opened, a dashboard view left) went on counting problems
-in the background, and could show a message, for up to a minute afterwards. Now everything the board waits on
-stops when it leaves the page, and starts again when it's back.
+Fixed: an automation turned off, or a device gone unavailable, after you opened a function didn't show as a
+problem until you opened the function again. It now shows as soon as Home Assistant says so.
 
-Every call the board makes to Home Assistant now has a time limit, and a failure is no longer dropped without a
-trace: the Diagnostics file lists what failed since the board opened (anonymised, only the kind of call and the
-error code). When the board asks the same question twice and the answers come back out of order, the older one no
-longer wins.
+Fixed: a configuration read just before you saved it could come back after the save and be shown, for up to a
+minute, as if it were the saved one. And a restore planned right after something was deleted in Home Assistant
+now sees the deletion.
 
-The board now keeps the time it asked each thing it knows from Home Assistant. A configuration read just before
-you saved can no longer be shown for a minute as if it were the saved one, and a restore planned right after
-something was deleted in Home Assistant sees the deletion.
+Fixed: a board you'd left (another sidebar entry opened, a dashboard view left) went on counting problems in the
+background, and could show a message, for up to a minute afterwards. Everything it waits on now stops when you
+leave and starts again when you're back.
 
-The board now redraws its list, header, boxes and side drawer by updating what's on the screen rather than
-replacing it, so the keyboard focus stays where it was when they change.
+When the board asks Home Assistant the same thing twice and the answers come back out of order, the older one no
+longer wins. Every call now has a time limit, and a call that fails is no longer dropped without a trace: the
+Diagnostics file lists what failed since the board opened (anonymised, only the kind of call and the error code).
 
-Fixed: an automation turned off (or a device gone unavailable) after a function was opened didn't show as a problem
-until the function was opened again. The board now notices and redraws the function's problems.
+The list, header, boxes and side drawer now update what's on the screen instead of drawing it again, so the
+keyboard focus stays where it was when they change.
+
+Behind it, for anyone working on the board: the board's code is in parts (a clock for every timer, one link to
+Home Assistant, a store of what it knows with the time it asked, one table of actions per view, drawing in place,
+and parts that don't reach into each other's state), each held to its rules by the tests. Every view is kept as
+a snapshot, and every board test also runs with Home Assistant answering late and out of turn.
 
 ## 0.9.2 (2026-11-19)
 

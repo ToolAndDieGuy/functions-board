@@ -17,7 +17,7 @@ The tests are layers. Each one tests what the layer below can't, and is as fast 
 
 | Layer | Where | Runs on | What it is for |
 |---|---|---|---|
-| 1. Rules | `static.test.js` | the source | things that must never be true of the code (missing words, outside requests, ingress cookies) |
+| 1. Rules | `static.test.js` | the source | things that must never be true of the code (missing words, outside requests, ingress cookies), and the board's structure (below) |
 | 2. Units | `wiring`, `problems`, `sandbox`, `clock`, `link`, `store` `.test.js`; `backend/` | Node; pytest | the board's library (pure functions) and the Python side, case by case |
 | 3. The board | `board/` | Chromium, a fake Home Assistant | everything the board draws and does, in parallel, in seconds per test |
 | 4. Home Assistant | `e2e/` | Chromium, a real Home Assistant | what only the real thing can show: its API, its frontend, templates, isolation, privacy |
@@ -25,6 +25,27 @@ The tests are layers. Each one tests what the layer below can't, and is as fast 
 
 A check belongs in the lowest layer that can make it fail. A layout rule is a board test, not a Home Assistant
 test; how `analyze()` reads one automation shape is a unit test, not a board test.
+
+### The board's structure, as the rules hold it (0.10.0)
+
+The board's class was rebuilt in 0.10.0 around a few parts, each with rules in `static.test.js` (layer 1), unit
+tests of its logic in Node (layer 2) and mutants that break each rule (`tests/mutants.json`). CLAUDE.md
+("Design notes") says how each works.
+
+| Part | Where | Its rules | Its tests |
+|---|---|---|---|
+| The clock | `class Clock`, `this._clock` | no timer of the board's own outside it; all stopped when the board leaves the page | `clock.test.js`; `board/leak.test.js` |
+| The link | `class Link`, `this._ha` | every call to Home Assistant through it; the newest answer wins; time limits; no error dropped without a reason (`optional: '…'`, `quiet(…, '…')`) | `link.test.js`; a regress case for the Diagnostics file |
+| The store | `class Store`, `this._store` | an older answer never replaces a newer one; nothing deleted on registries older than the board data | `store.test.js`; regress cases (configs, the restore plan, 0.9.2) |
+| Actions | `_actionTables()` | every action named by a button has a handler, every handler is named, none in two tables; one place makes undo steps | the rules; the snapshots |
+| Drawing | `morph()`, `this._put` | the working views drawn in place | `board/draw.test.js`; the focus regress cases |
+| Parts | `PARTS`, `part:` blocks | every method in a part; no part uses another's state | the rules |
+
+Before a build like this one goes onto a real Home Assistant, `scripts/compare-builds.js` builds every function there
+with the installed board and the new one, side by side, and their counts must match.
+
+Two board suites hold that the rebuild changed nothing anyone sees: `board/snapshots.test.js` (every view, as
+text, against 0.9.1) and the jitter mode, under which every board suite must pass.
 
 ### Honest results
 
