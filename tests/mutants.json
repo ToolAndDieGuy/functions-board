@@ -1021,8 +1021,8 @@
  {
   "name": "delete with items: a piece in another function goes",
   "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "if (other.size) return T('stays_also_in'",
-  "replace": "if (false) return T('stays_also_in'",
+  "find": "if (other.size) return plain ? T('shared_also_in'",
+  "replace": "if (false) return plain ? T('shared_also_in'",
   "suite": "board-regress",
   "only": "never deletes",
   "expect": "a piece also in another function stays"
@@ -1030,8 +1030,8 @@
  {
   "name": "delete with items: a piece used outside goes",
   "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "if (who.size) return T('stays_used_by'",
-  "replace": "if (false) return T('stays_used_by'",
+  "find": "if (who.size) return plain ? T('shared_used_by'",
+  "replace": "if (false) return plain ? T('shared_used_by'",
   "suite": "board-regress",
   "only": "never deletes",
   "expect": "a script run from outside the function stays"
@@ -1098,5 +1098,14 @@
   "suite": "board-regress",
   "only": "restoring a version never",
   "expect": "restore: the shared automation is still there|restore: the script used outside"
+ },
+ {
+  "name": "restore: no warning for rewriting what's shared",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "plan.writeShared = plan.write.map((k) => ({ k, why: this._sharedWhy({ id: k }, label, mine, uses, true) })).filter((x) => x.why);",
+  "replace": "plan.writeShared = [];",
+  "suite": "board-regress",
+  "only": "restoring a version never",
+  "expect": "restore warns that what it writes back"
  }
 ]

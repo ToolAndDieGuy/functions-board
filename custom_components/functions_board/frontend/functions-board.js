@@ -3033,6 +3033,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       ver_added_delete: 'Delete them',
       ver_added_h: 'Added since this version was saved',
       ver_added_shared: 'Shared with another function or used elsewhere, so they\'re only taken out of this function (never turned off or deleted): {list}',
+      ver_write_shared: 'These are also in another function or used elsewhere, so restoring changes them there too: {list}',
       ver_added_off: 'Turn them off (automations; scripts and helpers stay as they are)',
       ver_added_other: 'Taken out of the function (they lose its label, nothing else changes): {list}',
       ver_auto: 'saved before a restore',
@@ -3601,6 +3602,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       n_frames: { one: '{n} frame', other: '{n} frames' },
       n_notes: { one: '{n} note', other: '{n} notes' },
       deletes_these_from_home_assistant: 'Deletes these from Home Assistant. Devices are never deleted.',
+      shared_also_in: 'also in {fns}',
+      shared_used_by: 'used outside this function by {names}',
       stays_also_in: 'stays: it\'s also in {fns}',
       stays_used_by: 'stays: used outside this function by {names}',
       stays_set_up_with: 'stays: deleting it would also delete {names}, set up with it, which isn\'t in this function',
@@ -8417,16 +8420,19 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     // why a piece of a function deleted with its items stays (0.11.0): it's also in another function, something
     // outside this one uses it, or deleting it would delete something that isn't in this function (a helper set up
     // with others). It stays, and only leaves this function; null when it may go
-    _sharedWhy(p, label, mine, uses) {
+    // plain: the reason alone, for a piece that stays anyway (restore rewriting what's also elsewhere)
+    _sharedWhy(p, label, mine, uses, plain) {
       const ids = [p.id].concat(p.siblings || []), fset = new Set(this._data.functions.filter((l) => l !== label)), other = new Set(), who = new Set();
       ids.forEach((id) => {
         const e = this._entMap.get(id);
         ((e && e.labels) || []).forEach((l) => { if (fset.has(l)) other.add(this._fnName(l)); });
         (uses.get(id) || new Set()).forEach((u) => who.add(u));
       });
-      if (other.size) return T('stays_also_in', { fns: [...other].join(', ') });
-      const names = (list) => list.slice(0, 3).join(', ') + (list.length > 3 ? T('and_more', { n: list.length - 3 }) : '');
-      if (who.size) return T('stays_used_by', { names: names([...who].map((u) => (u.startsWith('nr:') ? T('node_red_named', { name: u.slice(3) }) : this._nameOf(u)))) });
+      const fns = [...other].join(', '), names = (list) => list.slice(0, 3).join(', ') + (list.length > 3 ? T('and_more', { n: list.length - 3 }) : '');
+      if (other.size) return plain ? T('shared_also_in', { fns }) : T('stays_also_in', { fns });
+      const users = names([...who].map((u) => (u.startsWith('nr:') ? T('node_red_named', { name: u.slice(3) }) : this._nameOf(u))));
+      if (who.size) return plain ? T('shared_used_by', { names: users }) : T('stays_used_by', { names: users });
+      if (plain) return null;
       const with_ = (p.siblings || []).filter((x) => x !== p.id && !mine.includes(x));
       if (with_.length) return T('stays_set_up_with', { names: names(with_.map((x) => this._nameOf(x))) });
       return null;
@@ -12231,9 +12237,11 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       // what's shared (0.11.0): an automation, script or helper added since that's also in another function, or that
       // something outside this one uses, only leaves this function; it's never turned off or deleted
       const cand = plan.added.filter((k) => /^(automation|script)\./.test(k) || VER_HELPERS.has(k.split('.')[0])), mine = [...cur];
-      const uses = cand.length ? await this._outsideUses(cand, mine) : new Map();
+      const uses = cand.length || plan.write.length ? await this._outsideUses(cand.concat(plan.write), mine) : new Map();
       plan.shared = cand.map((k) => ({ k, why: this._sharedWhy({ id: k }, label, mine, uses) })).filter((x) => x.why);
       plan.added = plan.added.filter((k) => !plan.shared.some((x) => x.k === k));
+      // and what restore writes back that's also in another function or used elsewhere: it changes there too (a warning)
+      plan.writeShared = plan.write.map((k) => ({ k, why: this._sharedWhy({ id: k }, label, mine, uses, true) })).filter((x) => x.why);
       return plan;
     }
     _verRestoreDlg() {
@@ -12246,6 +12254,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       m.hidden = false;
       m.innerHTML = `<div class="dlg wide vrdlg"><h3>${T('ver_restore_h', { name: esc(v.name) })}</h3><p class="dtext">${T('ver_restore_lead', { fnName: esc(this._fnName(p.label)), when: esc(this._verWhen(v.at)) })}</p>`
         + `<ul class="vplan">${line(plan.write, P('ver_p_write', plan.write.length))}${line(plan.recreate, P('ver_p_recreate', plan.recreate.length))}${line(plan.rejoin, P('ver_p_rejoin', plan.rejoin.length))}${line(plan.same, P('ver_p_same', plan.same.length))}${line(plan.yaml, P('ver_p_yaml', plan.yaml.length))}${snap.layout ? `<li>${T('ver_p_layout')}</li>` : ''}</ul>`
+        + ((plan.writeShared || []).length ? `<div class="dwarn vwshared"><ha-icon icon="mdi:alert-outline"></ha-icon><span>${T('ver_write_shared', { list: plan.writeShared.map((x) => nm(x.k) + ' (' + esc(x.why) + ')').join(', ') })}</span></div>` : '')
         + (plan.missing.length ? `<h4>${T('ver_dev_h')}</h4><div class="hint">${T('ver_dev_hint')}</div>${devs}` : '')
         + (addLogic.length || addOther.length || plan.shared.length ? `<h4>${T('ver_added_h')}</h4>${plan.shared.length ? `<div class="hint">${T('ver_added_shared', { list: plan.shared.map((x) => nm(x.k) + ' (' + esc(x.why) + ')').join(', ') })}</div>` : ''}${addLogic.length ? `<div class="hint">${addLogic.map(nm).join(', ')}</div><label class="chk"><input type="radio" name="vextra" value="off" checked>${T('ver_added_off')}</label><label class="chk"><input type="radio" name="vextra" value="delete">${T('ver_added_delete')}</label>` : ''}${addOther.length ? `<div class="hint">${T('ver_added_other', { list: addOther.map(nm).join(', ') })}</div>` : ''}` : '')
         // a backup of what's there now only when asked for: switching between saved versions shouldn't pile up copies

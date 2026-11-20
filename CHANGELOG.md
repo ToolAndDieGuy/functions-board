@@ -32,7 +32,9 @@ unless you unticked them.
 
 Restoring a saved version works the same way. An automation, script or helper added since the version was saved
 that's also in another function, or that something outside this function uses, is never turned off or deleted:
-it's only taken out of the function you're restoring, and the dialog lists it apart with the reason.
+it's only taken out of the function you're restoring, and the dialog lists it apart with the reason. And when
+restoring writes back an automation, script or helper that's also in another function or used elsewhere, the dialog
+warns that it changes there too, and names where.
 
 ## 0.10.0 (2026-11-19)
 

@@ -1098,7 +1098,15 @@ test('0.11.0 restoring a version never turns off or deletes what was added since
   await addPiece(page, fake, OWN, { alias: 'Garage only check', triggers: [{ trigger: 'time', at: '07:00:00' }], conditions: [], actions: [] });
   await addPiece(page, fake, 'automation.fb_chime_at_noon', { alias: 'Chime at noon', triggers: [{ trigger: 'time', at: '12:00:00' }], conditions: [], actions: [{ action: 'script.fb_garage_chime' }] });
   for (const [id, labels] of [[SH, [garage, morning]], [RUN, [garage]], [OWN, [garage]]]) await ws(page, { type: 'config/entity_registry/update', entity_id: id, labels });
-  await el(page, (b) => b._store.changed('reg'));
+  // changed since, so restore writes them back: one also in the morning function, a script an automation outside
+  // runs, and one only the garage's
+  const LEFT = 'automation.garage_left_open', STOP = 'automation.garage_closed_stop_timer', aid = (k) => fake.states.get(k).attributes.id;
+  const edit = (k, alias) => { fake.autos[aid(k)] = Object.assign({}, fake.autos[aid(k)], { alias }); if (fake.autoByEntity[k]) fake.autoByEntity[k] = Object.assign({}, fake.autoByEntity[k], { alias }); };
+  edit(LEFT, 'Garage: left open (edited)'); edit(STOP, 'Garage: closed, stop timer (edited)');
+  fake.scripts.close_garage = Object.assign({}, fake.scripts.close_garage, { alias: 'Close garage (edited)' });
+  await addPiece(page, fake, 'automation.fb_close_at_night', { alias: 'Close at night', triggers: [{ trigger: 'time', at: '23:00:00' }], conditions: [], actions: [{ action: 'script.close_garage' }] });
+  await ws(page, { type: 'config/entity_registry/update', entity_id: LEFT, labels: [garage, morning] });
+  await el(page, (b) => { b._store.changed('reg'); b._store.changed('cfg:'); });
   await fake.idle(400);
   await el(page, (b, id) => b._verRestore(id), v.id);
   await fbq(page, '.modal .vrdlg').waitFor({ timeout: 15000 });
@@ -1107,6 +1115,10 @@ test('0.11.0 restoring a version never turns off or deletes what was added since
     && /Garage and morning light \(stays: it's also in Morning\)/.test(text) && /Garage chime \(stays: used outside this function by Chime at noon\)/.test(text), text);
   const sharedLine = (text.match(/Shared with another function[^\n]*/) || [''])[0];
   check('0.11.0 restore: what\'s only the function\'s is offered to turn off or delete, not listed as shared', !/Garage only check/.test(sharedLine) && /Garage only check[\s\S]*Turn them off/.test(text), text);
+  const warn = (await fbq(page, '.modal .vwshared').count()) ? await fbq(page, '.modal .vwshared').innerText() : '';
+  check('0.11.0 restore warns that what it writes back changes in the other function too', /restoring changes them there too/.test(warn) && /Garage: left open \(also in Morning\)/.test(warn), warn);
+  check('0.11.0 ... and where something outside uses it', /Close garage \(used outside this function by Close at night\)/.test(warn), warn);
+  check('0.11.0 ... but not for what only this function has (written back all the same)', !/stop timer/.test(warn) && /stop timer/.test(text), { warn, text });
   await fbq(page, '.modal input[name="vextra"][value="delete"]').check();
   await fbq(page, '.modal [data-act="ver-restore-go"]').click();
   await until(() => el(page, (b) => b._$.modal.hidden || null), 20000);
