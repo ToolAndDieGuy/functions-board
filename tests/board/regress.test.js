@@ -1084,4 +1084,38 @@ test('0.11.0 deleting a function and its items never deletes what\'s shared: it 
   check('0.11.0 deleting with what\'s shared: no errors', page.logs.length === 0, page.logs);
 });
 
+test('0.11.0 restoring a version never turns off or deletes what was added since and is shared: it only leaves the function', async ({ browser, fake }) => {
+  fake.store.mode = 'full';
+  const { page } = await imported(browser);
+  const garage = await openFn(page, /garage/i), morning = await el(page, (b) => b._data.functions.find((l) => /morning/i.test(b._fnName(l))));
+  // a version of the garage, saved before anything was added
+  const snap = await el(page, (b, l) => b._verSnapshot(l), garage);
+  const v = await ws(page, { type: 'functions_board/version_save', label: garage, name: 'Before', snapshot: snap });
+  // added since: an automation also in the morning function, a script an automation outside runs, one of its own
+  const SH = 'automation.fb_garage_and_morning', RUN = 'script.fb_garage_chime', OWN = 'automation.fb_garage_only';
+  await addPiece(page, fake, SH, { alias: 'Garage and morning light', triggers: [{ trigger: 'time', at: '06:00:00' }], conditions: [], actions: [] });
+  await addPiece(page, fake, RUN, { alias: 'Garage chime', sequence: [] });
+  await addPiece(page, fake, OWN, { alias: 'Garage only check', triggers: [{ trigger: 'time', at: '07:00:00' }], conditions: [], actions: [] });
+  await addPiece(page, fake, 'automation.fb_chime_at_noon', { alias: 'Chime at noon', triggers: [{ trigger: 'time', at: '12:00:00' }], conditions: [], actions: [{ action: 'script.fb_garage_chime' }] });
+  for (const [id, labels] of [[SH, [garage, morning]], [RUN, [garage]], [OWN, [garage]]]) await ws(page, { type: 'config/entity_registry/update', entity_id: id, labels });
+  await el(page, (b) => b._store.changed('reg'));
+  await fake.idle(400);
+  await el(page, (b, id) => b._verRestore(id), v.id);
+  await fbq(page, '.modal .vrdlg').waitFor({ timeout: 15000 });
+  const text = await fbq(page, '.modal .vrdlg').innerText();
+  check('0.11.0 restore: what\'s shared is listed apart, only taken out of the function, with why', /only taken out of this function \(never turned off or deleted\)/.test(text)
+    && /Garage and morning light \(stays: it's also in Morning\)/.test(text) && /Garage chime \(stays: used outside this function by Chime at noon\)/.test(text), text);
+  const sharedLine = (text.match(/Shared with another function[^\n]*/) || [''])[0];
+  check('0.11.0 restore: what\'s only the function\'s is offered to turn off or delete, not listed as shared', !/Garage only check/.test(sharedLine) && /Garage only check[\s\S]*Turn them off/.test(text), text);
+  await fbq(page, '.modal input[name="vextra"][value="delete"]').check();
+  await fbq(page, '.modal [data-act="ver-restore-go"]').click();
+  await until(() => el(page, (b) => b._$.modal.hidden || null), 20000);
+  await fake.idle(500);
+  const st = (id) => page.evaluate((k) => { const s = document.querySelector('home-assistant').hass.states[k]; return s ? s.state : null; }, id);
+  check('0.11.0 restore: the function\'s own piece added since is deleted', (await st(OWN)) === null);
+  check('0.11.0 restore: the shared automation is still there, still on, still in its other function, out of this one', (await st(SH)) === 'on' && await hasLabel(page, SH, morning) && !(await hasLabel(page, SH, garage)), { state: await st(SH) });
+  check('0.11.0 restore: the script used outside is still there, out of this function', (await st(RUN)) !== null && !(await hasLabel(page, RUN, garage)));
+  check('0.11.0 restoring with what\'s shared: no errors', page.logs.length === 0, page.logs);
+});
+
 pwTest.afterAll(() => done());

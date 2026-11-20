@@ -1080,5 +1080,23 @@
   "suite": "board-regress",
   "only": "never deletes",
   "expect": "every shared piece is still there"
+ },
+ {
+  "name": "restore: what's shared is turned off or deleted with the rest",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "plan.shared = cand.map((k) => ({ k, why: this._sharedWhy({ id: k }, label, mine, uses) })).filter((x) => x.why);",
+  "replace": "plan.shared = [];",
+  "suite": "board-regress",
+  "only": "restoring a version never",
+  "expect": "restore: the shared automation is still there"
+ },
+ {
+  "name": "restore: what's shared stays in the function",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "        try { await this._label(x.k, label, false, false); } catch (e) {",
+  "replace": "        try { void 0; } catch (e) {",
+  "suite": "board-regress",
+  "only": "restoring a version never",
+  "expect": "restore: the shared automation is still there|restore: the script used outside"
  }
 ]

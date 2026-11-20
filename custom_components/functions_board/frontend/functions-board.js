@@ -3032,6 +3032,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       ver_active: 'active',
       ver_added_delete: 'Delete them',
       ver_added_h: 'Added since this version was saved',
+      ver_added_shared: 'Shared with another function or used elsewhere, so they\'re only taken out of this function (never turned off or deleted): {list}',
       ver_added_off: 'Turn them off (automations; scripts and helpers stay as they are)',
       ver_added_other: 'Taken out of the function (they lose its label, nothing else changes): {list}',
       ver_auto: 'saved before a restore',
@@ -12227,6 +12228,12 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       snap.members.forEach((k) => { if (!cur.has(k) && !plan.recreate.includes(k) && (k.startsWith('device:') ? this._devMap.has(k.slice(7)) : this._entMap.has(k))) plan.rejoin.push(k); });
       plan.added = diff.added;
       plan.missing = Object.keys(snap.devices || {}).filter((d) => !this._devMap.has(d));
+      // what's shared (0.11.0): an automation, script or helper added since that's also in another function, or that
+      // something outside this one uses, only leaves this function; it's never turned off or deleted
+      const cand = plan.added.filter((k) => /^(automation|script)\./.test(k) || VER_HELPERS.has(k.split('.')[0])), mine = [...cur];
+      const uses = cand.length ? await this._outsideUses(cand, mine) : new Map();
+      plan.shared = cand.map((k) => ({ k, why: this._sharedWhy({ id: k }, label, mine, uses) })).filter((x) => x.why);
+      plan.added = plan.added.filter((k) => !plan.shared.some((x) => x.k === k));
       return plan;
     }
     _verRestoreDlg() {
@@ -12240,7 +12247,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       m.innerHTML = `<div class="dlg wide vrdlg"><h3>${T('ver_restore_h', { name: esc(v.name) })}</h3><p class="dtext">${T('ver_restore_lead', { fnName: esc(this._fnName(p.label)), when: esc(this._verWhen(v.at)) })}</p>`
         + `<ul class="vplan">${line(plan.write, P('ver_p_write', plan.write.length))}${line(plan.recreate, P('ver_p_recreate', plan.recreate.length))}${line(plan.rejoin, P('ver_p_rejoin', plan.rejoin.length))}${line(plan.same, P('ver_p_same', plan.same.length))}${line(plan.yaml, P('ver_p_yaml', plan.yaml.length))}${snap.layout ? `<li>${T('ver_p_layout')}</li>` : ''}</ul>`
         + (plan.missing.length ? `<h4>${T('ver_dev_h')}</h4><div class="hint">${T('ver_dev_hint')}</div>${devs}` : '')
-        + (addLogic.length || addOther.length ? `<h4>${T('ver_added_h')}</h4>${addLogic.length ? `<div class="hint">${addLogic.map(nm).join(', ')}</div><label class="chk"><input type="radio" name="vextra" value="off" checked>${T('ver_added_off')}</label><label class="chk"><input type="radio" name="vextra" value="delete">${T('ver_added_delete')}</label>` : ''}${addOther.length ? `<div class="hint">${T('ver_added_other', { list: addOther.map(nm).join(', ') })}</div>` : ''}` : '')
+        + (addLogic.length || addOther.length || plan.shared.length ? `<h4>${T('ver_added_h')}</h4>${plan.shared.length ? `<div class="hint">${T('ver_added_shared', { list: plan.shared.map((x) => nm(x.k) + ' (' + esc(x.why) + ')').join(', ') })}</div>` : ''}${addLogic.length ? `<div class="hint">${addLogic.map(nm).join(', ')}</div><label class="chk"><input type="radio" name="vextra" value="off" checked>${T('ver_added_off')}</label><label class="chk"><input type="radio" name="vextra" value="delete">${T('ver_added_delete')}</label>` : ''}${addOther.length ? `<div class="hint">${T('ver_added_other', { list: addOther.map(nm).join(', ') })}</div>` : ''}` : '')
         // a backup of what's there now only when asked for: switching between saved versions shouldn't pile up copies
         + `<label class="chk vbackup"><input type="checkbox" name="vbackup">${T('ver_restore_backup')}</label><div class="hint">${p.savedAs ? T('ver_now_saved_as', { name: esc(p.savedAs.name) }) : T('ver_restore_unsaved')}</div>`
         + [...doms].filter((d) => d === 'automation' || d === 'script').map((d) => this._yamlWarn(d)).join('')
@@ -12291,6 +12298,10 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       for (const k of plan.rejoin.concat(plan.recreate)) {
         const id = plan.recreate.includes(k) ? findNew(k) : k;
         if (id) { try { await this._label(id, label, true, false); } catch (e) { errs.push(name(k) + ': ' + ((e && e.message) || e)); } }
+      }
+      // what was added since and is shared only leaves the function (0.11.0)
+      for (const x of plan.shared || []) {
+        try { await this._label(x.k, label, false, false); } catch (e) { errs.push(this._boxName(x.k) + ': ' + ((e && (e.message || e.body || e.code)) || e)); }
       }
       // what was added since: turned off or deleted, as chosen; anything else is taken out of the function
       for (const k of plan.added) {
