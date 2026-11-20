@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.11.0 (2026-11-20)
 
 Import finds more of the systems you've built, and lets you decide where one ends and the next begins.
 
