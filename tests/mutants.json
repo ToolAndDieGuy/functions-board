@@ -1107,5 +1107,67 @@
   "suite": "board-regress",
   "only": "restoring a version never",
   "expect": "restore warns that what it writes back"
+ },
+ {
+  "name": "scenes: arrows to what's on the board by default",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "const mode = SET_MODES.includes(sets[k]) ? sets[k] : 'none';",
+  "replace": "const mode = SET_MODES.includes(sets[k]) ? sets[k] : 'board';",
+  "suite": "board-regress",
+  "only": "0.11.1",
+  "expect": "by default a scene draws no arrows"
+ },
+ {
+  "name": "scenes: what's on the board brings the box too",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "if (mode !== 'all' || !rest.length) return;",
+  "replace": "if (!rest.length) return;",
+  "suite": "board-regress",
+  "only": "0.11.1",
+  "expect": "Only to what's on the board"
+ },
+ {
+  "name": "scenes: no arrow to the box of the rest",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "        this._link(edges, k, key, r);\n",
+  "replace": "",
+  "suite": "board-regress",
+  "only": "0.11.1",
+  "expect": "Everything"
+ },
+ {
+  "name": "scenes: the box's rows show no state",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "if (sv.textContent !== v) sv.textContent = v;",
+  "replace": "void v;",
+  "suite": "board-regress",
+  "only": "0.11.1",
+  "expect": "lists each with its state"
+ },
+ {
+  "name": "scenes: no count on a scene drawing nothing",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "+ (n.setN && n.setMode === 'none' ?",
+  "replace": "+ (false ?",
+  "suite": "board-regress",
+  "only": "0.11.1",
+  "expect": "says how many it sets"
+ },
+ {
+  "name": "scenes: undo leaves the choice",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "        if (v.sets && Object.keys(v.sets).length) L.sets = v.sets; else delete L.sets;\n",
+  "replace": "",
+  "suite": "board-regress",
+  "only": "0.11.1",
+  "expect": "Undo goes back"
+ },
+ {
+  "name": "layout: a scene's choice isn't kept",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "if (src.sets != null) out.sets =",
+  "replace": "if (false) out.sets =",
+  "suite": "wiring",
+  "expect": "choice of what it shows is kept"
  }
 ]

@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+A scene or group now draws no arrows to what it sets until you choose otherwise. Before, it drew arrows only to the
+members that happened to be on the board for other reasons, so a scene that sets a dozen lights looked as if it set
+two. Its box now says how many it sets, and **What it sets** in its bar chooses: nothing (the default), the members
+already on the board, or everything, with the rest listed in a box of their own beside it, each with its state.
+The choice is kept with the function, and Undo takes it back.
+
 ## 0.11.0 (2026-11-20)
 
 Import finds more of the systems you've built, and lets you decide where one ends and the next begins.

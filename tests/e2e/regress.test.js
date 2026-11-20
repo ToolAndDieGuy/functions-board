@@ -372,7 +372,11 @@ test('Phase 2: area targets, purpose-specific triggers, helper inputs, scenes', 
   check('2.2 and to the member light it covers', has(ent, 'action', 'light.bed_light') && m.edges.find((e) => e[2] === 'light.bed_light' && e[0] === ent)[4] === A, m.edges);
   check('2.2 no bare light.turn_on action box', !m.nodes.some((n) => n[0] === 'svc:light.turn_on'), m.nodes);
   check('2.1 motion.detected then turn on lights: no loop', !m.edges.some((e) => e[3]), m.edges.filter((e) => e[3]));
-  check('2.4 the scene changes its member light', has(scene, 'action', 'light.bed_light'), m.edges);
+  // 0.11.1: a scene draws no arrows to what it sets until it's asked to; asked for what's on the board, it does
+  check('2.4 by default the scene draws no arrow to its member light', !has(scene, 'action', 'light.bed_light'), m.edges);
+  await el(page, (b, k) => b._setMode(k, 'board'), scene);
+  await until(() => el(page, (b, k) => b._model && b._model.edges.some((e) => e.from === k && e.to === 'light.bed_light' && e.role === 'action')), 10000);
+  check('2.4 asked for what\'s on the board, the scene changes its member light', true);
   const filt = await el(page, (b, k) => b._targetEntities(k, { role: 'trigger', kind: 'motion.detected' }), A);
   check('2.2 a motion trigger on the area covers only its motion sensors', JSON.stringify(filt) === '["binary_sensor.movement_backyard"]', filt);
   // a template sensor's inputs

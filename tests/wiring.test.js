@@ -245,6 +245,10 @@ for (const [name, cfgs, want] of phase2) { const got = loops(cfgs); check(name, 
   check('layout: paused list keeps entity ids only', JSON.stringify(L.paused) === '["automation.a"]', L.paused);
   check('layout: unknown keys kept for newer versions', L.extra && L.extra.kept === true);
   check('layout: garbage in gives an empty layout', JSON.stringify(cleanLayout('x').nodes) === '{}' && cleanLayout(null).frames.length === 0);
+  // 0.11.1: what each scene or group shows of what it sets; only the three choices are kept
+  const S = cleanLayout({ sets: { 'scene.sleep': 'all', 'group.lights': 'board', 'scene.bad': 'everything', 'scene.num': 3 } });
+  check('layout: a scene\'s or group\'s choice of what it shows is kept, anything else dropped', JSON.stringify(S.sets) === JSON.stringify({ 'scene.sleep': 'all', 'group.lights': 'board' }), S.sets);
+  check('layout: sets that aren\'t a map give none', JSON.stringify(cleanLayout({ sets: ['all'] }).sets) === '{}' && cleanLayout({}).sets === undefined);
   check('esc covers quotes', esc('a"b\'c<d>&') === 'a&quot;b&#39;c&lt;d&gt;&amp;');
 }
 
