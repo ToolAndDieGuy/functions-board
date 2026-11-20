@@ -52,13 +52,15 @@ The fake (`tests/board/fake-ha.js`) answers the board's calls from `tests/board/
 fresh test Home Assistant by `node tests/board/capture.js` (re-record after changing `tests/e2e/config` or moving
 Home Assistant); a call it doesn't know fails the test (`fake.unknown`), so teach it anything new the board asks.
 `FB_JITTER=<seed>` makes it answer late and out of turn (events before or after their answers; the weekly jitter
-job runs every board suite so).
+job runs every board suite so). A call the board reports as failed is an error in a board test unless the test
+expects it (`page.allowFail`, as in the real-HA suites); `window.__fbReconnect()` is the connection coming back.
 `tests/e2e/contract.test.js` compares the fake's answers with the real Home Assistant's, so the fake can't drift.
 `tests/board/helpers.js` has the same API as `tests/e2e/lib.js`.
 
 The real-HA suites run on Playwright Test (`tests/playwright.config.js`, one suite at a time, one worker), with
-`tests/e2e/fixtures.js`: each test starts from a snapshot of what tests may change in Home Assistant and is put back
-to it afterwards, even when it fails (`snapshot()` and `restore()` in `tests/e2e/ha-api.js`; proven by
+`tests/e2e/fixtures.js`: each test starts from a snapshot of what tests may change in Home Assistant (UI automations,
+scripts, helpers and scenes, areas, entity and device registry fields, the board's data) and is put back to it
+afterwards, even when it fails (`snapshot()` and `restore()` in `tests/e2e/ha-api.js`; proven by
 `isolation.test.js`), so no test may count on what an earlier one left. A failed test keeps the traces of its
 browser contexts: `npx playwright show-report tests/.results/html-<suite>` (`htmlb-<suite>` for the board layer).
 
@@ -194,8 +196,8 @@ returns everything the library section defines.
   `after` replaces the wait of that name (debounce), `once` keeps it (throttle), `every` repeats, `frame` waits for
   the next frame, `deadline` is how long a call may take (run at once when the clock stops), `sleep` is a pause
   in a background task (false when the clock stops: give up), `pause` is a pause inside a write (never stopped).
-  `disconnectedCallback` stops it, `connectedCallback` starts it again; no raw `setTimeout` in the board's class
-  (a static rule).
+  `disconnectedCallback` stops it, `connectedCallback` starts it again (and catches up, see the link); no raw
+  `setTimeout` in the board's class (a static rule). A save asked while the clock is stopped is written at once.
 - **The link** (0.10.0, `class Link` in the library section, `this._ha`): every call to Home Assistant. The board
   calls `this._ws(msg, o)`, `this._api(method, path, body, o)`, `this._svc(domain, service, data, target, o)` and
   subscribes through `this._haConn` (`subscribeMessage`/`subscribeEvents`, as Home Assistant's connection, plus `o`);
@@ -206,7 +208,9 @@ returns everything the library section defines.
   manifest lists come sorted; the entity, device and area registries keep Home Assistant's order (the layout follows
   it). Unsubscribing is `this._ha.drop(p)`; a task of the board's own is `_ha.soft(p, what, fallback)` (reported) or
   `_ha.quiet(p, '<why>', fallback)`. Static rules: no `.catch(() => …)` in the board's class, every `optional` and
-  `quiet` gives its reason, no empty `catch` block, no property with a method's name.
+  `quiet` gives its reason, no empty `catch` block, no property with a method's name. When the board was off the
+  page, or the connection was lost and came back (`this._haConn.onReady`), it heard nothing meanwhile: `_catchUp()`
+  makes everything held stale, reads the shared data and the registries again and opens the function again.
 - **The store** (0.10.0, `class Store` in the library section, `this._store`): what the board knows of Home Assistant,
   each fact with the time its question was asked: the registries (`'reg'`), configs (`'cfg:<entity id>'`, kept a
   minute) and the time of the shared board data (`'data'`). An older answer never replaces a newer one;

@@ -147,4 +147,19 @@ const make = (o = {}) => { const env = pretendTimers(), ha = pretendHA(), told =
     check('L5 nothing is kept for questions all answered', link._last.size === 0, [...link._last.keys()]);
     check('L5 stableJson writes a message the same whatever the order of its keys', stableJson({ b: 1, a: [1, { d: 2, c: 3 }] }) === stableJson({ a: [1, { c: 3, d: 2 }], b: 1 }));
   }
+
+  // L6 the connection coming back (0.10.0: the board catches up on what it missed): told through ready(), until
+  // stopped; a link to something with no such news answers a function that stops nothing
+  {
+    const fns = new Set();
+    const link = new Link({ ready: (cb) => { fns.add(cb); return () => fns.delete(cb); } });
+    let n = 0;
+    const off = link.ready(() => n++);
+    [...fns].forEach((f) => f());
+    off();
+    [...fns].forEach((f) => f());
+    check('L6 ready(): told when the connection comes back, and not after it is stopped', n === 1 && fns.size === 0, { n, left: fns.size });
+    const none = new Link({}).ready(() => {});
+    check('L6 ready() on a link with no connection news: a function that stops nothing', typeof none === 'function');
+  }
 })();

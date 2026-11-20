@@ -19,7 +19,8 @@ const test = base.test.extend({
     helpers.current.all = [fake];
     lib.hooks.traces = [];
     lib.hooks.attempt = { test: testInfo.titlePath.slice(1).join(' › '), retry: testInfo.retry };
-    lib.hooks.mark = lib.hooks.suite ? lib.hooks.suite.results.length : 0;
+    const own = lib.suiteOf(testInfo.file);
+    lib.hooks.mark = own ? own.results.length : 0;
     await use(fake);
     for (const c of lib.hooks.open.splice(0)) await lib.stopTrace(c).catch(() => {});
     const fakes = helpers.current.all;
@@ -31,12 +32,14 @@ const test = base.test.extend({
     }
     helpers.current.fake = null; helpers.current.all = [];
     const unknown = [...new Set(fakes.flatMap((f) => f.unknown))];
-    if (unknown.length && lib.hooks.suite) lib.hooks.suite.check(testInfo.title + ': the board asked the fake Home Assistant only what it knows', false, unknown);
+    if (unknown.length && own) own.check(testInfo.title + ': the board asked the fake Home Assistant only what it knows', false, unknown);
   }, { auto: true }],
 });
 test.afterEach(async ({}, testInfo) => {
-  if (testInfo.status !== testInfo.expectedStatus && testInfo.error && lib.hooks.suite && !lib.hooks.suite.results.slice(lib.hooks.mark || 0).some((r) => !r.ok)) {
-    lib.hooks.suite.check(testInfo.title + ' (ran to the end)', false, String(testInfo.error.message || testInfo.error).split('\n')[0]);
+  // (the test's own suite: a worker runs tests from several files, and the last one loaded may be another's)
+  const own = lib.suiteOf(testInfo.file);
+  if (testInfo.status !== testInfo.expectedStatus && testInfo.error && own && !own.results.slice(lib.hooks.mark || 0).some((r) => !r.ok)) {
+    own.check(testInfo.title + ' (ran to the end)', false, String(testInfo.error.message || testInfo.error).split('\n')[0]);
   }
 });
 module.exports = { test, expect: base.expect };

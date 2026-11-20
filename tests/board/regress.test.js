@@ -782,7 +782,9 @@ test('0.10.0 a call that fails is reported: in the Diagnostics file, anonymised 
   check('0.10.0 ... anonymised, without the failure\'s message (it can name things in a home)', !/someones_lamp/.test(anon.text));
   const real = await file(false);
   check('0.10.0 ... with real names, with its message', /light\.someones_lamp is gone/.test(real.text));
-  check('0.10.0 failure reported: no errors', page.logs.length === 0, page.logs);
+  // (the planted failure is reported, as it should be: nothing else is)
+  const other = page.logs.filter((l) => !/frontend\/get_user_data failed \(planted_failure\)/.test(l));
+  check('0.10.0 failure reported: no errors', other.length === 0 && other.length < page.logs.length, page.logs);
 });
 
 test('0.10.0 a config read before a save isn\'t taken for the saved one', async ({ browser, fake }) => {
@@ -834,6 +836,77 @@ test('0.10.0 an automation turned off after the board was built becomes a warnin
   const w = await until(async () => (await off()) || null, 8000);
   check('0.10.0 turned off, its warning shows, with no reopening', !!w);
   check('0.10.0 turned off later: no errors', page.logs.length === 0, page.logs);
+});
+
+// what Home Assistant changed while the board wasn't listening: an automation's config saved (no reload event
+// reaches the board), and a function made on another board (no store message reaches it)
+async function missWhileAway(page, fake) {
+  const K = 'automation.garage_left_open', cfg = fake.autoByEntity[K];
+  fake.autoByEntity[K] = Object.assign({}, cfg, { triggers: cfg.triggers.concat([{ trigger: 'state', entity_id: 'binary_sensor.movement_backyard', to: 'on' }]) });
+  const lid = 'fb_while_away';
+  fake.labels.push({ label_id: lid, name: 'Made while away', icon: 'mdi:star', color: null, description: null, created_at: Date.now() / 1000, modified_at: Date.now() / 1000 });
+  fake.store.data = Object.assign({}, fake.store.data, { functions: fake.store.data.functions.concat([lid]) });
+  return { K, lid };
+}
+// whether the board shows both: the new trigger's arrow, and the function on its list
+const sawBoth = (page, K, lid) => el(page, (b, [k, l]) => (b._model && b._model.edges.some((e) => e.from === 'binary_sensor.movement_backyard' && e.to === k) && b._data.functions.includes(l)) || null, [K, lid]);
+const shown = (page, K) => el(page, (b, k) => ({ fns: b._data.functions, trig: b._model && b._model.edges.filter((e) => e.to === k).map((e) => e.from) }), K);
+
+test('0.10.0 a board put back on the page catches up with what changed while it was away', async ({ browser, fake }) => {
+  const { page } = await imported(browser);
+  await openFn(page, /garage/i);
+  // taken off (a dashboard keeps its card while you're on another page), and put back later: the same element
+  await page.evaluate(() => { const b = document.querySelector('functions-board'), p = b.parentNode; b.remove(); window.__fbBack = () => p.appendChild(b); });
+  await fake.idle(300);
+  const { K, lid } = await missWhileAway(page, fake);
+  await page.evaluate(() => window.__fbBack());
+  const ok = await until(() => sawBoth(page, K, lid), 8000);
+  check('0.10.0 put back: the board shows the config saved and the function made while it was away', !!ok, await shown(page, K));
+  check('0.10.0 caught up on its return: no errors', page.logs.length === 0, page.logs);
+});
+
+test('0.10.0 when the connection comes back, the board catches up with what it missed', async ({ browser, fake }) => {
+  const { page } = await imported(browser);
+  await openFn(page, /garage/i);
+  // the connection lost (Home Assistant restarting, say): its changes meanwhile never reach the board
+  const { K, lid } = await missWhileAway(page, fake);
+  await fake.idle(300);
+  const before = await sawBoth(page, K, lid);
+  await page.evaluate(() => window.__fbReconnect());
+  const ok = await until(() => sawBoth(page, K, lid), 8000);
+  check('0.10.0 connection back: the board shows the config saved and the function made while it was down', !before && !!ok, { before, now: await shown(page, K) });
+  check('0.10.0 caught up after the connection came back: no errors', page.logs.length === 0, page.logs);
+});
+
+test('0.10.0 a change saved while the board is off the page is written', async ({ browser, fake }) => {
+  const { page } = await imported(browser);
+  const lid = await openFn(page, /garage/i);
+  await fake.idle(300);
+  await page.evaluate(() => { const b = document.querySelector('functions-board'), p = b.parentNode; b.remove(); window.__fbOff = b; window.__fbBack = () => { p.appendChild(b); window.__fbOff = null; }; });
+  // (as when a load the board started before it left drops a gone layout, and saves)
+  await page.evaluate((l) => { const b = window.__fbOff; b._layout(l).notes.push({ id: 'offpage', text: 'saved off the page', x: 0, y: 0 }); b._save(); }, lid);
+  const written = await until(() => (((fake.store.data.layouts || {})[lid] || {}).notes || []).some((n) => n.id === 'offpage') || null, 5000);
+  check('0.10.0 off the page, a save is written at once (its clock is stopped)', !!written, (fake.store.data.layouts || {})[lid]);
+  await page.evaluate(() => window.__fbBack());
+  check('0.10.0 saved off the page: no errors', page.logs.length === 0, page.logs);
+});
+
+test('0.10.0 an automation in the registry that isn\'t loaded: no config asked, no failure reported', async ({ browser, fake }) => {
+  const { page } = await imported(browser);
+  const lid = await openFn(page, /garage/i);
+  // left over in the registry (its YAML gone): no state, no config; Home Assistant answers not_found for it
+  const X = 'automation.fb_left_over';
+  fake.entities.set(X, { entity_id: X, id: 'fbleftover01', platform: 'automation', unique_id: 'fbleftover', labels: [lid], area_id: null, device_id: null, disabled_by: null, hidden_by: null, name: null, original_name: 'Left over', icon: null, categories: {}, config_entry_id: null, has_entity_name: false, entity_category: null, options: {} });
+  const n0 = fake.calls.length;
+  await el(page, (b) => { b._store.changed('reg'); return b._reload(); });
+  await until(() => el(page, (b, k) => (b._model && b._model.nodes.has(k)) || null, X), 8000);
+  await el(page, (b) => b._scanProblems());
+  await fake.idle(400);
+  const asked = fake.calls.slice(n0).filter((c) => c.type === 'automation/config' && c.msg.entity_id === X).length;
+  const errs = await el(page, (b) => b._ha.errors.map((e) => e.what + ' ' + e.code));
+  check('0.10.0 not loaded: its box is on the board, and its config isn\'t asked for', asked === 0, { asked });
+  check('0.10.0 not loaded: no failure reported for it', errs.length === 0, errs);
+  check('0.10.0 not loaded: no errors', page.logs.length === 0, page.logs);
 });
 
 pwTest.afterAll(() => done());

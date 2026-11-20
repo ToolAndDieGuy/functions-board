@@ -8,6 +8,7 @@
 #   sh tests/run.sh --only PATTERN   only the suites whose names match (a grep -E pattern), e.g. 'static|e2e-ui'
 #   --size                           also the size test (1,000 automations; slow)
 # Suites: selftest static wiring problems sandbox clock link store backend | board-smoke board-a11y board-layout board-regress
+# board-snapshots board-leak board-draw
 # (the board on the fake Home Assistant) | with --ha: apitest e2e-isolation e2e-contract e2e-ui e2e-regress
 # e2e-tools e2e-sync e2e-sandbox e2e-versions e2e-privacy (e2e-size). Exits 1 if anything failed.
 cd "$(dirname "$0")/.."
@@ -54,8 +55,9 @@ if [ -n "$BW" ]; then
   if [ "$(echo $BW | wc -w)" = "$(echo $BOARD | wc -w)" ]; then MATCH=""; else MATCH="$(echo $BW | sed 's/board-//g; s/ /|/g')"; fi
   t0=$(date +%s)
   FB_SUITE="${MATCH:+($MATCH)}" npx playwright test -c tests/board.config.js > "$R/board.log" 2>&1
-  code=$?
-  for b in $BW; do WANT="$WANT $b"; echo $code > "$R/$b.exit"; done
+  # one exit code for the whole layer (board.exit): report.js judges it with all of the layer's suites at once
+  echo $? > "$R/board.exit"
+  for b in $BW; do WANT="$WANT $b"; done
   # the board suites run together: their time is the whole layer's
   echo $(( $(date +%s) - t0 )) > "$R/board.secs"
 fi

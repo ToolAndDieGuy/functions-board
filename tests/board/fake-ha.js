@@ -95,6 +95,12 @@ class FakeHA {
     page.logs = [];
     page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) page.logs.push('console: ' + m.text()); });
     page.on('pageerror', (e) => page.logs.push('pageerror: ' + e.message));
+    // a call the board reports as failed (its link warns of each) is an error too, unless the test expects that call
+    // to fail (page.allowFail, as in tests/e2e/lib.js, where a failed answer on the websocket is one)
+    page.on('console', (m) => {
+      const x = m.type() === 'warning' && /^Functions Board: (\w+) (.+?) failed \((.*?)\)/.exec(m.text());
+      if (x && !(page.allowFail || []).some((re) => re.test(x[1] === 'api' ? x[2].replace(/^[A-Z]+ /, '') : x[2]))) page.logs.push('reported: ' + m.text().slice(0, 300));
+    });
     page.on('close', () => { this.pages.delete(page); for (const [k, v] of this.subs) if (v.page === page) this.subs.delete(k); });
     // nothing reaches a network: the page is served from here, and any other request (an editor's iframe, an
     // icon) gets an empty answer
@@ -438,7 +444,14 @@ const PAGE_SIDE = `(() => {
     subscribeMessage: async (cb, msg) => { const id = ++sid; subs.set(id, cb); await call('sub', { sid: id, msg }); return async () => { subs.delete(id); await call('unsub', { sid: id }).catch(() => {}); }; },
     subscribeEvents: (cb, type) => conn.subscribeMessage(cb, type ? { type: 'subscribe_events', event_type: type } : { type: 'subscribe_events' }),
     sendMessagePromise: (m) => call('ws', m),
+    // as Home Assistant's connection: 'ready' each time it comes back after it was lost (window.__fbReconnect)
+    addEventListener: (t, cb) => { if (!on.has(t)) on.set(t, new Set()); on.get(t).add(cb); },
+    removeEventListener: (t, cb) => { if (on.has(t)) on.get(t).delete(cb); },
   };
+  const on = new Map();
+  // the connection lost and back: its subscriptions carry on, but what was sent meanwhile never came
+  window.__fbReconnect = () => { [...(on.get('ready') || [])].forEach((cb) => cb(conn)); };
+  window.__fbConnListeners = () => [...on.values()].reduce((n, x) => n + x.size, 0);
   const make = () => ({
     states: view.states, user: view.user, themes: { darkMode: view.dark, themes: {}, default_theme: 'default' }, selectedTheme: null,
     language: 'en', locale: { language: 'en', number_format: 'language', time_format: 'language' }, config: view.config, services: view.services,

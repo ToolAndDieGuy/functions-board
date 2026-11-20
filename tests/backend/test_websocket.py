@@ -194,3 +194,25 @@ async def test_versions_admin_only(hass: HomeAssistant, hass_ws_client, hass_rea
     ws = await hass_ws_client(hass, hass_read_only_access_token)
     await ws.send_json_auto_id({"type": "functions_board/versions", "label": "garage"})
     assert (await ws.receive_json())["error"]["code"] == "unauthorized"
+
+
+async def test_a_version_that_cant_be_kept_takes_nothing_with_it(hass: HomeAssistant, monkeypatch) -> None:
+    """0.10.0: an automatic version makes room by pushing out older automatic ones only if it's then kept.
+
+    With versions full by size, it isn't kept ("full"), and the automatic ones it would have pushed out are still
+    there (they were deleted in memory, and the next save of anything stored that).
+    """
+    from custom_components.functions_board import versions as vmod  # noqa: PLC0415 - the module, to set its limit
+
+    store = vmod.Versions(hass)
+    monkeypatch.setattr(vmod, "MAX_VERSIONS", 3)
+    for i in range(3):
+        v, problem = store.add("f", f"v{i}", "", "", {"i": i, "pad": "x" * 100}, auto=i == 0)
+        assert v is not None and problem is None
+    monkeypatch.setattr(vmod, "MAX_VERSIONS_BYTES", store._total() + 50)
+    v, problem = store.add("f", "Before restoring", "", "", {"pad": "y" * 400}, auto=True)
+    assert v is None and problem == "full"
+    assert [x["name"] for x in store.list("f")] == ["v0", "v1", "v2"]
+    # one that fits once the oldest automatic one has gone is kept, and that one goes
+    v, problem = store.add("f", "Before restoring", "", "", {"pad": "y" * 100}, auto=True)
+    assert problem is None and [x["name"] for x in store.list("f")] == ["v1", "v2", "Before restoring"]

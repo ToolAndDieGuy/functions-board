@@ -22,7 +22,11 @@ const NOISE = /^(recorder\/info|lovelace\/config)$/;
 
 // Set by fixtures.js when the suites run under Playwright Test: a check is also a soft expectation, and every
 // context records a trace (kept by the fixture when the test fails).
-const hooks = { soft: null, trace: false, open: [], traces: [], suite: null };
+// suite: the last suite made; suites: every suite made in this process, by name (a Playwright worker runs tests
+// from several files: a fixture finds a test's own suite with suiteOf(), by the test's file)
+const hooks = { soft: null, trace: false, open: [], traces: [], suite: null, suites: new Map() };
+// a test file's suite: tests/board/<x>.test.js makes board-<x>, tests/e2e/<x>.test.js makes <x> (a static rule)
+const suiteOf = (file) => { const b = path.basename(String(file || ''), '.test.js'); return hooks.suites.get((/[\\/]board[\\/][^\\/]+$/.test(file || '') ? 'board-' : '') + b) || hooks.suite; };
 let traceN = 0;
 async function stopTrace(ctx) {
   if (!ctx.__fbTrace) return;
@@ -113,6 +117,7 @@ function suite(name) {
   };
   const me = { check, done, results };
   hooks.suite = me;
+  hooks.suites.set(name, me);
   return me;
 }
 
@@ -162,4 +167,4 @@ async function openFn(page, re) {
   return l.label_id;
 }
 
-module.exports = { hooks, stopTrace, chromium, BASE, STATE, SHOTS, auth, session, ws, svc, states, ready, fbq, board, sleep, until, suite, reset, freshBoard, importAll, openFn };
+module.exports = { hooks, suiteOf, stopTrace, chromium, BASE, STATE, SHOTS, auth, session, ws, svc, states, ready, fbq, board, sleep, until, suite, reset, freshBoard, importAll, openFn };

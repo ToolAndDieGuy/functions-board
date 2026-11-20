@@ -3,7 +3,7 @@
 // its view. Here the board is taken off and put back 50 times with the garage open, and then taken off for good.
 // Instruments in the page count timers and the listeners on window and document.
 //
-//   L1  taken off for good, the board has no subscription left with Home Assistant
+//   L1  taken off for good, the board has no subscription left with Home Assistant, and no listener on its connection
 //   L2  taken off for good, nothing of the board's runs any more: no interval left, no timer firing in the ten
 //       minutes after (on the page's clock)
 //   L3  taken off for good, it leaves no listener on window or document
@@ -86,6 +86,9 @@ test('the board opened and closed 50 times', async ({ browser }) => {
   });
   const subs = [...fake.subs.values()].map((v) => v.msg.type + (v.msg.event_type ? ' ' + v.msg.event_type : ''));
   check('L1 taken off for good, the board has no subscription left with Home Assistant', subs.length === 0, { left: subs.length, kinds: [...new Set(subs)] });
+  // (it listens for the connection coming back while it's on the page)
+  const conn = await page.evaluate(() => window.__fbConnListeners());
+  check('L1 taken off for good, nothing of the board\'s listens on the connection', conn === 0, { left: conn });
   check('L2 taken off for good, no interval of the board\'s is left', after.intervals.length === 0, { left: after.intervals.length, kinds: [...new Set(after.intervals)] });
   check('L2 taken off for good, no timer of the board\'s fires (10 minutes watched)', after.fired.length === 0, after.fired);
   check('L3 taken off for good, the board leaves no listener on window or document', after.listeners.length === 0, { left: after.listeners.length, kinds: [...new Set(after.listeners)] });

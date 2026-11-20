@@ -42,4 +42,20 @@ test('the fake\'s jitter puts events before and after answers', async ({ browser
   check('J1 without jitter, an event always comes before the answer it goes with', plain.before === 40 && plain.inOrder, plain);
   check('J2 with jitter, events come both before and after their answers, and in order', shaken.before >= 3 && shaken.after >= 3 && shaken.inOrder, shaken);
 });
+// A call the board reports as failed is an error in a board test (tests/board/fake-ha.js), as a failed answer is in
+// the real-HA suites, unless the test says it expects that call to fail (page.allowFail). Without it, a failure the
+// board reports when nothing has gone wrong (an expected one not marked optional) would pass every test.
+test('a failure the board reports is an error in the test, unless it is expected', async ({ browser, fake }) => {
+  const { page } = await session(browser);
+  await fbq(page, '.empty.wel').waitFor({ timeout: 15000 });
+  fake.answers = { 'config/category_registry/list': () => { throw Object.assign(new Error('planted'), { code: 'planted_failure' }); } };
+  await board(page).evaluate((b) => b._ws({ type: 'config/category_registry/list', scope: 'automation' }, { fallback: [] }));
+  await until(() => page.logs.length || null, 3000);
+  check('J3 a reported failure is in the page\'s errors', page.logs.some((l) => /^reported: .*config\/category_registry\/list failed \(planted_failure\)/.test(l)), page.logs);
+  page.logs = []; page.allowFail = [/^config\/category_registry\/list$/];
+  await board(page).evaluate((b) => b._ws({ type: 'config/category_registry/list', scope: 'automation' }, { fallback: [] }));
+  await page.waitForTimeout(300);
+  check('J3 ... and not when the test expects that call to fail', page.logs.length === 0, page.logs);
+  fake.answers = null;
+});
 test.afterAll(() => done());

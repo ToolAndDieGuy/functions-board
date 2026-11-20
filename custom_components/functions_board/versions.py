@@ -67,16 +67,20 @@ class Versions:
         size = len(json_bytes(snapshot))
         if size > MAX_VERSION_BYTES:
             return None, "too_large"
-        vs = self.by_label.setdefault(label, [])
+        vs = list(self.by_label.get(label, []))
         # versions saved by the board itself before a restore make room for themselves: the oldest of those go first
+        # (decided on a copy: a version that can't be kept takes nothing with it)
         while auto and len(vs) >= MAX_VERSIONS and any(v.get("auto") for v in vs):
             vs.remove(next(v for v in vs if v.get("auto")))
         if len(vs) >= MAX_VERSIONS:
             return None, "too_many"
-        if self._total() + size > MAX_VERSIONS_BYTES:
+        kept = {v["id"] for v in vs}
+        gone = sum(v.get("size", 0) for v in self.by_label.get(label, []) if v["id"] not in kept)
+        if self._total() - gone + size > MAX_VERSIONS_BYTES:
             return None, "full"
         version = {"id": uuid.uuid4().hex, "name": name, "desc": desc, "at": int(time.time() * 1000), "by": by, "size": size, "auto": auto, "print": print_, "snapshot": snapshot}
         vs.append(version)
+        self.by_label[label] = vs
         self._save()
         return version, None
 

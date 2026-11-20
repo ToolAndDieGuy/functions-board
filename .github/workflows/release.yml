@@ -18,9 +18,10 @@ jobs:
   release:
     name: Tag and publish
     runs-on: ubuntu-latest
-    # after a successful Validate run of a push to main (not a pull request's, not a failed one)
+    # after a successful Validate run of a push to main (not a pull request's, not a failed one); by hand, only from
+    # main (started from another branch, it would tag and publish that branch)
     if: >-
-      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
       (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main')
     steps:
       - uses: actions/checkout@v4

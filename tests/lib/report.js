@@ -29,6 +29,9 @@ if (fs.existsSync(qfile)) {
 }
 const quarantined = (suite, name) => quarantine.find((q) => q.suite === suite && name.includes(q.check));
 const seen = new Set();
+// the board layer (board-*) runs as one Playwright run with one exit code (board.exit): it's judged with all of
+// its suites at once, after them, so a quarantined check failing in one board suite doesn't fail the others
+const layer = { code: (() => { try { return +fs.readFileSync(path.join(dir, 'board.exit'), 'utf8').trim(); } catch (e) { return 0; } })(), failed: 0, held: 0, n: 0 };
 
 for (const name of want) {
   const file = path.join(dir, name + '.xml');
@@ -37,6 +40,7 @@ for (const name of want) {
   if (!r.tests) { bad++; out(name, 'FAILED: its report has no tests'); continue; }
   r.all.forEach((n) => quarantine.forEach((q) => { if (q.suite === name && n.includes(q.check)) seen.add(q); }));
   const held = r.failed.filter((f) => quarantined(name, f)), failed = r.failed.filter((f) => !quarantined(name, f));
+  if (name.startsWith('board-')) { layer.n++; layer.failed += failed.length; layer.held += held.length; }
   const ff = path.join(dir, name + '.flaky.json'), flaky = fs.existsSync(ff) ? JSON.parse(fs.readFileSync(ff, 'utf8')) : [];
   if (failed.length) {
     bad++; out(name, `FAILED: ${failed.length} of ${r.tests}`); failed.slice(0, 15).forEach((f) => note(f.slice(0, 300)));
@@ -51,6 +55,9 @@ for (const name of want) {
   flaky.forEach((f) => note(`flaky: ${f.test}: failed first, passed again (${f.failed.slice(0, 3).join('; ').slice(0, 300)})`));
   if (strict && flaky.length) { bad++; note('FAILED: the weekly run allows no flaky tests'); }
 }
+// the board layer exited with an error while no board suite reports a failure of its own: it crashed part way (a
+// suite not on run.sh's list failed, or Playwright did); with only quarantined failures, an error exit is expected
+if (layer.n && layer.code && !layer.failed && !layer.held) { bad++; const l = `board layer     FAILED: exited ${layer.code}, with every check of its ${layer.n} suites passed`; console.log(l); md.push(`| board layer | ${l.replace(/^board layer\s+/, '')} |`); }
 if (strict) {
   const old = Date.now() - 30 * 86400000;
   for (const q of quarantine) {

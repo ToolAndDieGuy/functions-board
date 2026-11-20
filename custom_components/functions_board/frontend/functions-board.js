@@ -4835,8 +4835,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
        the call says why its failure is expected: o.optional = '<the reason>'. o.fallback answers instead of
        throwing.
      - Lists Home Assistant gives in no promised order are put in one on arrival (LINK_ORDER).
-     to: { ws(msg), api(method, path, body), service(domain, service, data, target), sub(msg, cb) },
-     each returning a promise; clock: a Clock (its limit()); report(entry): told of each failure reported. */
+     to: { ws(msg), api(method, path, body), service(domain, service, data, target), sub(msg, cb) }, each returning a
+     promise, and ready(cb): cb each time the connection comes back after it was lost, returning the function that
+     stops it; clock: a Clock (its limit()); report(entry): told of each failure reported. */
   const LINK_TIMEOUT = 60000;
   const LINK_KEEP = 50;
   // lists in no promised order: by this field (other lists of helpers, `<domain>/list`, by id). Not the entity,
@@ -4933,6 +4934,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     }
     // any other call out (Node-RED's flows, through its page here): its time limit and its report
     call(what, run, o = {}) { return this._settle('call', what, this._raw(what, run, o.timeout), o); }
+    // cb each time the connection to Home Assistant comes back after it was lost (what Home Assistant said meanwhile
+    // never came: subscriptions start again, but not from where they were); returns the function that stops it
+    ready(cb) { return this.to.ready ? this.to.ready(cb) : () => {}; }
     // ends a subscription (given its promise or its function): one that fails to end was already gone with the
     // connection, so that failure isn't one
     drop(p) { Promise.resolve(p).then((f) => (typeof f === 'function' ? f() : null)).then(() => {}, () => {}); }
@@ -5146,10 +5150,12 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         api: (method, path, body) => this._hass.callApi(method, path, body),
         service: (domain, service, data, target) => this._hass.callService(domain, service, data, target),
         sub: (m, cb) => this._hass.connection.subscribeMessage(cb, m),
+        ready: (cb) => { const c = this._hass.connection, f = () => cb(); c.addEventListener('ready', f); return () => c.removeEventListener('ready', f); },
       }, { clock: this._clock, report: (e) => console.warn(`Functions Board: ${e.kind} ${e.what} failed (${e.code}): ${e.message}`) });
       this._haConn = {
         subscribeMessage: (cb, m, o) => this._ha.sub(m, cb, o),
         subscribeEvents: (cb, type, o) => this._ha.sub({ type: 'subscribe_events', event_type: type }, cb, o),
+        onReady: (cb) => this._ha.ready(cb),
       }; this._booting = false;
       this._watch = new Map(); this._toastActs = [];
       // what the board knows of Home Assistant, each fact with the time it was asked (0.10.0): the registries ('reg'),
@@ -5229,6 +5235,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         if (this._model) { this._startMonitors(); this._afterOpen(this._model.label); }
         this._dbgResume();
         this._resumeCapture();
+        // and what changed while it was away
+        this._catchUp();
       }
       if (this._ro && this._$) this._ro.observe(this._$.board);
       window.addEventListener('pagehide', this._flushNow);
@@ -5298,6 +5306,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     _save() {
       if (!this._data) return;
       this._savePending = true;
+      // off the page, with its clock stopped, it's written at once: a write finishes wherever the board is
+      if (!this._clock.running) { this._flushSave(); return; }
       this._clock.after('save', 700, () => this._doSave());
     }
     // a change made just before the tab closes or the page is left still gets written
@@ -5637,7 +5647,23 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         // saving an automation reloads it; saving a script calls script.reload (filtered by Home Assistant)
         c.subscribeEvents(() => this._configChanged(), 'automation_reloaded'),
         c.subscribeMessage(() => this._configChanged(), { type: 'subscribe_trigger', trigger: { trigger: 'event', event_type: 'call_service', event_data: { domain: 'script', service: 'reload' } } }, { fallback: null }),
+        // the connection lost and back (Home Assistant restarted, the network dropped): what was said meanwhile is gone
+        c.onReady(() => this._catchUp()),
       ];
+    }
+    // what Home Assistant said while the board wasn't listening (it was off the page, or the connection was lost and
+    // came back) never reached it: nothing it holds is taken as current; it reads the shared board data again, then
+    // the registries, and opens the function again (a load is shared with one in flight asked late enough)
+    _catchUp() {
+      if (!this._data || this._booting) return;
+      this._store.changed('cfg:'); this._store.changed('reg');
+      this._src = new Map(); this._grefs = null; this._cfgGen = (this._cfgGen || 0) + 1;
+      this._regWarm = false;
+      this._clock.once('probscan2', 3000, () => this._scanProblems());
+      this._clock.after('reg', 300, async () => {
+        if (this._storeMode === 'shared') await this._onShared({ what: 'all' });
+        await this._reload();
+      });
     }
     // changes saved by other boards: v0.4 integrations send them to subscribers; older ones fire a bus event
     async _subscribeShared(c) {
@@ -5693,7 +5719,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._data.ui.current = label;
       if (!keep && !opt.fromRoute) this._pushRoute(label, !!opt.replace);
       this._save();
-      const L = this._layout(label);
+      // (a function with no layout yet gets one)
+      this._layout(label);
       if (!keep) {
         this._sel = null;
         this._view = Object.assign({ x: 40, y: 40, k: 1 }, this._viewFor(label) || {});
@@ -5778,6 +5805,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       return this._store.asOfNow('cfg:' + entityId, 60000);
     }
     async _readConfig(entityId) {
+      // one in the registry that isn't loaded (left over, disabled, its YAML gone) has no config to read: Home
+      // Assistant answers not_found, which would be reported as a failure every time (the problems list shows it)
+      if (!this._hass.states[entityId]) return null;
       const d = entityId.split('.')[0];
       let cfg = null;
       try { const r = await this._ws({ type: d + '/config', entity_id: entityId }); cfg = r && r.config ? r.config : null; }
@@ -6410,7 +6440,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const marks = [], condOn = this._data.ui.condres !== false, mids = new Map(), fl = this._flow && this._sbxOn() ? this._flow : null;
       const dot = fl && fl.anim && fl.steps[fl.at] ? fl.steps[fl.at].links.find((l) => l.edge) : null;
       const geo = arrowGeo(E, boxOf, PR.ortho ? orthoSides : sides);
-      let dots = [], tagged = null;
+      let dots = [];
       const chev = [];
       if (PR.ortho) {
         const r = orthoAll(geo, (e, sd) => this._routeFor(e, sd), boxes);
@@ -6419,7 +6449,6 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         // a bus's dots light with it
         // a branch lights with its arrow
         dots = r.dots.map((dt) => Object.assign({ lit: !F || (dt.tag == null ? geo.some((g, i) => (r.owners[i] || []).includes(dt.own) && this._focusEdges.has(g.e.id)) : this._focusEdges.has(geo[dt.ri].e.id)) }, dt));
-        tagged = r.tags;
         // each arrow's direction, on runs that go back (right to left)
         geo.forEach((g, i) => {
           const pts = r.routes[i], hi = !!F && this._focusEdges.has(g.e.id), hp = r.hops[i] || new Map();
@@ -11235,7 +11264,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._flowGo(i, true);
     }
     _flowBuild(act) {
-      const g = this._sbx, m = this._model, eng = g.eng, vis = this._visibleKeys(), E = this._visEdges();
+      const g = this._sbx, eng = g.eng, vis = this._visibleKeys(), E = this._visEdges();
       const by = new Map(eng.log.map((e) => [e.id, e])), es = eng.log.filter((e) => e.id >= act.a && e.id <= act.b && e.kind !== 'note');
       // a board box for a key: itself, the MQTT box a topic is under (zigbee2mqtt/lamp for zigbee2mqtt/lamp/set), or a
       // temporary one
@@ -11482,7 +11511,6 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         default: return { main: e.text || '', sub: '', cls: e.warn ? 'amber' : '' };
       }
     }
-    _renderSbxSoon() { this._clock.once('sbxr', 120, () => this._renderSbx()); }
     _renderSbx() {
       this._renderChecks(true);
       const g = this._sbx, d = this._$.drawer;

@@ -58,7 +58,7 @@
  {
   "name": "fixtures: a test that stops part way is not named in its report",
   "file": "tests/board/fixtures.js",
-  "find": "lib.hooks.suite.check(testInfo.title + ' (ran to the end)'",
+  "find": "own.check(testInfo.title + ' (ran to the end)'",
   "replace": "void (testInfo.title + ' (ran to the end)'",
   "suite": "selftest",
   "expect": "stops part way"
@@ -683,6 +683,124 @@
   "replace": "if (false && (o.state",
   "suite": "e2e-isolation",
   "expect": "back on or off as before",
+  "fresh": true
+ },
+ {
+  "name": "board: the config of an automation that isn't loaded is asked for (and its not_found reported)",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      if (!this._hass.states[entityId]) return null;\n",
+  "replace": "",
+  "suite": "board-regress",
+  "only": "0.10.0 an automation in the registry",
+  "expect": "0.10.0 not loaded: (its box|no failure)"
+ },
+ {
+  "name": "board: a save asked off the page waits for the board's return",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      if (!this._clock.running) { this._flushSave(); return; }\n",
+  "replace": "",
+  "suite": "board-regress",
+  "only": "0.10.0 a change saved while",
+  "expect": "off the page, a save is written"
+ },
+ {
+  "name": "board: a board put back on the page doesn't catch up",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "        // and what changed while it was away\n        this._catchUp();\n",
+  "replace": "",
+  "suite": "board-regress",
+  "only": "0.10.0 a board put back",
+  "expect": "put back: the board shows"
+ },
+ {
+  "name": "board: the connection coming back isn't heard",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "        c.onReady(() => this._catchUp()),\n",
+  "replace": "",
+  "suite": "board-regress",
+  "only": "0.10.0 when the connection",
+  "expect": "connection back: the board shows"
+ },
+ {
+  "name": "link: ready() can't be stopped",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "    ready(cb) { return this.to.ready ? this.to.ready(cb) : () => {}; }",
+  "replace": "    ready(cb) { if (this.to.ready) this.to.ready(cb); return () => {}; }",
+  "suite": "link",
+  "expect": "L6 ready"
+ },
+ {
+  "name": "leak: the board leaves its listener on the connection",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "    ready(cb) { return this.to.ready ? this.to.ready(cb) : () => {}; }",
+  "replace": "    ready(cb) { if (this.to.ready) this.to.ready(cb); return () => {}; }",
+  "suite": "board-leak",
+  "expect": "listens on the connection"
+ },
+ {
+  "name": "fake: a failure the board reports passes a board test",
+  "file": "tests/board/fake-ha.js",
+  "find": "page.logs.push('reported: ' + m.text().slice(0, 300));",
+  "replace": "void 0;",
+  "suite": "board-smoke",
+  "expect": "J3 a reported failure"
+ },
+ {
+  "name": "report: a quarantined board check fails the board suites beside it",
+  "file": "tests/lib/report.js",
+  "find": "if (layer.n && layer.code && !layer.failed && !layer.held) {",
+  "replace": "if (layer.n && layer.code && !layer.failed) {",
+  "suite": "selftest",
+  "expect": "quarantined check failing in one board suite"
+ },
+ {
+  "name": "report: a board layer that crashed part way passes",
+  "file": "tests/lib/report.js",
+  "find": "if (layer.n && layer.code && !layer.failed && !layer.held) { bad++;",
+  "replace": "if (false) { bad++;",
+  "suite": "selftest",
+  "expect": "board layer exiting 1"
+ },
+ {
+  "name": "rules: a browser suite named after another file",
+  "file": "tests/board/smoke.test.js",
+  "find": "suite('board-smoke')",
+  "replace": "suite('board-smok')",
+  "suite": "static",
+  "expect": "named after its test file"
+ },
+ {
+  "name": "backend: an automatic version that isn't kept still pushes out older ones",
+  "file": "custom_components/functions_board/versions.py",
+  "find": "        vs = list(self.by_label.get(label, []))\n",
+  "replace": "        vs = self.by_label.setdefault(label, [])\n",
+  "suite": "backend",
+  "expect": "cant_be_kept"
+ },
+ {
+  "name": "backend: diagnostics fail on stored data that isn't labels",
+  "file": "custom_components/functions_board/diagnostics.py",
+  "find": "        labels = {x for x in found if isinstance(x, str) and x}",
+  "replace": "        labels = set(found)",
+  "suite": "backend",
+  "expect": "odd_stored_data"
+ },
+ {
+  "name": "isolation: helpers a test made stay",
+  "file": "tests/e2e/ha-api.js",
+  "find": "if (!R.helpers[d].includes(id))",
+  "replace": "if (false)",
+  "suite": "e2e-isolation",
+  "expect": "a helper it made is gone",
+  "fresh": true
+ },
+ {
+  "name": "isolation: devices stay where a test moved them",
+  "file": "tests/e2e/ha-api.js",
+  "find": "if (was && !same(fields(d, DEV_FIELDS), was))",
+  "replace": "if (false)",
+  "suite": "e2e-isolation",
+  "expect": "a device it moved",
   "fresh": true
  }
 ]

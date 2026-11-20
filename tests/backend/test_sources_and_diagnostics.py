@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from homeassistant.core import HomeAssistant
 from homeassistant.setup import async_setup_component
 
@@ -72,3 +74,17 @@ async def test_diagnostics_have_sizes_not_names(hass: HomeAssistant, hass_ws_cli
     assert diag["board"]["functions"] == ["label_1"]
     assert diag["board"]["layouts"] == {"label_1": {"nodes": {"light.e1": {"x": 0, "y": 0}}, "frames": [{"id": "f"}]}}
     assert "secret" not in str(diag)
+
+
+async def test_diagnostics_with_odd_stored_data(hass: HomeAssistant, hass_ws_client) -> None:
+    """0.10.0: functions_board/set takes any data; the anonymised file is still made when what it stored isn't labels."""
+    assert await async_setup_component(hass, "http", {})
+    assert await async_setup_component(hass, "functions_board", {})
+    await hass.async_block_till_done()
+    ws = await hass_ws_client(hass)
+    await ws.send_json_auto_id({"type": "functions_board/set", "data": {"functions": [{"odd": 1}, "garage", 7], "layouts": {"garage": {}}}})
+    assert (await ws.receive_json())["success"]
+    await ws.send_json_auto_id({"type": "functions_board/diagnostics", "anonymise": True})
+    res = await ws.receive_json()
+    assert res["success"], res
+    assert "garage" not in json.dumps(res["result"]["board"])
