@@ -2,13 +2,10 @@
 
 ## Unreleased
 
-A scene or group now draws no arrows to what it sets until you choose otherwise. Before, it drew arrows only to the
-members that happened to be on the board for other reasons, so a scene that sets a dozen lights looked as if it set
-two. Its box now says how many it sets, and **What it sets** in its bar chooses: nothing (the default), the members
-already on the board, or everything: those arrows, and, while you have it selected, the rest listed beside it, each
-with its state (past 15 the list scrolls, and the wheel scrolls it rather than the board). Not selected, it's a box
-like the rest, so nothing on the board moves.
-The choice is kept with the function, and Undo takes it back.
+A scene no longer draws arrows to the lights and devices it sets. Before, it drew arrows only to the ones that
+happened to be on the board for other reasons, so a scene that sets a dozen lights looked as if it set two. Its box
+now says how many it sets, and its arrows are the ones into what triggers on it or reads it (an automation started
+by the scene, a helper that tracks it). Groups still show arrows to their members on the board.
 
 ## 0.11.0 (2026-11-20)
 

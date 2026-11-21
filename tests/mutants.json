@@ -1109,83 +1109,21 @@
   "expect": "restore warns that what it writes back"
  },
  {
-  "name": "scenes: arrows to what's on the board by default",
+  "name": "scenes: arrows to what they set",
   "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "const mode = SET_MODES.includes(sets[k]) ? sets[k] : 'none';",
-  "replace": "const mode = SET_MODES.includes(sets[k]) ? sets[k] : 'board';",
+  "find": "if (dom === 'scene') { nodes.get(k).setN = new Set(list).size; return; }",
+  "replace": "if (dom === 'scene') { nodes.get(k).setN = new Set(list).size; }",
   "suite": "board-regress",
   "only": "0.11.1",
-  "expect": "by default a scene draws no arrows"
+  "expect": "a scene draws no arrow to anything it sets"
  },
  {
-  "name": "scenes: the list's rows show no state",
+  "name": "scenes: no count of what they set",
   "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "if (sv.textContent !== v) sv.textContent = v;",
-  "replace": "void v;",
-  "suite": "board-regress",
-  "only": "0.11.1",
-  "expect": "each with its state"
- },
- {
-  "name": "scenes: no count on a scene drawing nothing",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "+ (n.setN && n.setMode === 'none' ?",
-  "replace": "+ (false ?",
-  "suite": "board-regress",
-  "only": "0.11.1",
-  "expect": "says how many it sets"
- },
- {
-  "name": "scenes: undo leaves the choice",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "        if (v.sets && Object.keys(v.sets).length) L.sets = v.sets; else delete L.sets;\n",
+  "find": "      if (n.setN) r.text += ' · ' + P('sets_n', n.setN);",
   "replace": "",
   "suite": "board-regress",
   "only": "0.11.1",
-  "expect": "Undo goes back"
- },
- {
-  "name": "layout: a scene's choice isn't kept",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "if (src.sets != null) out.sets =",
-  "replace": "if (false) out.sets =",
-  "suite": "wiring",
-  "expect": "choice of what it shows is kept"
- },
- {
-  "name": "scenes: what's on the board lists the rest too",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "        if (mode === 'all') n.setRest = list.filter((x) => !nodes.has(x));",
-  "replace": "        n.setRest = list.filter((x) => !nodes.has(x));",
-  "suite": "board-regress",
-  "only": "0.11.1",
-  "expect": "Only to what's on the board"
- },
- {
-  "name": "scenes: the list stays open when not selected",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "const m = this._model, n = m && this._sel ? m.nodes.get(this._sel) : null, el = n && this._els.get(n.key);\n      let pop",
-  "replace": "const m = this._model, n = m && (this._sel || [...m.nodes.keys()].find((k) => (m.nodes.get(k).setRest || []).length)) ? m.nodes.get(this._sel || [...m.nodes.keys()].find((k) => (m.nodes.get(k).setRest || []).length)) : null, el = n && this._els.get(n.key);\n      let pop",
-  "suite": "board-regress",
-  "only": "0.11.1",
-  "expect": "nothing opened|closes when it isn't selected"
- },
- {
-  "name": "scenes: the list never scrolls",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "style=\"max-height:${SET_ROWS * 26}px\"",
-  "replace": "style=\"\"",
-  "suite": "board-regress",
-  "only": "0.11.1",
-  "expect": "past fifteen rows the list scrolls"
- },
- {
-  "name": "scenes: the wheel over the list zooms the board",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "if (r && r.scrollHeight > r.clientHeight) e.stopPropagation();",
-  "replace": "void r;",
-  "suite": "board-regress",
-  "only": "0.11.1",
-  "expect": "the wheel over it scrolls the list"
+  "expect": "its box says how many it sets"
  }
 ]

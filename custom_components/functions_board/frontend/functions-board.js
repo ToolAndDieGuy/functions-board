@@ -34,10 +34,6 @@
   // a cheap fingerprint of the registries: how many of each, and the newest change
   const regSig = (d) => d.map((list) => (list || []).length + ':' + (list || []).reduce((m, x) => Math.max(m, x.modified_at || x.created_at || 0), 0)).join('|');  // a create that left the board (phone app), in sessionStorage
   const NW = 240, NH = 62, XW = 204, XH = 40, COLG = 100, ROWG = 24;
-  // what a scene or group box shows of what it sets (0.11.1): nothing (the default), arrows to what's on the board for
-  // other reasons, or all of it (those arrows, and the rest listed beside it while it's selected); rows shown before
-  // that list scrolls
-  const SET_MODES = ['none', 'board', 'all'], SET_ROWS = 15;
 
   /* ---------- the board's words (4.9) ---------- */
   // Every text the board shows is in STR (at the end of this section): one table per language, keyed like
@@ -167,9 +163,6 @@
     });
     // which way the function flows: left to right (the default) or top to bottom
     if (src.dir != null) out.dir = src.dir === 'down' ? 'down' : 'right';
-    // what each scene or group shows of what it sets (0.11.1): no arrows, arrows to what's on the board, or everything
-    if (src.sets != null) out.sets = Object.fromEntries(Object.entries(src.sets && typeof src.sets === 'object' && !Array.isArray(src.sets) ? src.sets : {})
-      .filter(([k, v]) => typeof k === 'string' && k.length < 300 && SET_MODES.includes(v)).slice(0, 500));
     // boxes Auto-arrange leaves where they are
     if (src.keep != null) out.keep = Array.isArray(src.keep) ? src.keep.filter((k) => typeof k === 'string' && k.length < 300).slice(0, 2000) : [];
     if (out.paused != null) out.paused = Array.isArray(out.paused) ? out.paused.filter((x) => typeof x === 'string') : null;
@@ -2138,14 +2131,6 @@ button{font:inherit;color:inherit}
 .node.outside .ic{--mdc-icon-size:16px}
 .node.outside .name{font-weight:400;font-size:12px;color:var(--secondary-text-color)}
 .node.suggest{border-style:dashed;box-shadow:none;background:var(--primary-background-color)}
-.setpop{position:absolute;z-index:6;width:260px;display:flex;flex-direction:column;border:1px dashed var(--divider-color);border-radius:12px;background:var(--card-background-color);box-shadow:0 6px 18px rgba(0,0,0,.28)}
-.setpop .shead{display:flex;align-items:center;gap:8px;height:32px;padding:0 10px;flex:none}
-.setpop .shead .name{font-size:12.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.setpop .srows{display:flex;flex-direction:column;gap:2px;padding:0 6px 6px;overflow-y:auto;overscroll-behavior:contain}
-.setpop .srow{display:flex;align-items:center;gap:8px;min-height:24px;padding:0 6px;border-radius:6px;border:1px solid var(--divider-color);background:var(--primary-background-color);font-size:12px;flex:none}
-.setpop .srow ha-icon{--mdc-icon-size:15px;color:var(--secondary-text-color);flex:none}
-.setpop .srow .sn{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.setpop .srow .sv{color:var(--secondary-text-color);white-space:nowrap;font-size:11px}
 .node.off .ic{opacity:.55}.node.off .name{color:var(--secondary-text-color)}
 .node.warn{border-left:4px solid var(--fb-amber)}
 .node.err{border-left:4px solid var(--fb-red)}
@@ -2806,19 +2791,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       test_button_full_manager_only: 'Test button · Full manager only',
       monitor: 'Monitor',
       n_nodes: { one: '{n} node', other: '{n} nodes' },
-      n_more: { one: '{n} more', other: '{n} more' },
       sets_n: { one: 'sets {n} entity', other: 'sets {n} entities' },
-      members_n: { one: '{n} member', other: '{n} members' },
-      set_box_name: 'Also set by {name}',
-      sets_badge_t: { one: 'Sets {n} entity, not drawn: choose what it shows with What it sets in its bar', other: 'Sets {n} entities, not drawn: choose what it shows with What it sets in its bar' },
-      members_badge_t: { one: 'Has {n} member, not drawn: choose what it shows with What it sets in its bar', other: 'Has {n} members, not drawn: choose what it shows with What it sets in its bar' },
-      not_found_2: 'not found',
-      sets_btn: 'What it sets',
-      sets_menu: 'Arrows to what it sets',
-      sets_none: 'None',
-      sets_board: 'Only to what\'s on the board',
-      sets_all: 'Everything (the rest in a box)',
-      sets_step: 'What {name} sets',
       node_red_3: 'Node-RED · {tabLabel} · {count}',
       node_red_off: 'Node-RED · {tabLabel} · {count} · its tab is disabled',
       device_2: 'Device{extra}',
@@ -6134,7 +6107,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         this._wire(e, a, nodes, edges, true, tgts);
       });
       // scenes and groups change their members (2.4); derived helpers read their inputs (2.3)
-      this._wireGroups(nodes, edges, label);
+      this._wireGroups(nodes, edges);
       await this._wireSources(nodes, edges);
       // members no automation or script anywhere refers to (4.6)
       const refs = await this._globalRefs();
@@ -6308,26 +6281,23 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       }
       return ids;
     }
-    // scenes and groups set (or read) their members (2.4). What a box shows of them is its own choice (0.11.1): no
-    // arrows (the default: arrows to only some of a scene's lights read as if that were all it does), arrows to the
-    // members on the board for other reasons, or everything: those arrows, and the rest listed beside the box while
-    // it's selected (a list, not boxes: opening and closing it moves nothing on the board)
-    _wireGroups(nodes, edges, label) {
-      const READ_ONLY = new Set(['binary_sensor', 'sensor', 'event', 'notify']), sets = (label && this._layout(label).sets) || {};
+    // a group's members (2.4). A scene draws no arrows to what it sets (0.11.1): arrows to only the ones on the board
+    // for other reasons read as if that were all it does; its box says how many it sets. Its arrows are the ones into
+    // what triggers on it or reads it.
+    _wireGroups(nodes, edges) {
+      const READ_ONLY = new Set(['binary_sensor', 'sensor', 'event', 'notify']);
       [...nodes.keys()].forEach((k) => {
-        const st = this._hass.states[k], n = nodes.get(k);
+        const st = this._hass.states[k];
         if (!st || k.includes(':')) return;
         const dom = k.split('.')[0], reg = this._entMap.get(k);
         const isGroup = dom === 'scene' || dom === 'group' || (reg && reg.platform === 'group');
-        const list = isGroup ? [...new Set(toList(st.attributes.entity_id).filter((x) => typeof x === 'string' && x !== k))] : [];
-        if (!list.length) return;
-        n.setN = list.length;
-        const mode = SET_MODES.includes(sets[k]) ? sets[k] : 'none';
-        n.setMode = mode;
-        if (mode === 'none') return;
-        const r = READ_ONLY.has(dom) ? { role: 'source', svc: '' } : { role: 'action', svc: dom === 'scene' ? 'activate' : '' };
-        list.forEach((x) => { if (nodes.has(x)) this._link(edges, k, x, r); });
-        if (mode === 'all') n.setRest = list.filter((x) => !nodes.has(x));
+        const list = isGroup ? toList(st.attributes.entity_id).filter((x) => typeof x === 'string' && x !== k) : [];
+        if (dom === 'scene') { nodes.get(k).setN = new Set(list).size; return; }
+        list.forEach((m) => {
+          if (!nodes.has(m)) return;
+          if (READ_ONLY.has(dom)) this._link(edges, k, m, { role: 'source', svc: '' });
+          else this._link(edges, k, m, { role: 'action', svc: '' });
+        });
       });
     }
     async _wireSources(nodes, edges) {
@@ -6547,7 +6517,6 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         + (n.prob ? `<ha-icon class="prob p-${n.prob}" icon="${n.prob === 'error' ? 'mdi:alert-circle' : 'mdi:alert'}" title="${esc(this._probTitle(n.key))}"></ha-icon>` : '')
         + (n.unref ? `<ha-icon class="unref" icon="mdi:link-variant-off" title="${T('it_may_be_used_by', { extra: n.domain === 'script' ? T('no_automation_or_script_runs') : T('no_automation_or_script_refers') })}"></ha-icon>` : '')
         + (n.hidden ? `<span class="wr hid" title="${T('its_arrows_are_hidden_by')}">${P('n_hidden', n.hidden)}</span>` : '')
-        + (n.setN && n.setMode === 'none' ? `<span class="wr sets" title="${esc(n.domain === 'scene' ? P('sets_badge_t', n.setN) : P('members_badge_t', n.setN))}">&#8649;${n.setN}</span>` : '')
         + ((this._layout(this._model.label).keep || []).includes(n.key) ? `<ha-icon class="kept" icon="mdi:pin" title="${T('kept_in_place_auto_arrange')}"></ha-icon>` : '');
       const vd = this._ver && this._ver.diff ? (this._ver.diff.changed.has(n.key) ? 'chg' : this._ver.diff.only.has(n.key) ? 'only' : '') : '';
       return `<div class="node ${n.kind} d-${esc(n.domain)}${vd ? ' vd-' + vd : ''}" data-key="${esc(n.key)}" role="button" tabindex="-1" style="left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${n.h}px">`
@@ -6560,43 +6529,6 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         + (PROTO().ortho ? (() => { const V = this._vert(), at = V ? 'left' : 'top'; return portYs(V ? n.w : n.h).map((y) => `<span class="port pl" data-y="${y - 4}" style="${at}:${y - 4}px"></span><span class="port pr" data-y="${y - 4}" style="${at}:${y - 4}px"></span>`).join(''); })() : '') + '</div>';
     }
 
-    // what a selected scene or group set to show everything sets beyond the board: a list beside its box, as many rows
-    // as SET_ROWS before it scrolls (the wheel scrolls the list, not the board); gone when it isn't selected (0.11.1)
-    _renderSetPop() {
-      const m = this._model, n = m && this._sel ? m.nodes.get(this._sel) : null, el = n && this._els.get(n.key);
-      let pop = this._$.world.querySelector('.setpop');
-      if (!n || !el || !n.setRest || !n.setRest.length) { if (pop) pop.remove(); return; }
-      if (!pop || pop.dataset.key !== n.key) {
-        if (pop) pop.remove();
-        pop = document.createElement('div');
-        pop.className = 'setpop';
-        pop.dataset.key = n.key;
-        pop.setAttribute('role', 'region');
-        pop.setAttribute('aria-label', T('set_box_name', { name: n.name }));
-        // the wheel scrolls a list that scrolls; a press here isn't a press on the board
-        pop.addEventListener('wheel', (e) => { const r = pop.querySelector('.srows'); if (r && r.scrollHeight > r.clientHeight) e.stopPropagation(); });
-        pop.addEventListener('pointerdown', (e) => e.stopPropagation());
-        const rows = n.setRest.map((e) => {
-          const st = this._hass.states[e], reg = this._entMap.get(e), dom = e.split('.')[0];
-          const name = (st && st.attributes.friendly_name) || (reg && (reg.name || reg.original_name)) || e, icon = (reg && reg.icon) || (st && st.attributes.icon) || ICONS[dom] || 'mdi:shape-outline';
-          return `<div class="srow" data-e="${esc(e)}" title="${esc(name + ' · ' + e)}"><ha-icon icon="${esc(icon)}"></ha-icon><span class="sn">${esc(name)}</span><span class="sv"></span></div>`;
-        }).join('');
-        pop.innerHTML = `<div class="shead"><span class="tag">${esc(P('n_more', n.setRest.length))}</span><span class="name">${esc(T('set_box_name', { name: n.name }))}</span></div>`
-          + `<div class="srows" tabindex="0" style="max-height:${SET_ROWS * 26}px">${rows}</div>`;
-        this._$.world.appendChild(pop);
-      }
-      // beside the box: right of it, or under it top to bottom
-      const V = this._vert();
-      pop.style.left = (el.offsetLeft + (V ? 0 : el.offsetWidth + 18)) + 'px';
-      pop.style.top = (el.offsetTop + (V ? el.offsetHeight + 18 : 0)) + 'px';
-      this._setPopStates(pop);
-    }
-    _setPopStates(pop) {
-      (pop || this._$.world.querySelector('.setpop') || { querySelectorAll: () => [] }).querySelectorAll('.srow').forEach((r) => {
-        const so = this._stOf(r.dataset.e), v = so ? this._fmtState(r.dataset.e, so.state) : T('not_found_2'), sv = r.querySelector('.sv');
-        if (sv.textContent !== v) sv.textContent = v;
-      });
-    }
     _renderFrames() {
       if (!this._model) return;
       const L = this._layout(this._model.label);
@@ -6647,7 +6579,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           r = { text: tn + ' · ' + v };
         }
       }
-      if (n.setN) r.text += ' · ' + (n.domain === 'scene' ? P('sets_n', n.setN) : P('members_n', n.setN));
+      if (n.setN) r.text += ' · ' + P('sets_n', n.setN);
       if (n.kind === 'suggest') r.text = T('related', { text: r.text });
       if (this._sbxOn()) {
         // the sandbox: what runs there, and what it changed from the real state
@@ -6678,7 +6610,6 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     }
 
     _refreshStates() {
-      this._setPopStates();
       if (!this._model || !this._els) return;
       const m = this._model;
       // a box turned off, gone or unavailable since the board was built changes its problems: build it again
@@ -6919,7 +6850,6 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       });
       this._drawEdges();
       this._renderNodebar();
-      this._renderSetPop();
     }
     _hover(key) {
       if (this._hov === key) return;
@@ -6980,7 +6910,6 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       else if (ent) btn.push(['add', 'mdi:link-variant-plus', T('add_to_function')]);
       if (this._full() && !n.key.includes(':') && (logic || n.domain === 'scene' || this._scopeOf(n.key) === 'helpers')) btn.push(['delete', 'mdi:delete-outline', T('delete_3')]);
       const kept = (this._layout(m.label).keep || []).includes(n.key);
-      if (n.setN) btn.push(['sets', 'mdi:arrow-decision-outline', T('sets_btn')]);
       btn.push(['keep', kept ? 'mdi:pin-off-outline' : 'mdi:pin-outline', kept ? T('unpin') : T('keep_in_place')]);
       // developer tools (Phase 9)
       const tools = [];
@@ -7553,8 +7482,6 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           'mon-clear': (el) => { this._monData.delete(el.dataset.tid); this._monCount.delete(el.dataset.tid); this._renderMon(el.dataset.tid); },
           'watch': () => { if (this._sel) this._toggleWatch(this._sel); },
           'keep': () => { if (this._sel) this._toggleKeep(this._sel); },
-          'sets': (el) => { if (this._sel) this._setsMenu(el, this._sel); },
-          'sets-mode': (el) => { this._closeMenu(); this._setMode(el.dataset.k, el.dataset.mode); },
           'monitor': () => { if (this._sel) this._monitorFor(this._sel); },
           'mon-kind': (el) => {
             this._monKind = el.dataset.k === 'mqtt' ? 'mqtt' : 'event';
@@ -8313,7 +8240,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       else if (this._model) { this._place(); this._render(); }
     }
     // layout steps: moving boxes, Arrange, frames and notes restore the function's previous layout
-    _snap(label) { const L = this._layout(label); return JSON.stringify({ nodes: L.nodes, frames: L.frames, notes: L.notes, tools: L.tools || [], keep: L.keep || [], dir: L.dir || 'right', sets: L.sets || {} }); }
+    _snap(label) { const L = this._layout(label); return JSON.stringify({ nodes: L.nodes, frames: L.frames, notes: L.notes, tools: L.tools || [], keep: L.keep || [], dir: L.dir || 'right' }); }
     _layoutStep(label, before, text) {
       const after = this._snap(label);
       if (after === before) return;
@@ -8323,34 +8250,13 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         if (v.tools && v.tools.length) L.tools = v.tools; else delete L.tools;
         if (v.keep && v.keep.length) L.keep = v.keep; else delete L.keep;
         if (v.dir === 'down') L.dir = 'down'; else delete L.dir;
-        const sets = JSON.stringify(L.sets || {}) !== JSON.stringify(v.sets || {});
-        if (v.sets && Object.keys(v.sets).length) L.sets = v.sets; else delete L.sets;
         this._save();
-        if (sets && this._model && this._model.label === label) this._open(label, true);
         // test buttons and monitors are boxes on the board: put them back or take them away too
         if (tools && this._model && this._model.label === label) { this._syncTools(); this._startMonitors(); }
       };
       // another board may have changed this layout since: ask before overwriting that
       const check = async (dir) => this._snap(label) === (dir === 'undo' ? after : before);
       this._history({ label, text, check, undo: async () => apply(before), redo: async () => apply(after) });
-    }
-
-    // what a scene or group box shows of what it sets (0.11.1): its menu, and the choice (one undo step)
-    _setsMenu(btn, k) {
-      const L = this._layout(this._model.label), cur = SET_MODES.includes((L.sets || {})[k]) ? L.sets[k] : 'none';
-      this._menu(btn, [['none', T('sets_none')], ['board', T('sets_board')], ['all', T('sets_all')]]
-        .map(([mode, text]) => ({ act: 'sets-mode', data: { k, mode }, icon: cur === mode ? 'mdi:radiobox-marked' : 'mdi:radiobox-blank', text })), T('sets_menu'));
-    }
-    _setMode(k, mode) {
-      const m = this._model;
-      if (!m || !SET_MODES.includes(mode)) return;
-      const label = m.label, L = this._layout(label), before = this._snap(label), n = m.nodes.get(k);
-      const sets = Object.assign({}, L.sets || {});
-      if (mode === 'none') delete sets[k]; else sets[k] = mode;
-      if (Object.keys(sets).length) L.sets = sets; else delete L.sets;
-      this._save();
-      this._layoutStep(label, before, T('sets_step', { name: (n && n.name) || k }));
-      this._open(label, true);
     }
 
     /* ---------- frames and notes ---------- */

@@ -1130,70 +1130,38 @@ test('0.11.0 restoring a version never turns off or deletes what was added since
   check('0.11.0 restoring with what\'s shared: no errors', page.logs.length === 0, page.logs);
 });
 
-test('0.11.1 a scene shows what it sets as chosen: no arrows by default, arrows to what\'s on the board, or everything, listed beside it while it\'s selected', async ({ browser, fake }) => {
+// an automation or script added to the fake Home Assistant, as its editor would make it
+async function addAuto(page, fake, id, config) {
+  const oid = id.split('.')[1], uid = 'fb' + oid;
+  fake.entities.set(id, { entity_id: id, id: 'fbid' + oid, platform: 'automation', unique_id: uid, labels: [], area_id: null, device_id: null, disabled_by: null, hidden_by: null, name: null, original_name: config.alias, icon: null, categories: {}, config_entry_id: null, has_entity_name: false, entity_category: null, options: {} });
+  fake.autos[uid] = Object.assign({ id: uid }, config);
+  await fake.setState(id, 'on', { friendly_name: config.alias, id: uid, last_triggered: null, mode: 'single', current: 0 });
+}
+
+test('0.11.1 a scene draws no arrows to what it sets, only into what triggers on it or reads it; a group still shows its members', async ({ browser, fake }) => {
   const { page } = await imported(browser);
-  const SC = 'scene.fb_sleep', BIG = 'scene.fb_all_off';
-  const members = ['light.bed_light', 'light.ceiling_lights', 'light.kitchen_lights', 'light.office_rgbw_lights', 'light.living_room_rgbww_lights', 'light.entrance_color_white_lights', 'cover.living_room_window', 'lock.front_door', 'switch.decorative_lights', 'fan.ceiling_fan', 'climate.hvac', 'media_player.bedroom'];
+  const SC = 'scene.fb_sleep', GR = 'group.fb_morning_lights', HLP = 'sensor.fb_sleep_since';
+  const members = ['light.bed_light', 'light.ceiling_lights', 'light.kitchen_lights', 'light.office_rgbw_lights', 'cover.living_room_window', 'lock.front_door'];
   await fake.setState(SC, '2026-11-20T03:00:00+00:00', { friendly_name: 'Sleep', entity_id: members });
-  // a scene that sets more than fifteen things nothing else on the board has
-  const many = [...fake.states.keys()].filter((k) => /^(light|switch|sensor|binary_sensor|cover|fan|lock|climate|input_boolean|input_number)\./.test(k) && !members.includes(k)).slice(0, 22);
-  await fake.setState(BIG, '2026-11-20T03:00:00+00:00', { friendly_name: 'All off', entity_id: many });
-  await addPiece(page, fake, 'automation.fb_sleep_at_night', { alias: 'Morning: sleep scene at night', triggers: [{ trigger: 'time', at: '22:30:00' }], conditions: [], actions: [{ action: 'scene.turn_on', target: { entity_id: [SC, BIG] } }] });
+  await fake.setState(GR, 'on', { friendly_name: 'Morning lights', entity_id: ['light.kitchen_lights', 'light.bed_light'] });
+  await addAuto(page, fake, 'automation.fb_sleep_at_night', { alias: 'Morning: sleep scene at night', triggers: [{ trigger: 'time', at: '22:30:00' }], conditions: [], actions: [{ action: 'scene.turn_on', target: { entity_id: SC } }, { action: 'homeassistant.turn_on', target: { entity_id: GR } }] });
+  await addAuto(page, fake, 'automation.fb_after_sleep', { alias: 'Morning: after the sleep scene', triggers: [{ trigger: 'state', entity_id: SC }], conditions: [], actions: [{ action: 'light.turn_off', target: { entity_id: 'light.office_rgbw_lights' } }] });
+  fake.entities.set(HLP, { entity_id: HLP, id: 'fbidsince', platform: 'template', unique_id: 'fbsince', labels: [], categories: {}, area_id: null, device_id: null, config_entry_id: null, disabled_by: null, hidden_by: null, name: null, original_name: 'Sleep since', icon: null, has_entity_name: false, entity_category: null, options: {} });
+  await fake.setState(HLP, '3', { friendly_name: 'Sleep since' });
+  fake.sources[HLP] = { entities: [SC] };
   const morning = await el(page, (b) => b._data.functions.find((l) => /morning/i.test(b._fnName(l))));
-  await ws(page, { type: 'config/entity_registry/update', entity_id: 'automation.fb_sleep_at_night', labels: [morning] });
+  for (const id of ['automation.fb_sleep_at_night', 'automation.fb_after_sleep', HLP]) await ws(page, { type: 'config/entity_registry/update', entity_id: id, labels: [morning] });
   await el(page, (b) => b._store.changed('reg'));
   await openFn(page, /morning/i);
-  await until(() => el(page, (b, [sc, l]) => { if (b._model && b._model.nodes.get(sc)) return true; b._open(l, true); return null; }, [SC, morning]), 10000, 600);
-  const look = (k = SC) => el(page, (b, sc) => {
-    const m = b._model, n = m.nodes.get(sc), pop = b.shadowRoot.querySelector(`.setpop[data-key="${sc}"]`), rows = pop && pop.querySelector('.srows');
-    return { to: m.edges.filter((e) => e.from === sc).map((e) => e.to).sort(), mode: n && n.setMode, status: n ? b._status(n).text : '', boxes: [...m.nodes.keys()].filter((x) => x.startsWith('set:')).length,
-      badge: (b.shadowRoot.querySelector(`.node[data-key="${sc}"] .wr.sets`) || {}).textContent || '', pop: !!pop,
-      rows: pop ? [...pop.querySelectorAll('.srow')].map((r) => r.querySelector('.sn').textContent + '=' + r.querySelector('.sv').textContent) : [],
-      scroll: rows ? { h: rows.clientHeight, sh: rows.scrollHeight, top: rows.scrollTop } : null };
-  }, k);
-  const a = await look();
-  check('0.11.1 by default a scene draws no arrows to what it sets', a.to.length === 0 && !a.pop && a.mode === 'none', a);
-  check('0.11.1 ... and its box says how many it sets', a.badge === '⇉12' && /sets 12 entities/.test(a.status), a);
-  const pick = async (mode, k = SC) => {
-    await fbq(page, `.node[data-key="${k}"]`).click();
-    await fbq(page, '.nodebar [data-act="sets"]').click();
-    await fbq(page, `.menu [data-act="sets-mode"][data-mode="${mode}"]`).click();
-    await until(() => el(page, (b, [sc, md]) => { const n = b._model && b._model.nodes.get(sc); return !!(n && n.setMode === md); }, [k, mode]), 8000);
-    await fake.idle(300);
-  };
-  await pick('board');
-  const b1 = await look();
-  check('0.11.1 "Only to what\'s on the board": arrows to the members already there, and nothing listed', JSON.stringify(b1.to) === JSON.stringify(['cover.living_room_window', 'light.kitchen_lights']) && !b1.pop && !b1.badge, b1);
-  await pick('all');
-  await page.keyboard.press('Escape');
-  await until(() => el(page, (b) => !b._sel || null), 4000);
-  const c0 = await look();
-  check('0.11.1 "Everything", not selected: a box like the rest, its arrows to what\'s on the board, nothing opened, no box added', JSON.stringify(c0.to) === JSON.stringify(['cover.living_room_window', 'light.kitchen_lights']) && !c0.pop && c0.boxes === 0, c0);
-  await fbq(page, `.node[data-key="${SC}"]`).click();
-  const c = await look();
-  check('0.11.1 "Everything", selected: the rest listed beside it, each with its state', c.pop && c.rows.length === 10 && c.rows.includes('Front Door=locked') && c.rows.includes('Bed Light=off'), c);
-  check('0.11.1 ... ten rows show whole, no scrolling', c.scroll && c.scroll.sh <= c.scroll.h + 1, c.scroll);
-  await page.keyboard.press('Escape');
-  await until(() => el(page, (b) => !b._sel || null), 4000);
-  check('0.11.1 ... and closes when it isn\'t selected', !(await look()).pop);
-  // more than fifteen: the list scrolls, and the wheel scrolls it, not the board
-  await pick('all', BIG);
-  const g = await look(BIG);
-  check('0.11.1 past fifteen rows the list scrolls', g.pop && g.rows.length > 15 && g.scroll.h <= 15 * 26 + 1 && g.scroll.sh > g.scroll.h, g.scroll);
-  const k0 = await el(page, (b) => b._view.k);
-  const box = await fbq(page, `.setpop[data-key="${BIG}"] .srows`).boundingBox();
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await page.mouse.wheel(0, 300);
-  await page.waitForTimeout(400);
-  const g2 = await look(BIG), k1 = await el(page, (b) => b._view.k);
-  check('0.11.1 ... the wheel over it scrolls the list and leaves the board\'s zoom alone', g2.scroll.top > 0 && k1 === k0, { top: g2.scroll.top, k0, k1 });
-  await el(page, (b, l) => b._open(l), morning);
-  await until(() => el(page, (b, sc) => { const n = b._model && b._model.nodes.get(sc); return !!(n && n.setMode === 'all'); }, SC), 8000);
-  check('0.11.1 the choice is kept with the function', true);
-  await fbq(page, '[data-act="undo"]').click();
-  await until(() => el(page, (b, sc) => { const n = b._model && b._model.nodes.get(sc); return !!(n && n.setMode === 'none'); }, BIG), 8000);
-  check('0.11.1 Undo goes back to the choice before', (await look(BIG)).mode === 'none');
-  check('0.11.1 what a scene sets: no errors', page.logs.length === 0, page.logs);
+  await until(() => el(page, (b, [sc, l]) => { if (b._model && b._model.nodes.get(sc) && b._model.edges.some((e) => e.from === sc && e.role === 'source')) return true; b._open(l, true); return null; }, [SC, morning]), 12000, 700);
+  const m = await el(page, (b, [sc, gr]) => ({ from: b._model.edges.filter((e) => e.from === sc).map((e) => e.role + ':' + e.to).sort(), group: b._model.edges.filter((e) => e.from === gr).map((e) => e.to).sort(),
+    status: b._status(b._model.nodes.get(sc)).text, groupWant: ['light.bed_light', 'light.kitchen_lights'].filter((x) => b._model.nodes.has(x)), onBoard: ['light.kitchen_lights', 'cover.living_room_window', 'light.office_rgbw_lights'].filter((x) => b._model.nodes.has(x)) }), [SC, GR]);
+  check('0.11.1 the scene\'s members that are on the board are there (so arrows could have been drawn)', m.onBoard.length === 3, m);
+  check('0.11.1 a scene draws no arrow to anything it sets', !m.from.some((x) => /^action:/.test(x) && members.includes(x.slice(7))), m.from);
+  check('0.11.1 ... only into what triggers on it and what reads it', JSON.stringify(m.from) === JSON.stringify(['source:' + HLP, 'trigger:automation.fb_after_sleep']), m.from);
+  check('0.11.1 its box says how many it sets', /sets 6 entities/.test(m.status), m.status);
+  check('0.11.1 a group still shows arrows to its members on the board', m.group.length > 0 && JSON.stringify(m.group) === JSON.stringify(m.groupWant), m);
+  check('0.11.1 scenes: no errors', page.logs.length === 0, page.logs);
 });
 
 pwTest.afterAll(() => done());
