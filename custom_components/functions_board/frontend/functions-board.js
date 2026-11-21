@@ -2792,6 +2792,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       monitor: 'Monitor',
       n_nodes: { one: '{n} node', other: '{n} nodes' },
       sets_n: { one: 'sets {n} entity', other: 'sets {n} entities' },
+      members_n: { one: '{n} member', other: '{n} members' },
       node_red_3: 'Node-RED · {tabLabel} · {count}',
       node_red_off: 'Node-RED · {tabLabel} · {count} · its tab is disabled',
       device_2: 'Device{extra}',
@@ -6106,8 +6107,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         nodes.set(e, this._mkNode(e, 'suggest'));
         this._wire(e, a, nodes, edges, true, tgts);
       });
-      // scenes and groups change their members (2.4); derived helpers read their inputs (2.3)
-      this._wireGroups(nodes, edges);
+      // scenes and groups change their members (2.4), unseen; derived helpers read their inputs (2.3)
+      const held = this._wireGroups(nodes);
       await this._wireSources(nodes, edges);
       // members no automation or script anywhere refers to (4.6)
       const refs = await this._globalRefs();
@@ -6131,7 +6132,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       nodes.forEach((n, k) => { n.writers = writers.has(k) ? [...writers.get(k)].filter((x) => /^(automation|script)\./.test(x)).length : 0; });
       // loops are found on the entities behind area, floor and label targets, not on the target boxes:
       // motion in the nursery turning on the nursery's lights is no loop (2.2)
-      const plain = list.filter((e) => !TGT_RE.test(e.from) && !TGT_RE.test(e.to)), extra = [];
+      const plain = list.filter((e) => !TGT_RE.test(e.from) && !TGT_RE.test(e.to)), extra = held.slice();
       tgts.forEach(({ src, r, ref, suggest }) => {
         if (suggest) return;
         const inbound = r.role === 'trigger' || r.role === 'condition';
@@ -6281,24 +6282,27 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       }
       return ids;
     }
-    // a group's members (2.4). A scene draws no arrows to what it sets (0.11.1): arrows to only the ones on the board
-    // for other reasons read as if that were all it does; its box says how many it sets. Its arrows are the ones into
-    // what triggers on it or reads it.
-    _wireGroups(nodes, edges) {
-      const READ_ONLY = new Set(['binary_sensor', 'sensor', 'event', 'notify']);
+    // scenes and groups (2.4) draw no arrows to what they set or hold (0.11.1): arrows to only the ones on the board
+    // for other reasons read as if that were all they do. Their box says how many; their arrows are the ones into what
+    // triggers on them or reads them, and clicking one shows the rest. What they change still counts for loops: the
+    // unseen links to their members on the board are returned for the loop check (a sensor group is read from its
+    // members; the rest change theirs)
+    _wireGroups(nodes) {
+      const READ_ONLY = new Set(['binary_sensor', 'sensor', 'event']), held = [];
       [...nodes.keys()].forEach((k) => {
         const st = this._hass.states[k];
         if (!st || k.includes(':')) return;
         const dom = k.split('.')[0], reg = this._entMap.get(k);
-        const isGroup = dom === 'scene' || dom === 'group' || (reg && reg.platform === 'group');
-        const list = isGroup ? toList(st.attributes.entity_id).filter((x) => typeof x === 'string' && x !== k) : [];
-        if (dom === 'scene') { nodes.get(k).setN = new Set(list).size; return; }
+        if (dom !== 'scene' && dom !== 'group' && !(reg && reg.platform === 'group')) return;
+        const list = [...new Set(toList(st.attributes.entity_id).filter((x) => typeof x === 'string' && x !== k))];
+        if (dom === 'scene') nodes.get(k).setN = list.length; else nodes.get(k).memN = list.length;
         list.forEach((m) => {
           if (!nodes.has(m)) return;
-          if (READ_ONLY.has(dom)) this._link(edges, k, m, { role: 'source', svc: '' });
-          else this._link(edges, k, m, { role: 'action', svc: '' });
+          const [from, to, role] = READ_ONLY.has(dom) ? [m, k, 'source'] : [k, m, 'action'];
+          held.push({ id: from + '>' + to + '|held', from, to, role, svcs: new Set(), tfs: [], anyTrig: false });
         });
       });
+      return held;
     }
     async _wireSources(nodes, edges) {
       if (this._storeMode !== 'shared') return;
@@ -6580,6 +6584,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         }
       }
       if (n.setN) r.text += ' · ' + P('sets_n', n.setN);
+      if (n.memN) r.text += ' · ' + P('members_n', n.memN);
       if (n.kind === 'suggest') r.text = T('related', { text: r.text });
       if (this._sbxOn()) {
         // the sandbox: what runs there, and what it changed from the real state
@@ -11639,8 +11644,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     _flowBuild(act) {
       const g = this._sbx, eng = g.eng, vis = this._visibleKeys(), E = this._visEdges();
       const by = new Map(eng.log.map((e) => [e.id, e])), es = eng.log.filter((e) => e.id >= act.a && e.id <= act.b && e.kind !== 'note');
-      // a board box for a key: itself, the MQTT box a topic is under (zigbee2mqtt/lamp for zigbee2mqtt/lamp/set), or a
-      // temporary one
+      // a board box for a key: itself, the MQTT box a topic is under (zigbee2mqtt/lamp for zigbee2mqtt/lamp/set), the
+      // device box of an entity the board shows only as its device (an action on a device runs on its entities,
+      // 0.11.1), the area, floor or label box it was reached through, or a temporary one
       const res = (k) => {
         if (!k) return null;
         if (vis.has(k)) return k;
@@ -11648,6 +11654,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           const t = k.slice(5);
           for (const n of vis) if (n.startsWith('mqtt:')) { const b = n.slice(5); if (b === t || t.startsWith(b + '/') || sbxTopic(b, t)) return n; }
         }
+        const reg = this._entMap.get(k);
+        if (reg && reg.device_id && vis.has('device:' + reg.device_id)) return 'device:' + reg.device_id;
+        for (const n of vis) if (/^(area|floor|label):/.test(n)) { const t = this._tgt.get(n); if (t && t.entities.includes(k)) return n; }
         return '~' + k;
       };
       const edgeFor = (a, b, role) => {
@@ -11680,7 +11689,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         const role = { trigger: 'trigger', cond: 'condition', call: 'call' }[e.kind];
         from.forEach((x) => to.forEach((y) => {
           const a = res(x), b = res(y);
-          if (!a || !b || a === b) return;
+          if (!a || !b || a === b || links.some((l) => l.a === a && l.b === b)) return;
           const ed = a[0] !== '~' && b[0] !== '~' ? edgeFor(a, b, role) : null;
           links.push({ a, b, edge: ed ? ed.id : null, rev: !!ed && ed.from !== a });
           ghost(a, b, true); ghost(b, a, false);

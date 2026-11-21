@@ -1109,10 +1109,10 @@
   "expect": "restore warns that what it writes back"
  },
  {
-  "name": "scenes: arrows to what they set",
+  "name": "scenes and groups: arrows to what they set or hold",
   "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "if (dom === 'scene') { nodes.get(k).setN = new Set(list).size; return; }",
-  "replace": "if (dom === 'scene') { nodes.get(k).setN = new Set(list).size; }",
+  "find": "      const held = this._wireGroups(nodes);",
+  "replace": "      const held = this._wireGroups(nodes); [...nodes.keys()].forEach((k) => { const st = this._hass.states[k]; if (st && /^(scene|group)\\./.test(k)) toList(st.attributes.entity_id).forEach((x) => { if (nodes.has(x)) this._link(edges, k, x, { role: 'action', svc: '' }); }); });",
   "suite": "board-regress",
   "only": "0.11.1",
   "expect": "a scene draws no arrow to anything it sets"
@@ -1125,5 +1125,41 @@
   "suite": "board-regress",
   "only": "0.11.1",
   "expect": "its box says how many it sets"
+ },
+ {
+  "name": "groups: no count of their members",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      if (n.memN) r.text += ' · ' + P('members_n', n.memN);",
+  "replace": "",
+  "suite": "board-regress",
+  "only": "0.11.1",
+  "expect": "its box says how many members it has"
+ },
+ {
+  "name": "sandbox: an entity shown only as its device gets a temporary box",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "        if (reg && reg.device_id && vis.has('device:' + reg.device_id)) return 'device:' + reg.device_id;",
+  "replace": "",
+  "suite": "board-regress",
+  "only": "0.11.1",
+  "expect": "no temporary box for the device"
+ },
+ {
+  "name": "sandbox: one arrow drawn twice",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "          if (!a || !b || a === b || links.some((l) => l.a === a && l.b === b)) return;",
+  "replace": "          if (!a || !b || a === b) return;",
+  "suite": "board-regress",
+  "only": "0.11.1",
+  "expect": "the action goes from the automation to the device box, once"
+ },
+ {
+  "name": "scenes: loops through them not found",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      const plain = list.filter((e) => !TGT_RE.test(e.from) && !TGT_RE.test(e.to)), extra = held.slice();",
+  "replace": "      const plain = list.filter((e) => !TGT_RE.test(e.from) && !TGT_RE.test(e.to)), extra = [];",
+  "suite": "board-regress",
+  "only": "0.11.1",
+  "expect": "the loop through it is still marked"
  }
 ]

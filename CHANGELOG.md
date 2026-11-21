@@ -2,10 +2,15 @@
 
 ## Unreleased
 
-A scene no longer draws arrows to the lights and devices it sets. Before, it drew arrows only to the ones that
-happened to be on the board for other reasons, so a scene that sets a dozen lights looked as if it set two. Its box
-now says how many it sets, and its arrows are the ones into what triggers on it or reads it (an automation started
-by the scene, a helper that tracks it). Groups still show arrows to their members on the board.
+Scenes and groups no longer draw arrows to the lights and devices they set or hold. Before, they drew arrows only
+to the ones that happened to be on the board for other reasons, so a scene that sets a dozen lights looked as if it
+set two. A scene's box now says how many it sets and a group's how many members it has; click one to see them. Their
+arrows are the ones into what triggers on them or reads them (an automation started by the scene, a helper that
+tracks it).
+
+In the sandbox, an action on a device shows on that device's box. Before, the board showed the device as one box but
+the sandbox looked for its entities, so it drew a temporary box marked "Not on this board" for something that was on
+it.
 
 ## 0.11.0 (2026-11-20)
 

@@ -1138,7 +1138,7 @@ async function addAuto(page, fake, id, config) {
   await fake.setState(id, 'on', { friendly_name: config.alias, id: uid, last_triggered: null, mode: 'single', current: 0 });
 }
 
-test('0.11.1 a scene draws no arrows to what it sets, only into what triggers on it or reads it; a group still shows its members', async ({ browser, fake }) => {
+test('0.11.1 a scene or group draws no arrows to what it sets or holds, only into what triggers on it or reads it', async ({ browser, fake }) => {
   const { page } = await imported(browser);
   const SC = 'scene.fb_sleep', GR = 'group.fb_morning_lights', HLP = 'sensor.fb_sleep_since';
   const members = ['light.bed_light', 'light.ceiling_lights', 'light.kitchen_lights', 'light.office_rgbw_lights', 'cover.living_room_window', 'lock.front_door'];
@@ -1155,13 +1155,61 @@ test('0.11.1 a scene draws no arrows to what it sets, only into what triggers on
   await openFn(page, /morning/i);
   await until(() => el(page, (b, [sc, l]) => { if (b._model && b._model.nodes.get(sc) && b._model.edges.some((e) => e.from === sc && e.role === 'source')) return true; b._open(l, true); return null; }, [SC, morning]), 12000, 700);
   const m = await el(page, (b, [sc, gr]) => ({ from: b._model.edges.filter((e) => e.from === sc).map((e) => e.role + ':' + e.to).sort(), group: b._model.edges.filter((e) => e.from === gr).map((e) => e.to).sort(),
-    status: b._status(b._model.nodes.get(sc)).text, groupWant: ['light.bed_light', 'light.kitchen_lights'].filter((x) => b._model.nodes.has(x)), onBoard: ['light.kitchen_lights', 'cover.living_room_window', 'light.office_rgbw_lights'].filter((x) => b._model.nodes.has(x)) }), [SC, GR]);
+    status: b._status(b._model.nodes.get(sc)).text, gstatus: b._status(b._model.nodes.get(gr)).text, groupWant: ['light.bed_light', 'light.kitchen_lights'].filter((x) => b._model.nodes.has(x)), onBoard: ['light.kitchen_lights', 'cover.living_room_window', 'light.office_rgbw_lights'].filter((x) => b._model.nodes.has(x)) }), [SC, GR]);
   check('0.11.1 the scene\'s members that are on the board are there (so arrows could have been drawn)', m.onBoard.length === 3, m);
   check('0.11.1 a scene draws no arrow to anything it sets', !m.from.some((x) => /^action:/.test(x) && members.includes(x.slice(7))), m.from);
   check('0.11.1 ... only into what triggers on it and what reads it', JSON.stringify(m.from) === JSON.stringify(['source:' + HLP, 'trigger:automation.fb_after_sleep']), m.from);
   check('0.11.1 its box says how many it sets', /sets 6 entities/.test(m.status), m.status);
-  check('0.11.1 a group still shows arrows to its members on the board', m.group.length > 0 && JSON.stringify(m.group) === JSON.stringify(m.groupWant), m);
+  check('0.11.1 a group draws no arrow to its members either, those on the board included', m.groupWant.length > 0 && m.group.length === 0, m);
+  check('0.11.1 its box says how many members it has', /2 members/.test(m.gstatus), m.gstatus);
   check('0.11.1 scenes: no errors', page.logs.length === 0, page.logs);
+});
+
+test('0.11.1 a loop through a scene is still found, with no arrow to what the scene sets', async ({ browser, fake }) => {
+  const { page } = await imported(browser);
+  const SC = 'scene.fb_evening', A = 'automation.fb_evening_again';
+  await fake.setState(SC, '2026-11-20T03:00:00+00:00', { friendly_name: 'Evening', entity_id: ['light.kitchen_lights', 'light.bed_light'] });
+  await addAuto(page, fake, A, { alias: 'Morning: evening scene when the kitchen lights come on', triggers: [{ trigger: 'state', entity_id: 'light.kitchen_lights', to: 'on' }], conditions: [], actions: [{ action: 'scene.turn_on', target: { entity_id: SC } }] });
+  const morning = await el(page, (b) => b._data.functions.find((l) => /morning/i.test(b._fnName(l))));
+  await ws(page, { type: 'config/entity_registry/update', entity_id: A, labels: [morning] });
+  await el(page, (b) => b._store.changed('reg'));
+  await openFn(page, /morning/i);
+  await until(() => el(page, (b, [a, l]) => { if (b._model && b._model.nodes.has(a) && b._model.nodes.has('light.kitchen_lights')) return true; b._open(l, true); return null; }, [A, morning]), 12000, 700);
+  const m = await el(page, (b, [a, sc]) => ({ loops: b._model.edges.filter((e) => e.loop).map((e) => e.from + '>' + e.to).sort(), fromScene: b._model.edges.filter((e) => e.from === sc).map((e) => e.to) }), [A, SC]);
+  check('0.11.1 the scene draws no arrow to the light it sets', !m.fromScene.includes('light.kitchen_lights'), m);
+  check('0.11.1 ... and the loop through it is still marked', m.loops.includes(A + '>' + SC) && m.loops.includes('light.kitchen_lights>' + A), m);
+  check('0.11.1 scene loop: no errors', page.logs.length === 0, page.logs);
+});
+
+test('0.11.1 the sandbox finds the device box of what an action on a device changes, not a box "not on this board"', async ({ browser, fake }) => {
+  const { page } = await imported(browser);
+  const garage = await openFn(page, /garage/i);
+  const dev = await el(page, (b) => b._ents.find((e) => e.entity_id === 'climate.heatpump').device_id);
+  // a second climate entity on the device (a second zone): an action on the device reaches both, and the step is still one arrow
+  fake.entities.set('climate.fb_heatpump_zone2', { entity_id: 'climate.fb_heatpump_zone2', id: 'fbidhpz2', platform: 'demo', unique_id: 'fbhpz2', labels: [], categories: {}, area_id: null, device_id: dev, config_entry_id: null, disabled_by: null, hidden_by: null, name: null, original_name: 'HeatPump zone 2', icon: null, has_entity_name: false, entity_category: null, options: {} });
+  await fake.setState('climate.fb_heatpump_zone2', 'heat', { friendly_name: 'HeatPump zone 2', hvac_modes: ['off', 'heat'] });
+  await addAuto(page, fake, 'automation.fb_heat_off_open', { alias: 'Garage open: heat pump off', triggers: [{ trigger: 'state', entity_id: 'cover.garage_door', to: 'open' }], conditions: [], actions: [{ action: 'climate.turn_off', target: { device_id: dev } }] });
+  await ws(page, { type: 'config/entity_registry/update', entity_id: 'automation.fb_heat_off_open', labels: [garage] });
+  await el(page, (b) => b._store.changed('reg'));
+  const D = 'device:' + dev;
+  await until(() => el(page, (b, [d, l]) => { if (b._model && b._model.nodes.has(d)) return true; b._open(l, true); return null; }, [D, garage]), 12000, 700);
+  check('0.11.1 the device is a box on the board and its entity is not', await el(page, (b, d) => b._model.nodes.has(d) && !b._model.nodes.has('climate.heatpump'), D));
+  await fbq(page, '.tools [data-act="sandbox"]').click();
+  await fbq(page, '.modal [data-act="sbx-start"]').click({ timeout: 3000 }).catch(() => {});
+  await fbq(page, '.drawer .sbctl .sbent').waitFor({ timeout: 10000 });
+  await fbq(page, '.drawer .sbent').selectOption('cover.garage_door');
+  await fbq(page, '.drawer .sbval-sel').selectOption('open');
+  await fbq(page, '.drawer [data-act="sbx-set"]').click();
+  await until(() => el(page, (b) => (b._sbx && !b._sbx.busy && b._sbx.eng.log.some((e) => e.kind === 'call' && e.key === 'automation.fb_heat_off_open')) || null), 15000);
+  const f = await el(page, (b, d) => {
+    const a = b._sbx.eng.log.find((e) => e.kind === 'call' && e.key === 'automation.fb_heat_off_open'), act = b._sbx.acts.find((x) => a.id >= x.a && a.id <= x.b);
+    const fl = b._flowBuild(act);
+    return { ghosts: [...fl.ghosts.keys()], links: fl.steps.flatMap((s) => s.links.map((l) => l.a + '>' + l.b)), boxes: fl.steps.filter((s) => s.e.kind === 'state' && s.e.key === 'climate.heatpump').map((s) => s.box) };
+  }, D);
+  check('0.11.1 no temporary box for the device\'s entity', !f.ghosts.includes('~climate.heatpump'), f);
+  check('0.11.1 the action goes from the automation to the device box, once', f.links.filter((x) => x === 'automation.fb_heat_off_open>' + D).length === 1, f);
+  check('0.11.1 ... and the entity\'s change shows on the device box', f.boxes.length > 0 && f.boxes.every((x) => x === D), f);
+  check('0.11.1 sandbox device: no errors', page.logs.length === 0, page.logs);
 });
 
 pwTest.afterAll(() => done());
