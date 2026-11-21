@@ -143,14 +143,14 @@ div.board.m-panel.pc.sbx
             path.dim.e.role-trigger d="M204,101 L240,101 Q254,101 254,115 L254,120 Q254,134 268,134 L302,134" data-edge="cover.garage_door>automation.garage_closed_stop_timer" marker-end="url(#fb-trig)" marker-start="url(#fb-dottrig)"
             path.dim.e.role-action d="M544,134 L588,134 Q602,134 602,148 L602,197 Q602,211 616,211 L642,211" data-edge="automation.garage_closed_stop_timer>timer.garage_open" marker-end="url(#fb-act)"
             path.e.hi.role-condition d="M884,247 L940,247 Q954,247 954,233 L954,230 Q954,216 968,216 L1006,216" data-edge="timer.garage_open>automation.garage_restart_timer_when_reopened" marker-end="url(#fb-hi)"
-            path.dim.e.role-action d="M1248,216 L1257,216 Q1266,216 1266,225 L1266,286 Q1266,300 1252,300 L616,300 Q602,300 602,286 L602,243 Q602,229 616,229 L642,229" data-edge="automation.garage_restart_timer_when_reopened>timer.garage_open" marker-end="url(#fb-act)"
+            path.e.hi.role-action d="M1248,216 L1257,216 Q1266,216 1266,225 L1266,286 Q1266,300 1252,300 L616,300 Q602,300 602,286 L602,243 Q602,229 616,229 L642,229" data-edge="automation.garage_restart_timer_when_reopened>timer.garage_open" marker-end="url(#fb-act)"
             path.chev.dim.role-action d="M1351,-40 L1359,-44.5 L1359,-35.5 z"
             path.chev.dim.role-action d="M1076,-40 L1084,-44.5 L1084,-35.5 z"
             path.chev.dim.role-action d="M801,-40 L809,-44.5 L809,-35.5 z"
             path.chev.dim.role-action d="M526,-40 L534,-44.5 L534,-35.5 z"
             path.chev.dim.role-action d="M251,-40 L259,-44.5 L259,-35.5 z"
-            path.chev.dim.role-action d="M1040.6666666666667,300 L1048.6666666666667,295.5 L1048.6666666666667,304.5 z"
-            path.chev.dim.role-action d="M819.3333333333333,300 L827.3333333333333,295.5 L827.3333333333333,304.5 z"
+            path.chev.role-action d="M1040.6666666666667,300 L1048.6666666666667,295.5 L1048.6666666666667,304.5 z"
+            path.chev.role-action d="M819.3333333333333,300 L827.3333333333333,295.5 L827.3333333333333,304.5 z"
             circle.dim.jd.role-trigger.split cx="938" cy="154" r="3.2"
             path.hit d="M1588,81 L1616,81 Q1630,81 1630,67 L1630,-26 Q1630,-40 1616,-40 L-6,-40 Q-20,-40 -20,-26 L-20,92 Q-20,101 -11,101 L-2,101" data-act="edge" data-e="script.close_garage>cover.garage_door"
               title | Close garage changes Garage Door (close_cover)
@@ -181,10 +181,11 @@ div.board.m-panel.pc.sbx
             path.hit d="M1248,216 L1257,216 Q1266,216 1266,225 L1266,286 Q1266,300 1252,300 L616,300 Q602,300 602,286 L602,243 Q602,229 616,229 L642,229" data-act="edge" data-e="automation.garage_restart_timer_when_reopened>timer.garage_open"
               title | Garage: restart timer when reopened changes Garage open timer (start)
             text x="586" y="234.5" | start
-            g.bad.cres.sbxc data-edge="timer.garage_open>automation.garage_restart_timer_when_reopened" transform="translate(954,240.5)"
+            text x="929.5" y="294" | start
+            g.cres.ok.sbxc data-edge="timer.garage_open>automation.garage_restart_timer_when_reopened" transform="translate(954,240.5)"
               circle r="8"
-              path d="M-3,-3 L3,3 M3,-3 L-3,3"
-              title | In the sandbox: Garage open timer is active was false Garage open timer: idle
+              path d="M-3.6,0.2 L-1.1,2.8 L3.8,-2.6"
+              title | In the sandbox: Garage open timer is active was true
           svg.flowx aria-hidden="true"
             path.fx d="M204,101 L606,101 L606,216 L1008,216" marker-end="url(#fb-amber)"
           div.nodes aria-label="Boxes: arrow keys follow the arrows, Enter opens, Space shows the actions" role="group"
@@ -226,7 +227,7 @@ div.board.m-panel.pc.sbx
               span.port.pr data-y="27" style="top:27px"
               span.pl.port data-y="45" style="top:45px"
               span.port.pr data-y="45" style="top:45px"
-            div.d-automation.member.node.now aria-label="Automation Garage: start open timer On · ran once in the sandbox. Set off by Garage Door. Changes Garage open timer" aria-pressed="false" data-key="automation.garage_start_open_timer" role="button" style="left:304px;top:189px;width:240px;height:62px" tabindex="-1" title="Garage: start open timer — On · ran once in the sandbox"
+            div.d-automation.member.node aria-label="Automation Garage: start open timer On · ran once in the sandbox. Set off by Garage Door. Changes Garage open timer" aria-pressed="false" data-key="automation.garage_start_open_timer" role="button" style="left:304px;top:189px;width:240px;height:62px" tabindex="-1" title="Garage: start open timer — On · ran once in the sandbox"
               span.tag | Automation
               ha-icon.ic icon="mdi:robot-outline"
               div.txt
@@ -300,7 +301,7 @@ Outside this function"
               span.port.pr data-y="16" style="top:16px"
               span.pl.port data-y="28" style="top:28px"
               span.port.pr data-y="28" style="top:28px"
-            div.d-automation.node.suggest aria-label="Automation Garage: restart timer when reopened On · ran once in the sandbox. Related, not in this function. Checks Garage open timer. Changes Garage open timer" aria-pressed="false" data-key="automation.garage_restart_timer_when_reopened" role="button" style="left:1008px;top:185px;width:240px;height:62px" tabindex="-1" title="Garage: restart timer when reopened — On · ran once in the sandbox
+            div.d-automation.node.now.suggest aria-label="Automation Garage: restart timer when reopened On · ran once in the sandbox. Related, not in this function. Checks Garage open timer. Changes Garage open timer" aria-pressed="false" data-key="automation.garage_restart_timer_when_reopened" role="button" style="left:1008px;top:185px;width:240px;height:62px" tabindex="-1" title="Garage: restart timer when reopened — On · ran once in the sandbox
 Related, not in this function. Select it to add it."
               span.tag | Automation
               ha-icon.ic icon="mdi:robot-outline"
@@ -318,12 +319,13 @@ Related, not in this function. Select it to add it."
               ha-icon icon="mdi:timer-sand"
             div.fnum data-act="flow-go" data-i="0" style="left:0px;top:81px" | 1
             div.fnum data-act="flow-go" data-i="1" style="left:253px;top:196.5px" | 2
-            div.fnum data-act="flow-go" data-i="2" style="left:621px;top:173.5px" | 3
-            div.fnum data-act="flow-go" data-i="3" style="left:969px;top:255.5px" | 4
-            div.fnum data-act="flow-go" data-i="4" style="left:1008px;top:185px" | 5
-            div.fnum data-act="flow-go" data-i="5" style="left:601px;top:255.5px" | 6
-            div.fnum data-act="flow-go" data-i="6" style="left:644px;top:198px" | 7
-            div.cur.fnum data-act="flow-go" data-i="7" style="left:304px;top:189px" | 8
+            div.fnum data-act="flow-go" data-i="2" style="left:601px;top:255.5px" | 3
+            div.fnum data-act="flow-go" data-i="3" style="left:644px;top:198px" | 4 9
+            div.fnum data-act="flow-go" data-i="4" style="left:304px;top:189px" | 5
+            div.fnum data-act="flow-go" data-i="5" style="left:621px;top:173.5px" | 6
+            div.fnum data-act="flow-go" data-i="6" style="left:969px;top:255.5px" | 7
+            div.fnum data-act="flow-go" data-i="7" style="left:944.5px;top:315px" | 8
+            div.cur.fnum data-act="flow-go" data-i="9" style="left:1008px;top:185px" | 10
           div.notes
           svg.links aria-hidden="true"
         div.empty hidden
@@ -434,8 +436,8 @@ Related, not in this function. Select it to add it."
               ha-icon icon="mdi:chevron-left"
             button data-act="flow-next" disabled title="Next step"
               ha-icon icon="mdi:chevron-right"
-            span.fpos | Step 8 of 8
-            span.fcur title="Garage: start open timer · finished" | Garage: start open timer · finished
+            span.fpos | Step 10 of 10
+            span.fcur title="Garage: restart timer when reopened · finished" | Garage: restart timer when reopened · finished
             button data-act="flow-play" | Replay
             button data-act="flow-undo" title="Undo this and everything after it" | Back to before this
             button data-act="lit-clear" | Clear
@@ -446,23 +448,29 @@ Related, not in this function. Select it to add it."
             button.fstep.lstep.on data-act="flow-go" data-i="1" title="Garage: start open timer triggered" | Garage: start open timer triggered
               i.fsn | 2
             span.larr | →
-            button.fstep.lstep.on data-act="flow-go" data-i="2" title="Garage: restart timer when reopened triggered" | Garage: restart timer when reopen…
+            button.fstep.lstep.on data-act="flow-go" data-i="2" title="Garage: start open timer: timer.start → Garage open timer" | Garage: start open timer: timer.s…
               i.fsn | 3
             span.larr | →
-            button.fstep.lstep.on data-act="flow-go" data-i="3" title="Garage: restart timer when reopened checks Garage open timer is active: false" | Garage: restart timer when reopen…
+            button.fstep.lstep.on data-act="flow-go" data-i="3" title="Garage open timer → active" | Garage open timer → active
               i.fsn | 4
             span.larr | →
-            button.fstep.lstep.on data-act="flow-go" data-i="4" title="Garage: restart timer when reopened · stopped" | Garage: restart timer when reopen…
+            button.fstep.lstep.on data-act="flow-go" data-i="4" title="Garage: start open timer · finished" | Garage: start open timer · finish…
               i.fsn | 5
             span.larr | →
-            button.fstep.lstep.on data-act="flow-go" data-i="5" title="Garage: start open timer: timer.start → Garage open timer" | Garage: start open timer: timer.s…
+            button.fstep.lstep.on data-act="flow-go" data-i="5" title="Garage: restart timer when reopened triggered" | Garage: restart timer when reopen…
               i.fsn | 6
             span.larr | →
-            button.fstep.lstep.on data-act="flow-go" data-i="6" title="Garage open timer → active" | Garage open timer → active
+            button.fstep.lstep.on data-act="flow-go" data-i="6" title="Garage: restart timer when reopened checks Garage open timer is active: true" | Garage: restart timer when reopen…
               i.fsn | 7
             span.larr | →
-            button.cur.fstep.lstep.on data-act="flow-go" data-i="7" title="Garage: start open timer · finished" | Garage: start open timer · finish…
+            button.fstep.lstep.on data-act="flow-go" data-i="7" title="Garage: restart timer when reopened: timer.start → Garage open timer" | Garage: restart timer when reopen…
               i.fsn | 8
+            span.larr | →
+            button.fstep.lstep.on data-act="flow-go" data-i="8" title="Garage open timer → active" | Garage open timer → active
+              i.fsn | 9
+            span.larr | →
+            button.cur.fstep.lstep.on data-act="flow-go" data-i="9" title="Garage: restart timer when reopened · finished" | Garage: restart timer when reopen…
+              i.fsn | 10
         div.ttip hidden
         div.toast aria-live="polite" hidden role="status"
           span | Imported 3 functions
@@ -652,51 +660,63 @@ Related, not in this function. Select it to add it."
               span.dm
                 b | Garage: start open timer triggered
                 span | Garage Door → open
-            button.blue.dbrow.fin.k-trigger data-act="sbx-pick" data-id="3"
+            button.dbrow.fin.k-call data-act="sbx-pick" data-id="3"
               span.rt | <time>
                 i.fsn | 3
-              ha-icon icon="mdi:play-circle-outline"
-              span.dm
-                b | Garage: restart timer when reopened triggered
-                span | Garage Door → open
-            button.dbrow.fin.k-cond.red data-act="sbx-pick" data-id="4"
-              span.rt | <time>
-                i.fsn | 4
-              ha-icon icon="mdi:close-circle-outline"
-              span.dm
-                b | Garage open timer is active: false
-                span | Garage open timer: idle
-            button.dbrow.fin.k-run.muted data-act="sbx-pick" data-id="5"
-              span.rt | <time>
-                i.fsn | 5
-              ha-icon icon="mdi:flag-checkered"
-              span.dm
-                b | Garage: restart timer when reopened · stopped
-                span | a condition was false
-            button.dbrow.fin.k-call data-act="sbx-pick" data-id="6"
-              span.rt | <time>
-                i.fsn | 6
               ha-icon icon="mdi:arrow-right-bold-outline"
               span.dm
                 b | timer.start → Garage open timer
                 span | Garage: start open timer
-            button.dbrow.fin.k-state data-act="sbx-pick" data-id="7"
+            button.dbrow.fin.k-state data-act="sbx-pick" data-id="4"
               span.rt | <time>
-                i.fsn | 7
+                i.fsn | 4
               ha-icon icon="mdi:swap-horizontal"
               span.dm
                 b | Garage open timer → active
                 span | was idle · by Garage: start open timer
-            button.dbrow.fin.k-run.on data-act="sbx-pick" data-id="8"
+            button.dbrow.fin.k-run data-act="sbx-pick" data-id="5"
               span.rt | <time>
-                i.fsn | 8
+                i.fsn | 5
               ha-icon icon="mdi:flag-checkered"
               span.dm
                 b | Garage: start open timer · finished
+            button.blue.dbrow.fin.k-trigger data-act="sbx-pick" data-id="6"
+              span.rt | <time>
+                i.fsn | 6
+              ha-icon icon="mdi:play-circle-outline"
+              span.dm
+                b | Garage: restart timer when reopened triggered
+                span | Garage Door → open
+            button.dbrow.fin.k-cond data-act="sbx-pick" data-id="7"
+              span.rt | <time>
+                i.fsn | 7
+              ha-icon icon="mdi:check-circle-outline"
+              span.dm
+                b | Garage open timer is active: true
+            button.dbrow.fin.k-call data-act="sbx-pick" data-id="8"
+              span.rt | <time>
+                i.fsn | 8
+              ha-icon icon="mdi:arrow-right-bold-outline"
+              span.dm
+                b | timer.start → Garage open timer
+                span | Garage: restart timer when reopened
+            button.dbrow.fin.k-state data-act="sbx-pick" data-id="9"
+              span.rt | <time>
+                i.fsn | 9
+              ha-icon icon="mdi:swap-horizontal"
+              span.dm
+                b | Garage open timer → active
+                span | was active · by Garage: restart timer when reopened
+            button.dbrow.fin.k-run.on data-act="sbx-pick" data-id="10"
+              span.rt | <time>
+                i.fsn | 10
+              ha-icon icon="mdi:flag-checkered"
+              span.dm
+                b | Garage: restart timer when reopened · finished
           div.sbvp
             div.sbvph
               b | Variables at this step
-              span.muted | Garage: start open timer · finished
+              span.muted | Garage: restart timer when reopened · finished
               button.chip data-act="sbx-vars-close" title="Close"
                 ha-icon icon="mdi:close"
             pre.sbvpre aria-label="Variables at this step" tabindex="0" | { "trigger": { "id": "0", "idx": "0", "platform": "state", "entity_id": "cover.garage_door", "from_state": { "entity_id": "cover.garage_door", "state": "closed", "attributes": { "is_closed": true, "device_class": "garage", "friendly_name": "Garage Door", "supported_features": 3 }, "last_changed": "<iso>", "last_updated": "<iso>" }, "to_state": { "entity_id": "cover.garage_door", "state": "open", "attributes": { "is_closed": false, "device_class": "garage", "friendly_name": "Garage Door", "supported_features": 3 }, "last_changed": "<iso>", "last_updated": "<iso>" } } }
@@ -715,9 +735,9 @@ Related, not in this function. Select it to add it."
       h4 | What should come of it
       label.chk | Garage open timer ends active
         input checked name="ckx" type="checkbox" value="0" ·value="0" ·checked=true
-      label.chk | Garage: restart timer when reopened is stopped by its conditions
-        input checked name="ckx" type="checkbox" value="1" ·value="1" ·checked=true
       label.chk | Garage: start open timer runs to the end
+        input checked name="ckx" type="checkbox" value="1" ·value="1" ·checked=true
+      label.chk | Garage: restart timer when reopened runs to the end
         input checked name="ckx" type="checkbox" value="2" ·value="2" ·checked=true
       label.chk | Close garage doesn't run
         input name="ckx" type="checkbox" value="3" ·value="3" ·checked=false

@@ -80,6 +80,7 @@ returns everything the library section defines.
 | `tests/clock.test.js` | `class Clock` on a pretend clock: `after` (the last call wins), `once` (the first wins), `every`, `frame`, `deadline`, `sleep`, `pause`, and `stop()` leaving nothing set |
 | `tests/link.test.js` | `class Link` against a pretend Home Assistant: the newest answer wins, time limits, failures reported unless optional, lists in a fixed order, what the Diagnostics file carries |
 | `tests/store.test.js` | `class Store` on a pretend clock: an older answer never replaces a newer one, questions in flight shared, a change makes a fact stale, as of now, how old a fact may be, the rule for deleting |
+| `tests/diff/` (pytest) | the sandbox against Home Assistant's own core: every scenario in `corpus.js` run in both, step by step, the calls and states compared (weekly: 1,000 random homes from `random.js`, `FB_DIFF_RANDOM`, `FB_DIFF_SEED`) |
 | `tests/backend/` (pytest) | the Python side: setup, store, websocket commands, diagnostics; `test_privacy.py`: canary data through the anonymiser and the log, no network modules, the manifest (sockets are blocked in all of it) |
 | `tests/board/smoke.test.js` | the board starts, imports and draws the garage, on the fake |
 | `tests/board/a11y.test.js` | axe-core (WCAG 2.2 AA) on every view in dark and light mode, with a problem on the board; the keyboard (roving box focus, arrows, Space, Enter, Escape, dialog and drawer focus in and back); spoken names; less motion |
@@ -181,6 +182,13 @@ returns everything the library section defines.
   `as_function` stand-ins (`SBX_PRELUDE`) that read the sandbox's states (`fb_s`) and clock (`fb_t`).
   `SBX_ETRIG` is generated from Home Assistant's own per-entity trigger classes: rerun
   `venv314/bin/python scripts/gen_sandbox_triggers.py` after moving to a newer Home Assistant.
+  The order things happen in (0.11.2) is Home Assistant's: `_dispatch()` is its event bus, so a state change or
+  event made while another is being handed out waits in a queue until that one is done. Handing one out fires its
+  triggers in order; for each, the automation's variables and conditions are looked at first (`_triggered`), then
+  its mode, then its run goes as far as it goes at once (to its first wait or its end, `_parked`) before the next
+  trigger. Only the waits listening when a change happened hear it (`_listening`), and a wait it satisfies goes on
+  after the handing out. `tests/diff` holds all of this to Home Assistant's core: when it finds a difference, put
+  the smallest scenario that shows it in `tests/diff/corpus.js` with the fix.
 - **Import** (0.11.0): `findFunctions(roles, info)` in the library section makes **parts** (what belongs together on
   any reading: helpers, scripts and scenes that link pieces, with category and name fences; an automation that only
   switches others; Node-RED groups, a tab's and tabs named alike; pieces starting from one device, actuator or

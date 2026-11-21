@@ -7,7 +7,7 @@
 #   --keep                           with --ha: use the test Home Assistant as it is (started if it isn't running)
 #   sh tests/run.sh --only PATTERN   only the suites whose names match (a grep -E pattern), e.g. 'static|e2e-ui'
 #   --size                           also the size test (1,000 automations; slow)
-# Suites: selftest static wiring import problems sandbox clock link store backend | board-smoke board-a11y board-layout board-regress
+# Suites: selftest static wiring import problems sandbox clock link store backend diff | board-smoke board-a11y board-layout board-regress
 # board-snapshots board-leak board-draw
 # (the board on the fake Home Assistant) | with --ha: apitest e2e-isolation e2e-contract e2e-ui e2e-regress
 # e2e-tools e2e-sync e2e-sandbox e2e-versions e2e-privacy (e2e-size). Exits 1 if anything failed.
@@ -45,6 +45,12 @@ for s in static wiring import problems sandbox clock link store; do want "$s" &&
 if want backend; then
   if [ -x venvtest/bin/python ]; then run backend venvtest/bin/python -m pytest tests/backend -q -p no:cacheprovider --junitxml="$R/backend.xml"
   else WANT="$WANT backend"; echo "venvtest is missing: sh tests/setup.sh backend" > "$R/backend.log"; fi
+fi
+# the sandbox against Home Assistant's own core, scenario by scenario (tests/diff; FB_DIFF_RANDOM=<n> FB_DIFF_SEED=<s>
+# adds random ones)
+if want diff; then
+  if [ -x venvtest/bin/python ]; then run diff venvtest/bin/python -m pytest tests/diff -q -p no:cacheprovider -c tests/diff/pytest.ini --rootdir tests/diff --junitxml="$R/diff.xml"
+  else WANT="$WANT diff"; echo "venvtest is missing: sh tests/setup.sh backend" > "$R/diff.log"; fi
 fi
 
 # the board on the fake Home Assistant (layer 3): every suite at once, one test per core

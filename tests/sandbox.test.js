@@ -74,7 +74,7 @@ const st = (sb, id) => (sb.get(id) || {}).state;
     await sb.advance(9 * MIN);
     check('garage: 9 minutes on, still waiting', kinds(sb, 'trigger').length === 0);
     await sb.advance(1 * MIN);
-    check('garage: at 10 minutes the automation fires and its condition passes', kinds(sb, 'trigger').length === 1 && kinds(sb, 'cond')[0].ok === true);
+    check('garage: at 10 minutes the automation fires and its condition passes', kinds(sb, 'trigger').length === 1 && (kinds(sb, 'cond')[0] || {}).ok === true);
     check('garage: the script it calls closes the door', st(sb, 'cover.garage_door') === 'closed' && sb.get('cover.garage_door').attributes.current_position === 0);
     const calls = kinds(sb, 'call');
     check('garage: the notification is a message: listed, nothing to change, not a gap', calls.some((c) => c.svc === 'notify.mobile_app_phone' && c.msg && !c.unknown), calls.map((c) => [c.svc, !!c.msg]));
@@ -669,6 +669,96 @@ const st = (sb, id) => (sb.get(id) || {}).state;
     check('0.11.2 ... an automation that turns off what another turns on is a fight over the light', fl('fight').some((x) => x.id === 'light.l'), ex.flags);
     check('0.11.2 ... one whose condition is never true is found, and so is a call it can\'t model', fl('cond_false').some((x) => x.id === 'automation.never') && fl('unknown').some((x) => x.svc === 'vacuum.weird_thing'), ex.flags);
     check('0.11.2 ... nothing claims "never started" for one that a value starts', !fl('never').some((x) => x.id === 'automation.never'), fl('never'));
+  }
+
+  // ---- 0.11.2 Home Assistant's order and what it refuses (each found by the differential test, tests/diff)
+  {
+    const sw = (id, to) => ({ trigger: 'state', entity_id: id, to });
+    const on = (id) => ({ action: 'input_boolean.turn_on', target: { entity_id: id } });
+    const inc = { action: 'counter.increment', target: { entity_id: 'counter.c' } };
+    const base = () => ({ 'binary_sensor.a': S('off'), 'binary_sensor.b': S('off'), 'input_boolean.x': S('off'), 'input_boolean.y': S('off'), 'counter.c': S('0'), 'timer.t': S('idle'), 'input_number.n': S('10', { min: 0, max: 100 }), 'input_select.s': S('low', { options: ['low', 'high'] }) });
+    // queued, max 2: one running and one waiting; the rest dropped
+    let sb = make(base(), { 'automation.q': { mode: 'queued', max: 2, triggers: [{ trigger: 'state', entity_id: 'binary_sensor.a' }], actions: [inc, { delay: { seconds: 30 } }] } });
+    await sb.start();
+    for (const v of ['on', 'off', 'on', 'off']) await sb.userSet('binary_sensor.a', v);
+    await sb.advance(120e3);
+    check('0.11.2 queued with max 2 runs twice for four triggers (the queued one counts)', st(sb, 'counter.c') === '2', st(sb, 'counter.c'));
+    // a paused timer started again goes on from where it was
+    sb = make(base(), { 'automation.t': { triggers: [sw('binary_sensor.a', 'on')], actions: [{ action: 'timer.start', target: { entity_id: 'timer.t' }, data: { duration: '00:01:00' } }] },
+      'automation.p': { triggers: [sw('binary_sensor.b', 'on')], actions: [{ action: 'timer.pause', target: { entity_id: 'timer.t' } }] },
+      'automation.go': { triggers: [sw('binary_sensor.b', 'off')], actions: [{ action: 'timer.start', target: { entity_id: 'timer.t' } }] } });
+    await sb.start();
+    await sb.userSet('binary_sensor.a', 'on'); await sb.advance(20e3); await sb.userSet('binary_sensor.b', 'on');
+    const left = (sb.get('timer.t').attributes || {}).remaining;
+    await sb.advance(300e3); await sb.userSet('binary_sensor.b', 'off'); await sb.advance(39e3);
+    const still = st(sb, 'timer.t');
+    await sb.advance(2e3);
+    check('0.11.2 a paused timer keeps what was left as Home Assistant writes it, and goes on from there', left === '0:00:40' && still === 'active' && st(sb, 'timer.t') === 'idle', [left, still, st(sb, 'timer.t')]);
+    // what Home Assistant refuses stops the run
+    sb = make(base(), { 'automation.n': { triggers: [sw('binary_sensor.a', 'on')], actions: [{ action: 'input_number.set_value', target: { entity_id: 'input_number.n' }, data: { value: 150 }, continue_on_error: true }, on('input_boolean.x')] },
+      'automation.s': { triggers: [sw('binary_sensor.b', 'on')], actions: [{ action: 'input_select.select_option', target: { entity_id: 'input_select.s' }, data: { option: 'medium' }, continue_on_error: true }, on('input_boolean.y')] } });
+    await sb.start();
+    await sb.userSet('binary_sensor.a', 'on');
+    const run = sb.log.find((e) => e.kind === 'run' && e.key === 'automation.n');
+    check('0.11.2 a number set past its range is refused: the run stops there, even with continue_on_error', st(sb, 'input_number.n') === '10' && st(sb, 'input_boolean.x') === 'off' && run && run.outcome === 'error' && /goes from 0 to 100/.test(run.why), run);
+    await sb.userSet('binary_sensor.b', 'on');
+    check('0.11.2 ... an option a select doesn\'t have is refused too, and continue_on_error carries on from that one', st(sb, 'input_select.s') === 'low' && st(sb, 'input_boolean.y') === 'on');
+    // conditions before the mode
+    sb = make(base(), { 'automation.r': { mode: 'restart', triggers: [{ trigger: 'state', entity_id: 'binary_sensor.a' }], conditions: [{ condition: 'state', entity_id: 'binary_sensor.b', state: 'on' }], actions: [{ delay: { seconds: 30 } }, on('input_boolean.x')] } });
+    await sb.start();
+    await sb.userSet('binary_sensor.b', 'on'); await sb.userSet('binary_sensor.a', 'on'); await sb.advance(10e3);
+    await sb.userSet('binary_sensor.b', 'off'); await sb.userSet('binary_sensor.a', 'off'); await sb.advance(25e3);
+    check('0.11.2 restart: a trigger whose conditions fail restarts nothing (conditions come before the mode)', st(sb, 'input_boolean.x') === 'on');
+    sb = make(base(), { 'automation.q': { mode: 'queued', triggers: [{ trigger: 'state', entity_id: 'binary_sensor.a' }], conditions: [{ condition: 'state', entity_id: 'binary_sensor.b', state: 'on' }], actions: [{ delay: { seconds: 20 } }, inc] } });
+    await sb.start();
+    await sb.userSet('binary_sensor.b', 'on'); await sb.userSet('binary_sensor.a', 'on'); await sb.userSet('binary_sensor.a', 'off'); await sb.userSet('binary_sensor.b', 'off');
+    await sb.advance(60e3);
+    check('0.11.2 queued: a waiting run keeps what its conditions said when it was triggered', st(sb, 'counter.c') === '2', st(sb, 'counter.c'));
+    // triggers take turns
+    sb = make(base(), { 'automation.two': { triggers: [{ trigger: 'state', entity_id: 'binary_sensor.a', to: null }, { trigger: 'state', entity_id: 'binary_sensor.a', from: 'off', to: 'on' }], actions: [{ action: 'input_boolean.toggle', target: { entity_id: 'input_boolean.x' } }] } });
+    await sb.start();
+    await sb.userSet('binary_sensor.a', 'on');
+    check('0.11.2 two triggers on one change both run (single mode: the first has ended by the second\'s turn)', st(sb, 'input_boolean.x') === 'off' && kinds(sb, 'run').length === 2, kinds(sb, 'run'));
+    sb = make(base(), { 'automation.self': { triggers: [sw('binary_sensor.a', 'on'), sw('input_boolean.x', 'on')], actions: [on('input_boolean.x'), inc] },
+      'automation.slow': { triggers: [sw('binary_sensor.b', 'on'), sw('input_boolean.y', 'on')], actions: [on('input_boolean.y'), { delay: { seconds: 5 } }, inc] } });
+    await sb.start();
+    await sb.userSet('binary_sensor.a', 'on');
+    check('0.11.2 an automation that starts itself runs again: the change waits until the run that made it has ended', st(sb, 'counter.c') === '2', st(sb, 'counter.c'));
+    await sb.userSet('binary_sensor.b', 'on'); await sb.advance(10e3);
+    check('0.11.2 ... but single mode drops it while its run waits', st(sb, 'counter.c') === '3' && sb.log.some((e) => e.kind === 'note' && e.key === 'automation.slow'), st(sb, 'counter.c'));
+    sb = make(base(), { 'automation.later': { triggers: [sw('binary_sensor.a', 'on'), sw('input_boolean.x', 'on')], actions: [{ delay: { seconds: 5 } }, on('input_boolean.x'), inc] } });
+    await sb.start();
+    await sb.userSet('binary_sensor.a', 'on'); await sb.advance(7e3);
+    const once = st(sb, 'counter.c');
+    await sb.advance(7e3);
+    check('0.11.2 ... but after a delay its change is handed out at once, with the run still going: single mode drops it', once === '1' && st(sb, 'counter.c') === '1' && sb.log.some((e) => e.kind === 'note' && e.key === 'automation.later'), [once, st(sb, 'counter.c')]);
+    sb = make(base(), { 'automation.w': { triggers: [sw('binary_sensor.a', 'on')], actions: [{ wait_for_trigger: [sw('input_boolean.x', 'on')] }, on('input_boolean.y')] },
+      'automation.b': { triggers: [sw('binary_sensor.b', 'on')], actions: [on('input_boolean.x'), { action: 'counter.increment', target: { entity_id: 'counter.d' } }] },
+      'automation.d': { triggers: [{ trigger: 'state', entity_id: 'counter.d' }], conditions: [{ condition: 'state', entity_id: 'input_boolean.y', state: 'off' }], actions: [inc] } });
+    await sb.start();
+    await sb.userSet('binary_sensor.a', 'on'); await sb.userSet('binary_sensor.b', 'on');
+    check('0.11.2 a wait a change satisfies goes on once that change and the ones queued behind it are handed out', st(sb, 'counter.c') === '1' && st(sb, 'input_boolean.y') === 'on', [st(sb, 'counter.c'), st(sb, 'input_boolean.y')]);
+    // ... and while a long run started by that change goes on, the waiting run is still waiting: a queued change that
+    // triggers its automation again finds it running
+    sb = make(Object.assign(base(), { 'input_boolean.q': S('off'), 'input_boolean.z': S('off'), 'counter.k': S('0') }), {
+      'automation.w': { triggers: [sw('binary_sensor.a', 'on'), sw('input_boolean.z', 'on')], actions: [{ action: 'counter.increment', target: { entity_id: 'counter.k' } }, { wait_for_trigger: [sw('input_boolean.x', 'on')] }, inc] },
+      'automation.b': { triggers: [sw('binary_sensor.b', 'on')], actions: [on('input_boolean.x')] },
+      'automation.r': { triggers: [sw('input_boolean.x', 'on')], actions: [{ repeat: { count: 20, sequence: [{ action: 'input_boolean.toggle', target: { entity_id: 'input_boolean.q' } }] } }, on('input_boolean.z')] } });
+    await sb.start();
+    await sb.userSet('binary_sensor.a', 'on'); await sb.userSet('binary_sensor.b', 'on');
+    check('0.11.2 ... a waiting run is still running until the handing out is done (single mode drops the next)', st(sb, 'counter.k') === '1' && st(sb, 'counter.c') === '1', [st(sb, 'counter.k'), st(sb, 'counter.c')]);
+    sb = make(base(), { 'automation.hear': { triggers: [{ trigger: 'state', entity_id: 'binary_sensor.b' }], actions: [{ wait_for_trigger: [sw('binary_sensor.b', 'on')], timeout: { seconds: 10 }, continue_on_timeout: false }, on('input_boolean.x')] } });
+    await sb.start();
+    await sb.userSet('binary_sensor.b', 'on'); await sb.advance(15e3);
+    check('0.11.2 a run doesn\'t hear the change that started it in its own wait (only the waits already listening do)', st(sb, 'input_boolean.x') === 'off');
+    // automation.trigger runs it inside the call
+    sb = make(base(), { 'automation.a': { triggers: [sw('binary_sensor.a', 'on')], actions: [{ action: 'automation.trigger', target: { entity_id: 'automation.b' } }, on('input_boolean.y')] },
+      'automation.b': { triggers: [], actions: [{ delay: { seconds: 10 } }, on('input_boolean.x')] } });
+    await sb.start();
+    await sb.userSet('binary_sensor.a', 'on'); await sb.advance(5e3);
+    const mid = st(sb, 'input_boolean.y');
+    await sb.advance(10e3);
+    check('0.11.2 automation.trigger waits for the run it starts', mid === 'off' && st(sb, 'input_boolean.x') === 'on' && st(sb, 'input_boolean.y') === 'on', mid);
   }
 
 })().catch((e) => check('the sandbox tests ran to the end', false, String(e && e.stack || e)));

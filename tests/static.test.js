@@ -332,6 +332,10 @@ check('A4 MQTT: the board listens; a message is published only by the person\'s 
   const quick = ((runsh.match(/^for s in ([\w ]+); do want "\$s" && nodetest/m) || [])[1] || '').split(/\s+/).filter(Boolean);
   const qpat = (wf.match(/run: sh tests\/run\.sh --only '(selftest\|static[^']*)'/) || [])[1];
   check('every quick node suite runs in CI', quick.length >= 5 && !!qpat && quick.every((q) => new RegExp('^(' + qpat + ')$').test(q)), { quick, qpat });
+  // 0.11.2: and the Python suites (the units and the sandbox against Home Assistant's core) in the backend job's
+  const py = ['backend', 'diff'].filter((x) => new RegExp('^if want ' + x + '; then', 'm').test(runsh));
+  const ppat = (wf.match(/run: sh tests\/run\.sh --only '(selftest\|backend[^']*)'/) || [])[1];
+  check('the Python suites (backend, diff) run in CI', py.length === 2 && !!ppat && py.every((q) => new RegExp('^(' + ppat + ')$').test(q)), { py, ppat });
   // and a browser test file's suite is named after it (board-<x> in tests/board, <x> in tests/e2e): a fixture finds a
   // test's own suite by its file (suiteOf in tests/e2e/lib.js), since one worker runs tests from several files
   const named = [['board', 'board-'], ['e2e', '']].flatMap(([dir, pre]) => fs.readdirSync(path.join(root, 'tests', dir)).filter((f) => f.endsWith('.test.js')).map((f) => {

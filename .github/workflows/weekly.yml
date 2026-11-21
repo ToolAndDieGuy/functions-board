@@ -12,6 +12,8 @@ name: Weekly
 #  - jitter: the board suites on fakes that answer late and out of turn (FB_JITTER, tests/board/fake-ha.js), with a
 #    new seed every week and no retries, so a race between an answer and an event shows (issues labelled test-gap,
 #    with the seed to run it again).
+#  - diff: the sandbox against Home Assistant's own core (tests/diff) on the corpus and 1,000 random small homes,
+#    a new seed every week (issues labelled test-gap, with the seed to run it again).
 #  - pictures: the README's screenshots taken again and compared with docs/images (tests/shots.sh), so pictures
 #    that no longer show the board as it is are noticed (issues labelled docs).
 
@@ -23,7 +25,7 @@ on:
       only:
         description: "Which job to run by hand"
         type: choice
-        options: [all, beta, mutants, strict, jitter, pictures]
+        options: [all, beta, mutants, strict, jitter, diff, pictures]
         default: all
 
 permissions:
@@ -199,6 +201,43 @@ jobs:
         run: |
           run="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           sh .github/issue.sh test-gap "The board fails under jitter" "A board suite failed on fakes that answer late and out of turn: $run. Run it again exactly with FB_JITTER=${{ github.run_id }} FB_RETRIES=0 sh tests/run.sh --only 'board-<suite>'."
+
+  diff:
+    if: github.event_name == 'schedule' || inputs.only == 'all' || inputs.only == 'diff'
+    name: The sandbox against Home Assistant's core, on random homes
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      FB_DIFF_RANDOM: "1000"
+      FB_DIFF_SEED: ${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: tests/setup.sh
+      - name: The backend venv (versions as in tests/setup.sh)
+        run: |
+          uv venv --python 3.14 venvtest
+          uv pip install --python venvtest/bin/python pytest-homeassistant-custom-component==0.13.375 home-assistant-frontend
+      - name: The corpus and 1,000 random scenarios (seed ${{ github.run_id }})
+        run: sh tests/run.sh --only '^diff$'
+      - name: Reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diff
+          path: tests/.results/
+      - name: Open an issue, or add to the open one
+        if: failure() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          sh .github/issue.sh test-gap "The sandbox differs from Home Assistant" "A random scenario ran differently in the sandbox and in Home Assistant's core: $run (the report says which step and how). Run it again exactly with FB_DIFF_RANDOM=1000 FB_DIFF_SEED=${{ github.run_id }} sh tests/run.sh --only '^diff$', and add the smallest case that shows it to tests/diff/corpus.js with the fix."
 
   pictures:
     if: github.event_name == 'schedule' || inputs.only == 'all' || inputs.only == 'pictures'

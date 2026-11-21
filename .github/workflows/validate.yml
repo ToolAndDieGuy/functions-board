@@ -65,12 +65,15 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: tests/setup.sh
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - name: Set up (versions as in tests/setup.sh)
         run: |
           uv venv --python 3.14 venvtest
           uv pip install --python venvtest/bin/python pytest-homeassistant-custom-component==0.13.375 home-assistant-frontend
-      - name: Self-test and the Python units
-        run: sh tests/run.sh --only 'selftest|backend'
+      - name: Self-test, the Python units, and the sandbox against Home Assistant's core
+        run: sh tests/run.sh --only 'selftest|backend|diff'
       - name: Test reports
         if: always()
         uses: actions/upload-artifact@v4

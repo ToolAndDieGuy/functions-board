@@ -3409,6 +3409,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       sbx_delay_label: '{name}: waits {d}',
       sbx_device_act: 'device action: {type}',
       sbx_err_continue: 'An error, carried on (continue_on_error): {e}',
+      sbx_refused_range: '{name} can\'t be set to {v}: it goes from {lo} to {hi}. Home Assistant stops the run here, even with continue_on_error.',
+      sbx_refused_option: '{name} has no option {v} (it has {list}). Home Assistant stops the run here.',
+      sbx_refused_counter: '{name} can\'t be set to {v}: its minimum, maximum or step doesn\'t allow it. Home Assistant stops the run here, even with continue_on_error.',
       sbx_error: 'The sandbox hit a problem: {e}',
       sbx_false: 'false',
       sbx_fires: 'fires {type}',
@@ -4068,6 +4071,26 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     if (!got || typeof got !== 'object') return false;
     return Object.entries(want).every(([k, v]) => subsetOf(v, got[k]));
   }
+  // what Home Assistant refuses (0.11.2, found by the differential test): the call is made, fails, and the run stops
+  // there; cfg marks an error continue_on_error doesn't carry on from (Home Assistant only carries on from its own
+  // errors, not from a value its schema refuses or a plain Python error)
+  function sbxRefuse(dom, svc, cur, d, name) {
+    if (!cur) return null;
+    const A = cur.attributes || {}, num = (x) => { const n = parseFloat(x); return isFinite(n) ? n : null; }, v = num(d && d.value);
+    if (dom === 'input_number' && svc === 'set_value' && v != null) {
+      const lo = num(A.min), hi = num(A.max);
+      if ((lo != null && v < lo) || (hi != null && v > hi)) return { text: T('sbx_refused_range', { name, v, lo, hi }), cfg: true };
+    }
+    if ((dom === 'input_select' || dom === 'select') && svc === 'select_option' && d && d.option != null) {
+      const opts = toList(A.options).map(String);
+      if (opts.length && !opts.includes(String(d.option))) return { text: T('sbx_refused_option', { name, v: d.option, list: opts.join(', ') }) };
+    }
+    if (dom === 'counter' && svc === 'set_value' && v != null) {
+      const lo = num(A.minimum), hi = num(A.maximum), step = num(A.step);
+      if ((lo != null && v < lo) || (hi != null && v > hi) || (step && v % step !== 0)) return { text: T('sbx_refused_counter', { name, v }), cfg: true };
+    }
+    return null;
+  }
   // what a service does to an entity's state: [state, attributes] or null when the sandbox doesn't know
   const SBX_ONOFF = new Set(['light', 'switch', 'fan', 'input_boolean', 'siren', 'humidifier', 'automation', 'remote', 'media_player', 'climate', 'water_heater', 'group']);
   const SBX_ARM = { alarm_arm_home: 'armed_home', alarm_arm_away: 'armed_away', alarm_arm_night: 'armed_night', alarm_arm_vacation: 'armed_vacation',
@@ -4366,7 +4389,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this.busy = 0; this.seq = 0; this.steps = 0; this.halted = false; this.n = 0; this.devT = new WeakMap();
       // 0.11.2: step-through (paused runs, breakpoints), how devices answer, and what was reached (coverage)
       this.stepping = false; this.breaks = new Set(); this.paused = new Map(); this.behave = new Map();
-      this.hit = new WeakSet(); this.cres = new WeakMap(); this.fired = new Set();
+      this.hit = new WeakSet(); this.cres = new WeakMap(); this.fired = new Set(); this.dispatching = false; this.evq = []; this.after = [];
       (o.items || []).forEach((x) => this.add(x.id, x.cfg));
     }
     add(id, cfg) { if (cfg) this.items.set(id, { id, cfg, kind: id.startsWith('script.') ? 'script' : 'automation' }); }
@@ -4400,8 +4423,10 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (run.cancelled) throw SBX_CANCEL;
       const lid = this._log({ kind: 'pause', key: run.item.id, cause: run.cause, text, vars: this._snap(run.vars) });
       // while it waits it isn't work in hand (settle() returns); going on counts again at once
+      this._parked(run);
       this.busy--;
       await new Promise((res) => { this.paused.set(lid, { run, res }); if (this.o.onPause) this.o.onPause(lid); });
+      this._moving(run);
       if (run.cancelled) throw SBX_CANCEL;
     }
     resume(lid) { const p = this.paused.get(lid); if (!p) return false; this.paused.delete(lid); this.busy++; p.res(); return true; }
@@ -4440,8 +4465,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     _drop(t) { const i = this.timers.indexOf(t); if (i >= 0) this.timers.splice(i, 1); if (t && t.run) t.run.timers.delete(t); }
     _sleep(ms, run, label) {
       return new Promise((res, rej) => {
-        const t = this._at(this.now + Math.max(0, ms), () => { this.busy++; res(); }, run, label);
+        const t = this._at(this.now + Math.max(0, ms), () => { this.busy++; this._moving(run); res(); }, run, label);
         t.rej = (e) => { this.busy++; rej(e); };
+        this._parked(run);
         this.busy--;
       });
     }
@@ -4561,11 +4587,20 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       await new Promise((r) => {
         this._task(async () => {
           const lid = this._log(Object.assign({ by: 'you' }, log));
-          for (const it of this.items.values()) {
-            if (it.kind !== 'automation' || !this._on(it)) continue;
-            this._trigs(it).forEach((t, i) => { if (t.enabled === false) return; const v = hit(t, it); if (v) this._fire(it, i, Object.assign({ platform: this._plat(t) }, typeof v === 'object' ? v : {}, tv ? tv(t) : {}), lid); });
-          }
-          [...this.waiters].forEach((w) => w.onOther && w.onOther(hit, tv, lid));
+          await this._dispatch(async () => {
+            const ws = this._listening();
+            for (const it of this.items.values()) {
+              if (it.kind !== 'automation' || !this._on(it)) continue;
+              const ts = this._trigs(it);
+              for (let i = 0; i < ts.length; i++) {
+                const t = ts[i];
+                if (t.enabled === false) continue;
+                const v = hit(t, it);
+                if (v) await this._fire(it, i, Object.assign({ platform: this._plat(t) }, typeof v === 'object' ? v : {}, tv ? tv(t) : {}), lid);
+              }
+            }
+            ws().forEach((w) => w.onOther && w.onOther(hit, tv, lid));
+          });
           r();
         });
       });
@@ -4643,21 +4678,26 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const nu = { state, attributes: A, last_changed: was === state && old ? old.last_changed : this.iso(), last_updated: this.iso() };
       this.changed.set(id, nu);
       const lid = this._log({ kind: 'state', key: id, from: was, to: state, cause, by: byYou ? 'you' : null });
-      await this._onState(id, old, nu, lid);
+      await this._dispatch(() => this._onState(id, old, nu, lid));
       return lid;
     }
     async fireEvent(type, data, cause, byYou) {
       const lid = this._log({ kind: 'event', key: 'event:' + type, text: type, data, cause, by: byYou ? 'you' : null });
       const ev = { event_type: type, data: data || {} };
-      for (const it of this.items.values()) {
-        if (it.kind !== 'automation' || !this._on(it)) continue;
-        this._trigs(it).forEach((t, i) => {
-          if (t.enabled === false || this._plat(t) !== 'event') return;
-          if (!toList(t.event_type).includes(type) || !subsetOf(t.event_data, data)) return;
-          this._fire(it, i, { platform: 'event', event: ev }, lid);
-        });
-      }
-      [...this.waiters].forEach((w) => w.onEvent && w.onEvent(ev, lid));
+      await this._dispatch(async () => {
+        const ws = this._listening();
+        for (const it of this.items.values()) {
+          if (it.kind !== 'automation' || !this._on(it)) continue;
+          const ts = this._trigs(it);
+          for (let i = 0; i < ts.length; i++) {
+            const t = ts[i];
+            if (t.enabled === false || this._plat(t) !== 'event') continue;
+            if (!toList(t.event_type).includes(type) || !subsetOf(t.event_data, data)) continue;
+            await this._fire(it, i, { platform: 'event', event: ev }, lid);
+          }
+        }
+        ws().forEach((w) => w.onEvent && w.onEvent(ev, lid));
+      });
       return lid;
     }
     // an MQTT message: the triggers on its topic (+ and # wildcards), and a publish in a script reaches them too
@@ -4674,14 +4714,17 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       try { pj = JSON.parse(text); } catch (e) { /* not JSON */ }
       const msg = { topic: String(topic), payload: text, payload_json: pj, qos: 0 };
       const lid = this._log({ kind: 'mqtt', key: 'mqtt:' + msg.topic, text: msg.topic, payload: text, cause, by: byYou ? 'you' : null });
-      for (const it of this.items.values()) {
-        if (it.kind !== 'automation' || !this._on(it)) continue;
-        const ts = this._trigs(it);
-        for (let i = 0; i < ts.length; i++) {
-          if (ts[i].enabled !== false && this._plat(ts[i]) === 'mqtt' && await this._mqttMatch(ts[i], msg)) this._fire(it, i, Object.assign({ platform: 'mqtt' }, msg), lid);
+      await this._dispatch(async () => {
+        const ws = this._listening();
+        for (const it of this.items.values()) {
+          if (it.kind !== 'automation' || !this._on(it)) continue;
+          const ts = this._trigs(it);
+          for (let i = 0; i < ts.length; i++) {
+            if (ts[i].enabled !== false && this._plat(ts[i]) === 'mqtt' && await this._mqttMatch(ts[i], msg)) await this._fire(it, i, Object.assign({ platform: 'mqtt' }, msg), lid);
+          }
         }
-      }
-      [...this.waiters].forEach((w) => w.onMqtt && w.onMqtt(msg, lid));
+        ws().forEach((w) => w.onMqtt && w.onMqtt(msg, lid));
+      });
       return lid;
     }
     async userMqtt(topic, payload) {
@@ -4725,6 +4768,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       return (t.above == null || (a != null && v > a)) && (t.below == null || (b != null && v < b));
     }
     async _onState(id, old, nu, lid) {
+      // the waits listening when the change happened: a run this change starts doesn't hear it in its own wait
+      const ws = this._listening();
       // a `for:` waiting on this entity: still matching, or let go
       for (const [k, p] of [...this.pend]) {
         if (p.id == null || p.id !== id) continue;
@@ -4755,12 +4800,14 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           } else if (p === 'time' && toList(t.at).includes(id)) {
             this._armTime(it, t, i);
           } else if (p === 'zone' && this._zoneHit(t, id, old, nu)) {
-            this._fire(it, i, { platform: 'zone', entity_id: id, from_state: old ? this.obj0(id, old) : null, to_state: this.obj0(id, nu), zone: this.obj(String(t.zone)), event: t.event || 'enter' }, lid);
+            await this._fire(it, i, { platform: 'zone', entity_id: id, from_state: old ? this.obj0(id, old) : null, to_state: this.obj0(id, nu), zone: this.obj(String(t.zone)), event: t.event || 'enter' }, lid);
           }
         }
       }
-      [...this.waiters].forEach((w) => w.onState && w.onState(id, old, nu, lid));
+      ws().forEach((w) => w.onState && w.onState(id, old, nu, lid));
     }
+    // the waits listening now; later, those of them still waiting
+    _listening() { const ws = [...this.waiters]; return () => ws.filter((w) => this.waiters.has(w)); }
     // ---- zones: a person or tracker is in one when its state is the zone's name ("home" for zone.home)
     _zoneName(z) {
       if (z == null) return null;
@@ -4911,7 +4958,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const key = it.id + '#' + i + '#' + id;
       const old = this.pend.get(key);
       if (old) { this._drop(old.timer); this.pend.delete(key); }
-      if (t.for == null) { this._fire(it, i, vars, lid); return; }
+      if (t.for == null) { await this._fire(it, i, vars, lid); return; }
       let ms = durMs(t.for);
       if (ms == null && TPL_RE.test(String(t.for))) { const r = await this.o.tpl(String(t.for), this._vars(null), this); ms = r.ok ? durMs(r.value) : null; }
       if (ms == null && typeof t.for === 'object') { const r = await this._render(t.for, null); ms = durMs(r); }
@@ -4929,7 +4976,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (was !== false) return;
       const vars = { platform: 'template', entity_id: null };
       let ms = t.for != null ? durMs(typeof t.for === 'object' ? t.for : TPL_RE.test(String(t.for)) ? (await this.o.tpl(String(t.for), {}, this)).value : t.for) : null;
-      if (ms == null || ms <= 0) { this._fire(it, i, vars, lid, r.partly); return; }
+      if (ms == null || ms <= 0) { await this._fire(it, i, vars, lid, r.partly); return; }
       vars.for = fmtDur(ms);
       const timer = this._at(this.now + ms, () => { this.pend.delete(pk); this._task(() => this._fire(it, i, vars, lid, r.partly)); }, null, T('sbx_for_label', { name: this._name(it.id), d: fmtDur(ms) }), it.id);
       this.pend.set(pk, { id: null, timer, still: async () => true });
@@ -5012,7 +5059,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     _vars(run) { return run ? Object.assign({}, run.vars) : {}; }
     _active(id) { return (this.runs.get(id) || []).filter((r) => !r.done); }
     running(id) { return this._active(id).length > 0; }
-    _fire(it, i, tv, cause, partly) {
+    async _fire(it, i, tv, cause, partly) {
       const t = this._trigs(it)[i] || {};
       const trigger = Object.assign({ id: t.id != null ? String(t.id) : String(i), idx: String(i) }, tv);
       const lid = this._log({ kind: 'trigger', key: it.id, text: this._trigText(t, trigger), ent: trigger.entity_id || null, to: trigger.to_state ? trigger.to_state.state : null, cause, partly, vars: this._snap({ trigger }) });
@@ -5023,7 +5070,12 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (this._plat(t) === 'state' && from.length && t.to == null && t.not_to == null && t.attribute == null && trigger.from_state && to != null && from.includes(to)) {
         this._log({ kind: 'note', key: it.id, cause: lid, warn: true, pk: 't_both|' + it.id, text: T('sbx_from_into', { name: this._name(it.id), ent: this._name(trigger.entity_id), to, from: from.join(', ') }) });
       }
-      this._start(it, { trigger }, lid, { conds: true });
+      // handing out the change waits until this trigger stops: its conditions failed, or its run got as far as it goes
+      // at once, or either waits for the person
+      const stop = {};
+      stop.p = new Promise((res) => { stop.res = res; });
+      this._start(it, { trigger }, lid, { conds: true, stop });
+      await stop.p;
     }
     _trigText(t, tv) {
       const p = this._plat(t);
@@ -5042,11 +5094,15 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       return String(p || '');
     }
     _start(it, vars, cause, opt) {
+      opt = opt || {};
+      // an automation: its variables and conditions first (_triggered); the promise of the run, or null
+      if (it.kind === 'automation' && !opt.checked) return this._task(() => this._triggered(it, vars, cause, opt));
       const cfg = it.cfg, mode = cfg.mode || 'single', max = cfg.max || 10, act = this._active(it.id);
       if (act.length) {
         if (mode === 'single') { this._log({ kind: 'note', key: it.id, cause, text: T('sbx_single', { name: this._name(it.id) }) }); return null; }
         if (mode === 'restart') act.forEach((r) => { this._cancel(r); this._log({ kind: 'note', key: it.id, cause, text: T('sbx_restart') }); });
-        else if (act.length >= max) { this._log({ kind: 'note', key: it.id, cause, warn: true, text: T('sbx_max', { mode, max }) }); return null; }
+        // max counts every run, the queued ones too (Home Assistant's queued mode: one running and max − 1 waiting)
+        else if (act.length + (mode === 'queued' ? (this.queue.get(it.id) || []).length : 0) >= max) { this._log({ kind: 'note', key: it.id, cause, warn: true, text: T('sbx_max', { mode, max }) }); return null; }
         else if (mode === 'queued') {
           const q = this.queue.get(it.id) || [];
           q.push([vars, cause, opt]); this.queue.set(it.id, q);
@@ -5055,12 +5111,64 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         }
       }
       const run = { item: it, vars: Object.assign({ this: this.obj(it.id) }, vars), cause, timers: new Set(), done: false, cancelled: false };
+      this._moving(run);
       const list = this.runs.get(it.id) || [];
       list.push(run); this.runs.set(it.id, list);
       const p = this._task(() => this._run(run, opt || {}));
       run.promise = p;
       return run;
     }
+    // an automation triggered (0.11.2, Home Assistant's order, found by the differential test): its variables and
+    // conditions are looked at first, and only then does its mode look at the runs already going, so a trigger whose
+    // conditions fail restarts nothing and a queued run keeps what its conditions said when it was triggered. When a
+    // trigger is looked at is the event bus's business (_dispatch).
+    async _triggered(it, vars, cause, opt) {
+      const stopped = () => { if (opt.stop) opt.stop.res(); };
+      if (this.halted) { stopped(); return null; }
+      // parkRes: a condition waiting for the person (stepping) counts as stopped
+      const cfg = it.cfg, run = { item: it, vars: Object.assign({ this: this.obj(it.id) }, vars), cause, timers: new Set(), done: false, cancelled: false, parkRes: opt.stop ? opt.stop.res : null };
+      try {
+        if (cfg.variables) Object.assign(run.vars, await this._render(cfg.variables, run));
+        if (opt.conds !== false) {
+          for (const c of toList(cfg.conditions != null ? cfg.conditions : cfg.condition)) {
+            const r = await this._condStep(c, run);
+            if (!r.ok) { this._log({ kind: 'run', key: it.id, outcome: 'stopped', why: T('sbx_cond_stopped'), cause, vars: this._snap(run.vars) }); stopped(); return null; }
+          }
+        }
+      } catch (e) {
+        stopped();
+        if (e === SBX_CANCEL) return null;
+        this._log({ kind: 'run', key: it.id, outcome: 'error', why: (e && e.message) || String(e), cause, vars: this._snap(run.vars) });
+        return null;
+      }
+      if (this.halted) { stopped(); return null; }
+      const r = this._start(it, run.vars, cause, Object.assign({}, opt, { checked: true, stop: null }));
+      if (r) r.parkP.then(stopped); else stopped();
+      return r;
+    }
+    // Home Assistant's event bus (0.11.2, found by the differential test): a state change or an event made while
+    // another is being handed out waits in a queue until that one is done, and is then handed out in turn. Handing one
+    // out means every trigger it fires, in order, each automation's run going as far as it goes at once (to its first
+    // wait, or its end) before the next trigger is looked at. So a run started by a change that changes something
+    // its own automation triggers on has ended by the time that trigger is looked at (and runs again), while a run
+    // going on after a delay changes it outside any handing out, so the trigger is looked at at once, with the run
+    // still going (and single mode drops it). A wait that a change satisfies goes on once the handing out is done.
+    async _dispatch(fn) {
+      if (this.dispatching) { this.evq.push(fn); return; }
+      this.dispatching = true;
+      try {
+        await fn();
+        while (this.evq.length) await this.evq.shift()();
+      } finally {
+        this.dispatching = false;
+        const later = this.after.splice(0);
+        later.forEach((go) => go());
+      }
+    }
+    // a run on the move (started, or going on after a wait), and stopped at a wait or its end: handing out a change
+    // waits for the runs it starts to stop (_fire)
+    _moving(run) { if (run && (run.parked || !run.parkP)) { run.parked = false; run.parkP = new Promise((res) => { run.parkRes = res; }); } }
+    _parked(run) { if (run && run.parkRes && !run.parked) { run.parked = true; run.parkRes(); } }
     _cancel(run) {
       if (run.done) return;
       run.cancelled = true;
@@ -5073,14 +5181,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       let outcome = 'finished', why = '';
       try {
         if (it.kind === 'automation') {
-          if (cfg.variables) Object.assign(run.vars, await this._render(cfg.variables, run));
-          if (opt.conds !== false) {
-            const cs = toList(cfg.conditions != null ? cfg.conditions : cfg.condition);
-            for (const c of cs) {
-              const r = await this._condStep(c, run);
-              if (!r.ok) { outcome = 'stopped'; why = T('sbx_cond_stopped'); return; }
-            }
-          }
+          // its variables and conditions were looked at when it was triggered (_triggered)
           await this._seq(toList(cfg.actions != null ? cfg.actions : cfg.action), run);
         } else {
           if (cfg.variables) Object.assign(run.vars, await this._render(cfg.variables, run));
@@ -5093,6 +5194,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         else { outcome = 'error'; why = (e && e.message) || String(e); }
       } finally {
         run.done = true;
+        this._parked(run);
         const list = (this.runs.get(it.id) || []).filter((r) => r !== run);
         this.runs.set(it.id, list);
         if (outcome !== 'cancelled' || !this.halted) this._log({ kind: 'run', key: it.id, outcome, why, cause: run.cause, vars: this._snap(run.vars) });
@@ -5260,7 +5362,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this.hit.add(a);
       try { await this._act1(a, run); } catch (e) {
         if (e === SBX_CANCEL || e === SBX_COND_FAIL || (e && e.stop)) throw e;
-        if (a.continue_on_error) { this._log({ kind: 'note', key: run.item.id, cause: run.cause, text: T('sbx_err_continue', { e: (e && e.message) || String(e) }) }); return; }
+        if (a.continue_on_error && !(e && e.cfg)) { this._log({ kind: 'note', key: run.item.id, cause: run.cause, text: T('sbx_err_continue', { e: (e && e.message) || String(e) }) }); return; }
         throw e;
       }
     }
@@ -5379,12 +5481,18 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           if (!it) { entry.unknown = true; continue; }
           const vars = Object.assign({}, s === 'turn_on' ? (data.variables || {}) : data);
           const r = this._start(it, vars, cid, {});
-          if (r && !['turn_on', 'toggle'].includes(s)) await new Promise((res, rej) => { this.busy--; r.onDone = (o) => { this.busy++; if (o === 'error') rej(new Error(T('sbx_script_failed', { name: this._name(id) }))); else res(); }; });
+          if (r && !['turn_on', 'toggle'].includes(s)) await new Promise((res, rej) => { r.parkP.then(() => { if (!r.done) this._parked(run); }); this.busy--; r.onDone = (o) => { this.busy++; this._moving(run); if (o === 'error') rej(new Error(T('sbx_script_failed', { name: this._name(id) }))); else res(); }; });
         }
         return;
       }
+      // automation.trigger runs it inside the call, at once, and the call waits for that run to end
       if (svc === 'automation.trigger') {
-        ents.forEach((id) => { const it = this.items.get(id); if (it) this._start(it, { trigger: { platform: null, id: 'trigger', idx: 'trigger' } }, cid, { conds: data.skip_condition === false }); else entry.unknown = true; });
+        for (const id of ents) {
+          const it = this.items.get(id);
+          if (!it) { entry.unknown = true; continue; }
+          const r = await this._triggered(it, { trigger: { platform: null, id: 'trigger', idx: 'trigger' } }, cid, { conds: data.skip_condition === false, now: true });
+          if (r) await new Promise((res) => { r.parkP.then(() => { if (!r.done) this._parked(run); }); this.busy--; r.onDone = () => { this.busy++; this._moving(run); res(); }; });
+        }
         return;
       }
       if (dom === 'timer') { for (const id of ents) await this._timer(id, s, data, cid); return; }
@@ -5408,6 +5516,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       let known = ents.length > 0;
       for (const id of ents) {
         const ed = id.split('.')[0], sv = generic ? ((HA_GENERIC[ed] || {})[s] || s) : s;
+        const no = sbxRefuse(ed, sv, this.get(id), data, this._name(id));
+        if (no) throw Object.assign(new Error(no.text), { cfg: !!no.cfg });
         const eff = sbxEffect(ed, sv, this.get(id), data, this.iso());
         if (!eff) { known = false; continue; }
         await this._answer(id, eff[0] == null ? (this.get(id) || {}).state : eff[0], eff[1], cid);
@@ -5417,6 +5527,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     }
     async _timer(id, s, d, cid) {
       const cur = this.get(id) || { state: 'idle', attributes: {} }, A = cur.attributes || {};
+      // remaining as Home Assistant writes it (H:MM:SS), so a paused timer started again goes on from where it was
+      const hms = (ms) => { const t = Math.round(Math.max(0, ms) / 1000); return `${Math.floor(t / 3600)}:${String(Math.floor(t / 60) % 60).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`; };
       const key = 'timer:' + id;
       const clear = () => this.timers.filter((x) => x.slot === key).forEach((x) => this._drop(x));
       const finish = async (ev) => { clear(); await this.setState(id, 'idle', { finishes_at: null, remaining: '0:00:00', last_transition: ev === 'timer.cancelled' ? 'cancelled' : 'finished' }, cid); await this.fireEvent(ev, { entity_id: id }, cid); };
@@ -5426,13 +5538,13 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         if (ms == null) ms = 0;
         clear();
         const at = this.now + ms;
-        await this.setState(id, 'active', { finishes_at: this.iso(at), remaining: fmtDur(ms), last_transition: cur.state === 'active' ? 'restarted' : 'started' }, cid);
+        await this.setState(id, 'active', { finishes_at: this.iso(at), remaining: hms(ms), last_transition: cur.state === 'active' ? 'restarted' : 'started' }, cid);
         this._at(at, () => this._task(async () => { await this.setState(id, 'idle', { finishes_at: null, remaining: '0:00:00', last_transition: 'finished' }, cid); await this.fireEvent('timer.finished', { entity_id: id }, cid); }), null, T('sbx_timer_label', { name: this._name(id) }), id).slot = key;
         return;
       }
       if (s === 'cancel') return finish('timer.cancelled');
       if (s === 'finish') return finish('timer.finished');
-      if (s === 'pause') { const left = A.finishes_at ? Date.parse(A.finishes_at) - this.now : 0; clear(); await this.setState(id, 'paused', { remaining: fmtDur(Math.max(0, left)), finishes_at: null, last_transition: 'paused' }, cid); }
+      if (s === 'pause') { const left = A.finishes_at ? Date.parse(A.finishes_at) - this.now : 0; clear(); await this.setState(id, 'paused', { remaining: hms(left), finishes_at: null, last_transition: 'paused' }, cid); }
     }
     async _waitTpl(a, run) {
       const tpl = String(a.wait_template), ms = a.timeout != null ? durMs(await this._render(a.timeout, run)) : null;
@@ -5484,10 +5596,16 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       return new Promise((res, rej) => {
         const w = { run, rej: (e) => { this.busy++; rej(e); } };
         let t = null;
-        w.res = (v) => { if (w.fin) return; w.fin = true; this.waiters.delete(w); if (t) this._drop(t); this.busy++; res(v); };
+        w.res = (v) => {
+          if (w.fin) return;
+          w.fin = true; this.waiters.delete(w); if (t) this._drop(t);
+          const go = () => { this.busy++; this._moving(run); res(v); };
+          if (this.dispatching) this.after.push(go); else go();
+        };
         Object.assign(w, mk(w));
         this.waiters.add(w);
-        if (ms != null) t = this._at(this.now + ms, () => { if (!w.fin) { w.fin = true; this.waiters.delete(w); this.busy++; res(false); } }, run, label);
+        if (ms != null) t = this._at(this.now + ms, () => { if (!w.fin) { w.fin = true; this.waiters.delete(w); this.busy++; this._moving(run); res(false); } }, run, label);
+        this._parked(run);
         this.busy--;
       });
     }

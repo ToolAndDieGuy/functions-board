@@ -44,6 +44,45 @@ type anything else:
 Any problem can now be ignored for good. It leaves the count and isn't listed under Dismissed either, even if it goes
 away and comes back. The problems list says how many are ignored for good and can bring them back as dismissed.
 
+The sandbox is now a debugger. Its drawer has four tabs:
+
+- **Timeline**, as before, with a plain sentence over each thing you did ("Motion turned on: Hall light on, timer
+  started"). Click any line to see the run's variables at that moment (`trigger`, `repeat`, `wait`, a response).
+  **Undo** takes back your last step and **Again** repeats it.
+- **States**: every entity in the sandbox with its state and attributes, the ones that changed first, each one
+  editable in place.
+- **Explore** tries everything the function can be given, one thing at a time from the same start (a day passing,
+  every value Set offers, every button, webhook, tag and sentence), and reports what never happens, conditions that
+  are never true, two automations fighting over one entity, and loops.
+- **Coverage** marks on the board what ran and what didn't: triggers never fired, conditions only ever true or only
+  ever false, choose options and else branches never taken.
+
+**Step** runs one step at a time: each run waits before every condition and action until you press Continue.
+**Pause here** on a box's bar makes runs of that automation wait at each step. **How a device answers** makes a
+device slow (a cover is opening first), fail (a lock jams) or go unavailable. **What if** has ready-made situations:
+everyone leaves or comes home, a power cut and power back, sunset, sunrise, the night, a morning, a day, a week. The
+clock can run by itself, from real time to 600 times faster. A box's bar suggests values to set, and Enter in a value
+sets it.
+
+The sandbox now does what Home Assistant does in places it didn't. Every case below was found by a new test that runs
+the same homes in the sandbox and in Home Assistant itself, step by step, and compares them:
+
+- An automation's conditions are checked when it's triggered, before its mode. A restart-mode automation whose
+  conditions fail no longer cancels the run it already has going, and a queued run keeps what its conditions said
+  when it was triggered.
+- When one change starts several runs, they go in Home Assistant's order: each run goes as far as it can at once
+  before the next trigger is looked at, and a change a run makes meanwhile waits its turn. So two triggers of one
+  automation on the same change both run; an automation that turns on what it triggers on runs again once it has
+  finished (but is "already running" if it changes it after a delay); and a wait doesn't hear the change that
+  started its own run. In the garage example, opening the door now also runs "restart timer when reopened", as it
+  does in Home Assistant: the timer the first automation just started is already active when its condition is
+  checked.
+- Queued mode's maximum counts the runs waiting in the queue, as Home Assistant's does.
+- A paused timer started again goes on from where it was paused. Before, it started over with the wrong time.
+- Setting a number outside its range, or a select to an option it doesn't have, stops the run with Home Assistant's
+  error. Before, the sandbox clamped the number or set the option and carried on.
+- `automation.trigger` waits for the run it starts, as a script call does.
+
 ## 0.11.0 (2026-11-20)
 
 Import finds more of the systems you've built, and lets you decide where one ends and the next begins.

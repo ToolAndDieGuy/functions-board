@@ -1578,5 +1578,93 @@
   "suite": "board-regress",
   "expect": "Pause here on a box",
   "only": "0.11.2 the sandbox: summaries"
+ },
+ {
+  "name": "sandbox: queued max counts only the running",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "act.length + (mode === 'queued' ? (this.queue.get(it.id) || []).length : 0) >= max",
+  "replace": "act.length >= max",
+  "suite": "sandbox",
+  "expect": "queued with max 2"
+ },
+ {
+  "name": "sandbox: a paused timer keeps what's left in words",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "await this.setState(id, 'paused', { remaining: hms(left),",
+  "replace": "await this.setState(id, 'paused', { remaining: fmtDur(Math.max(0, left)),",
+  "suite": "sandbox",
+  "expect": "a paused timer keeps"
+ },
+ {
+  "name": "sandbox: refuses nothing",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "        if (no) throw Object.assign(new Error(no.text), { cfg: !!no.cfg });\n",
+  "replace": "",
+  "suite": "sandbox",
+  "expect": "set past its range"
+ },
+ {
+  "name": "sandbox: continue_on_error carries on from anything",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "if (a.continue_on_error && !(e && e.cfg))",
+  "replace": "if (a.continue_on_error)",
+  "suite": "sandbox",
+  "expect": "set past its range"
+ },
+ {
+  "name": "sandbox: conditions not looked at when triggered",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "        if (opt.conds !== false) {\n          for (const c of toList(cfg.conditions != null ? cfg.conditions : cfg.condition)) {",
+  "replace": "        if (false) {\n          for (const c of toList(cfg.conditions != null ? cfg.conditions : cfg.condition)) {",
+  "suite": "sandbox",
+  "expect": "at 10 minutes the automation fires and its condition passes"
+ },
+ {
+  "name": "sandbox: automation.trigger doesn't wait",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "          if (r) await new Promise((res) => { r.parkP.then(() => { if (!r.done) this._parked(run); }); this.busy--; r.onDone = () => { this.busy++; this._moving(run); res(); }; });\n",
+  "replace": "",
+  "suite": "sandbox",
+  "expect": "automation.trigger waits"
+ },
+ {
+  "name": "sandbox: not_from ignored (the differential test sees it)",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      if (t.not_from != null && inList(ov, t.not_from)) return false;",
+  "replace": "",
+  "suite": "diff",
+  "expect": "not_from"
+ },
+ {
+  "name": "sandbox: a change made while another is handed out isn't queued",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      if (this.dispatching) { this.evq.push(fn); return; }\n",
+  "replace": "",
+  "suite": "sandbox",
+  "expect": "an automation that starts itself runs again"
+ },
+ {
+  "name": "sandbox: a satisfied wait goes on in the middle of the handing out",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "          if (this.dispatching) this.after.push(go); else go();",
+  "replace": "          go();",
+  "suite": "sandbox",
+  "expect": "a waiting run is still running until the handing out is done"
+ },
+ {
+  "name": "sandbox: handing out a change doesn't wait for the runs it starts",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      this._start(it, { trigger }, lid, { conds: true, stop });\n      await stop.p;",
+  "replace": "      this._start(it, { trigger }, lid, { conds: true, stop });",
+  "suite": "sandbox",
+  "expect": "two triggers on one change both run"
+ },
+ {
+  "name": "sandbox: a run hears the change that started it",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "    _listening() { const ws = [...this.waiters]; return () => ws.filter((w) => this.waiters.has(w)); }",
+  "replace": "    _listening() { return () => [...this.waiters]; }",
+  "suite": "sandbox",
+  "expect": "doesn't hear the change that started it"
  }
 ]
