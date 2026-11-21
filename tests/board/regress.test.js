@@ -1226,4 +1226,74 @@ test('0.11.1 the sandbox finds the device box of what an action on a device chan
   check('0.11.1 sandbox device: no errors', page.logs.length === 0, page.logs);
 });
 
+test('0.11.1 a trigger that starts both ways: a problem, said in the sandbox with Dismiss; any problem can be ignored for good', async ({ browser, fake }) => {
+  const { page } = await imported(browser);
+  const garage = await openFn(page, /garage/i);
+  const A = 'automation.fb_door_moved', K = 't_both|' + A;
+  await addAuto(page, fake, A, { alias: 'Garage: door moved', triggers: [{ trigger: 'state', entity_id: 'cover.garage_door', from: ['closed', 'open'] }], conditions: [], actions: [] });
+  await ws(page, { type: 'config/entity_registry/update', entity_id: A, labels: [garage] });
+  await el(page, (b) => b._store.changed('reg'));
+  const probs = () => el(page, (b) => ({ shown: (b._model.problems || []).map((p) => p.kind + '|' + p.ref), dis: (b._model.dismissed || []).map((p) => p.kind + '|' + p.ref), ign: (b._model.ignored || []).map((p) => p.kind + '|' + p.ref) }));
+  await until(() => el(page, (b, [k, l]) => { if (b._model && (b._model.problems || []).some((p) => p.kind + '|' + p.ref === k)) return true; b._open(l, true); return null; }, [K, garage]), 12000, 700);
+  await fbq(page, '.pchip').click();
+  await fbq(page, '.drawer .probs .prow').first().waitFor({ timeout: 5000 });
+  const row = await el(page, (b, k) => { const r = b._$.drawer.querySelector(`[data-k="${k}"]`).closest('.prow'); return { text: r.querySelector('.ptxt').textContent, acts: [...r.querySelectorAll('[data-act]')].map((x) => x.dataset.act) }; }, K);
+  check('0.11.1 a state trigger with From [closed, open] and no To is a warning that says why', /Garage: door moved \(automation\.fb_door_moved\) starts both ways: its trigger on Garage Door lists closed, open under From and has no To/.test(row.text), row);
+  check('0.11.1 ... with Dismiss and Ignore for good', row.acts.includes('pdis') && row.acts.includes('pdis-ever'), row);
+  // the sandbox says it when it happens, with Dismiss
+  await el(page, (b) => b._closeDrawer());
+  await fbq(page, '.tools [data-act="sandbox"]').click();
+  await fbq(page, '.modal [data-act="sbx-start"]').click({ timeout: 3000 }).catch(() => {});
+  await fbq(page, '.drawer .sbctl .sbent').waitFor({ timeout: 10000 });
+  const setDoor = async (v) => {
+    await fbq(page, '.drawer .sbent').selectOption('cover.garage_door');
+    await fbq(page, '.drawer .sbval-sel').selectOption(v);
+    await fbq(page, '.drawer [data-act="sbx-set"]').click();
+    await until(() => el(page, (b, x) => (b._sbx && !b._sbx.busy && b._sbx.eng.get('cover.garage_door').state === x) || null, v), 10000);
+  };
+  await setDoor('open');
+  const note = await until(() => el(page, (b, k) => { const x = b._$.drawer.querySelector(`.sbtl [data-act="sbx-pdis"][data-k="${k}"]`); return x ? x.closest('.dbrow').textContent : null; }, K), 5000);
+  check('0.11.1 the sandbox says it started on a change into a From state, with Dismiss', /door moved started on Garage Door changing to open\. Its trigger lists open under From/.test(note || ''), note);
+  await fbq(page, `.drawer [data-act="sbx-pdis"][data-k="${K}"]`).click();
+  const p1 = await until(async () => { const v = await probs(); return v.dis.includes(K) ? v : null; }, 5000);
+  check('0.11.1 Dismiss in the sandbox: the problem goes under Dismissed', !!p1 && !p1.shown.includes(K), p1);
+  check('0.11.1 ... and the note isn\'t shown any more', !(await el(page, (b, k) => !!b._$.drawer.querySelector(`.sbtl [data-k="${k}"]`), K)));
+  await setDoor('closed');
+  const again = await el(page, (b) => ({ fired: b._sbx.eng.log.filter((e) => e.kind === 'trigger' && e.key === 'automation.fb_door_moved').length, notes: b._$.drawer.querySelectorAll('.sbtl [data-act="sbx-pdis"]').length }));
+  check('0.11.1 ... nor said again when it fires again', again.fired === 2 && again.notes === 0, again);
+  await el(page, (b) => b._closeDrawer());
+  // ignore for good, from the dismissed list
+  await fbq(page, '.pdchip').click();
+  await fbq(page, `.drawer [data-act="pdis-ever"][data-k="${K}"]`).click();
+  const p2 = await until(async () => { const v = await probs(); return v.ign.includes(K) ? v : null; }, 5000);
+  check('0.11.1 Ignore for good: neither a problem nor dismissed', !!p2 && !p2.shown.includes(K) && !p2.dis.includes(K), p2);
+  const kept = await until(async () => { const d = ((await store(page)).layouts[garage] || {}).dismissed || []; const x = d.find((y) => y.k === K); return x && x.ever ? x : null; }, 5000);
+  check('0.11.1 ... kept with the function as ignored for good', !!kept, kept);
+  await el(page, (b) => b._openProblems());
+  const foot = await el(page, (b) => { const x = b._$.drawer.querySelector('.pother .pever'); return x ? x.textContent : null; });
+  check('0.11.1 the problems drawer says how many are ignored for good, with a way back', /1 ignored for good · Bring them back as dismissed/.test(foot || ''), foot);
+  // fixed and a day on: an ignored one isn't forgotten, as a dismissal would be
+  await el(page, (b, [l, k]) => { const d = b._data.layouts[l].dismissed.find((x) => x.k === k); d.gone = Date.now() - 30 * 3600 * 1000; }, [garage, K]);
+  fake.autos.fbfb_door_moved.triggers = [{ trigger: 'state', entity_id: 'cover.garage_door', from: 'closed', to: 'open' }];
+  await el(page, (b, l) => { b._configChanged(); return b._open(l, true); }, garage);
+  const still = await until(async () => { const d = ((await store(page)).layouts[garage] || {}).dismissed || []; const v = await probs(); return !v.ign.includes(K) && !v.shown.includes(K) ? d : null; }, 10000);
+  check('0.11.1 ... and when the problem goes, it stays ignored for good (never forgotten)', !!still && still.some((x) => x.k === K && x.ever), still);
+  // back as dismissed
+  fake.autos.fbfb_door_moved.triggers = [{ trigger: 'state', entity_id: 'cover.garage_door', from: ['closed', 'open'] }];
+  await el(page, (b, l) => { b._configChanged(); return b._open(l, true); }, garage);
+  await until(async () => (await probs()).ign.includes(K) || null, 10000);
+  await el(page, (b) => b._openProblems());
+  await fbq(page, '.drawer [data-act="pdis-unever"]').click();
+  const p3 = await until(async () => { const v = await probs(); return v.dis.includes(K) ? v : null; }, 5000);
+  check('0.11.1 Bring them back as dismissed: under Dismissed again', !!p3 && !p3.ign.includes(K), p3);
+  // the toast's Undo after Ignore for good puts it back where it was
+  await fbq(page, '.pdchip').click();
+  await fbq(page, `.drawer [data-act="pdis-ever"][data-k="${K}"]`).click();
+  await until(async () => (await probs()).ign.includes(K) || null, 5000);
+  await fbq(page, '.toast:not([hidden]) [data-act="toast-act"]').click();
+  const p4 = await until(async () => { const v = await probs(); return v.dis.includes(K) ? v : null; }, 5000);
+  check('0.11.1 Undo after Ignore for good: dismissed again, as it was', !!p4 && !p4.ign.includes(K), p4);
+  check('0.11.1 both ways and ignoring: no errors', page.logs.length === 0, page.logs);
+});
+
 pwTest.afterAll(() => done());

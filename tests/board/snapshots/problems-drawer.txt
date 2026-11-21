@@ -1,4 +1,4 @@
-style {58842 chars, #4e7a12c7}
+style {59256 chars, #17b87f0c}
 div.board.m-panel.pc
   aside.list
     div.lhead
@@ -491,4 +491,6 @@ Related, not in this function. Select it to add it."
                   ha-icon icon="mdi:pencil-outline"
                 button aria-label="Dismiss: cover.garage_door_gone doesn't exist: renamed or removed?" data-act="pdis" data-k="e_missing|cover.garage_door_gone" title="Stop counting this one: it leaves the count, the list and the board, and goes under Dismissed" | Dismiss
                   ha-icon icon="mdi:eye-off-outline"
+                button aria-label="Ignore for good: cover.garage_door_gone doesn't exist: renamed or removed?" data-act="pdis-ever" data-k="e_missing|cover.garage_door_gone" title="Never show this one again: not as a problem, and not under Dismissed, even if it goes away and comes back" | Ignore for good
+                  ha-icon icon="mdi:cancel"
   div.modal hidden

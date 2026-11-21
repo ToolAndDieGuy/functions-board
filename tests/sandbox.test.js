@@ -41,6 +41,26 @@ const kinds = (sb, k) => sb.log.filter((e) => e.kind === k);
 const st = (sb, id) => (sb.get(id) || {}).state;
 
 (async () => {
+  // ---- 0.11.1 a state trigger with From and no To: said when it fires on a change into a state it lists under From
+  {
+    const items = {
+      'automation.both': { triggers: [{ trigger: 'state', entity_id: 'binary_sensor.stove', from: ['off', 'on'] }], actions: [] },
+      'automation.meant': { triggers: [{ trigger: 'state', entity_id: 'binary_sensor.stove', from: ['off', 'on'], to: 'on' }], actions: [] },
+      'automation.from_off': { triggers: [{ trigger: 'state', entity_id: 'binary_sensor.stove', from: 'off' }], actions: [] },
+      'automation.any': { triggers: [{ trigger: 'state', entity_id: 'binary_sensor.stove' }], actions: [] },
+    };
+    const sb = make({ 'binary_sensor.stove': S('off') }, items);
+    await sb.start();
+    await sb.userSet('binary_sensor.stove', 'on');
+    const notes = () => sb.log.filter((e) => e.kind === 'note' && e.warn && /under From/.test(e.text)).map((e) => e.key);
+    check('0.11.1 from [off, on], off → on: said (on is listed under From)', JSON.stringify(notes()) === '["automation.both"]', sb.log.filter((e) => e.kind === 'note'));
+    await sb.userSet('binary_sensor.stove', 'off');
+    check('0.11.1 ... and on → off: said again; it fires both ways', JSON.stringify(notes()) === '["automation.both","automation.both"]', notes());
+    check('0.11.1 ... it names the change and what to do', sb.log.some((e) => e.kind === 'note' && /automation\.both started on binary_sensor\.stove changing to off\. Its trigger lists off under From and has no To, so any change away from off, on starts it, this one too\. If it should start on only one change, give the trigger a To\./.test(e.text)));
+    check('0.11.1 nothing said for From with a To, From alone that it fires on as written, or any change', !notes().some((k) => k !== 'automation.both'), notes());
+    check('0.11.1 the triggers all fired as Home Assistant would', kinds(sb, 'trigger').filter((e) => e.key === 'automation.both').length === 2 && kinds(sb, 'trigger').filter((e) => e.key === 'automation.from_off').length === 1);
+  }
+
   // ---- the garage: left open for 10 minutes, auto-close on → close it (a script), and notify
   {
     const sb = make({ 'cover.garage_door': S('closed'), 'input_boolean.auto_close': S('on'), 'automation.left_open': S('on'), 'script.close_garage': S('off') }, {

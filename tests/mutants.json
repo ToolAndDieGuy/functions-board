@@ -180,7 +180,7 @@
  {
   "name": "board: Bring back does nothing",
   "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "'pdis-back': (el) => { this._probDismiss(el.dataset.k, true); },",
+  "find": "'pdis-back': (el) => { this._probDismiss(el.dataset.k, 'back'); },",
   "replace": "'pdis-back': () => {},",
   "suite": "board-regress",
   "only": "0.9.0 dismissing",
@@ -1188,5 +1188,88 @@
   "suite": "board-regress",
   "only": "0.11.1",
   "expect": "over the device box: the call"
+ },
+ {
+  "name": "sandbox: no note on a trigger firing into a From state",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "&& trigger.from_state && to != null && from.includes(to)) {",
+  "replace": "&& trigger.from_state && to != null && from.includes(to) && false) {",
+  "suite": "sandbox",
+  "expect": "on is listed under From"
+ },
+ {
+  "name": "sandbox: the From note ignores To",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "if (this._plat(t) === 'state' && from.length && t.to == null && t.not_to == null",
+  "replace": "if (this._plat(t) === 'state' && from.length && t.not_to == null",
+  "suite": "sandbox",
+  "expect": "nothing said for From with a To"
+ },
+ {
+  "name": "problems: ignored for good is forgotten like a dismissal",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      if (d.ever) { out.push(d); return; }\n",
+  "replace": "",
+  "suite": "problems",
+  "expect": "never forgotten"
+ },
+ {
+  "name": "problems: ignored for good still shows",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "shown: problems.filter((p) => !off.has(probKey(p)) && !ever.has(probKey(p)))",
+  "replace": "shown: problems.filter((p) => !off.has(probKey(p)))",
+  "suite": "problems",
+  "expect": "ignored for good: neither shown"
+ },
+ {
+  "name": "problems: the layout drops ignored for good",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": ", d.ever ? { ever: true } : {}));",
+  "replace": "));",
+  "suite": "problems",
+  "expect": "the layout keeps ignored for good"
+ },
+ {
+  "name": "problems: one From state starts both ways",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "if (from.length >= 2 && !from.some((x) => TPL_RE.test(x)) && ents.length)",
+  "replace": "if (from.length >= 1 && !from.some((x) => TPL_RE.test(x)) && ents.length)",
+  "suite": "problems",
+  "expect": "one From state"
+ },
+ {
+  "name": "problems: both ways not reported",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "    for (const it of items) (it.both || []).forEach((b) => { const p = add('warn', 't_both', it.key, null); if (!p.ents) Object.assign(p, { ents: b.ents, from: b.from }); });\n",
+  "replace": "",
+  "suite": "problems",
+  "expect": "findProblems: one warning"
+ },
+ {
+  "name": "sandbox: a dismissed note is said again",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      const log = eng.log.filter((e) => !(e.pk && off.has(e.pk)));",
+  "replace": "      const log = eng.log;",
+  "suite": "board-regress",
+  "only": "0.11.1 a trigger that starts",
+  "expect": "the note isn't shown any more"
+ },
+ {
+  "name": "problems: Ignore for good does nothing",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "'pdis-ever': (el) => { this._probDismiss(el.dataset.k, 'ever'); },",
+  "replace": "'pdis-ever': () => {},",
+  "suite": "board-regress",
+  "only": "0.11.1 a trigger that starts",
+  "expect": "Ignore for good: neither a problem nor dismissed"
+ },
+ {
+  "name": "problems: Undo after Ignore for good brings it all the way back",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "this._probDismiss(k, was ? (was.ever ? 'ever' : 'off') : 'back')",
+  "replace": "this._probDismiss(k, 'back')",
+  "suite": "board-regress",
+  "only": "0.11.1 a trigger that starts",
+  "expect": "Undo after Ignore for good"
  }
 ]

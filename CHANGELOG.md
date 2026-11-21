@@ -14,6 +14,14 @@ it. When a step reaches a device's entities, or the lights of an area, it says o
 which of the entities, and with what ("climate.set_fan_mode → Thermostat Zone (fan_mode: On)"), or which of them
 changed to what.
 
+A state trigger that starts both ways is a new problem (amber). A trigger with From and no To starts on any change
+away from the states it lists, so `from: [off, on]` starts the automation when the stove turns on and again when it
+turns off. It's listed with the function's problems, and the sandbox's timeline says so when it happens, with Dismiss
+beside it, in case it's meant.
+
+Any problem can now be ignored for good. It leaves the count and isn't listed under Dismissed either, even if it goes
+away and comes back. The problems list says how many are ignored for good and can bring them back as dismissed.
+
 ## 0.11.0 (2026-11-20)
 
 Import finds more of the systems you've built, and lets you decide where one ends and the next begins.
