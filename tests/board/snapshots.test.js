@@ -82,6 +82,7 @@ function steady(text) {
     .replace(/\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*\b/g, '<day>')
     .replace(/\b\d+(\.\d+)?\s?(ms|s|sec|secs|seconds?|min|mins|minutes?|h|hrs?|hours?|d|days?|w|wks?|weeks?|mo|months?|y|yrs?|years?)( ago)?\b/g, '<dur>')
     .replace(/\b(just now|a moment ago|a few seconds ago|yesterday|last week|last month|last year)\b/g, '<dur>')
+    .replace(/\b1\d{12}\b/g, '<ms>')
     .replace(/\b[0-9a-f]{16,}\b/gi, '<id>')
     .replace(/\b[0-9A-Z]{26}\b/g, '<id>');
 }

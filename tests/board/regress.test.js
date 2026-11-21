@@ -1344,11 +1344,12 @@ test('0.11.1 the sandbox: what the automations read, with values either side of 
     const r = b._$.drawer, sel = r.querySelector('.sbent');
     sel.value = 'sensor.fb_co2'; sel.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
     const v = r.querySelector('.sbval-sel');
-    return { group: sel.querySelector('option[value="sensor.fb_co2"]').parentNode.label, picked: v.value, opts: [...v.options].map((o) => o.textContent), attr: r.querySelector('.sbattr').hidden };
+    const at = r.querySelector('.sbattr');
+    return { group: sel.querySelector('option[value="sensor.fb_co2"]').parentNode.label, picked: v.value, opts: [...v.options].map((o) => o.textContent), attr: at.hidden, attrs: [...at.options].map((o) => o.value), groups: at.querySelectorAll('optgroup').length };
   });
   check('0.11.1 Set: the CO2 sensor is under "Read by the automations"', co2.group === 'Read by the automations', co2);
   check('0.11.1 ... its values say why: 1101 above 1100 (picked) and 1100 at it', co2.picked === '1101' && co2.opts.includes('1101 · above 1100: Garage: CO2 high') && co2.opts.includes('1100 · at 1100, not past it: Garage: CO2 high'), co2);
-  check('0.11.1 ... and no attribute choice for it (only its state is read)', co2.attr === true, co2);
+  check('0.11.2 ... its attribute choice has its other attributes (none of them read, so no groups)', co2.attr === false && co2.groups === 0 && co2.attrs.join() === ',device_class,unit_of_measurement', co2);
   const fired = (k) => D((b, x) => b._sbx.eng.log.filter((e) => e.kind === 'trigger' && e.key === x).length, k);
   const settle = () => until(() => D((b) => (b._sbx && !b._sbx.busy) || null), 10000);
   await fbq(page, '.drawer [data-act="sbx-set"]').click(); await settle();
@@ -1394,6 +1395,111 @@ test('0.11.1 the sandbox: what the automations read, with values either side of 
   await fbq(page, '.drawer [data-act="sbx-jump"]').click(); await settle();
   check('0.11.1 Jump to, typed: +90 min', (await D((b) => b._sbx.eng.now)) - before === 90 * 60000);
   check('0.11.1 the new sandbox controls: no errors', page.logs.length === 0, page.logs);
+});
+
+test('0.11.2 the sandbox: summaries, variables, undo and again, states, step-through, breakpoints, how a device answers, what if, the clock at speed, the explorer and coverage', async ({ browser, fake }) => {
+  const { page } = await imported(browser);
+  await openFn(page, /garage/i);
+  await fbq(page, '.tools [data-act="sandbox"]').click();
+  await fbq(page, '.modal [data-act="sbx-start"]').click({ timeout: 3000 }).catch(() => {});
+  await fbq(page, '.drawer .sbctl .sbent').waitFor({ timeout: 10000 });
+  const D = (fn, arg) => el(page, fn, arg);
+  const settle = () => until(() => D((b) => (b._sbx && !b._sbx.busy) || null), 10000);
+  const open = async () => { await D((b) => { const s = b._$.drawer.querySelector('.sbent'); s.value = 'cover.garage_door'; s.dispatchEvent(new Event('change', { bubbles: true, composed: true })); const v = b._$.drawer.querySelector('.sbval-sel'); v.value = 'open'; v.dispatchEvent(new Event('change', { bubbles: true, composed: true })); }); await fbq(page, '.drawer [data-act="sbx-set"]').click(); await settle(); };
+  await open();
+  // a sentence of what came of it, before its rows
+  const sum = await D((b) => { const x = b._$.drawer.querySelector('.sbtl .sbsum'); return x ? x.textContent : null; });
+  check('0.11.2 each thing you do starts with a sentence of what came of it', /Started 2 automations: Garage: start open timer/.test(sum || '') && /changed Garage open timer → active/.test(sum || '') && /next: .*at/.test(sum || ''), sum);
+  // variables at a row
+  const vars = await D((b) => { const row = [...b._$.drawer.querySelectorAll('.sbtl .dbrow.k-call')][0]; row.click(); const p = b._$.drawer.querySelector('.sbvp'); return { hidden: p.hidden, text: p.textContent }; });
+  check('0.11.2 picking a row shows its variables: the trigger that started the run', !vars.hidden && /"to_state"/.test(vars.text) && /"open"/.test(vars.text), vars);
+  // Again, and Undo
+  const again = await D((b) => [...b._$.drawer.querySelectorAll('.sbrec [data-act="sbx-again"]')].map((x) => x.textContent));
+  check('0.11.2 Again lists what you did', again.length === 1 && /Garage Door/.test(again[0]), again);
+  await fbq(page, '.drawer [data-act="sbx-undo"]').click(); await settle();
+  const undone = await D((b) => ({ st: b._sbx.eng.get('cover.garage_door').state, steps: b._sbx.rec.steps.length, rows: b._sbx.eng.log.length }));
+  check('0.11.2 Undo: back to the start, the door as it was, no steps kept', undone.st !== 'open' && undone.steps === 0, undone);
+  await open();
+  await fbq(page, '.drawer [data-act="sbx-again"]').click(); await settle();
+  check('0.11.2 Again with nothing to change says so (the door is already open)', (await D((b) => b._sbx.eng.log.some((e) => e.kind === 'note' && /already/.test(e.text)))));
+  // the flow bar: back to before this
+  await D((b) => b._sbxRewind(0)); await settle();
+  await open();
+  check('0.11.2 the flow bar offers Back to before this', await D((b) => !!b._$.litbar.querySelector('[data-act="flow-undo"]')));
+  await D((b) => b._$.litbar.querySelector('[data-act="flow-undo"]').click()); await settle();
+  check('0.11.2 ... which undoes it', (await D((b) => b._sbx.rec.steps.length)) === 0);
+  // the states tab
+  await open();
+  await fbq(page, '.drawer .sbtabs [data-tab="st"]').click();
+  const sts = await D((b) => { const r = b._$.drawer.querySelector('.sbst'); const rows = [...r.querySelectorAll('.sbsr')]; return { hidden: r.hidden, changed: rows.filter((x) => x.classList.contains('ch')).map((x) => x.dataset.key), first: rows.slice(0, rows.filter((x) => x.classList.contains('ch')).length).every((x) => x.classList.contains('ch')), all: rows.length }; });
+  check('0.11.2 States: every entity, the ones changed in the sandbox marked and first', !sts.hidden && sts.first && sts.changed.includes('cover.garage_door') && sts.changed.includes('timer.garage_open') && sts.all > sts.changed.length, sts);
+  await D((b) => { const x = b._$.drawer.querySelector('.sbst [data-act="sbx-st-reset"][data-k="cover.garage_door"]'); x.click(); }); await settle();
+  check('0.11.2 Put back: the door as it is in your home', await D((b) => b._sbx.eng.get('cover.garage_door').state === b._sbx.eng.real['cover.garage_door'].state));
+  await fbq(page, '.drawer .sbtabs [data-tab="tl"]').click();
+  // step-through
+  await D((b) => b._sbxRewind(0)); await settle();
+  await D((b) => { const c = b._$.drawer.querySelector('.sbstep'); c.checked = true; c.dispatchEvent(new Event('change', { bubbles: true, composed: true })); });
+  await open();
+  const p1 = await D((b) => ({ n: b._sbx.eng.paused.size, q: b._$.drawer.querySelector('.sbask .sbpause') ? b._$.drawer.querySelector('.sbask .sbpause').textContent : null, timer: b._sbx.eng.get('timer.garage_open').state }));
+  check('0.11.2 Step through: both runs pause before their action, each shown with Step and Continue', p1.n === 2 && /Paused before: timer.start/.test(p1.q || '') && p1.timer !== 'active', p1);
+  await fbq(page, '.drawer .sbpause [data-act="sbx-stepone"]').first().click();
+  await until(() => D((b) => (b._sbx.eng.get('timer.garage_open').state === 'active' && b._sbx.eng.paused.size === 1) || null), 5000);
+  check('0.11.2 Step: one goes on (the timer starts), the other still waits', true);
+  await fbq(page, '.drawer [data-act="sbx-continue"]').first().click(); await settle();
+  check('0.11.2 Continue: none waits', (await D((b) => b._sbx.eng.paused.size)) === 0);
+  await D((b) => { const c = b._$.drawer.querySelector('.sbstep'); c.checked = false; c.dispatchEvent(new Event('change', { bubbles: true, composed: true })); });
+  // a breakpoint on one automation, from its box
+  await D((b) => b._sbxRewind(0)); await settle();
+  await D((b) => { b._sel = 'automation.garage_start_open_timer'; b._renderNodebar(); });
+  await D((b) => b._$.nodebar.querySelector('[data-act="sbx-break"]').click());
+  await open();
+  check('0.11.2 Pause here on a box: that automation pauses', (await D((b) => [b._sbx.eng.paused.size, b._sbx.eng.breaks.has('automation.garage_start_open_timer')])).join() === '1,true');
+  await fbq(page, '.drawer [data-act="sbx-continue"]').click(); await settle();
+  await D((b) => { b._sbx.eng.breaks.clear(); });
+  // how a device answers
+  await D((b) => b._sbxRewind(0)); await settle();
+  await D((b) => { const r = b._$.drawer; r.querySelector('.sbdev').value = 'cover.garage_door'; r.querySelector('.sbhow').value = 'slow'; });
+  await fbq(page, '.drawer [data-act="sbx-behave"]').click();
+  await D((b) => b._sbxStep({ op: 'run', id: 'script.close_garage', conds: true, ti: null })); await settle();
+  const slow = await D((b) => ({ st: b._sbx.eng.get('cover.garage_door').state, due: b._sbx.eng.pending().map((x) => x.label), rec: b._sbx.rec.steps.map((x) => x.op) }));
+  check('0.11.2 a door set to answer slowly is closing first, its end due, and the set-up kept as a step', /clos/.test(slow.st) && slow.due.some((x) => /Garage Door answers/.test(x)) && slow.rec[0] === 'behave', slow);
+  // what if
+  await D((b) => b._sbxRewind(0)); await settle();
+  await D((b) => { const s = b._$.drawer.querySelector('.sbwhat'); s.value = 'cut'; });
+  await fbq(page, '.drawer [data-act="sbx-whatif"]').click(); await settle();
+  const cut = await D((b) => ({ door: b._sbx.eng.get('cover.garage_door').state, back: [...b._$.drawer.querySelector('.sbwhat').options].some((o) => o.value === 'back') }));
+  check('0.11.2 What if a power cut: what the automations read goes unavailable, and The power comes back is offered', cut.door === 'unavailable' && cut.back, cut);
+  await D((b) => { const s = b._$.drawer.querySelector('.sbwhat'); s.value = 'back'; });
+  await fbq(page, '.drawer [data-act="sbx-whatif"]').click(); await settle();
+  check('0.11.2 ... and back', await D((b) => b._sbx.eng.get('cover.garage_door').state !== 'unavailable'));
+  // the clock at speed
+  const t0 = await D((b) => b._sbx.eng.now);
+  await D((b) => { const s = b._$.drawer.querySelector('.sbspeed'); s.value = '60'; s.dispatchEvent(new Event('change', { bubbles: true, composed: true })); });
+  await page.waitForTimeout(2300);
+  await D((b) => { const s = b._$.drawer.querySelector('.sbspeed'); s.value = '0'; s.dispatchEvent(new Event('change', { bubbles: true, composed: true })); });
+  await settle();
+  const ran = (await D((b) => b._sbx.eng.now)) - t0;
+  check('0.11.2 the clock at 60×: a minute a second', ran >= 60000 && ran <= 180000 && (await D((b) => b._sbx.rec.steps.filter((x) => x.op === 'advance').length)) === 1, ran);
+  // the explorer
+  await D((b) => b._sbxRewind(0)); await settle();
+  await fbq(page, '.drawer .sbtabs [data-tab="ex"]').click();
+  await fbq(page, '.drawer .sbex [data-act="sbx-explore"]').click();
+  await until(() => D((b) => (b._sbx.ex && !b._sbx.ex.running) || null), 60000);
+  const ex = await D((b) => ({ runs: b._sbx.ex.runs.length, text: b._$.drawer.querySelector('.sbex').textContent, opened: b._sbx.ex.runs.find((r) => r.step.id === 'cover.garage_door' && r.step.state === 'open') }));
+  check('0.11.2 Explore: each thing tried from the start, opening the door among them, starting the timer', ex.runs > 3 && !!ex.opened && ex.opened.started.includes('automation.garage_start_open_timer'), ex);
+  const i = await D((b) => b._sbx.ex.runs.findIndex((r) => r.step.id === 'cover.garage_door' && r.step.state === 'open'));
+  await D((b, n) => b._$.drawer.querySelector(`.sbex [data-act="sbx-ex-show"][data-i="${n}"]`).click(), i);
+  await until(() => D((b) => (b._sbx.tab === 'tl' && !b._sbx.busy && b._sbx.rec.steps.length >= 1) || null), 15000);
+  check('0.11.2 ... Show plays one in the sandbox: the door open, and the clock run on as it went', await D((b) => b._sbx.rec.steps[0].id === 'cover.garage_door' && b._sbx.eng.log.some((e) => e.kind === 'trigger' && e.key === 'automation.garage_left_open')));
+  // coverage: what you did here
+  await fbq(page, '.drawer .sbtabs [data-tab="cov"]').click();
+  await D((b) => { const c = b._$.drawer.querySelector('.sbcovmine'); c.checked = true; c.dispatchEvent(new Event('change', { bubbles: true, composed: true })); });
+  await fbq(page, '.drawer [data-act="sbx-cov-run"]').click();
+  await until(() => D((b) => (b._sbx.cov && !b._sbx.cov.running) || null), 15000);
+  const cov = await D((b) => { const r = b._$.drawer.querySelector('.sbcov'); return { sum: r.querySelector('p b') ? r.querySelector('p b').textContent : '', started: [...r.querySelectorAll('.sbcv[data-key="automation.garage_start_open_timer"] li')].map((x) => x.className), uncov: [...b._$.board.querySelectorAll('.node.uncov')].map((x) => x.dataset.key) }; });
+  check('0.11.2 Coverage: what you did reaches the open-timer automation fully', cov.started.length > 0 && cov.started.every((c) => c === 'cv-ok') && /reached fully/.test(cov.sum), cov);
+  check('0.11.2 ... and nothing on the board is marked unreached that was reached', !cov.uncov.includes('automation.garage_start_open_timer'), cov.uncov);
+  check('0.11.2 the sandbox\'s new tools: no errors', page.logs.length === 0, page.logs);
 });
 
 pwTest.afterAll(() => done());

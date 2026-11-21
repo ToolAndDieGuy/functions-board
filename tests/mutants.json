@@ -1381,7 +1381,7 @@
  {
   "name": "sandbox: scenes set nothing",
   "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "            if (st != null) await this.setState(id, String(st), A, cid);\n",
+  "find": "            if (st != null) await this._answer(id, String(st), A, cid);\n",
   "replace": "",
   "suite": "sandbox",
   "expect": "a scene sets what its config holds"
@@ -1422,7 +1422,7 @@
  {
   "name": "sandbox: no attribute choice",
   "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "      sel.hidden = !attrs.length;",
+  "find": "      sel.hidden = !attrs.length && !rest.length;",
   "replace": "      sel.hidden = true;",
   "suite": "board-regress",
   "expect": "an attribute a trigger reads",
@@ -1436,5 +1436,147 @@
   "suite": "board-regress",
   "expect": "Jump to, typed",
   "only": "0.11.1 the sandbox: what"
+ },
+ {
+  "name": "sandbox: never pauses",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      if (!this.stepping && !this.breaks.has(run.item.id)) return;\n      if (run.cancelled) throw SBX_CANCEL;",
+  "replace": "      return;",
+  "suite": "sandbox",
+  "expect": "stepping: the run waits"
+ },
+ {
+  "name": "sandbox: going on isn't counted as work",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "this.paused.delete(lid); this.busy++; p.res(); return true; }",
+  "replace": "this.paused.delete(lid); p.res(); return true; }",
+  "suite": "sandbox",
+  "expect": "Step: the"
+ },
+ {
+  "name": "sandbox: a slow device has no moving state",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      if (mid) await this.setState(id, mid, {}, cid);\n",
+  "replace": "",
+  "suite": "sandbox",
+  "expect": "a slow cover is opening first"
+ },
+ {
+  "name": "sandbox: a lock that fails doesn't jam",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "        if (id.startsWith('lock.')) await this.setState(id, 'jammed', {}, cid);\n",
+  "replace": "",
+  "suite": "sandbox",
+  "expect": "a lock that fails jams"
+ },
+ {
+  "name": "sandbox: calls ignore how a device answers",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "        await this._answer(id, eff[0] == null ? (this.get(id) || {}).state : eff[0], eff[1], cid);",
+  "replace": "        await this.setState(id, eff[0] == null ? (this.get(id) || {}).state : eff[0], eff[1], cid);",
+  "suite": "sandbox",
+  "expect": "a light set to go unavailable"
+ },
+ {
+  "name": "sandbox: calls keep no variables",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "ents: dom === 'script' && !['turn_on', 'turn_off', 'toggle'].includes(s) ? ['script.' + s] : ents, vars: this._snap(run.vars) });",
+  "replace": "ents: dom === 'script' && !['turn_on', 'turn_off', 'toggle'].includes(s) ? ['script.' + s] : ents });",
+  "suite": "sandbox",
+  "expect": "a call keeps the variables"
+ },
+ {
+  "name": "coverage: a choose option taken isn't marked",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "if (r.ok) { if (opt && typeof opt === 'object') this.hit.add(opt); return this._seq(opt.sequence, run); }",
+  "replace": "if (r.ok) { return this._seq(opt.sequence, run); }",
+  "suite": "sandbox",
+  "expect": "the choose option taken"
+ },
+ {
+  "name": "coverage: every condition seen true",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "const x = this.cres.get(c) || { t: false, f: false }; if (r.ok) x.t = true; else x.f = true;",
+  "replace": "const x = this.cres.get(c) || { t: false, f: false }; x.t = true;",
+  "suite": "sandbox",
+  "expect": "never true is found"
+ },
+ {
+  "name": "coverage: triggers never marked fired",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "push(`t/${i}`, 'trigger', t, { hit: engs.some((e) => e.fired.has(id + '#' + i)) });",
+  "replace": "push(`t/${i}`, 'trigger', t, { hit: false });",
+  "suite": "sandbox",
+  "expect": "the door trigger fired"
+ },
+ {
+  "name": "explorer: no fights",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "if (a.id === b.id && a.by && b.by && a.by !== b.by && a.to !== b.to &&",
+  "replace": "if (false &&",
+  "suite": "sandbox",
+  "expect": "fight over the light"
+ },
+ {
+  "name": "explorer: a day passing not tried",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "    const out = [{ step: { op: 'advance', ms: 864e5 }, what: T('sbx_x_day') }];",
+  "replace": "    const out = [];",
+  "suite": "sandbox",
+  "expect": "a day passing is tried"
+ },
+ {
+  "name": "sandbox: no sentence of what came of it",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      if (g.rec.steps.length === step0 && step0 > 0 && g.lastAdv === g.rec.steps[step0 - 1]) act.step0 = step0 - 1;\n      act.sum = this._sbxSum(act);",
+  "replace": "      if (g.rec.steps.length === step0 && step0 > 0 && g.lastAdv === g.rec.steps[step0 - 1]) act.step0 = step0 - 1;",
+  "suite": "board-regress",
+  "expect": "starts with a sentence",
+  "only": "0.11.2 the sandbox: summaries"
+ },
+ {
+  "name": "sandbox: Undo keeps every step",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "const steps = g.rec.steps.slice(0, Math.max(0, k)),",
+  "replace": "const steps = g.rec.steps.slice(0),",
+  "suite": "board-regress",
+  "expect": "Undo: back to the start",
+  "only": "0.11.2 the sandbox: summaries"
+ },
+ {
+  "name": "sandbox: changed states not first",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": ".sort((a, b) => (changed(b) - changed(a)) || nm(a).localeCompare(nm(b)));",
+  "replace": ".sort((a, b) => nm(a).localeCompare(nm(b)));",
+  "suite": "board-regress",
+  "expect": "marked and first",
+  "only": "0.11.2 the sandbox: summaries"
+ },
+ {
+  "name": "sandbox: the clock at speed moves a second a second",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "this._sbxStep({ op: 'advance', ms: 1000 * g.speed });",
+  "replace": "this._sbxStep({ op: 'advance', ms: 1000 });",
+  "suite": "board-regress",
+  "expect": "a minute a second",
+  "only": "0.11.2 the sandbox: summaries"
+ },
+ {
+  "name": "sandbox: a power cut cuts nothing",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "g.cut.set(id, eng.get(id).state); steps.push({ op: 'set', id, state: 'unavailable' });",
+  "replace": "g.cut.set(id, eng.get(id).state);",
+  "suite": "board-regress",
+  "expect": "power cut",
+  "only": "0.11.2 the sandbox: summaries"
+ },
+ {
+  "name": "sandbox: Pause here does nothing",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "const br = this._sbx.eng.breaks; if (br.has(k)) br.delete(k); else br.add(k);",
+  "replace": "const br = this._sbx.eng.breaks; br.delete(k);",
+  "suite": "board-regress",
+  "expect": "Pause here on a box",
+  "only": "0.11.2 the sandbox: summaries"
  }
 ]

@@ -587,4 +587,88 @@ const st = (sb, id) => (sb.get(id) || {}).state;
     check('0.11.1 ... finished too, so the timer.finished per-entity trigger fires', sb.get('timer.t').attributes.last_transition === 'finished' && st(sb, 'light.c') === 'on');
   }
 
+  // ---- 0.11.2 variables at each step, step-through and breakpoints
+  {
+    const sb = make({ 'binary_sensor.door': S('off'), 'light.l': S('off'), 'light.m': S('off') }, {
+      'automation.door': { triggers: [{ trigger: 'state', entity_id: 'binary_sensor.door', to: 'on', id: 'opened' }], conditions: [{ condition: 'state', entity_id: 'light.l', state: 'off' }],
+        actions: [{ variables: { who: 'door' } }, { action: 'light.turn_on', target: { entity_id: 'light.l' } }, { action: 'light.turn_on', target: { entity_id: 'light.m' } }] },
+    });
+    await sb.start();
+    await sb.userSet('binary_sensor.door', 'on');
+    const call = sb.log.find((e) => e.kind === 'call' && e.ents.includes('light.l'));
+    check('0.11.2 a call keeps the variables of its run: the trigger and what the run set', !!call && !!call.vars && !!call.vars.trigger && call.vars.trigger.id === 'opened' && call.vars.trigger.to_state.state === 'on' && call.vars.who === 'door', call && call.vars);
+    check('0.11.2 ... the trigger entry its trigger, the condition its variables', !!kinds(sb, 'trigger')[0].vars.trigger && !!kinds(sb, 'cond')[0].vars, kinds(sb, 'cond'));
+    // stepping: the run waits before each condition and action
+    const sb2 = make({ 'binary_sensor.door': S('off'), 'light.l': S('off'), 'light.m': S('off') }, {
+      'automation.door': { triggers: [{ trigger: 'state', entity_id: 'binary_sensor.door', to: 'on' }], conditions: [{ condition: 'state', entity_id: 'light.l', state: 'off' }],
+        actions: [{ action: 'light.turn_on', target: { entity_id: 'light.l' } }, { action: 'light.turn_on', target: { entity_id: 'light.m' } }] },
+    });
+    await sb2.start();
+    sb2.stepping = true;
+    await sb2.userSet('binary_sensor.door', 'on');
+    const pauses = () => sb2.log.filter((e) => e.kind === 'pause');
+    check('0.11.2 stepping: the run waits before its condition, nothing done yet', pauses().length === 1 && /condition/.test(pauses()[0].text) && st(sb2, 'light.l') === 'off' && sb2.paused.size === 1, pauses());
+    sb2.resume([...sb2.paused.keys()][0]); await sb2.settle();
+    check('0.11.2 Step: the condition, then a wait before the first action', pauses().length === 2 && kinds(sb2, 'cond').length === 1 && st(sb2, 'light.l') === 'off');
+    sb2.resume([...sb2.paused.keys()][0]); await sb2.settle();
+    check('0.11.2 Step: the first light on, waiting before the second', st(sb2, 'light.l') === 'on' && st(sb2, 'light.m') === 'off' && sb2.paused.size === 1);
+    sb2.stepping = false; sb2.resumeAll(); await sb2.settle();
+    check('0.11.2 Continue: the rest runs', st(sb2, 'light.m') === 'on' && sb2.paused.size === 0 && kinds(sb2, 'run')[0].outcome === 'finished');
+    // a breakpoint on one automation stops only it
+    const sb3 = make({ 'binary_sensor.door': S('off'), 'light.l': S('off'), 'light.m': S('off') }, {
+      'automation.a': { triggers: [{ trigger: 'state', entity_id: 'binary_sensor.door', to: 'on' }], actions: [{ action: 'light.turn_on', target: { entity_id: 'light.l' } }] },
+      'automation.b': { triggers: [{ trigger: 'state', entity_id: 'binary_sensor.door', to: 'on' }], actions: [{ action: 'light.turn_on', target: { entity_id: 'light.m' } }] },
+    });
+    await sb3.start();
+    sb3.breaks.add('automation.b');
+    await sb3.userSet('binary_sensor.door', 'on');
+    check('0.11.2 a breakpoint stops its automation only', st(sb3, 'light.l') === 'on' && st(sb3, 'light.m') === 'off' && sb3.paused.size === 1);
+    sb3.stopAll(); await sb3.settle();
+    check('0.11.2 a paused run stopped lets go of its pause', sb3.paused.size === 0 && kinds(sb3, 'run').some((e) => e.key === 'automation.b' && e.outcome === 'cancelled'), kinds(sb3, 'run'));
+  }
+
+  // ---- 0.11.2 how devices answer: slowly (moving first), not at all, unavailable
+  {
+    const sb = make({ 'binary_sensor.btn': S('off'), 'cover.g': S('closed'), 'lock.f': S('unlocked'), 'light.x': S('off') }, {
+      'automation.go': { triggers: [{ trigger: 'state', entity_id: 'binary_sensor.btn', to: 'on' }], actions: [{ action: 'cover.open_cover', target: { entity_id: 'cover.g' } }, { action: 'lock.lock', target: { entity_id: 'lock.f' } }, { action: 'light.turn_on', target: { entity_id: 'light.x' } }] },
+    });
+    await sb.start();
+    sb.setBehave('cover.g', 'slow', 15000); sb.setBehave('lock.f', 'fails'); sb.setBehave('light.x', 'unavailable');
+    await sb.userSet('binary_sensor.btn', 'on');
+    check('0.11.2 a slow cover is opening first', st(sb, 'cover.g') === 'opening' && sb.pending().some((x) => /answers/.test(x.label)));
+    check('0.11.2 a lock that fails jams, and the timeline says so', st(sb, 'lock.f') === 'jammed' && sb.log.some((e) => e.kind === 'note' && e.warn && /didn't answer/.test(e.text)));
+    check('0.11.2 a light set to go unavailable does', st(sb, 'light.x') === 'unavailable');
+    await sb.advance(15000);
+    check('0.11.2 ... and the cover is open 15 s later', st(sb, 'cover.g') === 'open');
+    check('0.11.2 checks keep how a device answers', JSON.stringify(lib.cleanCheck({ id: 'x', at: 1, steps: [{ op: 'behave', id: 'cover.g', how: 'slow', ms: 15000 }, { op: 'behave', id: 'cover.g', how: 'weird' }], expect: [{ k: 'state', id: 'cover.g', state: 'open' }] }).steps) === '[{"op":"behave","id":"cover.g","how":"slow","ms":15000}]');
+  }
+
+  // ---- 0.11.2 coverage and the explorer
+  {
+    const items = {
+      'automation.door': { triggers: [{ trigger: 'state', entity_id: 'binary_sensor.door', to: 'on' }, { trigger: 'time', at: '23:00:00' }],
+        actions: [{ choose: [{ conditions: [{ condition: 'state', entity_id: 'sun.sun', state: 'below_horizon' }], sequence: [{ action: 'light.turn_on', target: { entity_id: 'light.l' } }] }], default: [{ action: 'light.turn_off', target: { entity_id: 'light.l' } }] }] },
+      'automation.fight': { triggers: [{ trigger: 'state', entity_id: 'light.l', to: 'on' }], actions: [{ action: 'light.turn_off', target: { entity_id: 'light.l' } }] },
+      'automation.never': { triggers: [{ trigger: 'state', entity_id: 'input_boolean.x', to: 'on' }], conditions: [{ condition: 'state', entity_id: 'input_boolean.y', state: 'on' }], actions: [] },
+      'automation.unknown': { triggers: [{ trigger: 'state', entity_id: 'binary_sensor.btn', to: 'on' }], actions: [{ action: 'vacuum.weird_thing', target: { entity_id: 'vacuum.v' } }] },
+    };
+    const states = { 'binary_sensor.door': S('off'), 'binary_sensor.btn': S('off'), 'light.l': S('off'), 'sun.sun': S('below_horizon'), 'input_boolean.x': S('off'), 'input_boolean.y': S('off'), 'vacuum.v': S('docked') };
+    const sb = make(states, items);
+    await sb.start();
+    await sb.userSet('binary_sensor.door', 'on');
+    const cov = lib.sbxCoverage([sb], Object.entries(items).map(([id, cfg]) => ({ id, cfg: sb.items.get(id).cfg })), (k) => k);
+    const at = (id, path) => cov.find((x) => x.id === id && x.path === path) || {};
+    check('0.11.2 coverage: the door trigger fired, the 23:00 one didn\'t', at('automation.door', 't/0').hit === true && at('automation.door', 't/1').hit === false, cov.filter((x) => x.id === 'automation.door'));
+    check('0.11.2 ... the choose option taken, its condition seen true only, the default not taken', at('automation.door', 'a/0/choose/0').hit === true && at('automation.door', 'a/0/choose/0/if/0').t === true && at('automation.door', 'a/0/choose/0/if/0').f === false && at('automation.door', 'a/0/default').hit === false);
+    // the explorer: each thing on its own, from the same start
+    const mk = () => make(states, items);
+    const ex = await lib.sbxExplore(mk, {});
+    const fl = (k) => ex.flags.filter((x) => x.kind === k);
+    check('0.11.2 explorer: a day passing is tried, and each value Set offers', ex.runs[0].what === 'A day passes, nothing else done' && ex.runs.some((r) => r.step.op === 'set' && r.step.id === 'binary_sensor.door' && r.step.state === 'on'), ex.runs.map((r) => r.what));
+    check('0.11.2 ... the 23:00 trigger is reached by the day passing', ex.runs[0].started.includes('automation.door'), ex.runs[0]);
+    check('0.11.2 ... an automation that turns off what another turns on is a fight over the light', fl('fight').some((x) => x.id === 'light.l'), ex.flags);
+    check('0.11.2 ... one whose condition is never true is found, and so is a call it can\'t model', fl('cond_false').some((x) => x.id === 'automation.never') && fl('unknown').some((x) => x.svc === 'vacuum.weird_thing'), ex.flags);
+    check('0.11.2 ... nothing claims "never started" for one that a value starts', !fl('never').some((x) => x.id === 'automation.never'), fl('never'));
+  }
+
 })().catch((e) => check('the sandbox tests ran to the end', false, String(e && e.stack || e)));
