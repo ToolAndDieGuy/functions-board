@@ -324,7 +324,7 @@ const st = (sb, id) => (sb.get(id) || {}).state;
           { conditions: [{ condition: 'trigger', id: 'motion' }, "{{ trigger.entity_id == 'binary_sensor.motion' }}"], sequence: [{ action: 'light.turn_on', target: { entity_id: 'light.m' } }] }] }] },
     }, { o: { tpl: async (t, v) => ({ ok: true, value: v.trigger && v.trigger.entity_id === 'binary_sensor.motion', partly: [] }) } });
     await sb.start();
-    check('a zone trigger is named as one the sandbox doesn\'t follow', sb.log.some((e) => e.kind === 'note' && /zone/.test(e.text)));
+    check('0.11.1 a zone trigger is followed now: not named as one the sandbox doesn\'t follow', !sb.log.some((e) => e.kind === 'note' && /zone/.test(e.text)));
     await sb.userRun('automation.r', true, 0);
     check('run as if trigger 1 (zone, id home) fired: its trigger condition passes', st(sb, 'light.l') === 'on' && st(sb, 'light.m') === 'off');
     await sb.userRun('automation.r', true, 1);
@@ -424,6 +424,167 @@ const st = (sb, id) => (sb.get(id) || {}).state;
     check('checks: nothing to replay or nothing expected isn\'t a check', cleanCheck({ id: 'x', steps: [], expect: [{ k: 'ran', id: 'a.b' }] }) === null && cleanCheck({ id: 'x', steps: [{ op: 'next' }], expect: [] }) === null);
     check('checks: it keeps which automations and scripts took part, and nothing else in that list', JSON.stringify(cleanCheck({ id: 'x', items: ['automation.a', 'script.b', 'light.c', 5, 'automation.BAD id'], steps: [{ op: 'next' }], expect: [{ k: 'ran', id: 'automation.a' }] }).items) === '["automation.a","script.b"]');
     check('checks: steps and expectations it doesn\'t know are dropped', cleanCheck({ id: 'x', steps: [{ op: 'next' }, { op: 'shell', cmd: 'rm' }], expect: [{ k: 'ran', id: 'a.b' }, { k: 'eval', id: 'x' }] }).steps.length === 1);
+  }
+
+  // ---- 0.11.1 device triggers, conditions and actions on an entity: followed as the state ones they stand for
+  {
+    const reg = { 'aa11': 'binary_sensor.hall_motion', 'bb22': 'light.hall', 'cc33': 'sensor.hall_temp' };
+    const sb = make({ 'binary_sensor.hall_motion': S('off'), 'light.hall': S('off'), 'sensor.hall_temp': S('20'), 'light.porch': S('off') }, {
+      'automation.dev': { triggers: [{ trigger: 'device', device_id: 'd1', domain: 'binary_sensor', entity_id: 'aa11', type: 'motion', id: 'move' }, { trigger: 'device', device_id: 'd1', domain: 'sensor', entity_id: 'cc33', type: 'temperature', above: 25, id: 'hot' }],
+        conditions: [{ condition: 'device', device_id: 'd1', domain: 'light', entity_id: 'bb22', type: 'is_off' }],
+        actions: [{ device_id: 'd1', domain: 'light', entity_id: 'bb22', type: 'turn_on' }] },
+      'automation.after': { triggers: [{ trigger: 'device', device_id: 'd1', domain: 'binary_sensor', entity_id: 'aa11', type: 'no_motion', for: { minutes: 2 } }], actions: [{ action: 'light.turn_on', target: { entity_id: 'light.porch' } }] },
+    }, { o: { entityOf: (x) => reg[x] || null } });
+    await sb.start();
+    check('0.11.1 entity device triggers are followed: not named as ones the sandbox doesn\'t follow', !sb.log.some((e) => e.kind === 'note' && /device/.test(e.text)), sb.log.filter((e) => e.kind === 'note'));
+    await sb.userSet('binary_sensor.hall_motion', 'on');
+    check('0.11.1 a binary sensor\'s device trigger "motion" fires on it turning on (registry id → entity)', kinds(sb, 'trigger').some((e) => e.key === 'automation.dev'));
+    check('0.11.1 ... its device condition (light is off) passes without asking you, and its device action turns the light on', st(sb, 'light.hall') === 'on' && sb.asks.length === 0, sb.asks);
+    await sb.userSet('binary_sensor.hall_motion', 'off');
+    check('0.11.1 "no motion" for 2 minutes waits', st(sb, 'light.porch') === 'off');
+    await sb.advance(2 * MIN);
+    check('0.11.1 ... and fires after them', st(sb, 'light.porch') === 'on');
+    await sb.userSet('light.hall', 'off');
+    await sb.userSet('sensor.hall_temp', '26');
+    check('0.11.1 a sensor\'s device trigger with above: a numeric state trigger', kinds(sb, 'trigger').filter((e) => e.key === 'automation.dev').length === 2);
+    const lib2 = require('./lib/board-lib');
+    check('0.11.1 binary sensor types: no_/not_ are off, locked is off, not_locked on', lib2.sbxBinOn('no_motion') === 'off' && lib2.sbxBinOn('not_opened') === 'off' && lib2.sbxBinOn('opened') === 'on' && lib2.sbxBinOn('locked') === 'off' && lib2.sbxBinOn('not_locked') === 'on' && lib2.sbxBinOn('is_bat_low') === 'on');
+    check('0.11.1 a device trigger with no entity (an integration\'s own button) is left as it is', lib2.sbxDevTrig({ trigger: 'device', device_id: 'z', domain: 'zha', type: 'remote_button_short_press', subtype: 'turn_on' }, () => null) === null);
+  }
+
+  // ---- 0.11.1 an integration's own device trigger (ZHA, Z-Wave, Hue …): pressed by you, every trigger that is it fires
+  {
+    const btn = { trigger: 'device', device_id: 'zz', domain: 'zha', type: 'remote_button_short_press', subtype: 'turn_on' };
+    const sb = make({ 'light.desk': S('off'), 'light.lamp': S('off') }, {
+      'automation.on': { triggers: [btn], actions: [{ action: 'light.turn_on', target: { entity_id: 'light.desk' } }] },
+      'automation.off': { triggers: [Object.assign({}, btn, { subtype: 'turn_off' })], actions: [{ action: 'light.turn_on', target: { entity_id: 'light.lamp' } }] },
+    });
+    await sb.start();
+    const ins = sb.inputs();
+    check('0.11.1 inputs: both buttons are there to press, named by device, type and subtype', ins.presses.length === 2 && ins.presses.some((x) => /remote button short press · turn on/.test(x.label)), ins.presses);
+    await sb.userPress(ins.presses.find((x) => /turn on$/.test(x.label)).key);
+    check('0.11.1 pressing one fires the automation on it, not the other', st(sb, 'light.desk') === 'on' && st(sb, 'light.lamp') === 'off');
+  }
+
+  // ---- 0.11.1 any trigger the sandbox can't see coming (Z-Wave value updated, geo location): fired from the Press row
+  {
+    const zw = { trigger: 'zwave_js.value_updated', entity_id: 'lock.front', command_class: 98, property: 'latchStatus', to: 'open' };
+    const sb = make({ 'light.hall': S('off') }, { 'automation.zw': { triggers: [zw], actions: [{ action: 'light.turn_on', target: { entity_id: 'light.hall' } }] } });
+    await sb.start();
+    const ins = sb.inputs(), x = ins.presses.find((y) => /^zwave_js\.value_updated/.test(y.label));
+    check('0.11.1 a trigger the sandbox can\'t see coming is offered to fire, named by its settings', !!x && /property latchStatus/.test(x.label), ins.presses);
+    check('0.11.1 ... and the note at the start says where', sb.log.some((e) => e.kind === 'note' && /Press row/.test(e.text) && /zwave_js\.value_updated/.test(e.text)));
+    await sb.userPress(x.key);
+    check('0.11.1 firing it runs the automation, with the trigger\'s settings as its trigger variables', st(sb, 'light.hall') === 'on' && kinds(sb, 'trigger')[0].text.includes('zwave_js'), kinds(sb, 'trigger'));
+  }
+
+  // ---- 0.11.1 saved checks keep the new steps (a press, an attribute set, Home Assistant starting) and replay them
+  {
+    const btn = { trigger: 'device', device_id: 'zz', domain: 'zha', type: 'remote_button_short_press', subtype: 'turn_on' };
+    const items = [{ id: 'automation.on', cfg: { triggers: [btn], actions: [{ action: 'light.turn_on', target: { entity_id: 'light.desk' } }] } },
+      { id: 'automation.boot', cfg: { triggers: [{ trigger: 'homeassistant', event: 'start' }], actions: [{ action: 'light.turn_on', target: { entity_id: 'light.porch' } }] } }];
+    const c = lib.cleanCheck({ id: 'c1', at: at('20:00'), steps: [{ op: 'press', key: lib.sbxPressKey(btn) }, { op: 'set', id: 'light.lamp', state: null, attrs: { brightness: 10 } }, { op: 'ha', event: 'start' }, { op: 'shell' }],
+      expect: [{ k: 'state', id: 'light.desk', state: 'on' }, { k: 'state', id: 'light.porch', state: 'on' }] });
+    check('0.11.1 checks keep a press, an attribute set and Home Assistant starting (and drop what they don\'t know)', !!c && c.steps.map((x) => x.op).join() === 'press,set,ha' && c.steps[1].attrs.brightness === 10 && c.steps[1].state === null, c);
+    const r = await runCheck(c, { states: { 'light.desk': S('off'), 'light.porch': S('off'), 'light.lamp': S('on', { brightness: 200 }) }, items, tz: TZ, tpl: async () => ({ ok: false, err: 'none' }), name: (x) => x, condText: () => '' });
+    check('0.11.1 ... and replay them: the button, the restart, the attribute', r.ok && r.log.some((e) => e.kind === 'state' && e.key === 'light.lamp'), r.res);
+  }
+
+  // ---- 0.11.1 zones: triggers and conditions on a person's state
+  {
+    const sb = make({ 'person.sam': S('not_home'), 'zone.home': S('1', { friendly_name: 'Home' }), 'zone.work': S('0', { friendly_name: 'Work' }), 'light.l': S('off'), 'light.w': S('off') }, {
+      'automation.home': { triggers: [{ trigger: 'zone', entity_id: 'person.sam', zone: 'zone.home', event: 'enter' }], actions: [{ action: 'light.turn_on', target: { entity_id: 'light.l' } }] },
+      'automation.left_work': { triggers: [{ trigger: 'zone', entity_id: 'person.sam', zone: 'zone.work', event: 'leave' }], conditions: [{ condition: 'zone', entity_id: 'person.sam', zone: 'zone.home' }], actions: [{ action: 'light.turn_on', target: { entity_id: 'light.w' } }] },
+    });
+    await sb.start();
+    const z = sb.inputs().ents.find((x) => x.id === 'person.sam');
+    check('0.11.1 inputs: a person in a zone trigger is offered its zones by name, and away', !!z && ['home', 'Work', 'not_home'].every((v) => z.vals.some((y) => y.v === v)), z);
+    await sb.userSet('person.sam', 'Work');
+    check('0.11.1 entering another zone isn\'t entering home', st(sb, 'light.l') === 'off');
+    await sb.userSet('person.sam', 'home');
+    check('0.11.1 entering home (state "home") fires the zone trigger', st(sb, 'light.l') === 'on');
+    check('0.11.1 leaving work fires, and its zone condition (at home) passes', st(sb, 'light.w') === 'on' && sb.asks.length === 0, sb.asks);
+  }
+
+  // ---- 0.11.1 the sun follows the sandbox clock: sun.sun, sun triggers with offsets, sun conditions
+  {
+    const sun = S('above_horizon', { next_setting: new Date(at('16:50')).toISOString(), next_rising: new Date(at('07:00') + 86400000).toISOString() });
+    const sb = make({ 'sun.sun': sun, 'light.p': S('off'), 'light.q': S('off') }, {
+      'automation.dusk': { triggers: [{ trigger: 'sun', event: 'sunset', offset: '-00:30:00' }], conditions: [{ condition: 'sun', before: 'sunset' }], actions: [{ action: 'light.turn_on', target: { entity_id: 'light.p' } }] },
+      'automation.night': { triggers: [{ trigger: 'state', entity_id: 'sun.sun', to: 'below_horizon' }], conditions: [{ condition: 'sun', after: 'sunset', before: 'sunrise' }], actions: [{ action: 'light.turn_on', target: { entity_id: 'light.q' } }] },
+    }, { now: at('12:00') });
+    await sb.start();
+    check('0.11.1 the sun trigger is due at sunset less 30 minutes', sb.pending().some((x) => x.at === at('16:20') && /Sunset/.test(x.label)), sb.pending().map((x) => [new Date(x.at).toISOString(), x.label]));
+    await sb.advance(4 * 60 * MIN + 20 * MIN);
+    check('0.11.1 ... and fires then; "before sunset" holds at 16:20', st(sb, 'light.p') === 'on' && sb.asks.length === 0, sb.asks);
+    await sb.advance(30 * MIN);
+    check('0.11.1 at sunset sun.sun goes below the horizon on the sandbox clock', st(sb, 'sun.sun') === 'below_horizon');
+    check('0.11.1 ... "after sunset, before sunrise" is one or the other, so it holds in the evening', st(sb, 'light.q') === 'on');
+  }
+
+  // ---- 0.11.1 Home Assistant starting, webhooks, tags, calendars and Assist sentences, done by you
+  {
+    const sb = make({ 'light.a': S('off'), 'light.b': S('off'), 'light.c': S('off'), 'light.d': S('off'), 'light.e': S('off'), 'calendar.bins': S('off') }, {
+      'automation.start': { triggers: [{ trigger: 'homeassistant', event: 'start' }], actions: [{ action: 'light.turn_on', target: { entity_id: 'light.a' } }] },
+      'automation.hook': { triggers: [{ trigger: 'webhook', webhook_id: 'garage-x', allowed_methods: ['POST'] }], actions: [{ condition: 'template', value_template: '{{ 1 }}' }, { action: 'light.turn_on', target: { entity_id: 'light.b' } }] },
+      'automation.tag': { triggers: [{ trigger: 'tag', tag_id: 'front-door' }], actions: [{ action: 'light.turn_on', target: { entity_id: 'light.c' } }] },
+      'automation.cal': { triggers: [{ trigger: 'calendar', entity_id: 'calendar.bins', event: 'start', offset: '-1:00:00' }], actions: [{ action: 'light.turn_on', target: { entity_id: 'light.d' } }] },
+      'automation.say': { triggers: [{ trigger: 'conversation', command: ['[please] (turn|switch) on the {thing} [light]'] }], actions: [{ action: 'light.turn_on', target: { entity_id: 'light.e' } }] },
+    });
+    await sb.start();
+    const ins = sb.inputs();
+    check('0.11.1 inputs: Home Assistant start, the webhook, the tag, the calendar and an example sentence',
+      JSON.stringify(ins.ha) === '["start"]' && ins.hooks[0].id === 'garage-x' && ins.tags[0] === 'front-door' && ins.cals[0].id === 'calendar.bins' && ins.says[0].v === 'turn on the {thing}', ins);
+    await sb.userHA('start');
+    await sb.userWebhook('garage-x', { a: 1 }, 'GET');
+    check('0.11.1 Home Assistant starting fires its trigger; a webhook called with a method it doesn\'t allow doesn\'t', st(sb, 'light.a') === 'on' && st(sb, 'light.b') === 'off');
+    await sb.userWebhook('garage-x', { a: 1 }, 'POST');
+    await sb.userTag('front-door');
+    await sb.userCalendar('calendar.bins', 'start', 'Bins out');
+    check('0.11.1 the webhook, the tag and the calendar event fire theirs', st(sb, 'light.b') === 'on' && st(sb, 'light.c') === 'on' && st(sb, 'light.d') === 'on');
+    check('0.11.1 a tag scanned is also Home Assistant\'s tag_scanned event', kinds(sb, 'event').some((e) => e.text === 'tag_scanned'));
+    await sb.userSay('turn off the kitchen');
+    check('0.11.1 a sentence that doesn\'t match the template doesn\'t fire', st(sb, 'light.e') === 'off');
+    await sb.userSay('Please turn on the kitchen light');
+    const said = kinds(sb, 'trigger').find((e) => e.key === 'automation.say');
+    check('0.11.1 one that matches fires it ([optional], (a|b), {slot})', st(sb, 'light.e') === 'on' && !!said, said);
+    await sb.userSay('switch on the hall');
+    check('0.11.1 ... the optional words can be left out', kinds(sb, 'trigger').filter((e) => e.key === 'automation.say').length === 2);
+  }
+
+  // ---- 0.11.1 inputs: what to set, with the values that matter (thresholds both sides, per-entity triggers, presses)
+  {
+    const sb = make({ 'sensor.co2': S('760', { device_class: 'carbon_dioxide' }), 'light.l': S('on', { brightness: 120 }), 'event.button': S('2026-11-17T10:00:00Z', { event_types: ['single', 'double'] }), 'timer.t': S('idle'), 'input_number.n': S('3') }, {
+      'automation.high': { triggers: [{ trigger: 'air_quality.co2_crossed_threshold', target: { entity_id: 'sensor.co2' }, options: { behavior: 'each', threshold: { type: 'above', value: { active_choice: 'number', number: 1100 } } } }], actions: [] },
+      'automation.dim': { triggers: [{ trigger: 'light.brightness_crossed_threshold', target: { entity_id: 'light.l' }, options: { threshold: { type: 'below', value: { number: 50 } } } }], actions: [] },
+      'automation.dbl': { triggers: [{ trigger: 'event.received', target: { entity_id: 'event.button' }, options: { event_type: ['double'] } }], actions: [] },
+      'automation.n': { triggers: [{ trigger: 'numeric_state', entity_id: 'input_number.n', above: 2.5 }], conditions: [{ condition: 'state', entity_id: 'timer.t', state: 'active' }], actions: [] },
+    });
+    await sb.start();
+    const ins = sb.inputs(), one = (id, attr) => ins.ents.find((x) => x.id === id && x.attr === (attr || null));
+    const co2 = one('sensor.co2'), br = one('light.l', 'brightness'), ev = one('event.button'), n = one('input_number.n'), tm = one('timer.t');
+    check('0.11.1 CO2 above 1100: 1101 (crosses it) and 1100 (doesn\'t)', !!co2 && co2.vals.map((x) => x.v).join() === '1101,1100', co2);
+    check('0.11.1 brightness below 50: the attribute, with 49 and 50', !!br && br.vals.map((x) => x.v).join() === '49,50', br);
+    check('0.11.1 an event entity: a press of the type the trigger waits for', !!ev && ev.vals.length === 1 && ev.vals[0].v === lib.SBX_PRESS + 'double', ev);
+    check('0.11.1 a decimal threshold steps by its own decimals: above 2.5 → 2.6', !!n && n.vals[0].v === '2.6', n);
+    check('0.11.1 a condition\'s entity and state are there too', !!tm && tm.vals.some((x) => x.v === 'active'), tm);
+    await sb.userSet('event.button', '2026-11-17T20:00:00.000Z', { event_type: 'double' });
+    check('0.11.1 an event entity set with its event type fires event.received', kinds(sb, 'trigger').some((e) => e.key === 'automation.dbl'));
+  }
+
+  // ---- 0.11.1 scenes set what they hold; timers say their last transition (Home Assistant's timer triggers read it)
+  {
+    const sb = make({ 'scene.evening': S('2026-11-16T20:00:00Z', { id: 's1', entity_id: ['light.a', 'light.b'] }), 'light.a': S('off'), 'light.b': S('on'), 'timer.t': S('idle', { duration: '0:05:00' }), 'light.c': S('off') }, {
+      'script.go': { sequence: [{ action: 'scene.turn_on', target: { entity_id: 'scene.evening' } }, { action: 'timer.start', target: { entity_id: 'timer.t' } }] },
+      'automation.done': { triggers: [{ trigger: 'timer.finished', target: { entity_id: 'timer.t' } }], actions: [{ action: 'light.turn_on', target: { entity_id: 'light.c' } }] },
+    }, { o: { scene: async (id) => (id === 'scene.evening' ? { entities: { 'light.a': { state: 'on', brightness: 200 }, 'light.b': 'off' } } : null) } });
+    await sb.start();
+    await sb.userRun('script.go', true, null);
+    check('0.11.1 a scene sets what its config holds, with attributes', st(sb, 'light.a') === 'on' && sb.get('light.a').attributes.brightness === 200 && st(sb, 'light.b') === 'off');
+    check('0.11.1 ... and its own state becomes the time it was activated', st(sb, 'scene.evening') !== '2026-11-16T20:00:00Z');
+    check('0.11.1 a timer started says so in last_transition', sb.get('timer.t').attributes.last_transition === 'started');
+    await sb.advance(5 * MIN);
+    check('0.11.1 ... finished too, so the timer.finished per-entity trigger fires', sb.get('timer.t').attributes.last_transition === 'finished' && st(sb, 'light.c') === 'on');
   }
 
 })().catch((e) => check('the sandbox tests ran to the end', false, String(e && e.stack || e)));

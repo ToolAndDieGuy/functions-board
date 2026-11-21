@@ -1,4 +1,4 @@
-style {59346 chars, #cb3e8fb5}
+style {59722 chars, #828697c4}
 div.board.m-panel.pc.sbx
   aside.list
     div.lhead
@@ -469,7 +469,7 @@ Related, not in this function. Select it to add it."
       div.drawer aria-label="Sandbox · Garage" role="complementary"
         div.dhead
           span.dtitle tabindex="-1" | Sandbox · Garage
-          span.sbclock | <day> <time>
+          span.sbclock title="The sandbox clock: <dur> ahead of when it started (America/New_York) · the sun is down" | <day>, <date>, <time>
           button data-act="sbx-about" title="What the sandbox is for, and what it can't show you"
             ha-icon icon="mdi:information-outline"
           button data-act="sbx-reset" title="Start over from your home's current states"
@@ -483,18 +483,22 @@ Related, not in this function. Select it to add it."
             div.sbrow
               span.sbl | Set
               select.sbent aria-label="Entity" ·value="cover.garage_door"
-                option value="script.close_garage" | Close garage
-                option value="input_boolean.garage_auto_close" | Garage auto-close
-                option value="cover.garage_door" | Garage Door
-                option value="timer.garage_open" | Garage open timer
-                option value="automation.garage_closed_stop_timer" | Garage: closed, stop timer
-                option value="automation.garage_left_open" | Garage: left open
-                option value="automation.garage_restart_timer_when_reopened" | Garage: restart timer when reopened
-                option value="automation.garage_start_open_timer" | Garage: start open timer
+                optgroup label="Read by the automations"
+                  option value="input_boolean.garage_auto_close" | Garage auto-close
+                  option value="cover.garage_door" | Garage Door
+                  option value="timer.garage_open" | Garage open timer
+                optgroup label="Also on the board"
+                  option value="script.close_garage" | Close garage
+                  option value="automation.garage_closed_stop_timer" | Garage: closed, stop timer
+                  option value="automation.garage_left_open" | Garage: left open
+                  option value="automation.garage_restart_timer_when_reopened" | Garage: restart timer when reopened
+                  option value="automation.garage_start_open_timer" | Garage: start open timer
+              select.sbattr aria-label="State or attribute" hidden ·value=""
+                option value | state
               span.sbf
                 select.sbsel.sbval-sel aria-label="state" data-f="sbval" ·value="open"
-                  option value="open" | open (now)
-                  option value="closed" | closed
+                  option value="open" | open (now) · starts Garage: start open timer
+                  option value="closed" | closed · starts Garage: closed, stop timer
                   option value="opening" | opening
                   option value="closing" | closing
                   option value="unavailable" | unavailable
@@ -527,21 +531,54 @@ Related, not in this function. Select it to add it."
                 option value="automation.garage_start_open_timer" | Garage: start open timer
               select.sbtrig aria-label="As if this trigger fired" hidden ·value=""
                 option value | with no trigger
+              span.sbvarsw hidden
+                span.sbf
+                  select.sbsel.sbvars-sel aria-label="Its fields, as JSON" data-f="sbvars" ·value="other"
+                    option value="other" | Other…
+                  input.sbvars aria-label="Its fields, as JSON" placeholder="Its fields, as JSON" ·value=""
               label.sbcb | check its conditions
                 input.sbconds checked type="checkbox" ·value="on" ·checked=true
               button.chip data-act="sbx-run" | Run
             div.sbrow
               span.sbl | Clock
-              button.chip data-act="sbx-adv" data-ms="60000" | +<dur>
-              button.chip data-act="sbx-adv" data-ms="600000" | +<dur>
-              button.chip data-act="sbx-adv" data-ms="3600000" | +<dur>
+              span.sbf
+                select.sbadv-sel.sbsel aria-label="Advance the clock by" data-f="sbadv" ·value="60000"
+                  option value="1000" | +<dur>
+                  option value="10000" | +<dur>
+                  option selected value="60000" | +<dur>
+                  option value="300000" | +<dur>
+                  option value="600000" | +<dur>
+                  option value="1800000" | +<dur>
+                  option value="3600000" | +<dur>
+                  option value="10800000" | +<dur>
+                  option value="21600000" | +<dur>
+                  option value="43200000" | +<dur>
+                  option value="86400000" | +<dur>
+                  option value="604800000" | +<dur>
+                  option value="other" | Other…
+                input.sbadv aria-label="Advance the clock by" hidden placeholder="+<dur>, +<dur>, +<dur>" ·value=""
+              button.chip data-act="sbx-advby" | Advance
               button.chip.sbnext data-act="sbx-next" | Next: Garage open timer finishes in <time>
+            div.sbrow
+              span.sbl | Jump to
+              span.sbf
+                select.sbjump-sel.sbsel aria-label="Jump to" data-f="sbjump" ·value="1795064400000"
+                  option value="1795047322342" | <time> · Garage open timer finishes (in <time>)
+                  option value="1795064400000" | <day>, <date>, <time> · Midnight (in <time>)
+                  option value="1795091730370" | <day>, <date>, <time> · <day> (in <time>)
+                  option value="1795126687311" | <day>, <date>, <time> · <day> (in <time>)
+                  option value="other" | Other…
+                input.sbjump aria-label="Jump to" hidden placeholder="<time>, 2026-12-24 <time>, +<dur>" ·value=""
+              button.chip data-act="sbx-jump" | Go
           div.sbchk data-sig="0|true|0"
             div.ckhead
               span | 0 saved checks
               button.chip data-act="chk-save" title="Keep what you did in this sandbox, and what came of it, as a check that runs after every change" | Save as a check
                 ha-icon icon="mdi:content-save-check-outline"
           div.sbdue
+            span.muted | Coming up:
+            button.sbd data-act="sbx-to" data-at="1795047322342" data-key="1795047322342|Garage open timer finishes" title="Run the clock to <time>" | Garage open timer finishes · <time>
+            button.sbd data-act="sbx-to" data-at="1795091730370" data-key="1795091730370|<day>" title="Run the clock to <day>, <date>, <time>" | <day> · <time>
           div.dtl.sbtl
             button.dbrow.fin.k-state data-act="sbx-pick" data-id="1"
               span.rt | <time>

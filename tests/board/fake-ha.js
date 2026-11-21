@@ -353,6 +353,8 @@ class FakeHA {
       if (method === 'POST') { this.autos[id] = Object.assign({ id }, clone(body)); await this._automationSaved(id); return { result: 'ok' }; }
       if (method === 'DELETE') { if (!this.autos[id]) throw new HAError('not_found', 'Resource not found'); delete this.autos[id]; await this._automationGone(id); return { result: 'ok' }; }
     }
+    // a scene made in the editor: what it sets (the sandbox applies it)
+    if ((m = p.match(/^config\/scene\/config\/(.+)$/)) && method === 'GET') { const c = (this.sceneCfgs || {})[decodeURIComponent(m[1])]; if (!c) throw new HAError('not_found', 'Resource not found'); return clone(c); }
     if ((m = p.match(/^config\/script\/config\/(.+)$/))) {
       const oid = decodeURIComponent(m[1]);
       if (method === 'GET') { if (!this.scripts[oid]) throw new HAError('not_found', 'Resource not found'); return clone(this.scripts[oid]); }

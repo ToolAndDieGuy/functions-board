@@ -1682,6 +1682,9 @@
   const lessMotion = () => !!(typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches);
   // the "Other…" entry of the sandbox's dropdowns
   const SBX_OTHER = '\u0001other';
+  // a value in the sandbox's Set that is a press (a button, a scene, an event entity: its state becomes the time), with
+  // the event type after it for an event entity (0.11.1)
+  const SBX_PRESS = '\u0001press:';
   const VER_HELPERS = new Set(['input_boolean', 'input_number', 'input_text', 'input_select', 'input_datetime', 'input_button', 'counter', 'timer', 'schedule']);
   // what may be clicked on a saved version's board: looking, the sandbox, and the versions themselves
   const VER_OK_ACTS = /^(zoomin|zoomout|fit|togglelist|legend|hl|hl-.+|sandbox|sbx-.+|flow-.+|lit-.+|edge|close|back|newtab|modal-.+|ver-.+|vtab.*|versions|about|diag|diag-.+|problems|prob-.+|chk-run|chk-replay|hint-x|find-x|nr-open)$/;
@@ -2490,12 +2493,13 @@ i.fsn{font-style:normal;display:inline-block;min-width:16px;height:16px;padding:
 .sbnote{padding:8px 10px;font-size:12px;color:var(--secondary-text-color);border-bottom:1px solid var(--divider-color)}
 .sbctl{display:flex;flex-direction:column;gap:6px;padding:8px 10px;border-bottom:1px solid var(--divider-color)}
 .sbrow{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
-.sbl{width:44px;font-size:12px;color:var(--secondary-text-color)}
+.sbl{width:64px;font-size:12px;color:var(--secondary-text-color)}
 .sbrow select,.sbrow input:not([type=checkbox]){font:inherit;font-size:12.5px;padding:4px 8px;border-radius:8px;border:1px solid var(--divider-color);background:var(--card-background-color);color:var(--primary-text-color);min-width:0}
-.sbrow .sbent,.sbrow .sbrun{flex:1 1 170px}.sbrow .sbtrig{flex:1 1 150px}.sbrow .sbtop{flex:1 1 160px}.sbrow .sbpay{flex:1 1 140px}.sbrow .sbval{flex:0 1 130px}.sbrow .sbev{flex:1 1 140px}.sbrow .sbevd{flex:2 1 170px}
+.sbrow .sbent,.sbrow .sbrun,.sbrow .sbpress{flex:1 1 170px}.sbrow .sbattr{flex:0 1 120px}.sbrow .sbhook,.sbrow .sbcal{flex:1 1 140px}.sbrow .sbsay,.sbrow .sbjump{flex:2 1 200px}.sbrow .sbtrig{flex:1 1 150px}.sbrow .sbtop{flex:1 1 160px}.sbrow .sbpay{flex:1 1 140px}.sbrow .sbval{flex:0 1 130px}.sbrow .sbev{flex:1 1 140px}.sbrow .sbevd{flex:2 1 170px}
 .sbrow .chip:disabled{opacity:.5;cursor:default}
 .sbcb{display:inline-flex;gap:4px;align-items:center;font-size:12px;color:var(--secondary-text-color)}
-.sbdue{display:flex;flex-wrap:wrap;gap:4px 10px;padding:6px 10px;font-size:11.5px;border-bottom:1px solid var(--divider-color)}.sbdue:empty{display:none}
+.sbdue{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;padding:6px 10px;font-size:11.5px;border-bottom:1px solid var(--divider-color)}.sbdue:empty{display:none}
+.sbdue .sbd{font:inherit;font-size:11.5px;padding:2px 8px;border-radius:8px;border:1px solid var(--divider-color);background:none;color:var(--primary-text-color);cursor:pointer}.sbdue .sbd:hover{border-color:var(--fb-blue)}
 .sbask:empty{display:none}
 .sbq{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 10px;background:color-mix(in srgb,var(--fb-amber) 14%,transparent);border-bottom:1px solid var(--divider-color);font-size:12.5px}
 .sbq ha-icon{--mdc-icon-size:18px;color:var(--fb-amber-ink)}.sbq span{flex:1 1 200px}
@@ -2969,7 +2973,84 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       sbx_running: 'running in the sandbox',
       sbx_ran_n: { one: 'ran once in the sandbox', other: 'ran {n} times in the sandbox' },
       sbx_not_run: 'not run in the sandbox yet',
-      sbx_not_followed: 'Triggers the sandbox doesn\'t follow (use Run, with that trigger): {list}.',
+      sbx_not_followed: 'Triggers that don\'t come from states the sandbox holds: fire them from the Press row (or use Run, as if that trigger fired): {list}.',
+      sbx_g_read: 'Read by the automations',
+      sbx_g_rest: 'Also on the board',
+      sbx_attr: 'State or attribute',
+      sbx_v_l: '{v} · {why}',
+      sbx_press_now: 'Pressed now',
+      sbx_press_type: '{type}, now',
+      sbx_press: 'Press',
+      sbx_press_what: 'A device\'s button, or another trigger to fire',
+      sbx_press_b: 'Press',
+      sbx_webhook: 'Webhook',
+      sbx_method: 'Method',
+      sbx_body_empty: 'No body ({})',
+      sbx_body_ph: 'JSON body',
+      sbx_call: 'Call',
+      sbx_tag: 'Tag',
+      sbx_tag_id: 'Tag id',
+      sbx_scan: 'Scan',
+      sbx_pick_tag: 'Pick or type a tag id first.',
+      sbx_calendar: 'Calendar',
+      sbx_cal_what: 'Starts or ends',
+      sbx_cal_start: 'An event starts',
+      sbx_cal_end: 'An event ends',
+      sbx_cal_title: 'The event\'s title',
+      sbx_go: 'Go',
+      sbx_say: 'Assist',
+      sbx_say_as: '“{s}” ({name})',
+      sbx_sentence: 'What you say',
+      sbx_say_b: 'Say',
+      sbx_fill_slots: 'Type the sentence with its blanks (the parts in braces) filled in.',
+      sbx_ha: 'HA',
+      sbx_vars_ph: 'Its fields, as JSON',
+      sbx_vars_ex: 'Fields: {v}',
+      sbx_vars_none: 'No fields',
+      sbx_1day: '1 day',
+      sbx_1week: '1 week',
+      sbx_adv_ph: '+90 min, +2 h, +1 d',
+      sbx_advance: 'Advance',
+      sbx_adv_by: 'Advance the clock by',
+      sbx_jump: 'Jump to',
+      sbx_jump_ph: '21:30, 2026-12-24 07:00, +2 h',
+      sbx_jump_l: '{t} · {what} (in {d})',
+      sbx_time_edge: '{name}: its time condition {w} {t}',
+      sbx_after: 'after',
+      sbx_before: 'before',
+      sbx_midnight: 'Midnight',
+      sbx_bad_time: 'That isn\'t a time ahead of the sandbox clock: try 21:30, 2026-12-24 07:00 or +2 h.',
+      sbx_to_t: 'Run the clock to {t}',
+      sbx_clock_t: 'The sandbox clock: {d} ahead of when it started ({tz})',
+      sbx_sun_up: 'the sun is up',
+      sbx_sun_down: 'the sun is down',
+      sbx_ha_starts: 'Home Assistant started',
+      sbx_ha_stops: 'Home Assistant is shutting down',
+      sbx_webhook_called: 'Webhook {id} called',
+      sbx_tag_scanned: 'Tag {tag} scanned',
+      sbx_cal_summary: 'An event',
+      sbx_cal_starts: '{name}: “{summary}” starts',
+      sbx_cal_ends: '{name}: “{summary}” ends',
+      sbx_said: 'Said to Assist: “{s}”',
+      sbx_pressed: 'Pressed: {what}',
+      sbx_sunrise: 'Sunrise',
+      sbx_sunset: 'Sunset',
+      sbx_sun_label: '{name}: {ev}',
+      sbx_sun_why: 'It\'s {now}; it needs {what}',
+      sbx_sun_after: 'after {t}',
+      sbx_sun_before: 'before {t}',
+      sbx_trig_zone_enter: '{name} entered {zone}',
+      sbx_trig_zone_leave: '{name} left {zone}',
+      sbx_v_trig: 'starts {name}',
+      sbx_v_from: '{name} starts from it',
+      sbx_v_cond: 'a condition in {name}',
+      sbx_v_above: 'above {a}: {name}',
+      sbx_v_below: 'below {a}: {name}',
+      sbx_v_at: 'at {a}, not past it: {name}',
+      sbx_v_zone: 'in {zone}: {name}',
+      sbx_v_away: 'away: {name}',
+      sbx_v_press: 'pressed now: {name}',
+      sbx_v_press_t: '{type}, now: {name}',
       sbx_run_as: 'Run by you, as if trigger {n} ({p}) fired',
       sbx_as_if: 'As if this trigger fired',
       sbx_as_trigger: 'as if {n}. {what}',
@@ -2990,10 +3071,10 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       sbxi_safe: 'Nothing here reaches your home. The sandbox reads your states once when it opens and asks Home Assistant to render templates, which only reads. It never calls a service, fires an event, publishes to MQTT or sets a state: no device moves and no notification is sent.',
       sbxi_limits_h: 'What it can\'t show you',
       sbxi_l_board: '<b>Only the automations and scripts on this board run.</b> Anything else that would react to the same change, such as automations in other functions, blueprints, Node-RED flows, alerts or an integration\'s own logic, doesn\'t run here, so a chain that leaves this function stops at its edge.',
-      sbxi_l_devices: '<b>Devices don\'t answer.</b> A light turned on is simply on. There are no delays, failures, unavailable devices or values that change by themselves: a temperature stays where it is until you set it.',
+      sbxi_l_devices: '<b>Devices don\'t answer.</b> A light turned on is simply on. There are no delays, failures, unavailable devices or values that change by themselves: a temperature stays where it is until you set it, and so do helpers worked out from it (a template sensor).',
       sbxi_l_calls: '<b>Some calls change nothing here.</b> Notifications, TTS and log messages are listed as messages. Scenes, device actions and services the sandbox doesn\'t know are listed as calls it would make, without their effect.',
-      sbxi_l_triggers: '<b>Some triggers can\'t be followed:</b> zone, sun, Home Assistant starting, webhooks, device triggers, calendars and others. They\'re named when it opens. Use Run, as if that trigger fired, instead.',
-      sbxi_l_ask: '<b>Some answers come from you.</b> Sun, zone and device conditions, and templates Home Assistant can\'t render, are asked in the drawer. The result is only as good as your answer.',
+      sbxi_l_triggers: '<b>Some triggers are yours to fire.</b> A device\'s own buttons (ZHA, Z-Wave, Hue), webhooks, tags, calendars, Assist and Home Assistant starting have their own rows; one the sandbox can\'t see coming (Z-Wave value updated, geo location) is fired from the Press row. Zones and the sun follow the states and the clock. Calendar offsets and the sun\'s exact times are approximate.',
+      sbxi_l_ask: '<b>Some answers come from you.</b> An integration\'s own conditions, and templates Home Assistant can\'t render, are asked in the drawer. The result is only as good as your answer.',
       sbxi_l_tpl: '<b>Templates are rendered by Home Assistant</b> from the sandbox\'s states and clock. Ones that read locations (closest, distance) read your real home, and are marked partly real.',
       sbxi_l_nodered: '<b>Node-RED flows don\'t run.</b> Their boxes show what they use, but what a flow would do isn\'t simulated.',
       sbxi_l_copy: '<b>It\'s a copy from the moment it opens.</b> Changes in your home after that aren\'t picked up. Start over to take a fresh copy.',
@@ -3536,6 +3617,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       chk_s_next: 'Clock to what\'s due',
       chk_s_run: 'Run {name}',
       chk_s_set: 'Set {name} to {state}',
+      chk_s_attr: 'Set {name}: {what}',
+      chk_s_press: 'Press {what}',
       chk_save: 'Save as a check',
       chk_save_b: 'Save check',
       chk_save_h: 'Keep this run as a check',
@@ -3949,8 +4032,131 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     'media_player.muted': { k: 'target', d: { media_player: { attr: 'is_volume_muted' } }, to: [true] },
     'media_player.unmuted': { k: 'target', d: { media_player: { attr: 'is_volume_muted' } }, to: [false] },
   };
-  // the triggers the sandbox follows; the rest it says it can't, and Run with that trigger stands in
-  const SBX_PLATS = new Set(['state', 'numeric_state', 'event', 'time', 'time_pattern', 'template', 'mqtt']);
+  // the triggers the sandbox follows; the rest it says it can't, and Run with that trigger stands in. Since 0.11.1 also
+  // zone, sun, Home Assistant starting and stopping, webhooks, tags, calendars, Assist sentences and device triggers
+  // (one on an entity followed as the state trigger it stands for; an integration's own, a ZHA or Z-Wave button say,
+  // done by you from the drawer)
+  const SBX_PLATS = new Set(['state', 'numeric_state', 'event', 'time', 'time_pattern', 'template', 'mqtt', 'zone', 'sun', 'homeassistant', 'webhook', 'tag', 'calendar', 'conversation', 'device']);
+  // ---- device triggers, conditions and actions on an entity, as the state ones they stand for (0.11.1). entOf: the
+  // entity id for an entity registry id (the editor stores those)
+  const SBX_DEV_STATE = { opened: 'open', closed: 'closed', opening: 'opening', closing: 'closing', locked: 'locked', unlocked: 'unlocked', jammed: 'jammed', locking: 'locking', unlocking: 'unlocking', open: 'open', idle: 'idle', paused: 'paused', playing: 'playing', buffering: 'buffering', cleaning: 'cleaning', docked: 'docked', returning: 'returning', armed_away: 'armed_away', armed_home: 'armed_home', armed_night: 'armed_night', armed_vacation: 'armed_vacation', armed_custom_bypass: 'armed_custom_bypass', disarmed: 'disarmed', triggered: 'triggered', arming: 'arming', pending: 'pending', mowing: 'mowing', error: 'error' };
+  // a binary sensor's device trigger or condition type, on or off: motion → on, no_motion → off; a lock's is the other
+  // way round (on means unlocked)
+  function sbxBinOn(type) {
+    const ty = String(type).replace(/^is_/, '');
+    if (ty === 'locked') return 'off';
+    if (ty === 'not_locked') return 'on';
+    if (ty === 'turned_off' || ty === 'off') return 'off';
+    return /^(no|not)_/.test(ty) ? 'off' : 'on';
+  }
+  function sbxDevEnt(x, entOf) {
+    if (!x || x.entity_id == null) return null;
+    const e = String(toList(x.entity_id)[0]);
+    const id = EXACT_RE.test(e) ? e : entOf ? entOf(e) : null;
+    return id && EXACT_RE.test(id) ? id : null;
+  }
+  function sbxDevTrig(t, entOf) {
+    if (!t || typeof t !== 'object' || (t.trigger || t.platform) !== 'device' || !t.type) return null;
+    const ent = sbxDevEnt(t, entOf);
+    if (!ent) return null;
+    const dom = ent.split('.')[0], ty = String(t.type), keep = { _dev: t };
+    ['id', 'enabled', 'for', 'variables'].forEach((k) => { if (t[k] !== undefined) keep[k] = t[k]; });
+    const st = (to, from) => Object.assign({ trigger: 'state', entity_id: ent }, to !== undefined ? { to } : {}, from !== undefined ? { from } : {}, keep);
+    const num = (attribute) => (t.above == null && t.below == null ? null : Object.assign({ trigger: 'numeric_state', entity_id: ent }, attribute ? { attribute } : {}, t.above != null ? { above: t.above } : {}, t.below != null ? { below: t.below } : {}, keep));
+    if (ty === 'changed_states') return st(null);
+    if (dom === 'binary_sensor') return st(sbxBinOn(ty));
+    if (ty === 'turned_on') return st('on');
+    if (ty === 'turned_off') return st('off');
+    if (dom === 'sensor') return num(null);
+    if (dom === 'cover' && (ty === 'position' || ty === 'tilt_position')) return num(ty === 'position' ? 'current_position' : 'current_tilt_position');
+    if (dom === 'climate') return ty === 'hvac_mode_changed' ? st(t.to != null ? t.to : null) : ty === 'current_temperature_changed' ? num('current_temperature') : ty === 'current_humidity_changed' ? num('current_humidity') : null;
+    if ((dom === 'device_tracker' || dom === 'person') && (ty === 'enters' || ty === 'leaves')) return Object.assign({ trigger: 'zone', entity_id: ent, zone: t.zone, event: ty === 'enters' ? 'enter' : 'leave' }, keep);
+    if ((dom === 'select' || dom === 'input_select') && ty === 'current_option_changed') return st(t.to != null ? t.to : null, t.from != null ? t.from : undefined);
+    if ((dom === 'button' || dom === 'input_button' || dom === 'event') && (ty === 'pressed' || ty === 'event')) return st(null);
+    if (SBX_DEV_STATE[ty]) return st(SBX_DEV_STATE[ty]);
+    return null;
+  }
+  function sbxDevCond(c, entOf) {
+    if (!c || !c.type) return null;
+    const ent = sbxDevEnt(c, entOf);
+    if (!ent) return null;
+    const dom = ent.split('.')[0], ty = String(c.type), keep = c.for !== undefined ? { for: c.for } : {};
+    const st = (state, attribute) => Object.assign({ condition: 'state', entity_id: ent, state }, attribute ? { attribute } : {}, keep);
+    const num = (attribute) => (c.above == null && c.below == null ? null : Object.assign({ condition: 'numeric_state', entity_id: ent }, attribute ? { attribute } : {}, c.above != null ? { above: c.above } : {}, c.below != null ? { below: c.below } : {}));
+    if (dom === 'binary_sensor') return st(sbxBinOn(ty));
+    if (ty === 'is_on') return st('on');
+    if (ty === 'is_off') return st('off');
+    if (dom === 'sensor') return num(null);
+    if (dom === 'cover' && (ty === 'is_position' || ty === 'is_tilt_position')) return num(ty === 'is_position' ? 'current_position' : 'current_tilt_position');
+    if (dom === 'climate' && ty === 'is_hvac_mode' && c.hvac_mode != null) return st(c.hvac_mode);
+    if (dom === 'climate' && ty === 'is_preset_mode' && c.preset_mode != null) return st(c.preset_mode, 'preset_mode');
+    if ((dom === 'select' || dom === 'input_select') && ty === 'selected_option' && c.option != null) return st(c.option);
+    const m = /^is_(.+)$/.exec(ty);
+    if (m && SBX_DEV_STATE[m[1]]) return st(SBX_DEV_STATE[m[1]]);
+    if (m && Object.values(SBX_DEV_STATE).includes(m[1])) return st(m[1]);
+    return null;
+  }
+  // a device action on an entity, as the action it stands for: [service, data] or null
+  function sbxDevAct(a, entOf) {
+    if (!a || !a.type) return null;
+    const ent = sbxDevEnt(a, entOf);
+    if (!ent) return null;
+    const dom = ent.split('.')[0], ty = String(a.type);
+    if (['turn_on', 'turn_off', 'toggle'].includes(ty)) return [dom + '.' + ty, {}, ent];
+    if (dom === 'light' && ['brightness_increase', 'brightness_decrease', 'flash'].includes(ty)) return ['light.turn_on', {}, ent];
+    if (dom === 'lock' && ['lock', 'unlock', 'open'].includes(ty)) return ['lock.' + ty, {}, ent];
+    if (dom === 'cover' && ['open', 'close', 'stop'].includes(ty)) return ['cover.' + ty + '_cover', {}, ent];
+    if (dom === 'cover' && ty === 'set_position') return ['cover.set_cover_position', { position: a.position }, ent];
+    if (dom === 'alarm_control_panel' && /^(arm_|disarm|trigger)/.test(ty)) return ['alarm_control_panel.alarm_' + ty, {}, ent];
+    if (dom === 'climate' && ty === 'set_hvac_mode') return ['climate.set_hvac_mode', { hvac_mode: a.hvac_mode }, ent];
+    if (dom === 'climate' && ty === 'set_preset_mode') return ['climate.set_preset_mode', { preset_mode: a.preset_mode }, ent];
+    if ((dom === 'button' || dom === 'input_button') && ty === 'press') return [dom + '.press', {}, ent];
+    if ((dom === 'select' || dom === 'input_select') && ty === 'select_option') return [dom + '.select_option', { option: a.option }, ent];
+    if (dom === 'vacuum' && ['clean', 'dock'].includes(ty)) return ['vacuum.' + (ty === 'clean' ? 'start' : 'return_to_base'), {}, ent];
+    return null;
+  }
+  // an integration's own device trigger (no entity): what makes it one; two triggers with the same key are the same
+  // button. The keys besides these name the press: type, subtype, and the integration's own (zha's, deCONZ's …)
+  const SBX_DEV_SKIP = new Set(['trigger', 'platform', 'id', 'enabled', 'for', 'variables', 'metadata', 'alias']);
+  function sbxPressKey(t) {
+    const o = {};
+    Object.keys(t).filter((k) => !SBX_DEV_SKIP.has(k)).sort().forEach((k) => { o[k] = t[k]; });
+    return JSON.stringify(o);
+  }
+  // an Assist sentence template as a pattern: [optional words], (one|or|another), {slot}; slots come back by name
+  function sbxSentence(tpl) {
+    const names = [];
+    let src = '', i = 0;
+    const s = String(tpl).toLowerCase().trim();
+    for (; i < s.length; i++) {
+      const ch = s[i];
+      if (ch === '{') { const j = s.indexOf('}', i); const n = s.slice(i + 1, j < 0 ? s.length : j).split(':')[0].trim(); names.push(n); src += '(.+?)'; i = j < 0 ? s.length : j; }
+      else if (ch === '[') src += '(?:';
+      else if (ch === ']') src += ')?';
+      else if (ch === '(') src += '(?:';
+      else if (ch === ')') src += ')';
+      else if (ch === '|') src += '|';
+      else if (ch === ' ') src += '\\s*';
+      else src += ch.replace(/[.*+?^$\\/]/g, '\\$&');
+    }
+    let re = null;
+    try { re = new RegExp('^\\s*' + src + '\\s*[.!?]?\\s*$', 'i'); } catch (e) { re = null; }
+    return { names, match: (said) => { if (!re) return null; const m = re.exec(String(said).toLowerCase().trim()); if (!m) return null; const slots = {}; names.forEach((n, k) => { slots[n] = m[k + 1]; }); return slots; } };
+  }
+  function sbxSay(tpl) {
+    let s = String(tpl), prev;
+    do { prev = s; s = s.replace(/\[[^[\]]*\]/g, ''); } while (s !== prev);
+    do { prev = s; s = s.replace(/\(([^()|]*)(\|[^()]*)?\)/g, '$1'); } while (s !== prev);
+    return s.replace(/\{([^}:]+)(:[^}]*)?\}/g, '{$1}').replace(/\s+/g, ' ').trim();
+  }
+  // the number just past a threshold, for a value that crosses it: 1100 → 1101, 21.5 → 21.6
+  function sbxStep(x, up) {
+    const n = Number(x);
+    if (!isFinite(n)) return null;
+    const dec = (String(x).split('.')[1] || '').length, d = dec ? Math.pow(10, -dec) : 1;
+    const v = n + (up ? d : -d);
+    return dec ? v.toFixed(dec) : String(v);
+  }
   // calls that only send or log a message: nothing for the sandbox to change
   const SBX_MSG = new Set(['notify', 'persistent_notification', 'tts', 'system_log', 'logbook', 'assist_satellite', 'telegram_bot', 'mobile_app']);
   const sbxTopic = (pat, topic) => {
@@ -3994,12 +4200,13 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
   };
   class Sandbox {
     // o: { states (Home Assistant's, read, never written), items: [{ id, cfg }], now, tz, tpl(template, vars) → { ok, value,
-    //      partly } | { ok: false, err }, ask({ text, key }) → Promise<boolean>, resolve(ref) → entity ids, fetch(id) → cfg, onLog(entry) }
+    //      partly } | { ok: false, err }, ask({ text, key }) → Promise<boolean>, resolve(ref) → entity ids, fetch(id) → cfg, onLog(entry),
+    //      entityOf(registry id) → entity id, scene(id) → its config ({ entities }) or null }
     constructor(o) {
       this.o = o; this.real = o.states || {}; this.tz = o.tz; this.now = o.now == null ? Date.now() : o.now;
       this.changed = new Map(); this.items = new Map(); this.log = []; this.timers = []; this.runs = new Map();
       this.pend = new Map(); this.waiters = new Set(); this.tplLast = new Map(); this.queue = new Map();
-      this.busy = 0; this.seq = 0; this.steps = 0; this.halted = false; this.n = 0;
+      this.busy = 0; this.seq = 0; this.steps = 0; this.halted = false; this.n = 0; this.devT = new WeakMap();
       (o.items || []).forEach((x) => this.add(x.id, x.cfg));
     }
     add(id, cfg) { if (cfg) this.items.set(id, { id, cfg, kind: id.startsWith('script.') ? 'script' : 'automation' }); }
@@ -4074,7 +4281,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const not = [];
       this.items.forEach((it) => { if (it.kind === 'automation') this._trigs(it).forEach((t) => { const p = this._plat(t); if (t.enabled !== false && !SBX_PLATS.has(p) && !this._espec(p)) not.push(`${this._name(it.id)}: ${p}`); }); });
       if (not.length) this._log({ kind: 'note', text: T('sbx_not_followed', { list: [...new Set(not)].join(', ') }) });
-      this.items.forEach((it) => { if (it.kind === 'automation') this._trigs(it).forEach((t, i) => this._armTime(it, t, i)); });
+      this.items.forEach((it) => { if (it.kind === 'automation') this._trigs(it).forEach((t, i) => { this._armTime(it, t, i); this._armSun(it, t, i); }); });
+      this._armSunState();
       for (const it of this.items.values()) {
         if (it.kind !== 'automation') continue;
         const ts = this._trigs(it);
@@ -4087,7 +4295,15 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         }
       }
     }
-    _trigs(it) { return toList(it.cfg.triggers != null ? it.cfg.triggers : it.cfg.trigger).filter((t) => t && typeof t === 'object'); }
+    _trigs(it) { return this._asTrigs(it.cfg.triggers != null ? it.cfg.triggers : it.cfg.trigger); }
+    // a list of triggers, a device one on an entity as the trigger it stands for (the same object each time)
+    _asTrigs(list) {
+      return toList(list).filter((t) => t && typeof t === 'object').map((t) => {
+        if ((t.trigger || t.platform) !== 'device') return t;
+        if (!this.devT.has(t)) this.devT.set(t, sbxDevTrig(t, this.o.entityOf) || t);
+        return this.devT.get(t);
+      });
+    }
     _plat(t) { return t.trigger || t.platform; }
     _on(it) { const s = this.get(it.id); return !s || s.state !== 'off'; }
     // ---- what the person does
@@ -4103,27 +4319,105 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       await this.settle();
     }
     // run it as if one of its triggers fired (ti), or with none
-    async userRun(id, checkConds, ti) {
+    async userRun(id, checkConds, ti, vars) {
       this._fresh();
       const it = this.items.get(id);
       if (!it) return;
+      if (it.kind === 'script') {
+        const cause = this._log({ kind: 'trigger', key: id, text: T('sbx_run_by_you'), by: 'you', src: null });
+        this._start(it, Object.assign({}, vars || {}), cause, { conds: checkConds });
+        await this.settle();
+        return;
+      }
       const t = ti != null && it.kind === 'automation' ? this._trigs(it)[ti] : null;
       let trigger = { platform: null, id: 'manual', idx: 'manual' };
       if (t) {
         const p = this._plat(t), spec = this._espec(p);
         trigger = { platform: p, id: t.id != null ? String(t.id) : String(ti), idx: String(ti) };
-        const ents = p === 'state' || p === 'numeric_state' ? toList(t.entity_id) : spec ? this._etargets(t, spec) : [];
+        const ents = p === 'state' || p === 'numeric_state' || p === 'zone' ? toList(t.entity_id) : spec ? this._etargets(t, spec) : [];
         const e = ents.find((x) => typeof x === 'string');
         if (e) { const o = this.obj(e); Object.assign(trigger, { entity_id: e, from_state: o, to_state: o }); }
         if (p === 'event') trigger.event = { event_type: toList(t.event_type)[0], data: t.event_data || {} };
         if (p === 'mqtt') Object.assign(trigger, { topic: t.topic, payload: t.payload != null ? String(t.payload) : '' });
         if (p === 'time' || p === 'time_pattern') trigger.now = this.iso();
+        if (p === 'homeassistant' || p === 'sun' || p === 'zone' || p === 'calendar') trigger.event = t.event || (p === 'sun' ? 'sunrise' : p === 'calendar' ? 'start' : p === 'zone' ? 'enter' : 'start');
+        if (p === 'webhook') Object.assign(trigger, { webhook_id: t.webhook_id, json: {}, data: {}, query: {} });
+        if (p === 'tag') trigger.tag_id = toList(t.tag_id)[0];
+        if (p === 'conversation') Object.assign(trigger, { sentence: String(toList(t.command)[0] || ''), slots: {}, details: {} });
       }
-      const src = trigger.entity_id || (trigger.event ? 'event:' + trigger.event.event_type : trigger.topic ? 'mqtt:' + trigger.topic : null)
+      const src = trigger.entity_id || (trigger.event && trigger.event.event_type ? 'event:' + trigger.event.event_type : trigger.topic ? 'mqtt:' + trigger.topic : null)
         || (t && toList(t.entity_id).find((x) => typeof x === 'string' && EXACT_RE.test(x))) || null;
       const cause = this._log({ kind: 'trigger', key: id, text: t ? T('sbx_run_as', { n: ti + 1, p: this._plat(t) }) : T('sbx_run_by_you'), by: 'you', src });
       this._start(it, { trigger }, cause, { conds: checkConds });
       await this.settle();
+    }
+    // ---- the other things that start automations (0.11.1), each done by you from the drawer
+    // fire every enabled trigger of the function's automations that `hit(t)` says this is, with what `tv(t)` gives
+    async _userTrig(log, hit, tv) {
+      this._fresh();
+      await new Promise((r) => {
+        this._task(async () => {
+          const lid = this._log(Object.assign({ by: 'you' }, log));
+          for (const it of this.items.values()) {
+            if (it.kind !== 'automation' || !this._on(it)) continue;
+            this._trigs(it).forEach((t, i) => { if (t.enabled === false) return; const v = hit(t, it); if (v) this._fire(it, i, Object.assign({ platform: this._plat(t) }, typeof v === 'object' ? v : {}, tv ? tv(t) : {}), lid); });
+          }
+          [...this.waiters].forEach((w) => w.onOther && w.onOther(hit, tv, lid));
+          r();
+        });
+      });
+      await this.settle();
+    }
+    // Home Assistant starting or shutting down
+    userHA(event) {
+      return this._userTrig({ kind: 'did', key: 'ha:' + event, text: (event === 'shutdown' ? T('sbx_ha_stops') : T('sbx_ha_starts')) },
+        (t) => this._plat(t) === 'homeassistant' && (t.event || 'start') === event, () => ({ event }));
+    }
+    // a webhook called: its JSON body (or form data) and query
+    userWebhook(id, body, method) {
+      const json = body && typeof body === 'object' ? body : {};
+      return this._userTrig({ kind: 'did', key: 'webhook:' + id, text: T('sbx_webhook_called', { id }), data: json },
+        (t) => this._plat(t) === 'webhook' && String(t.webhook_id) === String(id) && (!t.allowed_methods || toList(t.allowed_methods).map((x) => String(x).toUpperCase()).includes(String(method || 'POST').toUpperCase())),
+        () => ({ webhook_id: id, json, data: json, query: {} }));
+    }
+    // an NFC tag scanned (and Home Assistant's tag_scanned event, which other triggers may wait for)
+    async userTag(tag, device) {
+      await this._userTrig({ kind: 'did', key: 'tag:' + tag, text: T('sbx_tag_scanned', { tag }) },
+        (t) => this._plat(t) === 'tag' && toList(t.tag_id).map(String).includes(String(tag)) && (t.device_id == null || toList(t.device_id).includes(device)),
+        () => ({ tag_id: tag, device_id: device || null }));
+      this._fresh();
+      this._task(() => this.fireEvent('tag_scanned', Object.assign({ tag_id: tag }, device ? { device_id: device } : {}), null, false));
+      await this.settle();
+    }
+    // a calendar event starting or ending (the trigger's offset is the sandbox clock's to move)
+    userCalendar(ent, event, summary) {
+      const ev = { summary: summary || T('sbx_cal_summary'), start: this.iso(), end: this.iso(this.now + 3600000), all_day: false, description: '', location: '' };
+      return this._userTrig({ kind: 'did', key: ent, text: (event === 'end' ? T('sbx_cal_ends', { name: this._name(ent), summary: ev.summary }) : T('sbx_cal_starts', { name: this._name(ent), summary: ev.summary })) },
+        (t) => this._plat(t) === 'calendar' && String(t.entity_id) === ent && (t.event || 'start') === event, () => ({ event, calendar_event: ev, offset: '0:00:00' }));
+    }
+    // a sentence said to Assist: the conversation triggers it matches, with their slots
+    userSay(said) {
+      return this._userTrig({ kind: 'did', key: 'say:', text: T('sbx_said', { s: said }) },
+        (t) => { if (this._plat(t) !== 'conversation') return null; for (const c of toList(t.command)) { const slots = sbxSentence(c).match(said); if (slots) return { sentence: said, slots, details: Object.fromEntries(Object.entries(slots).map(([k, v]) => [k, { name: k, text: v, value: v }])), device_id: null, user_input: { text: said } }; } return null; });
+    }
+    // an integration's own device trigger (a ZHA or Z-Wave button, a Hue remote), or any trigger the sandbox has no
+    // way to see coming (Z-Wave value updated, a KNX telegram, geo location): fired by you, every trigger that is it,
+    // as it's configured
+    userPress(key) {
+      let label = '';
+      this.items.forEach((it) => { if (it.kind === 'automation') this._trigs(it).forEach((t) => { if (sbxPressKey(t) === key) label = label || this._pressText(t); }); });
+      let dev = null;
+      try { dev = (JSON.parse(key) || {}).device_id; } catch (e) { dev = null; }
+      return this._userTrig({ kind: 'did', key: typeof dev === 'string' ? 'device:' + dev : 'press:', text: T('sbx_pressed', { what: label }) },
+        (t) => this._plat(t) !== 'state' && sbxPressKey(t) === key, (t) => Object.fromEntries(Object.entries(t).filter(([k]) => !SBX_DEV_SKIP.has(k))));
+    }
+    _pressText(t) {
+      if (this._plat(t) === 'device') {
+        const what = [t.type, t.subtype].filter((x) => x != null && x !== '').map((x) => String(x).replace(/_/g, ' ')).join(' · ');
+        return `${t.device_id ? this._name('device:' + t.device_id) : t.domain}: ${what || t.domain}`;
+      }
+      const rest = Object.entries(t).filter(([k, v]) => !SBX_DEV_SKIP.has(k) && v != null && typeof v !== 'object').map(([k, v]) => `${k} ${v}`).join(', ');
+      return shorten(`${this._plat(t)}${rest ? ': ' + rest : ''}`, 90);
     }
     // a service call made by you (a kept test button, say): done on the sandbox like one in a script
     async userCall(svc, data, ids) {
@@ -4257,10 +4551,68 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
             await this._fireFor(it, i, Object.assign({}, t, { for: (t.options || {}).for }), vars, lid, id, async (st) => this._eValid(spec, t, id, st));
           } else if (p === 'time' && toList(t.at).includes(id)) {
             this._armTime(it, t, i);
+          } else if (p === 'zone' && this._zoneHit(t, id, old, nu)) {
+            this._fire(it, i, { platform: 'zone', entity_id: id, from_state: old ? this.obj0(id, old) : null, to_state: this.obj0(id, nu), zone: this.obj(String(t.zone)), event: t.event || 'enter' }, lid);
           }
         }
       }
       [...this.waiters].forEach((w) => w.onState && w.onState(id, old, nu, lid));
+    }
+    // ---- zones: a person or tracker is in one when its state is the zone's name ("home" for zone.home)
+    _zoneName(z) {
+      if (z == null) return null;
+      const id = String(z);
+      if (id === 'zone.home') return 'home';
+      const s = this.get(id);
+      return s && s.attributes && s.attributes.friendly_name ? String(s.attributes.friendly_name) : id.split('.')[1];
+    }
+    _zoneHit(t, id, old, nu) {
+      if (!toList(t.entity_id).includes(id)) return false;
+      const name = this._zoneName(t.zone), was = !!old && old.state === name, is = !!nu && nu.state === name;
+      return (t.event || 'enter') === 'leave' ? was && !is : !was && is;
+    }
+    // ---- the sun: sun.sun follows the sandbox clock (its next rising and setting, a day apart after that), and sun
+    // triggers fire at sunrise or sunset plus their offset
+    _sunAt(ev, from) {
+      const s = this.get('sun.sun'), A = (s && s.attributes) || {}, base = Date.parse(ev === 'sunset' ? A.next_setting : A.next_rising);
+      if (!isFinite(base)) return null;
+      let at = base;
+      while (at > from + 86400000) at -= 86400000;
+      while (at <= from) at += 86400000;
+      return at;
+    }
+    _armSun(it, t, i) {
+      if (t.enabled === false || this._plat(t) !== 'sun') return;
+      const key = 'sun:' + it.id + '#' + i, ev = t.event === 'sunset' ? 'sunset' : 'sunrise', off = durMs(t.offset) || 0;
+      this.timers.filter((x) => x.slot === key).forEach((x) => this._drop(x));
+      const base = this._sunAt(ev, this.now - off);
+      if (base == null) return;
+      this._at(base + off, () => {
+        if (this._on(it)) this._task(() => this._fire(it, i, { platform: 'sun', event: ev, offset: t.offset != null ? t.offset : 0 }, null));
+        this._armSun(it, t, i);
+      }, null, T('sbx_sun_label', { name: this._name(it.id), ev: (ev === 'sunset' ? T('sbx_sunset') : T('sbx_sunrise')) }), it.id).slot = key;
+    }
+    _armSunState() {
+      if (!this.get('sun.sun')) return;
+      this.timers.filter((x) => x.slot === 'sun:state').forEach((x) => this._drop(x));
+      const r = this._sunAt('sunrise', this.now), st = this._sunAt('sunset', this.now);
+      if (r == null || st == null) return;
+      const up = r < st, at = Math.min(r, st);
+      this._at(at, () => this._task(async () => {
+        const nr = this._sunAt('sunrise', at), ns = this._sunAt('sunset', at);
+        await this.setState('sun.sun', up ? 'above_horizon' : 'below_horizon', Object.assign({ rising: up }, nr ? { next_rising: this.iso(nr) } : {}, ns ? { next_setting: this.iso(ns) } : {}), null);
+        this._armSunState();
+      }), null, (up ? T('sbx_sunrise') : T('sbx_sunset')), 'sun.sun').slot = 'sun:state';
+    }
+    // today's sunrise or sunset on the sandbox clock (the one on its local date)
+    _sunToday(ev) {
+      const at = this._sunAt(ev, this.now - 86400000);
+      if (at == null) return null;
+      const day = (ms) => { const p = tzParts(ms, this.tz); return p.y * 10000 + p.mo * 100 + p.d; };
+      let x = at;
+      while (day(x) > day(this.now)) x -= 86400000;
+      while (day(x) < day(this.now)) x += 86400000;
+      return x;
     }
     // ---- Home Assistant's per-entity triggers, by the rules of its trigger classes
     _espec(p) { return typeof p === 'string' ? SBX_ETRIG_OWN[p] || SBX_ETRIG[p] || null : null; }
@@ -4475,6 +4827,14 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (p === 'event') return T('sbx_trig_event', { type: tv.event.event_type });
       if (p === 'time' || p === 'time_pattern') return T('sbx_trig_time');
       if (p === 'template') return T('sbx_trig_template');
+      if (p === 'zone') { const name = this._name(tv.entity_id), zone = this._name(String(t.zone)); return tv.event === 'leave' ? T('sbx_trig_zone_leave', { name, zone }) : T('sbx_trig_zone_enter', { name, zone }); }
+      if (p === 'sun') return tv.event === 'sunset' ? T('sbx_sunset') : T('sbx_sunrise');
+      if (p === 'homeassistant') return tv.event === 'shutdown' ? T('sbx_ha_stops') : T('sbx_ha_starts');
+      if (p === 'webhook') return T('sbx_webhook_called', { id: tv.webhook_id });
+      if (p === 'tag') return T('sbx_tag_scanned', { tag: tv.tag_id });
+      if (p === 'calendar') { const name = this._name(String(t.entity_id)), summary = (tv.calendar_event || {}).summary || ''; return tv.event === 'end' ? T('sbx_cal_ends', { name, summary }) : T('sbx_cal_starts', { name, summary }); }
+      if (p === 'conversation') return T('sbx_said', { s: tv.sentence });
+      if (p === 'device' || !SBX_PLATS.has(p)) return T('sbx_pressed', { what: this._pressText(t) });
       return String(p || '');
     }
     _start(it, vars, cause, opt) {
@@ -4640,16 +5000,35 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           if (c.weekday) ok = ok && toList(c.weekday).includes(WD[p.wd]);
           return { ok, why: ok ? '' : T('sbx_it_is', { t: `${WD[p.wd]} ${String(p.h).padStart(2, '0')}:${String(p.mi).padStart(2, '0')}` }) };
         }
+        case 'zone': {
+          const ents = toList(c.entity_id), zones = toList(c.zone).map((z) => this._zoneName(z));
+          const ok = ents.length > 0 && ents.every((id) => { const st = this.get(id); return !!st && zones.includes(st.state); });
+          return { ok, why: ok ? '' : ents.map((id) => `${this._name(id)}: ${(this.get(id) || {}).state}`).join(', ') };
+        }
+        case 'sun': {
+          const at = (ev, off) => { const x = this._sunToday(ev); return x == null ? null : x + (durMs(off) || 0); };
+          const b = c.before ? at(c.before, c.before_offset) : null, a = c.after ? at(c.after, c.after_offset) : null;
+          if ((c.before && b == null) || (c.after && a == null)) break;
+          // before sunrise or after sunset is one or the other, as Home Assistant has it
+          // (after is from the moment itself: in Home Assistant the check runs a moment after what set it off)
+          const ok = c.before === 'sunrise' && c.after === 'sunset' ? this.now < b || this.now >= a : (b == null || this.now < b) && (a == null || this.now >= a);
+          const hm = (x) => { const q = tzParts(x, this.tz); return `${String(q.h).padStart(2, '0')}:${String(q.mi).padStart(2, '0')}`; };
+          return { ok, why: T('sbx_sun_why', { now: hm(this.now), what: [a != null ? T('sbx_sun_after', { t: hm(a) }) : '', b != null ? T('sbx_sun_before', { t: hm(b) }) : ''].filter(Boolean).join(', ') }) };
+        }
+        case 'device': {
+          const x = sbxDevCond(c, this.o.entityOf);
+          if (x) return this._cond(x, run);
+          break;
+        }
         case 'trigger': {
           const id = run.vars.trigger ? String(run.vars.trigger.id) : null;
           const ok = toList(c.id).map(String).includes(id);
           return { ok, why: ok ? '' : T('sbx_trig_was', { id: id == null ? '—' : id }) };
         }
-        default: {
-          const a = await this._ask({ text: T('sbx_ask_cond', { c: this.o.condText ? this.o.condText(c) : String(type) }), run });
-          return { ok: !!a, why: T('sbx_you_said', { a: a ? T('sbx_true') : T('sbx_false') }) };
-        }
+        default: break;
       }
+      const a = await this._ask({ text: T('sbx_ask_cond', { c: this.o.condText ? this.o.condText(c) : String(type) }), run });
+      return { ok: !!a, why: T('sbx_you_said', { a: a ? T('sbx_true') : T('sbx_false') }) };
     }
     async _tplCond(s, run) {
       const r = await this._tpl(s, run);
@@ -4728,8 +5107,13 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         await this.fireEvent(type, data, cid);
         return;
       }
-      if (a.scene !== undefined) { this._log({ kind: 'call', key: run.item.id, cause: run.cause, svc: 'scene.turn_on', ents: [String(a.scene)], unknown: true }); return; }
-      if (a.device_id && a.domain && a.type) { this._log({ kind: 'call', key: run.item.id, cause: run.cause, svc: T('sbx_device_act', { type: a.type }), ents: ['device:' + a.device_id], unknown: true }); return; }
+      if (a.scene !== undefined) return this._call('scene.turn_on', { target: { entity_id: a.scene } }, run);
+      if (a.device_id && a.domain && a.type) {
+        const x = sbxDevAct(a, this.o.entityOf);
+        if (x) return this._call(x[0], { data: x[1], target: { entity_id: x[2] } }, run);
+        this._log({ kind: 'call', key: run.item.id, cause: run.cause, svc: T('sbx_device_act', { type: a.type }), ents: ['device:' + a.device_id], unknown: true });
+        return;
+      }
       if (a.set_conversation_response !== undefined) return;
       this._log({ kind: 'note', key: run.item.id, cause: run.cause, text: T('sbx_unknown_step', { k: Object.keys(a).join(', ') }) });
     }
@@ -4792,6 +5176,21 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         return;
       }
       if (dom === 'timer') { for (const id of ents) await this._timer(id, s, data, cid); return; }
+      // a scene sets what it holds (its config, when it's one made in the editor), and its own state is the time
+      if (svc === 'scene.turn_on' || svc === 'scene.apply') {
+        let known = true;
+        const sets = svc === 'scene.apply' ? [data.entities] : [];
+        for (const id of ents) { const cfg = this.o.scene ? await this.o.scene(id) : null; if (cfg && cfg.entities) sets.push(cfg.entities); else known = false; if (this.get(id)) await this.setState(id, this.iso(), {}, cid); }
+        for (const set of sets) {
+          for (const [id, v] of Object.entries(set || {})) {
+            if (!EXACT_RE.test(id)) continue;
+            const st = v && typeof v === 'object' ? v.state : v, A = v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).filter(([k]) => k !== 'state')) : {};
+            if (st != null) await this.setState(id, String(st), A, cid);
+          }
+        }
+        if (!known) { entry.unknown = true; if (this.o.onLog) this.o.onLog(entry, true); }
+        return;
+      }
       if (svc === 'mqtt.publish') { await this.mqtt(data.topic, data.payload != null ? data.payload : data.payload_template, cid); return; }
       if (SBX_MSG.has(dom)) { entry.msg = true; if (this.o.onLog) this.o.onLog(entry, true); return; }
       let known = ents.length > 0;
@@ -4808,20 +5207,20 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const cur = this.get(id) || { state: 'idle', attributes: {} }, A = cur.attributes || {};
       const key = 'timer:' + id;
       const clear = () => this.timers.filter((x) => x.slot === key).forEach((x) => this._drop(x));
-      const finish = async (ev) => { clear(); await this.setState(id, 'idle', { finishes_at: null, remaining: '0:00:00' }, cid); await this.fireEvent(ev, { entity_id: id }, cid); };
+      const finish = async (ev) => { clear(); await this.setState(id, 'idle', { finishes_at: null, remaining: '0:00:00', last_transition: ev === 'timer.cancelled' ? 'cancelled' : 'finished' }, cid); await this.fireEvent(ev, { entity_id: id }, cid); };
       if (s === 'start' || s === 'change') {
         let ms = durMs(d.duration != null ? d.duration : s === 'start' && cur.state === 'paused' ? A.remaining : A.duration);
         if (s === 'change') { const left = A.finishes_at ? Date.parse(A.finishes_at) - this.now : 0; ms = left + (ms || 0); }
         if (ms == null) ms = 0;
         clear();
         const at = this.now + ms;
-        await this.setState(id, 'active', { finishes_at: this.iso(at), remaining: fmtDur(ms) }, cid);
-        this._at(at, () => this._task(async () => { await this.setState(id, 'idle', { finishes_at: null, remaining: '0:00:00' }, cid); await this.fireEvent('timer.finished', { entity_id: id }, cid); }), null, T('sbx_timer_label', { name: this._name(id) }), id).slot = key;
+        await this.setState(id, 'active', { finishes_at: this.iso(at), remaining: fmtDur(ms), last_transition: cur.state === 'active' ? 'restarted' : 'started' }, cid);
+        this._at(at, () => this._task(async () => { await this.setState(id, 'idle', { finishes_at: null, remaining: '0:00:00', last_transition: 'finished' }, cid); await this.fireEvent('timer.finished', { entity_id: id }, cid); }), null, T('sbx_timer_label', { name: this._name(id) }), id).slot = key;
         return;
       }
       if (s === 'cancel') return finish('timer.cancelled');
       if (s === 'finish') return finish('timer.finished');
-      if (s === 'pause') { const left = A.finishes_at ? Date.parse(A.finishes_at) - this.now : 0; clear(); await this.setState(id, 'paused', { remaining: fmtDur(Math.max(0, left)), finishes_at: null }, cid); }
+      if (s === 'pause') { const left = A.finishes_at ? Date.parse(A.finishes_at) - this.now : 0; clear(); await this.setState(id, 'paused', { remaining: fmtDur(Math.max(0, left)), finishes_at: null, last_transition: 'paused' }, cid); }
     }
     async _waitTpl(a, run) {
       const tpl = String(a.wait_template), ms = a.timeout != null ? durMs(await this._render(a.timeout, run)) : null;
@@ -4833,7 +5232,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (!done && a.continue_on_timeout === false) throw Object.assign({}, SBX_STOP, { text: T('sbx_timed_out') });
     }
     async _waitTrig(a, run) {
-      const ts = toList(a.wait_for_trigger).filter((t) => t && typeof t === 'object' && t.enabled !== false), ms = a.timeout != null ? durMs(await this._render(a.timeout, run)) : null;
+      const ts = this._asTrigs(a.wait_for_trigger).filter((t) => t.enabled !== false), ms = a.timeout != null ? durMs(await this._render(a.timeout, run)) : null;
       this._log({ kind: 'wait', key: run.item.id, cause: run.cause, text: T('sbx_wait_trig', { d: ms == null ? '' : ' ' + T('sbx_up_to', { d: fmtDur(ms) }) }) });
       const tid = (t, i) => (t.id != null ? String(t.id) : String(i));
       // template triggers fire on becoming true: what they are when the wait starts
@@ -4850,6 +5249,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
               if (p === 'state' && this._stateMatch(t, id, old, nu)) w.res(base);
               else if (p === 'numeric_state' && toList(t.entity_id).includes(id) && !this._inRange(t, await this._numVal(t, id, old, run)) && this._inRange(t, await this._numVal(t, id, nu, run))) w.res(base);
               else if (spec && this._eFires(spec, t, id, old, nu)) w.res(base);
+              else if (p === 'zone' && this._zoneHit(t, id, old, nu)) w.res(Object.assign(base, { zone: this.obj(String(t.zone)), event: t.event || 'enter' }));
               else if (p === 'template' && this._reads(t.value_template, id)) {
                 const r = await this._tpl(t.value_template, run), v = r.ok ? asBool(r.value) : null;
                 if (v === true && tplWas.get(i) === false) w.res({ platform: 'template', idx: String(i), id: tid(t, i), entity_id: null });
@@ -4858,6 +5258,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
             }
           } finally { this.busy--; }
         },
+        onOther: (hit, tv) => { ts.forEach((t, i) => { if (w.fin) return; const v = hit(t); if (v) w.res(Object.assign({ platform: this._plat(t), idx: String(i), id: tid(t, i) }, typeof v === 'object' ? v : {}, tv ? tv(t) : {})); }); },
         onEvent: (ev) => { ts.forEach((t, i) => { if (this._plat(t) === 'event' && toList(t.event_type).includes(ev.event_type) && subsetOf(t.event_data, ev.data)) w.res({ platform: 'event', idx: String(i), id: tid(t, i), event: ev }); }); },
         onMqtt: async (msg) => {
           this.busy++;
@@ -4877,6 +5278,130 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         if (ms != null) t = this._at(this.now + ms, () => { if (!w.fin) { w.fin = true; this.waiters.delete(w); this.busy++; res(false); } }, run, label);
         this.busy--;
       });
+    }
+    // ---- what the person can do to start the function's automations or change what they check (0.11.1): every
+    // entity (or attribute of one) a trigger, a wait or a condition reads, with the values that matter to it (the
+    // states it starts on, a number either side of each threshold, a zone, a press); the integrations' own device
+    // triggers to press; webhooks, tags, calendars, Assist sentences, and Home Assistant starting or stopping
+    _walk(it, onTrig, onCond) {
+      const conds = (x) => toList(x).forEach((c) => {
+        if (!c || typeof c !== 'object') return;
+        if (Array.isArray(c)) { conds(c); return; }
+        onCond(c.condition === 'device' ? sbxDevCond(c, this.o.entityOf) || c : c);
+        ['conditions', 'and', 'or', 'not'].forEach((k) => { if (c[k] && typeof c[k] === 'object') conds(c[k]); });
+      });
+      const acts = (x) => toList(x).forEach((a) => {
+        if (!a || typeof a !== 'object') return;
+        if (Array.isArray(a)) { acts(a); return; }
+        if (typeof a.condition === 'string' || a.and || a.or || a.not) conds(a);
+        if (a.wait_for_trigger) this._asTrigs(a.wait_for_trigger).forEach((t) => onTrig(t, true));
+        if (a.choose) toList(a.choose).forEach((o) => { if (o) { conds(o.conditions); acts(o.sequence); } });
+        if (a.default) acts(a.default);
+        if (a.if) { conds(a.if); acts(a.then); acts(a.else); }
+        if (a.repeat) { conds(a.repeat.while); conds(a.repeat.until); acts(a.repeat.sequence); }
+        if (a.sequence) acts(a.sequence);
+        if (a.parallel) toList(a.parallel).forEach((b) => acts(b && b.sequence !== undefined ? b.sequence : b));
+      });
+      if (it.kind === 'automation') {
+        this._trigs(it).forEach((t) => onTrig(t, false));
+        conds(it.cfg.conditions != null ? it.cfg.conditions : it.cfg.condition);
+        acts(it.cfg.actions != null ? it.cfg.actions : it.cfg.action);
+      } else acts(it.cfg.sequence);
+    }
+    inputs() {
+      const ents = new Map(), presses = new Map(), hooks = new Map(), tags = new Set(), cals = new Map(), says = new Map(), ha = new Set();
+      const slot = (id, attr) => {
+        if (typeof id !== 'string' || !EXACT_RE.test(id)) return null;
+        const k = id + '|' + (attr || '');
+        if (!ents.has(k)) ents.set(k, { id, attr: attr || null, vals: [] });
+        return ents.get(k);
+      };
+      const add = (id, attr, v, why) => {
+        const x = slot(id, attr);
+        if (!x || v == null || (typeof v === 'object')) return;
+        const sv = String(v);
+        if (TPL_RE.test(sv) || x.vals.some((y) => y.v === sv)) return;
+        x.vals.push({ v: sv, why });
+      };
+      const lit = (x) => (x == null ? null : typeof x === 'number' ? String(x) : /^-?\d+(\.\d+)?$/.test(String(x).trim()) ? String(x).trim() : (() => { const n = this._limit(x); return n == null ? null : String(n); })());
+      const thr = (id, attr, above, below, name) => {
+        const a = lit(above), b = lit(below);
+        if (a != null) { add(id, attr, sbxStep(a, true), T('sbx_v_above', { a, name })); add(id, attr, a, T('sbx_v_at', { a, name })); }
+        if (b != null) { add(id, attr, sbxStep(b, false), T('sbx_v_below', { a: b, name })); add(id, attr, b, T('sbx_v_at', { a: b, name })); }
+        if (a == null && b == null) slot(id, attr);
+      };
+      const reads = (tpl) => { for (const m of String(tpl || '').matchAll(ENTITY_RE)) slot(m[0], null); };
+      const zones = (id, z, name) => { toList(z).forEach((x) => { const zn = this._zoneName(x); if (zn) add(id, null, zn, T('sbx_v_zone', { zone: this._name(String(x)), name })); }); add(id, null, 'not_home', T('sbx_v_away', { name })); };
+      this.items.forEach((it) => {
+        const name = this._name(it.id), trig = T('sbx_v_trig', { name }), cond = T('sbx_v_cond', { name });
+        this._walk(it, (t, inWait) => {
+          if (t.enabled === false) return;
+          const p = this._plat(t), spec = this._espec(p);
+          if (p === 'state') toList(t.entity_id).forEach((id) => { toList(t.to).forEach((v) => add(id, t.attribute, v, trig)); toList(t.from).forEach((v) => add(id, t.attribute, v, T('sbx_v_from', { name }))); slot(id, t.attribute); });
+          else if (p === 'numeric_state') toList(t.entity_id).forEach((id) => thr(id, t.attribute, t.above, t.below, name));
+          else if (p === 'zone') toList(t.entity_id).forEach((id) => zones(id, t.zone, name));
+          else if (p === 'template') reads(t.value_template);
+          else if (p === 'time') toList(t.at).forEach((a) => { if (EXACT_RE.test(String(a))) slot(String(a), null); });
+          else if ((p === 'device' && !t._dev) || (!SBX_PLATS.has(p) && !spec && p)) presses.set(sbxPressKey(t), this._pressText(t));
+          else if (p === 'webhook' && t.webhook_id != null) hooks.set(String(t.webhook_id), toList(t.allowed_methods || ['POST', 'PUT']).map(String));
+          else if (p === 'tag') toList(t.tag_id).forEach((x) => tags.add(String(x)));
+          else if (p === 'calendar' && t.entity_id) { const k = String(t.entity_id); cals.set(k, new Set([...(cals.get(k) || []), t.event || 'start'])); }
+          else if (p === 'conversation') toList(t.command).forEach((c) => says.set(sbxSay(c), name));
+          else if (p === 'homeassistant') ha.add(t.event || 'start');
+          else if (spec) {
+            this._etargets(t, spec).forEach((id) => {
+              const ds = spec.d[id.split('.')[0]] || {}, st = this.get(id), A = (st && st.attributes) || {};
+              const attr = ds.attr && !(ds.attr === 'is_closed' && id.startsWith('cover.')) ? ds.attr : null;
+              const th = (t.options || {}).threshold || {}, lim = (c) => (c == null ? null : typeof c === 'object' ? (c.number != null ? c.number : c.entity || null) : c);
+              switch (spec.k) {
+                case 'target': case 'transition': toList(spec.to).forEach((v) => add(id, attr, v, trig)); toList(spec.from).forEach((v) => add(id, attr, v, T('sbx_v_from', { name }))); slot(id, attr); break;
+                case 'cover': add(id, null, id.startsWith('cover.') ? (ds.tv ? 'closed' : 'open') : ds.tv, trig); break;
+                case 'num_changed': case 'num_crossed':
+                  if (th.type === 'above') thr(id, attr, lim(th.value), null, name);
+                  else if (th.type === 'below') thr(id, attr, null, lim(th.value), name);
+                  else if (th.type === 'between' || th.type === 'outside') thr(id, attr, lim(th.value_min), lim(th.value_max), name);
+                  else slot(id, attr);
+                  break;
+                case 'stateless': {
+                  const types = toList((t.options || {}).event_type).concat(Array.isArray(spec.evt) ? spec.evt : []);
+                  const all = types.length ? types : id.startsWith('event.') ? toList(A.event_types) : [];
+                  if (id.startsWith('event.') && all.length) all.forEach((ty) => add(id, null, SBX_PRESS + ty, T('sbx_v_press_t', { type: ty, name })));
+                  else add(id, null, SBX_PRESS, T('sbx_v_press', { name }));
+                  break;
+                }
+                case 'counter': {
+                  const n = parseFloat(st ? st.state : '');
+                  if (spec.op === 'max') add(id, null, A.maximum, trig); else if (spec.op === 'min') add(id, null, A.minimum, trig);
+                  else if (spec.op === 'reset') add(id, null, A.initial == null ? 0 : A.initial, trig);
+                  else if (isFinite(n)) add(id, null, String(spec.op === 'down' ? n - 1 : n + 1), trig);
+                  else slot(id, null);
+                  break;
+                }
+                case 'changed': toList(A.options).forEach((v) => add(id, null, v, trig)); slot(id, null); break;
+                default: slot(id, attr);
+              }
+            });
+          }
+        }, (c) => {
+          const type = c.condition;
+          if (type === 'state') toList(c.entity_id).forEach((id) => toList(c.state).forEach((v) => add(id, c.attribute, v, cond)));
+          else if (type === 'numeric_state') toList(c.entity_id).forEach((id) => thr(id, c.attribute, c.above, c.below, name));
+          else if (type === 'zone') toList(c.entity_id).forEach((id) => zones(id, c.zone, name));
+          else if (type === 'template') reads(c.value_template);
+          else if (typeof c === 'string') reads(c);
+          else if (type === 'time') [c.after, c.before].forEach((x) => { if (EXACT_RE.test(String(x || ''))) slot(String(x), null); });
+        });
+      });
+      const nm = (id) => this._name(id);
+      return {
+        ents: [...ents.values()].sort((a, b) => nm(a.id).localeCompare(nm(b.id)) || String(a.attr || '').localeCompare(String(b.attr || ''))),
+        presses: [...presses].map(([key, label]) => ({ key, label })).sort((a, b) => a.label.localeCompare(b.label)),
+        hooks: [...hooks].map(([id, methods]) => ({ id, methods })),
+        tags: [...tags],
+        cals: [...cals].map(([id, evs]) => ({ id, events: [...evs] })),
+        says: [...says].map(([v, name]) => ({ v, name })),
+        ha: ['start', 'shutdown'].filter((x) => ha.has(x)),
+      };
     }
     // what changed since the start: [{ id, from, to }]
     diff() { return [...this.changed].map(([id, s]) => ({ id, from: this.real[id] ? this.real[id].state : null, to: s.state })).filter((x) => x.from !== x.to); }
@@ -4963,7 +5488,24 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
          items: the automations and scripts that took part (the function's own and the related ones on its board),
          steps: [{ op: set|event|mqtt|run|advance|next, … }], answers: [{ key, text, value }] given to its questions,
          expect: [{ k: state, id, state } | { k: ran|stopped|notran, id }] } ---------- */
-  const CHECK_OPS = new Set(['set', 'event', 'mqtt', 'run', 'advance', 'next']);
+  const CHECK_OPS = new Set(['set', 'event', 'mqtt', 'run', 'advance', 'next', 'press', 'ha', 'webhook', 'tag', 'calendar', 'say']);
+  // one step of a check (or of what you do in the sandbox), done on an engine
+  function sbxDoStep(eng, s) {
+    switch (s.op) {
+      case 'set': return eng.userSet(s.id, s.state, s.attrs);
+      case 'event': return eng.userEvent(s.type, s.data);
+      case 'mqtt': return eng.userMqtt(s.topic, s.payload);
+      case 'run': return eng.userRun(s.id, s.conds, s.ti, s.vars);
+      case 'advance': return eng.advance(s.ms);
+      case 'press': return eng.userPress(s.key);
+      case 'ha': return eng.userHA(s.event);
+      case 'webhook': return eng.userWebhook(s.id, s.data, s.method);
+      case 'tag': return eng.userTag(s.tag);
+      case 'calendar': return eng.userCalendar(s.id, s.event, s.summary);
+      case 'say': return eng.userSay(s.text);
+      default: return eng.toNext();
+    }
+  }
   const CHECK_EXP = new Set(['state', 'ran', 'stopped', 'notran']);
   // what a check may hold, and no more (it's kept in the layout, shared and synced)
   function cleanCheck(c) {
@@ -4976,10 +5518,16 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     });
     const steps = (Array.isArray(c.steps) ? c.steps : []).slice(0, 100).map((x) => {
       if (!x || !CHECK_OPS.has(x.op)) return null;
-      if (x.op === 'set') return id(x.id) && { op: 'set', id: x.id, state: str(x.state, 255) };
+      if (x.op === 'set') return id(x.id) && Object.assign({ op: 'set', id: x.id, state: x.state == null ? null : str(x.state, 255) }, x.attrs && typeof x.attrs === 'object' && Object.keys(x.attrs).length ? { attrs: plain(x.attrs) } : {});
+      if (x.op === 'press') return { op: 'press', key: str(x.key, 1000) };
+      if (x.op === 'ha') return { op: 'ha', event: x.event === 'shutdown' ? 'shutdown' : 'start' };
+      if (x.op === 'webhook') return { op: 'webhook', id: str(x.id, 255), method: str(x.method || 'POST', 10).toUpperCase(), data: plain(x.data) };
+      if (x.op === 'tag') return { op: 'tag', tag: str(x.tag, 255) };
+      if (x.op === 'calendar') return id(x.id) && { op: 'calendar', id: x.id, event: x.event === 'end' ? 'end' : 'start', summary: str(x.summary, 255) };
+      if (x.op === 'say') return { op: 'say', text: str(x.text, 500) };
       if (x.op === 'event') return { op: 'event', type: str(x.type, 255), data: plain(x.data) };
       if (x.op === 'mqtt') return { op: 'mqtt', topic: str(x.topic, 255), payload: str(x.payload, 4000) };
-      if (x.op === 'run') return id(x.id) && { op: 'run', id: x.id, conds: !!x.conds, ti: Number.isInteger(x.ti) ? x.ti : null };
+      if (x.op === 'run') return id(x.id) && Object.assign({ op: 'run', id: x.id, conds: !!x.conds, ti: Number.isInteger(x.ti) ? x.ti : null }, x.vars && typeof x.vars === 'object' && Object.keys(x.vars).length ? { vars: plain(x.vars) } : {});
       if (x.op === 'advance') return { op: 'advance', ms: Math.max(0, Math.min(366 * 864e5, Math.round(+x.ms || 0))) };
       return { op: 'next' };
     }).filter(Boolean);
@@ -5006,14 +5554,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       },
     }));
     await eng.start();
-    for (const s of c.steps) {
-      if (s.op === 'set') await eng.userSet(s.id, s.state);
-      else if (s.op === 'event') await eng.userEvent(s.type, s.data);
-      else if (s.op === 'mqtt') await eng.userMqtt(s.topic, s.payload);
-      else if (s.op === 'run') await eng.userRun(s.id, s.conds, s.ti);
-      else if (s.op === 'advance') await eng.advance(s.ms);
-      else if (s.op === 'next') await eng.toNext();
-    }
+    for (const s of c.steps) await sbxDoStep(eng, s);
     await eng.settle();
     const runs = (k) => eng.log.filter((e) => e.kind === 'run' && e.key === k).map((e) => e.outcome);
     const res = c.expect.map((x) => {
@@ -7613,8 +8154,16 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           'sbx-fire': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
           'sbx-run': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
           'sbx-mqtt': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
-          'sbx-adv': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
           'sbx-next': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
+          'sbx-press': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
+          'sbx-ha': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
+          'sbx-hook': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
+          'sbx-tag': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
+          'sbx-cal': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
+          'sbx-say': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
+          'sbx-advby': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
+          'sbx-jump': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
+          'sbx-to': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
           'sbx-pick': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
           'sbx-pdis': (el) => { this._probDismiss(el.dataset.k, 'off'); },
           'sbx-reset': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
@@ -9850,7 +10399,14 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     _checkName(k) { return this._model && this._model.nodes.has(k) ? this._model.nodes.get(k).name : this._nameOf(k); }
     _chkStepText(s) {
       const nm = (k) => esc(this._checkName(k));
-      if (s.op === 'set') return T('chk_s_set', { name: nm(s.id), state: esc(s.state) });
+      if (s.op === 'set' && s.attrs && s.state == null) return T('chk_s_attr', { name: nm(s.id), what: esc(Object.entries(s.attrs).map(([k, v]) => `${k} ${v}`).join(', ')) });
+      if (s.op === 'set') return T('chk_s_set', { name: nm(s.id), state: esc(s.attrs && s.attrs.event_type ? s.attrs.event_type : s.state) });
+      if (s.op === 'press') return T('chk_s_press', { what: esc(((() => { try { const o = JSON.parse(s.key); return [o.type, o.subtype].filter(Boolean).join(' · '); } catch (e) { return ''; } })()) || '') });
+      if (s.op === 'ha') return s.event === 'shutdown' ? T('sbx_ha_stops') : T('sbx_ha_starts');
+      if (s.op === 'webhook') return T('sbx_webhook_called', { id: esc(s.id) });
+      if (s.op === 'tag') return T('sbx_tag_scanned', { tag: esc(s.tag) });
+      if (s.op === 'calendar') return s.event === 'end' ? T('sbx_cal_ends', { name: nm(s.id), summary: esc(s.summary) }) : T('sbx_cal_starts', { name: nm(s.id), summary: esc(s.summary) });
+      if (s.op === 'say') return T('sbx_said', { s: esc(s.text) });
       if (s.op === 'event') return T('chk_s_event', { type: esc(s.type) });
       if (s.op === 'mqtt') return T('chk_s_mqtt', { topic: esc(s.topic), payload: esc(shorten(s.payload, 40)) });
       if (s.op === 'run') return T('chk_s_run', { name: nm(s.id) });
@@ -9935,7 +10491,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       };
       const resolve = (ref) => { if (ref.startsWith('device:')) return this._ents.filter((e) => e.device_id === ref.slice(7)).map((e) => e.entity_id); const t = this._tgt.get(ref); return t ? t.entities : []; };
       const o = { states: this._hass.states, tz: this._hass.config && this._hass.config.time_zone, tpl: (t, v, e) => this._sbxTpl(t, v, e), resolve,
-        fetch: (id) => this._fetchConfig(id), name: (id) => this._boxName(id), condText: (c) => condText(c, (x) => this._boxName(x)) };
+        fetch: (id) => this._fetchConfig(id), name: (id) => this._boxName(id), condText: (c) => condText(c, (x) => this._boxName(x)),
+        entityOf: (x) => this._entOfReg(x), scene: (id) => this._sceneCfg(id) };
       const rec = have && have.gen === gen ? have : { gen, res: new Map() };
       for (const c of list) {
         try { const r = await runCheck(c, Object.assign({ items: await itemsFor(c) }, o)); rec.res.set(c.id, { ok: r.ok, unsure: r.unsure, res: r.res }); }
@@ -9979,15 +10536,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       for (const s of c.steps) {
         if (!this._sbxOn()) return;
         const g = this._sbx;
-        await this._sbxDo((e) => {
-          this._sbxRec(s);
-          if (s.op === 'set') return e.userSet(s.id, s.state);
-          if (s.op === 'event') return e.userEvent(s.type, s.data);
-          if (s.op === 'mqtt') return e.userMqtt(s.topic, s.payload);
-          if (s.op === 'run') return e.userRun(s.id, s.conds, s.ti);
-          if (s.op === 'advance') return e.advance(s.ms);
-          return e.toNext();
-        });
+        await this._sbxDo((e) => { this._sbxRec(s); return sbxDoStep(e, s); });
         if (this._sbx !== g) return;
         if (!(await this._clock.sleep(300))) return;
       }
@@ -11418,8 +11967,20 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         states, items: ids.map((id, i) => ({ id, cfg: cfgs[i] })), now, tz: this._hass.config && this._hass.config.time_zone,
         tpl: (t, v, e) => this._sbxTpl(t, v, e), ask: (q) => this._sbxAsk(q), resolve, fetch: (id) => this._fetchConfig(id),
         name: (id) => this._boxName(id), condText: (c) => condText(c, (x) => this._boxName(x)), onLog: () => this._sbxLogged(),
+        entityOf: (x) => this._entOfReg(x), scene: (id) => this._sceneCfg(id),
       });
       await g.eng.start();
+    }
+    // the entity id for an entity registry id (a device trigger, condition or action made in the editor keeps those)
+    _entOfReg(x) {
+      const e = this._ents.find((y) => y.id === x);
+      return e ? e.entity_id : null;
+    }
+    // a scene's config (what it sets), for one made in the editor; one in YAML has none to read
+    async _sceneCfg(id) {
+      const st = this._hass.states[id], sid = st && st.attributes && st.attributes.id;
+      if (sid == null) return null;
+      return this._api('GET', `config/scene/config/${encodeURIComponent(sid)}`, null, { optional: 'a scene set up in YAML has no config to read', fallback: null });
     }
     _sbxEnd() {
       const g = this._sbx;
@@ -11482,32 +12043,146 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     _sbxLogged() {
       this._clock.once('sbx', 120, () => { this._renderSbx(); this._refreshStates(); });
     }
-    // the entities you can set, the events you can fire, the automations and scripts you can run
+    // the drawer's controls (0.11.1: everything a dropdown, with Other… to type anything else). Set: every entity or
+    // attribute the automations read (triggers, waits, conditions), with the values that matter to them, then the
+    // rest of the board's. A row for each other thing that starts one of them, when one does: a device's own
+    // button, an event, MQTT, a webhook, a tag, a calendar, Assist, Home Assistant starting or stopping. Run, and the
+    // clock: advance by, jump to a time, what's due next
     _renderSbxCtl() {
       const g = this._sbx, box = this._$.drawer.querySelector('.sbctl');
       if (!g || !box) return;
-      const m = this._model, nm = (k) => this._boxName(k);
-      const ents = [...m.nodes.keys()].filter((k) => !k.includes(':') && g.eng.get(k)).sort((a, b) => nm(a).localeCompare(nm(b)));
+      const m = this._model, nm = (k) => this._boxName(k), byName = (a, b) => nm(a).localeCompare(nm(b));
+      const ins = g.ins = g.eng.inputs();
+      const read = [...new Set(ins.ents.map((x) => x.id))].filter((k) => g.eng.get(k)).sort(byName);
+      const rest = [...m.nodes.keys()].filter((k) => !k.includes(':') && g.eng.get(k) && !read.includes(k)).sort(byName);
+      const ents = read.concat(rest);
       const evs = [...m.nodes.keys()].filter((k) => k.startsWith('event:')).map((k) => k.slice(6));
       ['timer.finished', 'timer.cancelled'].forEach((x) => { if (!evs.includes(x) && ents.some((e) => e.startsWith('timer.'))) evs.push(x); });
-      const runs = [...g.eng.items.keys()].sort((a, b) => nm(a).localeCompare(nm(b)));
+      const runs = [...g.eng.items.keys()].sort(byName);
       const topics = new Set([...m.nodes.keys()].filter((k) => k.startsWith('mqtt:')).map((k) => k.slice(5)));
       g.eng.items.forEach((it) => { if (it.kind === 'automation') g.eng._trigs(it).forEach((t) => { if (g.eng._plat(t) === 'mqtt' && t.topic && !/[+#]/.test(t.topic)) topics.add(String(t.topic)); }); });
-      const opt = (k) => `<option value="${esc(k)}">${esc(nm(k))}</option>`;
-      this._put(box, `<div class="sbrow"><span class="sbl">${T('sbx_set')}</span><select class="sbent" aria-label="${T('sbx_entity')}">${ents.map(opt).join('')}</select>${this._sbxField('sbval', [], T('sbx_state'))}<button class="chip" data-act="sbx-set">${T('sbx_set_b')}</button></div>`
-        + `<div class="sbrow"><span class="sbl">${T('sbx_event')}</span>${this._sbxField('sbev', evs.map((x) => ({ v: x, l: x })), T('sbx_event_type'))}${this._sbxField('sbevd', [], T('sbx_event_data_ph'))}<button class="chip" data-act="sbx-fire">${T('sbx_fire')}</button></div>`
-        + (topics.size ? `<div class="sbrow"><span class="sbl">MQTT</span>${this._sbxField('sbtop', [...topics].map((x) => ({ v: x, l: x })), T('sbx_topic'))}${this._sbxField('sbpay', [], T('sbx_payload'))}<button class="chip" data-act="sbx-mqtt">${T('sbx_send')}</button></div>` : '')
-        + `<div class="sbrow"><span class="sbl">${T('sbx_run')}</span><select class="sbrun" aria-label="${T('sbx_run_what')}">${runs.map(opt).join('')}</select><select class="sbtrig" aria-label="${T('sbx_as_if')}"></select><label class="sbcb"><input type="checkbox" class="sbconds" checked>${T('sbx_check_conds')}</label><button class="chip" data-act="sbx-run">${T('sbx_run_b')}</button></div>`
-        + `<div class="sbrow"><span class="sbl">${T('sbx_clock')}</span><button class="chip" data-act="sbx-adv" data-ms="60000">+1 min</button><button class="chip" data-act="sbx-adv" data-ms="600000">+10 min</button><button class="chip" data-act="sbx-adv" data-ms="3600000">+1 h</button><button class="chip sbnext" data-act="sbx-next"></button></div>`);
+      const opt = (k) => `<option value="${esc(k)}">${esc(nm(k))}</option>`, o2 = (v, l) => `<option value="${esc(v)}">${esc(l)}</option>`;
+      const row = (label, body) => `<div class="sbrow"><span class="sbl">${label}</span>${body}</div>`;
+      const sel = (cls, aria, opts) => `<select class="${cls}" aria-label="${esc(aria)}">${opts}</select>`;
+      const entOpts = (read.length && rest.length ? `<optgroup label="${esc(T('sbx_g_read'))}">${read.map(opt).join('')}</optgroup><optgroup label="${esc(T('sbx_g_rest'))}">${rest.map(opt).join('')}</optgroup>` : ents.map(opt).join(''));
+      const rows = [
+        row(T('sbx_set'), sel('sbent', T('sbx_entity'), entOpts) + sel('sbattr', T('sbx_attr'), '') + this._sbxField('sbval', [], T('sbx_state')) + `<button class="chip" data-act="sbx-set">${T('sbx_set_b')}</button>`),
+      ];
+      if (ins.presses.length) rows.push(row(T('sbx_press'), sel('sbpress', T('sbx_press_what'), ins.presses.map((x) => o2(x.key, x.label)).join('')) + `<button class="chip" data-act="sbx-press">${T('sbx_press_b')}</button>`));
+      rows.push(row(T('sbx_event'), this._sbxField('sbev', evs.map((x) => ({ v: x, l: x })), T('sbx_event_type')) + this._sbxField('sbevd', [], T('sbx_event_data_ph')) + `<button class="chip" data-act="sbx-fire">${T('sbx_fire')}</button>`));
+      if (topics.size) rows.push(row('MQTT', this._sbxField('sbtop', [...topics].map((x) => ({ v: x, l: x })), T('sbx_topic')) + this._sbxField('sbpay', [], T('sbx_payload')) + `<button class="chip" data-act="sbx-mqtt">${T('sbx_send')}</button>`));
+      if (ins.hooks.length) rows.push(row(T('sbx_webhook'), sel('sbhook', T('sbx_webhook'), ins.hooks.map((x) => o2(x.id, x.id)).join('')) + sel('sbhookm', T('sbx_method'), '') + this._sbxField('sbhookd', [{ v: '{}', l: T('sbx_body_empty') }], T('sbx_body_ph')) + `<button class="chip" data-act="sbx-hook">${T('sbx_call')}</button>`));
+      if (ins.tags.length) rows.push(row(T('sbx_tag'), this._sbxField('sbtag', ins.tags.map((x) => ({ v: x, l: x })), T('sbx_tag_id')) + `<button class="chip" data-act="sbx-tag">${T('sbx_scan')}</button>`));
+      if (ins.cals.length) rows.push(row(T('sbx_calendar'), sel('sbcal', T('sbx_calendar'), ins.cals.map((x) => opt(x.id)).join('')) + sel('sbcalev', T('sbx_cal_what'), o2('start', T('sbx_cal_start')) + o2('end', T('sbx_cal_end'))) + this._sbxField('sbcals', [{ v: T('sbx_cal_summary'), l: T('sbx_cal_summary') }], T('sbx_cal_title')) + `<button class="chip" data-act="sbx-cal">${T('sbx_go')}</button>`));
+      if (ins.says.length) rows.push(row(T('sbx_say'), this._sbxField('sbsay', ins.says.map((x) => ({ v: x.v, l: T('sbx_say_as', { s: x.v, name: x.name }) })), T('sbx_sentence')) + `<button class="chip" data-act="sbx-say">${T('sbx_say_b')}</button>`));
+      if (ins.ha.length) rows.push(row(T('sbx_ha'), sel('sbha', T('sbx_ha'), ins.ha.map((x) => o2(x, x === 'shutdown' ? T('sbx_ha_stops') : T('sbx_ha_starts'))).join('')) + `<button class="chip" data-act="sbx-ha">${T('sbx_go')}</button>`));
+      rows.push(row(T('sbx_run'), sel('sbrun', T('sbx_run_what'), runs.map(opt).join('')) + `<select class="sbtrig" aria-label="${T('sbx_as_if')}"></select>` + `<span class="sbvarsw" hidden>${this._sbxField('sbvars', [], T('sbx_vars_ph'))}</span>` + `<label class="sbcb"><input type="checkbox" class="sbconds" checked>${T('sbx_check_conds')}</label>` + `<button class="chip" data-act="sbx-run">${T('sbx_run_b')}</button>`));
+      const steps = [[1e3, '1 s'], [1e4, '10 s'], [6e4, '1 min'], [3e5, '5 min'], [6e5, '10 min'], [18e5, '30 min'], [36e5, '1 h'], [108e5, '3 h'], [216e5, '6 h'], [432e5, '12 h'], [864e5, T('sbx_1day')], [6048e5, T('sbx_1week')]];
+      rows.push(row(T('sbx_clock'), this._sbxField('sbadv', steps.map(([v, l]) => ({ v: String(v), l: '+' + l, pick: v === 6e4 })), T('sbx_adv_ph'), T('sbx_adv_by')) + `<button class="chip" data-act="sbx-advby">${T('sbx_advance')}</button>` + `<button class="chip sbnext" data-act="sbx-next"></button>`));
+      rows.push(row(T('sbx_jump'), this._sbxField('sbjump', [], T('sbx_jump_ph'), T('sbx_jump')) + `<button class="chip" data-act="sbx-jump">${T('sbx_go')}</button>`));
+      this._put(box, rows.join(''));
       const pick = this._sel && ents.includes(this._sel) ? this._sel : ents[0];
       if (pick) this._sbxPick(pick);
       this._sbxTrigs();
       this._sbxEvData();
       this._sbxPayloads();
+      this._sbxHookM();
+      this._sbxJumps();
+    }
+    // the attributes the automations read of the entity picked, as a choice beside its state
+    _sbxAttrs(k) {
+      const g = this._sbx, sel = this._$.drawer.querySelector('.sbattr');
+      if (!g || !sel) return;
+      const attrs = [...new Set(((g.ins && g.ins.ents) || []).filter((x) => x.id === k && x.attr).map((x) => x.attr))];
+      sel.innerHTML = `<option value="">${esc(T('sbx_state'))}</option>` + attrs.map((a) => `<option value="${esc(a)}">${esc(a)}</option>`).join('');
+      sel.hidden = !attrs.length;
+    }
+    // the values for the entity (or attribute) picked: the ones that matter to an automation first, with why, then
+    // its usual states, then unavailable and unknown
+    _sbxValOpts(k, attr) {
+      const g = this._sbx, n = this._model.nodes.get(k), s = g.eng.get(k);
+      const now = s ? (attr ? (s.attributes || {})[attr] : s.state) : null, nowS = now == null ? null : typeof now === 'object' ? JSON.stringify(now) : String(now);
+      const out = [], seen = new Set(), put = (v, l, pick) => { if (seen.has(v)) return; seen.add(v); out.push({ v, l, pick }); };
+      ((g.ins && g.ins.ents) || []).filter((x) => x.id === k && (x.attr || '') === (attr || '')).forEach((x) => x.vals.forEach((y) => {
+        if (y.v.startsWith(SBX_PRESS)) put(y.v, y.why, true);
+        else put(y.v, y.why ? T('sbx_v_l', { v: y.v === nowS ? T('sbx_state_now', { state: y.v }) : y.v, why: y.why }) : y.v, y.v !== nowS);
+      }));
+      const dom = k.split('.')[0];
+      if (!attr) {
+        if (['button', 'input_button', 'scene'].includes(dom)) put(SBX_PRESS, T('sbx_press_now'), true);
+        if (dom === 'event') toList(s && s.attributes && s.attributes.event_types).forEach((ty) => put(SBX_PRESS + ty, T('sbx_press_type', { type: ty }), true));
+        (n ? this._stateHints(n) : []).forEach((x) => put(x, x === nowS ? T('sbx_state_now', { state: x }) : x, x !== nowS));
+      }
+      if (nowS != null) put(nowS, T('sbx_state_now', { state: nowS }), false);
+      if (!attr) ['unavailable', 'unknown'].forEach((x) => put(x, x, false));
+      // the first value that changes something is picked, so Set does something
+      const first = out.find((o) => o.pick);
+      out.forEach((o) => { o.pick = o === first; });
+      return { opts: out, now: nowS };
+    }
+    _sbxPick(k, soft) {
+      const d = this._$.drawer, sel = d.querySelector('.sbent'), val = d.querySelector('input.sbval');
+      if (!sel || !this._sbx) return;
+      if (soft && sel.value !== k) return;
+      sel.value = k;
+      if (!soft) this._sbxAttrs(k);
+      this._sbxVals(soft);
+    }
+    _sbxVals(soft) {
+      const d = this._$.drawer, sel = d.querySelector('.sbent'), at = d.querySelector('.sbattr'), val = d.querySelector('input.sbval');
+      if (!sel || !this._sbx) return;
+      const { opts, now } = this._sbxValOpts(sel.value, at && !at.hidden ? at.value : '');
+      this._sbxOpts('sbval', opts, soft ? true : 'pick');
+      if (val) { if (!soft) val.value = ''; val.placeholder = now != null ? T('sbx_now_is', { state: now }) : T('sbx_state'); }
+    }
+    // a webhook's methods, as its trigger allows them
+    _sbxHookM() {
+      const d = this._$.drawer, h = d.querySelector('.sbhook'), m = d.querySelector('.sbhookm'), g = this._sbx;
+      if (!h || !m || !g) return;
+      const x = (g.ins.hooks || []).find((y) => y.id === h.value);
+      m.innerHTML = (x ? x.methods : ['POST']).map((v) => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+    }
+    // the times worth jumping to: what's due, sunrise and sunset, the function's time triggers and the edges of its
+    // time conditions, and midnight; each with how far off it is
+    _sbxJumps() {
+      const g = this._sbx;
+      if (!g || !this._$.drawer.querySelector('.sbjump-sel')) return;
+      const eng = g.eng, out = new Map(), put = (at, l) => { if (at != null && at > eng.now && !out.has(at)) out.set(at, l); };
+      eng.pending().forEach((x) => put(x.at, x.label));
+      put(eng._sunAt('sunrise', eng.now), T('sbx_sunrise'));
+      put(eng._sunAt('sunset', eng.now), T('sbx_sunset'));
+      eng.items.forEach((it) => eng._walk(it, (t) => { if (eng._plat(t) === 'time') toList(t.at).forEach((a) => put(eng._timeAt(a, eng.now), T('sbx_time_label', { name: this._boxName(it.id) }))); }, (c) => {
+        if (c.condition !== 'time') return;
+        [['after', c.after], ['before', c.before]].forEach(([w, v]) => { if (v != null && !EXACT_RE.test(String(v))) put(eng._timeAt(v, eng.now), T('sbx_time_edge', { name: this._boxName(it.id), w: w === 'after' ? T('sbx_after') : T('sbx_before'), t: String(v) })); });
+      }));
+      put(localAt(eng.now + 86400000, [0, 0, 0], eng.tz), T('sbx_midnight'));
+      const opts = [...out].sort((a, b) => a[0] - b[0]).slice(0, 30).map(([at, l]) => ({ v: String(at), l: T('sbx_jump_l', { t: this._sbxWhen(at), what: l, d: clockShort(at - eng.now) }) }));
+      const sel = this._$.drawer.querySelector('.sbjump-sel'), inp = this._$.drawer.querySelector('input.sbjump');
+      this._sbxOpts('sbjump', opts, sel.value !== SBX_OTHER || (inp && inp.value) ? true : 'pick');
+    }
+    // a time on the sandbox clock: Fri 20 Nov, 22:00:53 (the day only when it isn't today)
+    _sbxWhen(ms, full) {
+      const eng = this._sbx && this._sbx.eng, tz = eng ? eng.tz : undefined, p = tzParts(ms, tz), q = eng ? tzParts(eng.now, tz) : p;
+      const hms = `${String(p.h).padStart(2, '0')}:${String(p.mi).padStart(2, '0')}:${String(p.s).padStart(2, '0')}`;
+      if (!full && p.y === q.y && p.mo === q.mo && p.d === q.d) return hms;
+      let day = `${WD[p.wd]} ${p.d}/${p.mo}`;
+      try { day = new Intl.DateTimeFormat(this._hass.language || undefined, { weekday: 'short', day: 'numeric', month: 'short', timeZone: tz || undefined }).format(new Date(ms)); } catch (e) { /* the plain one */ }
+      return `${day}, ${hms}`;
+    }
+    // a time typed under Jump to: 21:30 (the next one), 2026-11-21 07:00, or +90 min / +2 h / +1 d
+    _sbxParseWhen(txt) {
+      const eng = this._sbx.eng, s = String(txt || '').trim();
+      let m = /^\+\s*(\d+(?:\.\d+)?)\s*(s|sec|m|min|h|hr|d|day|days|w|week)?$/i.exec(s);
+      if (m) { const u = (m[2] || 'min').toLowerCase()[0]; return eng.now + parseFloat(m[1]) * ({ s: 1e3, m: 6e4, h: 36e5, d: 864e5, w: 6048e5 }[u]); }
+      m = /^(\d{4})-(\d{1,2})-(\d{1,2})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(s);
+      if (m) { const base = Date.UTC(+m[1], +m[2] - 1, +m[3], 12); return localAt(base, [+m[4], +m[5], +(m[6] || 0)], eng.tz); }
+      const hms = parseHMS(s);
+      return hms ? eng._timeAt(s, eng.now) : null;
     }
     // a dropdown of what fits, ending with Other… which opens a box to type anything else
-    _sbxField(cls, opts, ph) {
-      return `<span class="sbf"><select class="sbsel ${cls}-sel" data-f="${cls}" aria-label="${esc(ph)}">${opts.map((o) => `<option value="${esc(o.v)}">${esc(o.l)}</option>`).join('')}<option value="${SBX_OTHER}">${T('sbx_other')}</option></select><input class="${cls}" placeholder="${esc(ph)}" aria-label="${esc(ph)}"${opts.length ? ' hidden' : ''}></span>`;
+    _sbxField(cls, opts, ph, aria) {
+      const pick = opts.find((o) => o.pick), sel = (o) => (o === pick ? ' selected' : '');
+      return `<span class="sbf"><select class="sbsel ${cls}-sel" data-f="${cls}" aria-label="${esc(aria || ph)}">${opts.map((o) => `<option value="${esc(o.v)}"${sel(o)}>${esc(o.l)}</option>`).join('')}<option value="${SBX_OTHER}">${T('sbx_other')}</option></select><input class="${cls}" placeholder="${esc(ph)}" aria-label="${esc(aria || ph)}"${opts.length ? ' hidden' : ''}></span>`;
     }
     _sbxOpts(cls, opts, keep) {
       const sel = this._$.drawer.querySelector(`.${cls}-sel`);
@@ -11580,38 +12255,33 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       };
       sel.innerHTML = ts.map((t, i) => `<option value="${i}">${esc(T('sbx_as_trigger', { n: i + 1, what: shorten(what(t), 50) }))}</option>`).join('') + `<option value="">${esc(T('sbx_no_trigger'))}</option>`;
       sel.hidden = !ts.length;
+      // a script's fields: its defaults or examples to start from, none, or your own
+      const vw = d.querySelector('.sbvarsw'), fields = it && it.kind === 'script' && it.cfg.fields && typeof it.cfg.fields === 'object' ? it.cfg.fields : null;
+      if (vw) vw.hidden = !fields;
+      if (fields) {
+        const ex = {};
+        Object.entries(fields).forEach(([k, f]) => { const v = f && (f.default !== undefined ? f.default : f.example); if (v !== undefined) ex[k] = v; });
+        const opts = Object.keys(ex).length ? [{ v: JSON.stringify(ex), l: T('sbx_vars_ex', { v: shorten(Object.entries(ex).map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`).join(', '), 60) }), pick: true }] : [];
+        opts.push({ v: '', l: T('sbx_vars_none') });
+        this._sbxOpts('sbvars', opts, 'pick');
+      }
     }
-    // soft: only bring the suggestions and the "now …" hint up to date, if that entity is still the one picked, and
-    // leave what's typed (after a Set settles, the person may already be on the next one)
     // the sandbox drawer's own fields
     _sbxChange(t) {
       if (!t.classList) return false;
       if (t.classList.contains('sbent')) { this._sbxPick(t.value); return true; }
+      if (t.classList.contains('sbattr')) { this._sbxVals(); return true; }
       if (t.classList.contains('sbrun')) { this._sbxTrigs(); return true; }
+      if (t.classList.contains('sbhook')) { this._sbxHookM(); return true; }
       if (t.classList.contains('sbsel')) {
         this._sbxOther(t, true);
         if (t.dataset.f === 'sbev') this._sbxEvData();
         if (t.dataset.f === 'sbtop') this._sbxPayloads();
+        // an example sentence with a {slot} in it: to be filled in, in the box
+        if (t.dataset.f === 'sbsay' && /\{/.test(t.value)) { const inp = t.parentNode.querySelector('input'); const v = t.value; t.value = SBX_OTHER; this._sbxOther(t, true); if (inp) inp.value = v; }
         return true;
       }
       return false;
-    }
-    _sbxPick(k, soft) {
-      const d = this._$.drawer, sel = d.querySelector('.sbent'), val = d.querySelector('input.sbval');
-      if (!sel || !this._sbx) return;
-      if (soft && sel.value !== k) return;
-      sel.value = k;
-      const n = this._model.nodes.get(k), s = this._sbx.eng.get(k), now = s ? String(s.state) : null;
-      const hints = new Set(n ? this._stateHints(n) : []);
-      if (now != null) hints.add(now);
-      // a sandbox is where you'd try what a missing or failing device does
-      ['unavailable', 'unknown'].forEach((x) => hints.add(x));
-      const opts = [...hints].map((x) => ({ v: x, l: x === now ? T('sbx_state_now', { state: x }) : x }));
-      // the first state it isn't in already, so Set does something
-      const first = opts.find((o) => o.v !== now && o.v !== 'unavailable' && o.v !== 'unknown');
-      if (first) first.pick = true;
-      this._sbxOpts('sbval', opts, soft ? true : 'pick');
-      if (val) { if (!soft) val.value = ''; val.placeholder = now != null ? T('sbx_now_is', { state: now }) : T('sbx_state'); }
     }
     async _sbxDo(fn) {
       const g = this._sbx;
@@ -11640,16 +12310,48 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       }
       this._sbxAction(act, el);
     }
+    // one thing you do, recorded for a check and done on the sandbox
+    _sbxStep(step) { return this._sbxDo((e) => { this._sbxRec(step); return sbxDoStep(e, step); }); }
     _sbxAction(act, el) {
       const d = this._$.drawer, q = (s) => d.querySelector(s);
       switch (act) {
         case 'sbx-set': {
-          const id = q('.sbent').value, v = this._sbxVal('sbval');
+          const id = q('.sbent').value, v = this._sbxVal('sbval'), at = q('.sbattr'), attr = at && !at.hidden ? at.value : '';
           if (!id || !v) { this._toast(T('sbx_pick_state')); return; }
           if (q('input.sbval')) q('input.sbval').value = '';
-          this._sbxDo((e) => { this._sbxRec({ op: 'set', id, state: v }); return e.userSet(id, v); }).then(() => this._sbxPick(id, true));
+          // a press: its state becomes the time (an event entity's with its event type); an attribute: as a number,
+          // true or false when it reads as one
+          const asVal = (x) => (/^-?\d+(\.\d+)?$/.test(x) ? parseFloat(x) : x === 'true' ? true : x === 'false' ? false : x === 'null' ? null : x);
+          const step = v.startsWith(SBX_PRESS) ? { op: 'set', id, state: this._sbx.eng.iso(), attrs: v.length > SBX_PRESS.length ? { event_type: v.slice(SBX_PRESS.length) } : undefined }
+            : attr ? { op: 'set', id, state: null, attrs: { [attr]: asVal(v) } } : { op: 'set', id, state: v };
+          this._sbxDo((e) => { this._sbxRec(step); return sbxDoStep(e, step); }).then(() => this._sbxPick(id, true));
           break;
         }
+        case 'sbx-press': { const key = q('.sbpress').value; if (key) this._sbxStep({ op: 'press', key }); break; }
+        case 'sbx-ha': this._sbxStep({ op: 'ha', event: q('.sbha').value }); break;
+        case 'sbx-hook': {
+          const raw = this._sbxVal('sbhookd');
+          let data = {};
+          if (raw) { try { data = JSON.parse(raw); } catch (e) { const p = parseLoose(raw); if (p && typeof p === 'object') data = p; else { this._toast(T('sbx_bad_data')); return; } } }
+          this._sbxStep({ op: 'webhook', id: q('.sbhook').value, method: q('.sbhookm').value, data });
+          break;
+        }
+        case 'sbx-tag': { const tag = this._sbxVal('sbtag'); if (!tag) { this._toast(T('sbx_pick_tag')); return; } this._sbxStep({ op: 'tag', tag }); break; }
+        case 'sbx-cal': this._sbxStep({ op: 'calendar', id: q('.sbcal').value, event: q('.sbcalev').value, summary: this._sbxVal('sbcals') || T('sbx_cal_summary') }); break;
+        case 'sbx-say': { const text = this._sbxVal('sbsay'); if (!text || /\{/.test(text)) { this._toast(T('sbx_fill_slots')); return; } this._sbxStep({ op: 'say', text }); break; }
+        case 'sbx-advby': {
+          const raw = this._sbxVal('sbadv'), ms = /^\d+$/.test(raw) ? +raw : (() => { const at = this._sbxParseWhen(/^\+/.test(raw) ? raw : '+' + raw); return at == null ? null : at - this._sbx.eng.now; })();
+          if (!ms || ms <= 0) { this._toast(T('sbx_bad_time')); return; }
+          this._sbxStep({ op: 'advance', ms });
+          break;
+        }
+        case 'sbx-jump': {
+          const raw = this._sbxVal('sbjump'), at = /^\d{10,}$/.test(raw) ? +raw : this._sbxParseWhen(raw), ms = at == null ? null : at - this._sbx.eng.now;
+          if (ms == null || ms <= 0) { this._toast(T('sbx_bad_time')); return; }
+          this._sbxStep({ op: 'advance', ms });
+          break;
+        }
+        case 'sbx-to': { const ms = +el.dataset.at - this._sbx.eng.now; if (ms > 0) this._sbxStep({ op: 'advance', ms }); break; }
         case 'sbx-fire': {
           const type = this._sbxVal('sbev'), raw = this._sbxVal('sbevd');
           if (!type) { this._toast(T('sbx_pick_event')); return; }
@@ -11660,8 +12362,10 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         }
         case 'sbx-run': {
           const id = q('.sbrun').value, tv = q('.sbtrig') && !q('.sbtrig').hidden ? q('.sbtrig').value : '';
-          const conds = q('.sbconds').checked, ti = tv === '' ? null : +tv;
-          if (id) this._sbxDo((e) => { this._sbxRec({ op: 'run', id, conds, ti }); return e.userRun(id, conds, ti); });
+          const conds = q('.sbconds').checked, ti = tv === '' ? null : +tv, vw = q('.sbvarsw');
+          let vars;
+          if (vw && !vw.hidden) { const raw = this._sbxVal('sbvars'); if (raw) { try { vars = JSON.parse(raw); } catch (e) { const p = parseLoose(raw); if (p && typeof p === 'object') vars = p; else { this._toast(T('sbx_bad_data')); return; } } } }
+          if (id) this._sbxStep(Object.assign({ op: 'run', id, conds, ti }, vars ? { vars } : {}));
           break;
         }
         case 'sbx-mqtt': {
@@ -11671,7 +12375,6 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           this._sbxDo((e) => { this._sbxRec({ op: 'mqtt', topic, payload }); return e.userMqtt(topic, payload); });
           break;
         }
-        case 'sbx-adv': { const ms = +el.dataset.ms; this._sbxDo((e) => { this._sbxRec({ op: 'advance', ms }); return e.advance(ms); }); break; }
         case 'sbx-next': this._sbxDo((e) => { this._sbxRec({ op: 'next' }); return e.toNext(); }); break;
         case 'sbx-reset': this._sbxReset(); break;
         case 'sbx-ans': { const a = this._sbx && this._sbx.asks[+el.dataset.i]; if (!a) return; if (a.q.value) { const inp = d.querySelector(`.sbav[data-i="${el.dataset.i}"]`); a.res(parseLoose(inp ? inp.value : '')); } else a.res(el.dataset.v === '1'); break; }
@@ -11737,7 +12440,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       es.forEach((e) => {
         const c = by.get(e.cause), links = [];
         let box = null, from = [], to = [];
-        if (e.kind === 'trigger') { const src = e.src || (c && ['state', 'event', 'mqtt'].includes(c.kind) ? c.key : e.ent); if (src) from = [src]; else box = e.key; to = [e.key]; }
+        // something you did that isn't a box (Home Assistant starting, a webhook): the step is on what it started; a
+        // device's button pressed comes from the device's box when it's on the board
+        if (e.kind === 'trigger') { const src = e.src || (c && ['state', 'event', 'mqtt'].includes(c.kind) ? c.key : c && c.kind === 'did' ? (vis.has(c.key) ? c.key : null) : e.ent); if (src) from = [src]; else box = e.key; to = [e.key]; }
         else if (e.kind === 'cond') { from = e.ents || []; to = [e.key]; if (!from.length) box = e.key; }
         else if (e.kind === 'call') {
           to = [...new Set((e.ents || []).concat(kids.get(e.id) || []))];
@@ -11971,6 +12676,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const nm = (k) => (k ? this._boxName(k) : ''), g = this._sbx, by = (x) => g && g.eng.log.find((y) => y.id === x);
       switch (e.kind) {
         case 'state': return { main: `${nm(e.key)} → ${this._fmtState(e.key, e.to)}`, sub: [e.from != null ? T('sbx_was', { s: this._fmtState(e.key, e.from) }) : '', e.by === 'you' ? T('sbx_by_you') : (by(e.cause) && by(e.cause).kind === 'call' ? T('sbx_by', { name: nm(by(e.cause).key) }) : '')].filter(Boolean).join(' · ') };
+        case 'did': return { main: e.text, sub: T('sbx_by_you') };
         case 'event': return { main: T('sbx_event_x', { type: e.text }), sub: e.by === 'you' ? T('sbx_by_you') : (by(e.cause) && by(e.cause).key ? T('sbx_by', { name: nm(by(e.cause).key) }) : '') };
         case 'trigger': return { main: T('sbx_triggered', { name: nm(e.key) }), sub: e.ent ? `${nm(e.ent)} → ${this._fmtState(e.ent, e.to)}` : e.text, cls: 'blue' };
         case 'cond': return { main: `${e.text}: ${e.ok ? T('sbx_true') : T('sbx_false')}`, sub: e.why || '', cls: e.ok ? '' : 'red' };
@@ -11987,11 +12693,11 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (!g || !this._sbxOn()) return;
       const eng = g.eng, box = d.querySelector('.sbtl');
       const ck = d.querySelector('.sbclock');
+      // the sandbox clock: the day and the time to the second, how far it is from now, and the sun (0.11.1)
       if (ck) {
-        const p = tzParts(eng.now, eng.tz);
-        let w = WD[p.wd];
-        try { w = new Intl.DateTimeFormat(this._hass.language || undefined, { weekday: 'short', timeZone: eng.tz || undefined }).format(new Date(eng.now)); } catch (e) { /* the short English name */ }
-        ck.textContent = `${w} ${String(p.h).padStart(2, '0')}:${String(p.mi).padStart(2, '0')}:${String(p.s).padStart(2, '0')}`;
+        const off = eng.now - g.rec.at, sun = eng.get('sun.sun');
+        ck.textContent = this._sbxWhen(eng.now, true);
+        ck.title = T('sbx_clock_t', { d: off > 999 ? clockShort(off) : '0 s', tz: eng.tz || '' }) + (sun ? ' · ' + (sun.state === 'above_horizon' ? T('sbx_sun_up') : T('sbx_sun_down')) : '');
       }
       const nx = d.querySelector('.sbnext'), due = eng.pending();
       if (nx) {
@@ -12000,13 +12706,15 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       }
       d.querySelectorAll('.sbctl button').forEach((b) => { if (b !== nx) b.disabled = !!g.busy; });
       const dueBox = d.querySelector('.sbdue');
-      if (dueBox) dueBox.innerHTML = due.length > 1 ? `<span class="muted">${T('sbx_due')}</span> ` + due.slice(0, 6).map((x) => `<span class="sbd">${esc(x.label)} · ${esc(fmtDur(x.at - eng.now))}</span>`).join('') : '';
+      // what's coming up, each a button that runs the clock to it
+      if (dueBox) this._put(dueBox, due.length ? `<span class="muted">${T('sbx_due')}</span> ` + due.slice(0, 8).map((x) => `<button class="sbd" data-act="sbx-to" data-at="${x.at}" data-key="${x.at}|${esc(x.label)}" title="${esc(T('sbx_to_t', { t: this._sbxWhen(x.at) }))}">${esc(x.label)} · ${esc(fmtDur(x.at - eng.now))}</button>`).join('') : '');
+      this._sbxJumps();
       const ask = d.querySelector('.sbask');
       if (ask) ask.innerHTML = g.asks.map((a, i) => `<div class="sbq"><ha-icon icon="mdi:account-question-outline"></ha-icon><span>${esc(a.q.text)}</span>${a.q.value
         ? `<input class="sbav" data-i="${i}" aria-label="${T('sbx_value')}"><button class="chip" data-act="sbx-ans" data-i="${i}">${T('sbx_use')}</button>`
         : `<button class="chip" data-act="sbx-ans" data-i="${i}" data-v="1">${T('sbx_true')}</button><button class="chip" data-act="sbx-ans" data-i="${i}" data-v="0">${T('sbx_false')}</button>`}</div>`).join('');
       if (!box) return;
-      const icon = { mqtt: 'mdi:access-point', state: 'mdi:swap-horizontal', event: 'mdi:lightning-bolt-outline', trigger: 'mdi:play-circle-outline', cond: 'mdi:help-rhombus-outline', call: 'mdi:arrow-right-bold-outline', run: 'mdi:flag-checkered', wait: 'mdi:timer-sand', note: 'mdi:information-outline', ask: 'mdi:account-question-outline' };
+      const icon = { did: 'mdi:gesture-tap', mqtt: 'mdi:access-point', state: 'mdi:swap-horizontal', event: 'mdi:lightning-bolt-outline', trigger: 'mdi:play-circle-outline', cond: 'mdi:help-rhombus-outline', call: 'mdi:arrow-right-bold-outline', run: 'mdi:flag-checkered', wait: 'mdi:timer-sand', note: 'mdi:information-outline', ask: 'mdi:account-question-outline' };
       const atEnd = box.scrollTop + box.clientHeight >= box.scrollHeight - 40;
       const fl = this._flow, fnum = new Map(fl ? fl.steps.map((s, i) => [s.e.id, i + 1]) : []);
       // a note about a problem the board knows (a trigger that starts both ways, 0.11.1) can be dismissed from here;

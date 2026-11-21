@@ -1289,5 +1289,152 @@
   "suite": "board-regress",
   "only": "0.11.1 the sandbox finds",
   "expect": "the words stay over the box"
+ },
+ {
+  "name": "sandbox: binary sensor device types all on",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "    return /^(no|not)_/.test(ty) ? 'off' : 'on';",
+  "replace": "    return 'on';",
+  "suite": "sandbox",
+  "expect": "binary sensor types"
+ },
+ {
+  "name": "sandbox: device triggers not translated",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "        if (!this.devT.has(t)) this.devT.set(t, sbxDevTrig(t, this.o.entityOf) || t);",
+  "replace": "        if (!this.devT.has(t)) this.devT.set(t, t);",
+  "suite": "sandbox",
+  "expect": "registry id"
+ },
+ {
+  "name": "sandbox: device conditions asked",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "          const x = sbxDevCond(c, this.o.entityOf);\n          if (x) return this._cond(x, run);",
+  "replace": "          const x = null;",
+  "suite": "sandbox",
+  "expect": "without asking you"
+ },
+ {
+  "name": "sandbox: zone.home isn't \"home\"",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      if (id === 'zone.home') return 'home';\n",
+  "replace": "",
+  "suite": "sandbox",
+  "expect": "entering home"
+ },
+ {
+  "name": "sandbox: before sunrise and after sunset both at once",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "c.before === 'sunrise' && c.after === 'sunset' ? this.now < b || this.now >= a :",
+  "replace": "false ? this.now < b || this.now >= a :",
+  "suite": "sandbox",
+  "expect": "one or the other"
+ },
+ {
+  "name": "sandbox: sun offsets left out",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      this._at(base + off, () => {",
+  "replace": "      this._at(base, () => {",
+  "suite": "sandbox",
+  "expect": "less 30 minutes"
+ },
+ {
+  "name": "sandbox: no value past an above threshold",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "if (a != null) { add(id, attr, sbxStep(a, true),",
+  "replace": "if (a != null) { add(id, attr, sbxStep(a, false),",
+  "suite": "sandbox",
+  "expect": "CO2 above 1100"
+ },
+ {
+  "name": "sandbox: attributes of per-entity triggers not offered",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "const attr = ds.attr && !(ds.attr === 'is_closed' && id.startsWith('cover.')) ? ds.attr : null;",
+  "replace": "const attr = null;",
+  "suite": "sandbox",
+  "expect": "brightness below 50"
+ },
+ {
+  "name": "sandbox: a press fires every button",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "        (t) => this._plat(t) !== 'state' && sbxPressKey(t) === key,",
+  "replace": "        (t) => this._plat(t) !== 'state',",
+  "suite": "sandbox",
+  "expect": "not the other"
+ },
+ {
+  "name": "sandbox: webhook methods ignored",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": " && (!t.allowed_methods || toList(t.allowed_methods).map((x) => String(x).toUpperCase()).includes(String(method || 'POST').toUpperCase())),",
+  "replace": ",",
+  "suite": "sandbox",
+  "expect": "method it doesn"
+ },
+ {
+  "name": "sandbox: optional words required",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      else if (ch === ']') src += ')?';",
+  "replace": "      else if (ch === ']') src += ')';",
+  "suite": "sandbox",
+  "expect": "optional words can be left out"
+ },
+ {
+  "name": "sandbox: scenes set nothing",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "            if (st != null) await this.setState(id, String(st), A, cid);\n",
+  "replace": "",
+  "suite": "sandbox",
+  "expect": "a scene sets what its config holds"
+ },
+ {
+  "name": "sandbox: timers don't say they finished",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "remaining: '0:00:00', last_transition: 'finished' }, cid); await this.fireEvent('timer.finished', { entity_id: id }, cid); }), null,",
+  "replace": "remaining: '0:00:00' }, cid); await this.fireEvent('timer.finished', { entity_id: id }, cid); }), null,",
+  "suite": "sandbox",
+  "expect": "finished too"
+ },
+ {
+  "name": "sandbox: other triggers not offered to fire",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": " || (!SBX_PLATS.has(p) && !spec && p)) presses.set(",
+  "replace": " || false) presses.set(",
+  "suite": "sandbox",
+  "expect": "can't see coming is offered"
+ },
+ {
+  "name": "checks: a press step dropped",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      if (x.op === 'press') return { op: 'press', key: str(x.key, 1000) };\n",
+  "replace": "",
+  "suite": "sandbox",
+  "expect": "checks keep a press"
+ },
+ {
+  "name": "sandbox: Set's values don't say why",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "((g.ins && g.ins.ents) || []).filter((x) => x.id === k && (x.attr || '') === (attr || ''))",
+  "replace": "((g.ins && g.ins.ents) || []).filter((x) => false)",
+  "suite": "board-regress",
+  "expect": "its values say why",
+  "only": "0.11.1 the sandbox: what"
+ },
+ {
+  "name": "sandbox: no attribute choice",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      sel.hidden = !attrs.length;",
+  "replace": "      sel.hidden = true;",
+  "suite": "board-regress",
+  "expect": "an attribute a trigger reads",
+  "only": "0.11.1 the sandbox: what"
+ },
+ {
+  "name": "sandbox: typed minutes read as seconds",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "{ s: 1e3, m: 6e4, h: 36e5, d: 864e5, w: 6048e5 }",
+  "replace": "{ s: 1e3, m: 6e3, h: 36e5, d: 864e5, w: 6048e5 }",
+  "suite": "board-regress",
+  "expect": "Jump to, typed",
+  "only": "0.11.1 the sandbox: what"
  }
 ]
