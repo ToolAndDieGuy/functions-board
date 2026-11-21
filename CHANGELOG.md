@@ -12,7 +12,8 @@ In the sandbox, an action on a device shows on that device's box. Before, the bo
 the sandbox looked for its entities, so it drew a temporary box marked "Not on this board" for something that was on
 it. When a step reaches a device's entities, or the lights of an area, it says over that box what it did: the action,
 which of the entities, and with what ("climate.set_fan_mode → Thermostat Zone (fan_mode: On)"), or which of them
-changed to what.
+changed to what. The words stay over the box until a later step there says more, and while the run plays, a step with words
+waits long enough to read them.
 
 A state trigger that starts both ways is a new problem (amber). A trigger with From and no To starts on any change
 away from the states it lists, so `from: [off, on]` starts the automation when the stove turns on and again when it

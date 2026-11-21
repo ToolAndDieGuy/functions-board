@@ -2232,6 +2232,7 @@ svg path.e.prob{stroke:var(--error-color,#db4437);stroke-dasharray:5 4}
 .pdchip ha-icon{--mdc-icon-size:16px}
 .probs .pother{padding:8px 14px 14px;display:flex;flex-wrap:wrap;gap:6px 14px;align-items:baseline}
 .probs .pever{color:var(--secondary-text-color)}
+.flow .fsay.now{border-color:var(--fb-blue);z-index:4}
 .dbrow .sbpk{margin-top:4px}
 .dbrow .sbpk button{display:inline-flex;align-items:center;gap:4px;font:inherit;font-size:12px;padding:2px 8px;border-radius:6px;border:1px solid var(--divider-color);background:none;color:var(--primary-text-color);cursor:pointer}
 .dbrow .sbpk ha-icon{--mdc-icon-size:14px}
@@ -2469,7 +2470,7 @@ circle.fdot{fill:var(--fb-blue);stroke:var(--card-background-color);stroke-width
 .flow .fnum.cur{background:color-mix(in srgb,var(--fb-blue) 70%,#000);color:#fff}
 .flow .fwait{position:absolute;transform:translate(-100%,-50%);display:flex;align-items:center;gap:3px;height:20px;padding:0 7px;border-radius:10px;background:var(--fb-amber);color:#000;font-size:11px;font-weight:600;white-space:nowrap;pointer-events:auto;z-index:2}
 .flow .fwait ha-icon{--mdc-icon-size:13px}
-.flow .fsay{position:absolute;transform:translate(-50%,-100%);width:max-content;max-width:380px;padding:3px 9px;border-radius:8px;box-sizing:border-box;background:var(--card-background-color);border:1.5px solid var(--fb-blue);color:var(--primary-text-color);font-size:11.5px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:0 2px 6px rgba(0,0,0,.25);pointer-events:auto;z-index:3}
+.flow .fsay{position:absolute;transform:translate(-50%,-100%);width:max-content;max-width:380px;padding:3px 9px;border-radius:8px;box-sizing:border-box;background:var(--card-background-color);border:1.5px solid color-mix(in srgb,var(--fb-blue) 35%,transparent);color:var(--primary-text-color);font-size:11.5px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:0 2px 6px rgba(0,0,0,.25);pointer-events:auto;z-index:3}
 .litbar.flowbar{flex-direction:column;flex-wrap:nowrap;align-items:stretch;gap:6px}
 .litbar.flowbar .fhead{display:flex;align-items:center;gap:6px;min-width:0}
 .litbar.flowbar .fhead .fcur{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
@@ -11800,8 +11801,11 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const tick = () => {
         if (this._flow !== f) return;
         this._flowGo(i, true);
-        // a long flow plays a little faster: ten seconds or so in all
-        if (++i < f.steps.length) this._clock.after('lit', Math.max(450, Math.min(850, 10000 / f.steps.length)), tick);
+        // a long flow plays a little faster: ten seconds or so in all. A step with words over a box waits long enough
+        // to read them (0.11.1)
+        const words = this._flowSays(f.steps[i]).reduce((n, [, t]) => n + t.length, 0);
+        const ms = Math.max(450, Math.min(850, 10000 / f.steps.length), words ? Math.min(5000, 1200 + 45 * words) : 0);
+        if (++i < f.steps.length) this._clock.after('lit', ms, tick);
       };
       tick();
     }
@@ -11845,6 +11849,11 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (e.kind === 'wait' && e.key) return T('sbx_f_waits', { a: nm(e.key), w: String(e.text || '').replace(/^./, (c) => c.toLowerCase()) });
       if (e.kind === 'cond' && e.key) return T('sbx_f_checks', { a: nm(e.key), c: t });
       return t;
+    }
+    // a step's words over the boxes that stand in for what it reached: [[box, words]]
+    _flowSays(st) {
+      return st.links.filter((l) => l.via.length).map((l) => [l.b, l.via]).concat(st.box && st.via.length ? [[st.box, st.via]] : [])
+        .map(([k, via]) => [k, this._flowSay(st.e, via)]).filter(([, t]) => t);
     }
     // what a step did to the entities a box stands in for: the call, to which of them, with its settings; or the change
     _flowSay(e, via) {
@@ -11941,12 +11950,13 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           if (!s.links.length && s.box) { const R = rect(s.box); if (R) spot(R.x, R.y, i + 1, cur); }
         });
       }
-      // the current step, in words over a box that stands in for what it reached: which of a device's entities was
-      // called and with what, or changed to what (0.11.1)
-      const cs = f && f.at >= 0 ? f.steps[f.at] : null;
-      if (cs) {
-        const says = cs.links.filter((l) => l.via.length).map((l) => [l.b, l.via]).concat(cs.box && cs.via.length ? [[cs.box, cs.via]] : []);
-        says.forEach(([k, via]) => { const R = rect(k), t = R && this._flowSay(cs.e, via); if (t) html.push(`<div class="fsay" data-key="${esc(k)}" style="left:${R.x + R.w / 2}px;top:${R.y - 12}px" title="${esc(t)}">${esc(t)}</div>`); });
+      // steps in words over a box that stands in for what they reached: which of a device's entities was called and
+      // with what, or changed to what (0.11.1). Each box keeps the words of the last step to reach it until a later
+      // one does; the current step's are marked
+      if (f && f.at >= 0) {
+        const say = new Map();
+        f.steps.slice(0, f.at + 1).forEach((st, i) => this._flowSays(st).forEach(([k, t]) => say.set(k, { t, now: i === f.at })));
+        say.forEach(({ t, now }, k) => { const R = rect(k); if (R) html.push(`<div class="fsay${now ? ' now' : ''}" data-key="${esc(k)}" style="left:${R.x + R.w / 2}px;top:${R.y - 12}px" title="${esc(t)}">${esc(t)}</div>`); });
       }
       // what's waiting in the sandbox, and for how long on its clock
       const due = new Map();

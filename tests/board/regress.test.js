@@ -1221,6 +1221,23 @@ test('0.11.1 the sandbox finds the device box of what an action on a device chan
   check('0.11.1 over the device box: the call, to which of its entities, with what', JSON.stringify(call.says) === JSON.stringify([[D, 'climate.set_hvac_mode → HeatPump, HeatPump zone 2 (hvac_mode: off)']]), call);
   const ch = await say(/HeatPump zone 2 →/);
   check('0.11.1 ... and on a change, which entity changed to what', ch.says && ch.says.length === 1 && ch.says[0][0] === D && /^HeatPump zone 2 → /i.test(ch.says[0][1]), ch);
+  // a step after the call that says nothing over the device box: the call's words are still there, not marked
+  const later = await el(page, (b, d) => {
+    const c = b._flow.steps.findIndex((s) => s.e.kind === 'call' && b._flowSays(s).length), i = b._flow.steps.findIndex((s, j) => j > c && !b._flowSays(s).length);
+    if (i < 0) return { i };
+    b._flowGo(i, false);
+    return { i, says: [...b.shadowRoot.querySelectorAll('.flow .fsay')].map((x) => [x.dataset.key, x.classList.contains('now'), x.textContent]) };
+  }, D);
+  check('0.11.1 the words stay over the box after their step, unmarked, until a later step there says more', later.i > 0 && later.says.length === 1 && later.says[0][0] === D && later.says[0][1] === false, later);
+  // playing: each step's wait, up to the first with words over a box (played at once, not waited for)
+  const waits = await el(page, (b) => {
+    const got = [], after = b._clock.after.bind(b._clock), at = b._flow.steps.findIndex((s) => b._flowSays(s).length);
+    b._clock.after = (name, ms, fn) => { if (name !== 'lit') return after(name, ms, fn); got.push([b._flow.at, ms]); if (b._flow.at < at) fn(); return null; };
+    try { b._flowPlay(); } finally { b._clock.after = after; }
+    return { at, got };
+  });
+  const wSay = waits.got.find(([i]) => i === waits.at), wRest = waits.got.filter(([i]) => i !== waits.at);
+  check('0.11.1 playing: the step with words over a box waits long enough to read them (2 s or more), the others under 1 s', waits.at >= 0 && !!wSay && wSay[1] >= 2000 && wRest.length > 0 && wRest.every(([, ms]) => ms < 1000), waits);
   const own = await el(page, (b) => { const i = b._flow.steps.findIndex((s) => s.e.kind === 'trigger'); b._flowGo(i, false); return b.shadowRoot.querySelectorAll('.flow .fsay').length; });
   check('0.11.1 ... and nothing over a box that is what the step reached', own === 0, own);
   check('0.11.1 sandbox device: no errors', page.logs.length === 0, page.logs);

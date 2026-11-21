@@ -1165,8 +1165,8 @@
  {
   "name": "sandbox: no words over a stand-in box",
   "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "      const cs = f && f.at >= 0 ? f.steps[f.at] : null;",
-  "replace": "      const cs = null;",
+  "find": "      if (f && f.at >= 0) {\n        const say = new Map();",
+  "replace": "      if (false) {\n        const say = new Map();",
   "suite": "board-regress",
   "only": "0.11.1",
   "expect": "over the device box: the call"
@@ -1271,5 +1271,23 @@
   "suite": "board-regress",
   "only": "0.11.1 a trigger that starts",
   "expect": "Undo after Ignore for good"
+ },
+ {
+  "name": "sandbox: words over a box don't hold the play",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "words ? Math.min(5000, 1200 + 45 * words) : 0);",
+  "replace": "0);",
+  "suite": "board-regress",
+  "only": "0.11.1 the sandbox finds",
+  "expect": "waits long enough to read them"
+ },
+ {
+  "name": "sandbox: words over a box only for the current step",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "f.steps.slice(0, f.at + 1).forEach((st, i) => this._flowSays(st)",
+  "replace": "f.steps.slice(f.at, f.at + 1).forEach((st, i) => this._flowSays(st)",
+  "suite": "board-regress",
+  "only": "0.11.1 the sandbox finds",
+  "expect": "the words stay over the box"
  }
 ]
