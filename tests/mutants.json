@@ -1666,5 +1666,79 @@
   "replace": "    _listening() { return () => [...this.waiters]; }",
   "suite": "sandbox",
   "expect": "doesn't hear the change that started it"
+ },
+ {
+  "name": "sandbox: Python's round without its exact ties",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "    if (/^50*$/.test(s.slice(i + 1 + d))) {",
+  "replace": "    if (Number.isInteger(x * Math.pow(10, d) * 2) && !Number.isInteger(x * Math.pow(10, d))) {",
+  "suite": "sandbox",
+  "expect": "Python's round"
+ },
+ {
+  "name": "sandbox: helpers don't follow what they read",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      await this._follow(id, lid);\n",
+  "replace": "",
+  "suite": "sandbox",
+  "expect": "a min/max follows its input"
+ },
+ {
+  "name": "sandbox: a threshold without its hysteresis",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      const below = (x, t) => x < t - h, above = (x, t) => x > t + h;",
+  "replace": "      const below = (x, t) => x < t, above = (x, t) => x > t;",
+  "suite": "sandbox",
+  "expect": "threshold: over the limit"
+ },
+ {
+  "name": "sandbox: a group's all is any",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      const mode = rule.all ? (f) => sts.every(f) : (f) => sts.some(f);",
+  "replace": "      const mode = (f) => sts.some(f);",
+  "suite": "sandbox",
+  "expect": "group: any or all"
+ },
+ {
+  "name": "sandbox: a min/max takes a state that isn't a number",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "        if (!PYNUM_RE.test(String(st.state))) return;\n",
+  "replace": "",
+  "suite": "sandbox",
+  "expect": "isn't a number leaves what it held"
+ },
+ {
+  "name": "sandbox: a min/max sum leaves out the unknown",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "        case 'sum': v = vals.some(([, x]) => x === 'unknown') ? null : pyRound(vals.reduce((a, [, x]) => a + x, 0), dig); break;",
+  "replace": "        case 'sum': v = !ok.length ? null : pyRound(ok.reduce((a, [, x]) => a + x, 0), dig); break;",
+  "suite": "sandbox",
+  "expect": "sum \\(unknown makes it unknown\\)"
+ },
+ {
+  "name": "board: the sandbox doesn't ask for the rules it's missing",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "    async _followRules(nodes, states) {\n      await this._askSources(nodes);",
+  "replace": "    async _followRules(nodes, states) {",
+  "suite": "board-regress",
+  "expect": "which helpers follow what they read",
+  "only": "0.11.2 the sandbox: a helper follows"
+ },
+ {
+  "name": "backend: no rule for a threshold",
+  "file": "custom_components/functions_board/sources.py",
+  "find": "        if module == \"homeassistant.components.threshold.binary_sensor\":",
+  "replace": "        if False:",
+  "suite": "backend",
+  "expect": "test_rules_the_sandbox_follows"
+ },
+ {
+  "name": "board: saved checks replay without the helpers' rules",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": ", scene: (id) => this._sceneCfg(id), derived: await this._followRules(own, this._hass.states) };",
+  "replace": ", scene: (id) => this._sceneCfg(id) };",
+  "suite": "board-regress",
+  "expect": "a saved check replays a threshold helper",
+  "only": "0.11.2 a saved check replays a helper"
  }
 ]

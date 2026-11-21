@@ -91,7 +91,23 @@ function one(r, n) {
   steps.push({ wait: 90 });
   const states = { 'binary_sensor.a': ['off'], 'binary_sensor.b': ['off'], 'sensor.t': ['15'], 'counter.c': ['0'] };
   HELP.forEach((h) => { states[h] = [r.pick(['on', 'off'])]; });
-  return { name: `random ${n}`, states, automations: autos, steps };
+  // helpers that follow what they read (a threshold, a group, a min/max), read by the automations now and then; they
+  // read only the sensors, so no loop
+  const derived = {};
+  if (r.maybe(0.4)) derived['binary_sensor.hot'] = { kind: 'threshold', entity: 'sensor.t', lower: r.maybe(0.4) ? 10 : null, upper: r.maybe(0.7) ? r.pick([20, 25]) : null, hysteresis: r.pick([0, 1, 2.5]) };
+  if (derived['binary_sensor.hot'] && derived['binary_sensor.hot'].lower == null && derived['binary_sensor.hot'].upper == null) derived['binary_sensor.hot'].upper = 20;
+  if (r.maybe(0.4)) derived['binary_sensor.any'] = { kind: 'group', entities: BIN.slice(), all: r.maybe(0.5) };
+  if (r.maybe(0.3)) { derived['sensor.avg'] = { kind: 'min_max', type: r.pick(['mean', 'max', 'min', 'sum', 'median']), round: r.pick([0, 1, 2]), entities: ['sensor.t', 'sensor.u'] }; states['sensor.u'] = ['12']; }
+  Object.keys(derived).forEach((id) => { states[id] = ['unknown']; });
+  const ids = Object.keys(derived);
+  Object.values(autos).forEach((a) => {
+    if (!ids.length) return;
+    const id = r.pick(ids);
+    if (r.maybe(0.5)) a.triggers.push(id === 'sensor.avg' ? { trigger: 'numeric_state', entity_id: id, above: r.pick([12, 15, 20]) } : { trigger: 'state', entity_id: id, to: r.pick(['on', 'off']) });
+    else if (r.maybe(0.5)) a.conditions = (a.conditions || []).concat([id === 'sensor.avg' ? { condition: 'numeric_state', entity_id: id, below: r.pick([14, 18, 25]) } : { condition: 'state', entity_id: id, state: r.pick(['on', 'off']) }]);
+  });
+  if (states['sensor.u']) for (let i = 0; i < 2; i++) steps.splice(r.int(0, steps.length - 1), 0, { set: 'sensor.u', to: String(r.pick([3, 11.5, 17, 24.25])) });
+  return Object.assign({ name: `random ${n}`, states, automations: autos, steps }, ids.length ? { derived } : {});
 }
 
 function make(n, seed) {

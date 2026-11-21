@@ -22,7 +22,8 @@ async def test_template_sensor_inputs(hass: HomeAssistant, hass_ws_client) -> No
     await ws.send_json_auto_id({"type": "functions_board/sources", "entity_ids": ["sensor.t", "input_boolean.a"]})
     res = (await ws.receive_json())["result"]["sources"]
     # this fails loudly if a Home Assistant release moves the private attribute the answer comes from
-    assert res == {"sensor.t": {"entities": ["counter.b", "input_boolean.a"], "domains": [], "all": False, "how": "template"}}
+    assert res == {"sensor.t": {"entities": ["counter.b", "input_boolean.a"], "domains": [], "all": False, "how": "template",
+        "rule": {"kind": "template", "state": "{{ states('counter.b') }}{{ is_state('input_boolean.a', 'on') }}"}}}
 
 
 async def test_trigger_based_template_inputs(hass: HomeAssistant, hass_ws_client) -> None:
@@ -53,7 +54,28 @@ async def test_min_max_helper_inputs(hass: HomeAssistant, hass_ws_client) -> Non
     ws = await hass_ws_client(hass)
     await ws.send_json_auto_id({"type": "functions_board/sources", "entity_ids": ["sensor.max"]})
     res = (await ws.receive_json())["result"]["sources"]
-    assert res == {"sensor.max": {"entities": ["sensor.one", "sensor.two"], "domains": [], "all": False, "how": "options"}}
+    assert res == {"sensor.max": {"entities": ["sensor.one", "sensor.two"], "domains": [], "all": False, "how": "options",
+        "rule": {"kind": "min_max", "type": "max", "round": 2, "entities": ["sensor.one", "sensor.two"]}}}
+
+
+async def test_rules_the_sandbox_follows(hass: HomeAssistant, hass_ws_client) -> None:
+    """0.11.2: a threshold sensor and a binary sensor group say how they follow what they read (UI helpers here)."""
+    hass.states.async_set("sensor.t", "20")
+    hass.states.async_set("binary_sensor.d1", "off")
+    hass.states.async_set("binary_sensor.d2", "off")
+    assert await async_setup_component(hass, "http", {})
+    assert await async_setup_component(hass, "functions_board", {})
+    thr = MockConfigEntry(domain="threshold", title="Hot", options={"name": "Hot", "entity_id": "sensor.t", "lower": None, "upper": 25.0, "hysteresis": 1.0})
+    grp = MockConfigEntry(domain="group", title="Doors", options={"name": "Doors", "group_type": "binary_sensor", "entities": ["binary_sensor.d1", "binary_sensor.d2"], "all": True, "hide_members": False})
+    for e in (thr, grp):
+        e.add_to_hass(hass)
+        assert await hass.config_entries.async_setup(e.entry_id)
+    await hass.async_block_till_done()
+    ws = await hass_ws_client(hass)
+    await ws.send_json_auto_id({"type": "functions_board/sources", "entity_ids": ["binary_sensor.hot", "binary_sensor.doors"]})
+    res = (await ws.receive_json())["result"]["sources"]
+    assert res["binary_sensor.hot"]["rule"] == {"kind": "threshold", "entity": "sensor.t", "lower": None, "upper": 25.0, "hysteresis": 1.0}
+    assert res["binary_sensor.doors"]["rule"] == {"kind": "group", "entities": ["binary_sensor.d1", "binary_sensor.d2"], "all": True}
 
 
 async def test_diagnostics_have_sizes_not_names(hass: HomeAssistant, hass_ws_client) -> None:

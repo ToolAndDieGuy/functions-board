@@ -761,4 +761,40 @@ const st = (sb, id) => (sb.get(id) || {}).state;
     check('0.11.2 automation.trigger waits for the run it starts', mid === 'off' && st(sb, 'input_boolean.x') === 'on' && st(sb, 'input_boolean.y') === 'on', mid);
   }
 
+  // ---- 0.11.2 helpers that follow what they read (Home Assistant's rules for min/max, threshold, group; a template)
+  {
+    const { sbxFollow, pyRound } = lib;
+    const S2 = (x) => ({ state: x, attributes: {} });
+    const home = { 'sensor.a': S2('2'), 'sensor.b': S2('3'), 'sensor.c': S2('unknown') }, get = (id) => home[id];
+    const mm = (type, round) => ({ kind: 'min_max', type, round, entities: ['sensor.a', 'sensor.b', 'sensor.c'] });
+    const got = (r) => sbxFollow(r, get, {}, null)[0];
+    check('0.11.2 min/max: min, max, mean, median (2.5 to even is 2), sum (unknown makes it unknown), range, last', got(mm('min', 2)) === '2.0' && got(mm('max', 2)) === '3.0' && got(mm('mean', 2)) === '2.5' && got(mm('median', 0)) === '2.0' && got(mm('sum', 1)) === 'unknown' && got(mm('range', 2)) === '1.0' && got(mm('last', 2)) === '3.0',
+      ['min', 'max', 'mean', 'median', 'sum', 'range', 'last'].map((t) => got(mm(t, t === 'median' ? 0 : 2))));
+    const mem = {};
+    sbxFollow(mm('mean', 2), get, mem, null);
+    home['sensor.a'] = S2('abc');
+    check('0.11.2 ... a state that isn\'t a number leaves what it held (as Home Assistant\'s min/max does)', sbxFollow(mm('mean', 2), get, mem, 'sensor.a')[0] === '2.5');
+    home['sensor.a'] = S2('unavailable');
+    check('0.11.2 ... unavailable leaves it out', sbxFollow(mm('mean', 2), get, mem, 'sensor.a')[0] === '3.0');
+    check('0.11.2 Python\'s round: the float\'s exact value, ties to even', pyRound(4.45, 1) === 4.5 && pyRound(2.675, 2) === 2.67 && pyRound(2.5, 0) === 2 && pyRound(0.125, 2) === 0.12 && pyRound(-2.5, 0) === -2);
+    const thr = { kind: 'threshold', entity: 'sensor.t', lower: null, upper: 25, hysteresis: 1 }, tm = {}, side = (v) => sbxFollow(thr, () => S2(v), tm, 'sensor.t')[0];
+    check('0.11.2 threshold: over the limit plus the hysteresis to turn on, under it minus the hysteresis to turn off', [side('20'), side('25.5'), side('26.5'), side('25'), side('23.9'), side('x')].join() === 'off,off,on,on,off,unknown');
+    const grp = (all, a, b) => sbxFollow({ kind: 'group', entities: ['d.1', 'd.2'], all }, (id) => S2(id === 'd.1' ? a : b), {}, null)[0];
+    check('0.11.2 group: any or all on; unknown if none (or not all) is known; unavailable only when all are', grp(false, 'on', 'off') === 'on' && grp(true, 'on', 'off') === 'off' && grp(false, 'unknown', 'unavailable') === 'unknown' && grp(true, 'on', 'unknown') === 'unknown' && grp(false, 'unavailable', 'unavailable') === 'unavailable');
+    // the engine: a helper follows its input before the automations hear the change
+    const sb = make({ 'sensor.t1': S('20'), 'sensor.t2': S('24'), 'sensor.avg': S('22'), 'input_boolean.x': S('off'), 'binary_sensor.door': S('off'), 'sensor.status': S('closed') }, {
+      'automation.a': { triggers: [{ trigger: 'state', entity_id: 'sensor.t1' }], conditions: [{ condition: 'numeric_state', entity_id: 'sensor.avg', above: 24.5 }], actions: [{ action: 'input_boolean.turn_on', target: { entity_id: 'input_boolean.x' } }] },
+    }, { o: {
+      derived: { 'sensor.avg': { rule: { kind: 'min_max', type: 'mean', round: 2, entities: ['sensor.t1', 'sensor.t2'] }, reads: [] }, 'sensor.status': { rule: { kind: 'template', state: "{{ 'open' if is_state('binary_sensor.door', 'on') else 'closed' }}" }, reads: ['binary_sensor.door'] } },
+      tpl: async (t) => (/is_state\('binary_sensor.door', 'on'\)/.test(t) ? { ok: true, value: sb.get('binary_sensor.door').state === 'on' ? 'open' : 'closed' } : { ok: false, err: 'stub' }),
+    } });
+    await sb.start();
+    check('0.11.2 the sandbox says which helpers follow what they read', sb.log.some((e) => e.kind === 'note' && /follow what they read/.test(e.text) && /sensor.avg/.test(e.text)));
+    await sb.userSet('sensor.t1', '26');
+    const row = sb.log.find((e) => e.kind === 'state' && e.key === 'sensor.avg');
+    check('0.11.2 a min/max follows its input, and an automation\'s condition on it sees it changed', st(sb, 'sensor.avg') === '25.0' && st(sb, 'input_boolean.x') === 'on' && row && row.follows === 'sensor.t1', [st(sb, 'sensor.avg'), st(sb, 'input_boolean.x')]);
+    await sb.userSet('binary_sensor.door', 'on');
+    check('0.11.2 a template helper is rendered again when what it reads changes', st(sb, 'sensor.status') === 'open');
+  }
+
 })().catch((e) => check('the sandbox tests ran to the end', false, String(e && e.stack || e)));

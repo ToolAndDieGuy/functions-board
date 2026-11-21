@@ -83,6 +83,13 @@ the same homes in the sandbox and in Home Assistant itself, step by step, and co
   error. Before, the sandbox clamped the number or set the option and carried on.
 - `automation.trigger` waits for the run it starts, as a script call does.
 
+Helpers that follow what they read now do so in the sandbox: template sensors and binary sensors, min/max sensors,
+threshold sensors, and binary sensor, light and switch groups. They use Home Assistant's own rules (a min/max's
+rounding, a threshold's hysteresis, a group's "all"), and they change before any automation hears the change. The
+drawer lists them when it opens, and each change says what it followed. Saved checks replay them the same way.
+Other helpers worked out from something (a derivative, a utility meter, statistics) stay as they are unless you set
+them. The integration's `functions_board/sources` answer now carries each helper's rule for this.
+
 ## 0.11.0 (2026-11-20)
 
 Import finds more of the systems you've built, and lets you decide where one ends and the next begins.

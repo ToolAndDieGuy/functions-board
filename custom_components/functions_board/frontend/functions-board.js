@@ -3005,6 +3005,10 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       sbx_ran_n: { one: 'ran once in the sandbox', other: 'ran {n} times in the sandbox' },
       sbx_not_run: 'not run in the sandbox yet',
       sbx_not_followed: 'Triggers that don\'t come from states the sandbox holds: fire them from the Press row (or use Run, as if that trigger fired): {list}.',
+      sbx_follows_list: 'These helpers follow what they read here, as in Home Assistant: {list}. Other helpers stay as they are unless you set them.',
+      sbx_follows_partly: '(without its delay)',
+      sbx_follows: 'follows {name}',
+      sbx_follow_failed: '{name} couldn\'t be worked out here, so it stays as it is: {e}',
       sbx_g_read: 'Read by the automations',
       sbx_g_rest: 'Also on the board',
       sbx_attr: 'State or attribute',
@@ -3221,7 +3225,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       sbxi_safe: 'Nothing here reaches your home. The sandbox reads your states once when it opens and asks Home Assistant to render templates, which only reads. It never calls a service, fires an event, publishes to MQTT or sets a state: no device moves and no notification is sent.',
       sbxi_limits_h: 'What it can\'t show you',
       sbxi_l_board: '<b>Only the automations and scripts on this board run.</b> Anything else that would react to the same change, such as automations in other functions, blueprints, Node-RED flows, alerts or an integration\'s own logic, doesn\'t run here, so a chain that leaves this function stops at its edge.',
-      sbxi_l_devices: '<b>Devices don\'t answer.</b> A light turned on is simply on. There are no delays, failures, unavailable devices or values that change by themselves: a temperature stays where it is until you set it, and so do helpers worked out from it (a template sensor).',
+      sbxi_l_devices: '<b>Devices answer at once.</b> A light turned on is simply on, unless the Device row makes it slow, fail or go unavailable. Values don\'t change by themselves: a temperature stays where it is until you set it. Template, min/max, threshold and group helpers follow what they read, as in Home Assistant; other helpers worked out from something (a derivative, a utility meter) stay as they are.',
       sbxi_l_calls: '<b>Some calls change nothing here.</b> Notifications, TTS and log messages are listed as messages. Scenes, device actions and services the sandbox doesn\'t know are listed as calls it would make, without their effect.',
       sbxi_l_triggers: '<b>Some triggers are yours to fire.</b> A device\'s own buttons (ZHA, Z-Wave, Hue), webhooks, tags, calendars, Assist and Home Assistant starting have their own rows; one the sandbox can\'t see coming (Z-Wave value updated, geo location) is fired from the Press row. Zones and the sun follow the states and the clock. Calendar offsets and the sun\'s exact times are approximate.',
       sbxi_l_ask: '<b>Some answers come from you.</b> An integration\'s own conditions, and templates Home Assistant can\'t render, are asked in the drawer. The result is only as good as your answer.',
@@ -4071,6 +4075,91 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     if (!got || typeof got !== 'object') return false;
     return Object.entries(want).every(([k, v]) => subsetOf(v, got[k]));
   }
+  // helpers that follow what they read (0.11.2): Home Assistant's own rules, copied from its integrations, for a
+  // min/max sensor (min_max), a threshold sensor (threshold) and a binary sensor, light or switch group (group). A
+  // template helper is rendered by the engine. The rule comes from functions_board/sources; mem is the helper's own
+  // memory (a threshold's last side, the numbers a min/max holds). [state, attributes], or null to leave it as it is.
+  const SBX_FOLLOW = new Set(['template', 'min_max', 'threshold', 'group']);
+  const PYNUM_RE = /^\s*[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?\s*$/;
+  // Python's round(x, d): the float's exact value rounded, an exact tie to even (multiplying by 10^d first would make
+  // ties of numbers that aren't: 4.45 is 4.4500000000000002, which rounds to 4.5); and a float as Home Assistant writes
+  // it in a state (20.0, 21.5)
+  function pyRound(x, d) {
+    const s = Math.abs(x).toFixed(Math.min(100, d + 25)), i = s.indexOf('.');
+    if (/^50*$/.test(s.slice(i + 1 + d))) {
+      const cut = Number(s.slice(0, i + 1 + d)), last = Number(d === 0 ? s[i - 1] : s[i + d]);
+      return Math.sign(x) * (last % 2 ? Number((cut + Math.pow(10, -d)).toFixed(d)) : cut);
+    }
+    return Number(x.toFixed(d));
+  }
+  const pyFloat = (v) => (Number.isInteger(v) ? v.toFixed(1) : String(v));
+  function sbxFollow(rule, get, mem, changed) {
+    if (!rule) return null;
+    if (rule.kind === 'min_max') {
+      const ents = toList(rule.entities).map(String), dig = rule.round != null ? +rule.round : 2;
+      // as its state listener: unknown or unavailable is unknown, a number is kept (and is the last), anything else
+      // leaves what it held
+      const take = (id) => {
+        const st = get(id);
+        if (!st || st.state == null || st.state === 'unknown' || st.state === 'unavailable') { mem.vals.set(id, 'unknown'); return; }
+        if (!PYNUM_RE.test(String(st.state))) return;
+        const n = Number(st.state);
+        mem.vals.set(id, n); mem.last = n; mem.lastId = id;
+      };
+      if (!mem.vals) { mem.vals = new Map(); ents.forEach((id) => { if (get(id)) take(id); }); }
+      else if (changed) take(changed);
+      const vals = ents.filter((id) => mem.vals.has(id)).map((id) => [id, mem.vals.get(id)]), ok = vals.filter(([, v]) => v !== 'unknown');
+      let v = null, side = null;
+      const pick = (better) => { ok.forEach(([id, x]) => { if (v == null || better(x, v)) { v = x; side = id; } }); };
+      const nums = ok.map(([, x]) => x).sort((a, b) => a - b);
+      switch (rule.type) {
+        case 'min': pick((x, y) => x < y); break;
+        case 'max': pick((x, y) => x > y); break;
+        case 'last': v = mem.last != null ? mem.last : null; side = mem.lastId || null; break;
+        case 'mean': v = nums.length ? pyRound(nums.reduce((a, b) => a + b, 0) / nums.length, dig) : null; break;
+        case 'median': v = nums.length ? pyRound(nums.length % 2 ? nums[(nums.length - 1) / 2] : (nums[nums.length / 2 - 1] + nums[nums.length / 2]) / 2, dig) : null; break;
+        case 'range': v = nums.length ? pyRound(nums[nums.length - 1] - nums[0], dig) : null; break;
+        case 'sum': v = vals.some(([, x]) => x === 'unknown') ? null : pyRound(vals.reduce((a, [, x]) => a + x, 0), dig); break;
+        default: return null;
+      }
+      const A = { entity_id: ents };
+      if (rule.type === 'min') A.min_entity_id = side;
+      if (rule.type === 'max') A.max_entity_id = side;
+      if (rule.type === 'last') A.last_entity_id = side;
+      return [v == null ? 'unknown' : pyFloat(v), A];
+    }
+    if (rule.kind === 'threshold') {
+      const st = get(rule.entity);
+      if (!st) return null;
+      const v = st.state !== 'unknown' && st.state !== 'unavailable' && PYNUM_RE.test(String(st.state)) ? Number(st.state) : null;
+      const h = +rule.hysteresis || 0, lo = rule.lower == null ? null : +rule.lower, up = rule.upper == null ? null : +rule.upper;
+      const below = (x, t) => x < t - h, above = (x, t) => x > t + h;
+      const type = lo != null && up != null ? 'range' : lo != null ? 'lower' : 'upper';
+      if (v == null) { mem.pos = 'unknown'; mem.on = null; }
+      else if (type === 'lower') {
+        if (mem.on == null) { mem.on = false; mem.pos = 'above'; }
+        if (below(v, lo)) { mem.pos = 'below'; mem.on = true; } else if (above(v, lo)) { mem.pos = 'above'; mem.on = false; }
+      } else if (type === 'upper') {
+        if (mem.on == null) { mem.on = false; mem.pos = 'below'; }
+        if (above(v, up)) { mem.pos = 'above'; mem.on = true; } else if (below(v, up)) { mem.pos = 'below'; mem.on = false; }
+      } else {
+        if (mem.on == null) { mem.on = true; mem.pos = 'in_range'; }
+        if (below(v, lo)) { mem.pos = 'below'; mem.on = false; }
+        if (above(v, up)) { mem.pos = 'above'; mem.on = false; } else if (above(v, lo) && below(v, up)) { mem.pos = 'in_range'; mem.on = true; }
+      }
+      return [mem.on == null ? 'unknown' : mem.on ? 'on' : 'off', { entity_id: rule.entity, hysteresis: h, lower: lo, upper: up, position: mem.pos, sensor_value: v, type }];
+    }
+    if (rule.kind === 'group') {
+      const sts = toList(rule.entities).map((id) => get(String(id))).filter(Boolean).map((x) => x.state);
+      const mode = rule.all ? (f) => sts.every(f) : (f) => sts.some(f);
+      const avail = sts.some((x) => x !== 'unavailable'), valid = mode((x) => x !== 'unknown' && x !== 'unavailable');
+      const on = valid ? mode((x) => x === 'on') : null;
+      return [!avail ? 'unavailable' : on == null ? 'unknown' : on ? 'on' : 'off', { entity_id: toList(rule.entities) }];
+    }
+    return null;
+  }
+  // what a followed helper reads
+  const sbxFeeds = (d) => (d.rule.kind === 'template' ? toList(d.reads) : d.rule.kind === 'threshold' ? [d.rule.entity] : toList(d.rule.entities)).map(String);
   // what Home Assistant refuses (0.11.2, found by the differential test): the call is made, fails, and the run stops
   // there; cfg marks an error continue_on_error doesn't carry on from (Home Assistant only carries on from its own
   // errors, not from a value its schema refuses or a plain Python error)
@@ -4390,6 +4479,16 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       // 0.11.2: step-through (paused runs, breakpoints), how devices answer, and what was reached (coverage)
       this.stepping = false; this.breaks = new Set(); this.paused = new Map(); this.behave = new Map();
       this.hit = new WeakSet(); this.cres = new WeakMap(); this.fired = new Set(); this.dispatching = false; this.evq = []; this.after = [];
+      // helpers that follow what they read (sbxFollow): id → { rule, reads, mem }, and what each input feeds
+      this.follow = new Map(); this.feeds = new Map();
+      Object.entries(o.derived || {}).forEach(([id, d]) => {
+        if (!d || !d.rule || !SBX_FOLLOW.has(d.rule.kind)) return;
+        const cur = this.real[id], mem = {};
+        // a threshold remembers which side it was on: the helper's state as it is now
+        if (d.rule.kind === 'threshold' && cur) { mem.on = cur.state === 'on' ? true : cur.state === 'off' ? false : null; mem.pos = (cur.attributes || {}).position; }
+        this.follow.set(id, { rule: d.rule, reads: toList(d.reads), mem });
+        sbxFeeds(d).forEach((src) => { if (!this.feeds.has(src)) this.feeds.set(src, []); this.feeds.get(src).push(id); });
+      });
       (o.items || []).forEach((x) => this.add(x.id, x.cfg));
     }
     add(id, cfg) { if (cfg) this.items.set(id, { id, cfg, kind: id.startsWith('script.') ? 'script' : 'automation' }); }
@@ -4510,6 +4609,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const not = [];
       this.items.forEach((it) => { if (it.kind === 'automation') this._trigs(it).forEach((t) => { const p = this._plat(t); if (t.enabled !== false && !SBX_PLATS.has(p) && !this._espec(p)) not.push(`${this._name(it.id)}: ${p}`); }); });
       if (not.length) this._log({ kind: 'note', text: T('sbx_not_followed', { list: [...new Set(not)].join(', ') }) });
+      if (this.follow.size) this._log({ kind: 'note', text: T('sbx_follows_list', { list: [...this.follow].map(([id, f]) => this._name(id) + (f.rule.partly ? ' ' + T('sbx_follows_partly') : '')).join(', ') }) });
       this.items.forEach((it) => { if (it.kind === 'automation') this._trigs(it).forEach((t, i) => { this._armTime(it, t, i); this._armSun(it, t, i); }); });
       this._armSunState();
       for (const it of this.items.values()) {
@@ -4665,7 +4765,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       await this.settle();
     }
     // ---- states and events
-    async setState(id, state, attrs, cause, byYou) {
+    async setState(id, state, attrs, cause, byYou, follows) {
       const old = this.get(id), was = old ? old.state : null;
       const A = Object.assign({}, old ? old.attributes : {}, attrs || {});
       // a cover's opened and closed triggers read is_closed
@@ -4677,7 +4777,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       }
       const nu = { state, attributes: A, last_changed: was === state && old ? old.last_changed : this.iso(), last_updated: this.iso() };
       this.changed.set(id, nu);
-      const lid = this._log({ kind: 'state', key: id, from: was, to: state, cause, by: byYou ? 'you' : null });
+      const lid = this._log({ kind: 'state', key: id, from: was, to: state, cause, by: byYou ? 'you' : null, follows: follows || null });
       await this._dispatch(() => this._onState(id, old, nu, lid));
       return lid;
     }
@@ -4770,6 +4870,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     async _onState(id, old, nu, lid) {
       // the waits listening when the change happened: a run this change starts doesn't hear it in its own wait
       const ws = this._listening();
+      // helpers that follow this one first, as Home Assistant's are set up before its automations: what the automations
+      // read sees them changed (their own changes are handed out after this one)
+      await this._follow(id, lid);
       // a `for:` waiting on this entity: still matching, or let go
       for (const [k, p] of [...this.pend]) {
         if (p.id == null || p.id !== id) continue;
@@ -4805,6 +4908,35 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         }
       }
       ws().forEach((w) => w.onState && w.onState(id, old, nu, lid));
+    }
+    // a followed helper's state now, or null (as it is; a template that can't be rendered says so once)
+    async _followed(id, f, changed) {
+      if (f.rule.kind !== 'template') return sbxFollow(f.rule, (x) => this.get(x), f.mem, changed);
+      const r = await this.o.tpl(String(f.rule.state), this._vars(null), this);
+      if (!r || !r.ok) {
+        if (!f.said) { f.said = true; this._log({ kind: 'note', key: id, warn: true, text: T('sbx_follow_failed', { name: this._name(id), e: (r && r.err) || '' }) }); }
+        return null;
+      }
+      const v = r.value;
+      if (id.startsWith('binary_sensor.')) return [asBool(v) ? 'on' : 'off', {}];
+      return [v == null ? 'unknown' : typeof v === 'object' ? JSON.stringify(v) : String(v), {}];
+    }
+    async _follow(id, lid) {
+      for (const d of this.feeds.get(id) || []) {
+        const f = this.follow.get(d), out = await this._followed(d, f, id);
+        if (out) await this.setState(d, out[0], out[1], lid, false, id);
+      }
+    }
+    // every followed helper worked out from scratch and set as it is, with nothing told (a home set up from nothing:
+    // the differential test)
+    async followAll() {
+      for (const [id, f] of this.follow) {
+        f.mem = {};
+        const out = await this._followed(id, f, null);
+        if (!out) continue;
+        const old = this.get(id), A = Object.assign({}, old ? old.attributes : {}, out[1]);
+        this.changed.set(id, { state: out[0], attributes: A, last_changed: this.iso(), last_updated: this.iso() });
+      }
     }
     // the waits listening now; later, those of them still waiting
     _listening() { const ws = [...this.waiters]; return () => ws.filter((w) => this.waiters.has(w)); }
@@ -7331,16 +7463,27 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       });
       return held;
     }
+    // what the boxes that may be derived helpers read (functions_board/sources), asked for those not known yet;
+    // nodes: the model's, or [entity id, { kind: 'member' }] pairs
+    async _askSources(nodes) {
+      if (this._storeMode !== 'shared') return;
+      const ask = [...nodes].filter(([k, n]) => !k.includes(':') && !/^(automation|script|scene|group)\./.test(k) && (n.kind === 'member' || this._scopeOf(k) === 'helpers' || (this._entMap.get(k) || {}).platform === 'template'))
+        .map(([k]) => k).filter((k) => !this._src.has(k)).slice(0, 500);
+      if (!ask.length) return;
+      try {
+        const r = await this._ws({ type: 'functions_board/sources', entity_ids: ask });
+        ask.forEach((k) => this._src.set(k, (r && r.sources && r.sources[k]) || null));
+      } catch (e) { ask.forEach((k) => this._src.set(k, null)); }
+    }
+    // the helpers among these that follow what they read, with their rules, for a sandbox (asked first if the board let
+    // go of them: a config changed): id → { rule, reads }
+    async _followRules(nodes, states) {
+      await this._askSources(nodes);
+      return Object.fromEntries([...this._src].filter(([k, x]) => x && x.rule && states[k]).map(([k, x]) => [k, { rule: x.rule, reads: x.entities }]));
+    }
     async _wireSources(nodes, edges) {
       if (this._storeMode !== 'shared') return;
-      const ask = [...nodes.entries()].filter(([k, n]) => !k.includes(':') && !/^(automation|script|scene|group)\./.test(k) && (n.kind === 'member' || this._scopeOf(k) === 'helpers' || (this._entMap.get(k) || {}).platform === 'template'))
-        .map(([k]) => k).filter((k) => !this._src.has(k)).slice(0, 500);
-      if (ask.length) {
-        try {
-          const r = await this._ws({ type: 'functions_board/sources', entity_ids: ask });
-          ask.forEach((k) => this._src.set(k, (r && r.sources && r.sources[k]) || null));
-        } catch (e) { ask.forEach((k) => this._src.set(k, null)); }
-      }
+      await this._askSources(nodes);
       [...nodes.entries()].forEach(([k, n]) => {
         const s = this._src.get(k);
         if (!s) return;
@@ -10959,9 +11102,10 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         return ids.map((e, i) => ({ id: e, cfg: cfgs[i] })).filter((x) => x.cfg);
       };
       const resolve = (ref) => { if (ref.startsWith('device:')) return this._ents.filter((e) => e.device_id === ref.slice(7)).map((e) => e.entity_id); const t = this._tgt.get(ref); return t ? t.entities : []; };
+      const own = this._ents.filter((e) => (e.labels || []).includes(label)).map((e) => [e.entity_id, { kind: 'member' }]);
       const o = { states: this._hass.states, tz: this._hass.config && this._hass.config.time_zone, tpl: (t, v, e) => this._sbxTpl(t, v, e), resolve,
         fetch: (id) => this._fetchConfig(id), name: (id) => this._boxName(id), condText: (c) => condText(c, (x) => this._boxName(x)),
-        entityOf: (x) => this._entOfReg(x), scene: (id) => this._sceneCfg(id) };
+        entityOf: (x) => this._entOfReg(x), scene: (id) => this._sceneCfg(id), derived: await this._followRules(own, this._hass.states) };
       const rec = have && have.gen === gen ? have : { gen, res: new Map() };
       for (const c of list) {
         try { const r = await runCheck(c, Object.assign({ items: await itemsFor(c) }, o)); rec.res.set(c.id, { ok: r.ok, unsure: r.unsure, res: r.res }); }
@@ -12433,12 +12577,15 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         return t ? t.entities : [];
       };
       // the engine's settings, kept: rewinding makes a new one from the same start, and so does the explorer (0.11.2)
+      // the helpers that follow what they read: their rules, asked now if the board let go of them (a config changed)
+      const derived = this._model ? await this._followRules(this._model.nodes, states) : {};
       g.opts = {
         states, items: ids.map((id, i) => ({ id, cfg: cfgs[i] })), now, tz: this._hass.config && this._hass.config.time_zone,
         tpl: (t, v, e) => this._sbxTpl(t, v, e), ask: (q) => this._sbxAsk(q), resolve, fetch: (id) => this._fetchConfig(id),
         name: (id) => this._boxName(id), condText: (c) => condText(c, (x) => this._boxName(x)), onLog: () => this._sbxLogged(),
         entityOf: (x) => this._entOfReg(x), scene: (id) => this._sceneCfg(id), actText: (a) => this._actText(a),
         onPause: () => this._renderSbx(),
+        derived,
       };
       g.eng = new Sandbox(g.opts);
       g.tab = 'tl';
@@ -13296,7 +13443,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     _sbxText(e) {
       const nm = (k) => (k ? this._boxName(k) : ''), g = this._sbx, by = (x) => g && g.eng.log.find((y) => y.id === x);
       switch (e.kind) {
-        case 'state': return { main: `${nm(e.key)} → ${this._fmtState(e.key, e.to)}`, sub: [e.from != null ? T('sbx_was', { s: this._fmtState(e.key, e.from) }) : '', e.by === 'you' ? T('sbx_by_you') : (by(e.cause) && by(e.cause).kind === 'call' ? T('sbx_by', { name: nm(by(e.cause).key) }) : '')].filter(Boolean).join(' · ') };
+        case 'state': return { main: `${nm(e.key)} → ${this._fmtState(e.key, e.to)}`, sub: [e.from != null ? T('sbx_was', { s: this._fmtState(e.key, e.from) }) : '', e.by === 'you' ? T('sbx_by_you') : e.follows ? T('sbx_follows', { name: nm(e.follows) }) : (by(e.cause) && by(e.cause).kind === 'call' ? T('sbx_by', { name: nm(by(e.cause).key) }) : '')].filter(Boolean).join(' · ') };
         case 'did': return { main: e.text, sub: T('sbx_by_you') };
         case 'pause': return { main: e.text, sub: this._boxName(e.key), cls: 'blue' };
         case 'event': return { main: T('sbx_event_x', { type: e.text }), sub: e.by === 'you' ? T('sbx_by_you') : (by(e.cause) && by(e.cause).key ? T('sbx_by', { name: nm(by(e.cause).key) }) : '') };

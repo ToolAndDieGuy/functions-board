@@ -1503,3 +1503,55 @@ test('0.11.2 the sandbox: summaries, variables, undo and again, states, step-thr
 });
 
 pwTest.afterAll(() => done());
+
+test('0.11.2 the sandbox: a helper follows what it reads, by the rule functions_board/sources gives', async ({ browser, fake }) => {
+  const { page } = await imported(browser);
+  const garage = await openFn(page, /garage/i);
+  // a threshold helper in the garage function, on a sensor the garage reads; the integration says how it follows it
+  const HOT = 'binary_sensor.fb_garage_hot', T = 'sensor.fb_garage_temp';
+  for (const [id, platform, st] of [[HOT, 'threshold', 'off'], [T, 'template', '20']]) {
+    fake.entities.set(id, { entity_id: id, id: 'fbid' + id.length + platform, platform, unique_id: id, labels: [], categories: {}, area_id: null, device_id: null, config_entry_id: null, disabled_by: null, hidden_by: null, name: null, original_name: id === HOT ? 'Garage hot' : 'Garage temperature', icon: null, has_entity_name: false, entity_category: null, options: {} });
+    await fake.setState(id, st, { friendly_name: id === HOT ? 'Garage hot' : 'Garage temperature' });
+  }
+  fake.sources[HOT] = { entities: [T], domains: [], all: false, how: 'options', rule: { kind: 'threshold', entity: T, lower: null, upper: 25, hysteresis: 1 } };
+  await ws(page, { type: 'config/entity_registry/update', entity_id: HOT, labels: [garage] });
+  await fake.idle(400);
+  await until(() => el(page, (b, h) => !!(b._model && b._model.nodes.has(h) && b._src.get(h)) || null, HOT), 10000);
+  // a config changed just now: the board let go of what helpers read, and the sandbox starts before it asks again
+  await el(page, (b) => { b._src = new Map(); });
+  await fbq(page, '.tools [data-act="sandbox"]').click();
+  await fbq(page, '.modal [data-act="sbx-start"]').click({ timeout: 3000 }).catch(() => {});
+  await fbq(page, '.drawer .sbctl .sbent').waitFor({ timeout: 10000 });
+  const said = await el(page, (b) => b._sbx.eng.log.filter((e) => e.kind === 'note').map((e) => e.text).join(' | '));
+  check('0.11.2 the sandbox says which helpers follow what they read', /follow what they read here.*Garage hot/.test(said), said);
+  await el(page, (b, t) => b._sbx.eng.userSet(t, '26.5'), T);
+  await until(() => el(page, (b) => (b._sbx && !b._sbx.busy) || null), 10000);
+  const got = await el(page, (b, h) => ({ st: b._sbx.eng.get(h).state, row: (b._sbx.eng.log.find((e) => e.kind === 'state' && e.key === h) || {}).follows, real: b._hass.states[h].state }), HOT);
+  check('0.11.2 a threshold helper turns on when its sensor passes the limit and the hysteresis, here only', got.st === 'on' && got.real === 'off' && got.row === T, got);
+  await el(page, (b) => b._renderSbx());
+  const text = await fbq(page, '.drawer .sbtl').innerText();
+  check('0.11.2 ... and its row says what it follows', /Garage hot → on[\s\S]*follows Garage temperature/.test(text), text.slice(0, 600));
+});
+
+test('0.11.2 a saved check replays a helper that follows what it reads', async ({ browser, fake }) => {
+  const { page } = await imported(browser);
+  const garage = await openFn(page, /garage/i);
+  const HOT = 'binary_sensor.fb_garage_hot', T = 'sensor.fb_garage_temp';
+  for (const [id, platform, st] of [[HOT, 'threshold', 'off'], [T, 'template', '20']]) {
+    fake.entities.set(id, { entity_id: id, id: 'fbid' + id.length + platform, platform, unique_id: id, labels: [], categories: {}, area_id: null, device_id: null, config_entry_id: null, disabled_by: null, hidden_by: null, name: null, original_name: id, icon: null, has_entity_name: false, entity_category: null, options: {} });
+    await fake.setState(id, st, {});
+  }
+  fake.sources[HOT] = { entities: [T], domains: [], all: false, how: 'options', rule: { kind: 'threshold', entity: T, lower: null, upper: 25, hysteresis: 1 } };
+  await ws(page, { type: 'config/entity_registry/update', entity_id: HOT, labels: [garage] });
+  await fake.idle(400);
+  await until(() => el(page, (b, h) => !!(b._model && b._model.nodes.has(h)) || null, HOT), 10000);
+  const res = await el(page, async (b, a) => {
+    b._src = new Map();  // as after a config change: the replay asks for the rules itself
+    const L = b._layout(a.garage);
+    L.checks = [{ id: 'fbhot1', name: 'Hot when warm', at: Date.now(), start: {}, items: [], steps: [{ op: 'set', id: a.T, state: '26.5' }], answers: [], expect: [{ k: 'state', id: a.HOT, state: 'on' }] }];
+    await b._runChecks(a.garage, null, true);
+    const r = b._checkRes.get(a.garage).res.get('fbhot1');
+    return { ok: r.ok, got: r.res.map((x) => x.got) };
+  }, { garage, T, HOT });
+  check('0.11.2 a saved check replays a threshold helper following its sensor', res.ok && res.got[0] === 'on', res);
+});

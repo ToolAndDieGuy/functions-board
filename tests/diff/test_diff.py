@@ -74,16 +74,40 @@ def _helpers(states: dict) -> dict:
     return conf
 
 
+def _derived(derived: dict) -> dict:
+    """Helpers that follow what they read, as Home Assistant's own platforms (from the rule the sandbox gets)."""
+    conf: dict = {}
+    for eid, rule in derived.items():
+        dom, obj = eid.split(".", 1)
+        if rule["kind"] == "min_max":
+            item = {"platform": "min_max", "name": obj, "type": rule["type"], "round_digits": rule.get("round", 2), "entity_ids": rule["entities"]}
+        elif rule["kind"] == "threshold":
+            item = {"platform": "threshold", "name": obj, "entity_id": rule["entity"], "hysteresis": rule.get("hysteresis", 0)}
+            item.update({k: rule[k] for k in ("lower", "upper") if rule.get(k) is not None})
+        elif rule["kind"] == "group":
+            item = {"platform": "group", "name": obj, "entities": rule["entities"], "all": rule.get("all", False)}
+        else:
+            raise AssertionError(f"no Home Assistant platform here for {rule['kind']}")
+        conf.setdefault(dom, []).append(item)
+    return conf
+
+
 async def _run_core(hass: HomeAssistant, freezer, sc: dict, start: str, tz: str) -> list:
     _count_threads(hass)
     await hass.config.async_set_time_zone(tz)
     freezer.move_to(start)
-    for dom, items in _helpers(sc["states"]).items():
+    derived = sc.get("derived") or {}
+    plain = {k: v for k, v in sc["states"].items() if k not in derived}
+    for dom, items in _helpers(plain).items():
         if items:
             assert await async_setup_component(hass, dom, {dom: items})
-    for eid, (state, *rest) in sc["states"].items():
+    for eid, (state, *rest) in plain.items():
         if eid.split(".", 1)[0] not in HELPERS:
             hass.states.async_set(eid, state, rest[0] if rest else {})
+    await hass.async_block_till_done()
+    # the helpers that follow what they read, set up after their inputs and before the automations
+    for dom, items in _derived(derived).items():
+        assert await async_setup_component(hass, dom, {dom: items})
     await hass.async_block_till_done()
     autos = [dict(cfg, id="fb_" + name, alias=name) for name, cfg in sc["automations"].items()]
     assert await async_setup_component(hass, "automation", {"automation": autos})

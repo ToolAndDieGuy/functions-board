@@ -22,7 +22,11 @@ async function runOne(sc) {
     // the corpus has no templates: one here is a mistake in the corpus
     tpl: async (t) => ({ ok: false, err: 'no templates in the differential corpus: ' + t }),
     ask: async () => true, name: (id) => id, condText: (c) => (typeof c === 'string' ? c : c.condition || 'condition'),
+    // helpers that follow what they read: the rule as functions_board/sources gives it
+    derived: Object.fromEntries(Object.entries(sc.derived || {}).map(([id, rule]) => [id, { rule, reads: [] }])),
   });
+  // Home Assistant works them out when they're set up, before the automations
+  await sb.followAll();
   await sb.start();
   const ids = Object.keys(sc.states).sort();
   const trace = [];

@@ -10,6 +10,12 @@ link a helper to its sources, so the integration answers this from inside:
   triggers, conditions, actions and their own templates (from the coordinator's config, also private).
 - Helpers set up in the UI (min/max, threshold, derivative, utility meter, statistics, group and so on):
   every string in the config entry's options that is an existing entity ID.
+
+Each answer may also carry `rule`, how the helper's state follows what it reads, so the board's sandbox can
+recompute it (0.11.2): a template entity's state template; a min/max sensor's type, rounding and entities; a
+threshold sensor's entity, limits and hysteresis; a binary sensor, light or switch group's members and whether
+all must be on. Read from the live entity's private attributes as above: a release that moves them leaves the rule
+out, and the sandbox keeps the helper as it is.
 """
 
 from __future__ import annotations
@@ -44,8 +50,55 @@ async def async_sources(hass: HomeAssistant, entity_ids: Iterable[str]) -> dict[
         if found is None and entity_id in entries and entries[entity_id].domain in helper_domains:
             found = _options_entities(hass, reg, entity_id, entries[entity_id].options)
         if found and (found["entities"] or found["domains"] or found["all"]):
+            if rule := _rule(comps, entity_id):
+                found["rule"] = rule
             out[entity_id] = found
     return out
+
+
+def _rule(comps: dict[str, Any], entity_id: str) -> dict[str, Any] | None:
+    """How the helper's state follows its inputs, when the sandbox can recompute it; else None."""
+    domain = split_entity_id(entity_id)[0]
+    comp = comps.get(domain)
+    if comp is None:
+        return None
+    try:
+        entity = comp.get_entity(entity_id)
+        if entity is None:
+            return None
+        module = type(entity).__module__
+        # a template entity (YAML or UI): the template its main state comes from
+        option, config = getattr(entity, "_state_option", None), getattr(entity, "_config", None)
+        # (not a trigger-based one: that changes when its trigger fires, not when what it reads does)
+        if module.startswith("homeassistant.components.template.") and option and isinstance(config, dict) and getattr(entity, "coordinator", None) is None:
+            template = getattr(config.get(option), "template", None)
+            if isinstance(template, str) and domain in ("sensor", "binary_sensor"):
+                rule: dict[str, Any] = {"kind": "template", "state": template}
+                if any(config.get(k) for k in ("delay_on", "delay_off", "auto_off")):
+                    rule["partly"] = True
+                return rule
+        if module == "homeassistant.components.min_max.sensor":
+            return {
+                "kind": "min_max",
+                "type": str(entity._sensor_type),  # noqa: SLF001
+                "round": int(entity._round_digits),  # noqa: SLF001
+                "entities": list(entity._entity_ids),  # noqa: SLF001
+            }
+        if module == "homeassistant.components.threshold.binary_sensor":
+            return {
+                "kind": "threshold",
+                "entity": str(entity._entity_id),  # noqa: SLF001
+                "lower": getattr(entity, "_threshold_lower", None),
+                "upper": getattr(entity, "_threshold_upper", None),
+                "hysteresis": float(entity._hysteresis),  # noqa: SLF001
+            }
+        if module in ("homeassistant.components.group.binary_sensor", "homeassistant.components.group.light", "homeassistant.components.group.switch"):
+            mode = getattr(entity, "mode", None)
+            if mode in (any, all):
+                return {"kind": "group", "entities": list(entity._entity_ids), "all": mode is all}  # noqa: SLF001
+    except Exception:  # noqa: BLE001 - private attributes: no rule beats a failed request
+        return None
+    return None
 
 
 async def _helper_domains(hass: HomeAssistant, domains: set[str]) -> set[str]:
