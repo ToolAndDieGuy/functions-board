@@ -1598,3 +1598,55 @@ test('0.11.2 the sandbox, whole home: the automations outside the function that 
   await until(() => D((b) => (b._sbx && b._sbx.outside.size === 0 && !b._data.ui.sbxWhole) || null), 10000);
   check('0.11.2 turning it off starts again with the function alone', true);
 });
+
+test('0.11.2 saved checks: edit one (name, step order and values, what it expects), share it as text, import one', async ({ browser, fake }) => {
+  const { page } = await imported(browser);
+  const garage = await openFn(page, /garage/i);
+  const D = (fn, arg) => el(page, fn, arg);
+  await D((b, label) => {
+    b._layout(label).checks = [{ id: 'fbck1', name: 'Door left open', at: Date.now(), start: {}, items: [], answers: [],
+      steps: [{ op: 'advance', ms: 60000 }, { op: 'set', id: 'cover.garage_door', state: 'open' }],
+      expect: [{ k: 'state', id: 'timer.garage_open', state: 'active' }, { k: 'ran', id: 'automation.garage_start_open_timer' }] }];
+  }, garage);
+  await fbq(page, '.tools [data-act="sandbox"]').click();
+  await fbq(page, '.modal [data-act="sbx-start"]').click({ timeout: 3000 }).catch(() => {});
+  await fbq(page, '.drawer .sbchk [data-act="chk-edit"]').click();
+  // the set step up, its value changed; the time step's seconds changed; one expectation out, one added
+  await fbq(page, '.modal [data-act="chk-st-up"][data-i="1"]').click();
+  const first = await fbq(page, '.modal .cked li >> nth=0').innerText();
+  check('0.11.2 Earlier moves a step up', /Garage Door/.test(first), first);
+  await D((b) => { const m = b._$.modal; const v = (sel, x) => { const i = m.querySelector(sel); if (i) i.value = x; }; v('input[data-ckst="0"]', 'opening'); v('input[data-ckst="1"]', '120'); });
+  await fbq(page, '.modal [data-act="chk-x-del"][data-i="1"]').click();
+  await D((b) => { const m = b._$.modal; m.querySelector('select[name="ckxk"]').value = 'state'; m.querySelector('select[name="ckxid"]').value = 'cover.garage_door'; m.querySelector('input[name="ckxs"]').value = 'opening'; });
+  await fbq(page, '.modal [data-act="chk-x-add"]').click();
+  // adding a run expectation on something that doesn't run says so
+  await D((b) => { const m = b._$.modal; m.querySelector('select[name="ckxk"]').value = 'ran'; m.querySelector('select[name="ckxid"]').value = 'cover.garage_door'; });
+  await fbq(page, '.modal [data-act="chk-x-add"]').click();
+  const said = await fbq(page, '.modal .dval').innerText();
+  check('0.11.2 an expectation that something runs needs an automation or a script', /Only an automation or a script runs/.test(said), said);
+  // typed last, so only saving reads it
+  await fbq(page, '.modal .ckdlg input[name="ckname"]').fill('Door open, timer on');
+  await fbq(page, '.modal [data-act="chk-edit-go"]').click();
+  const c = await D((b, label) => JSON.parse(JSON.stringify(b._layout(label).checks[0])), garage);
+  check('0.11.2 editing keeps the check (same id) with the new name, step order and values, and expectations', c.id === 'fbck1' && c.name === 'Door open, timer on'
+    && c.steps[0].op === 'set' && c.steps[0].state === 'opening' && c.steps[1].op === 'advance' && c.steps[1].ms === 120000
+    && c.expect.length === 2 && c.expect[0].k === 'state' && c.expect[0].id === 'timer.garage_open' && c.expect[1].id === 'cover.garage_door' && c.expect[1].state === 'opening', c);
+  // share: the check as text, without its id
+  await fbq(page, '.drawer .sbchk [data-act="chk-export"]').click();
+  const text = await fbq(page, '.modal textarea.ckjson').inputValue();
+  const o = JSON.parse(text);
+  check('0.11.2 Share gives the check as text, marked as one, without its id', o.functions_board_check === 1 && !('id' in o) && o.name === 'Door open, timer on' && o.steps.length === 2, o);
+  await fbq(page, '.modal [data-act="modal-cancel"]').click();
+  // import: what was shared comes back as a new check; something else doesn't
+  await fbq(page, '.drawer .sbchk [data-act="chk-import"]').click();
+  await fbq(page, '.modal textarea.ckjson').fill('{"name": "not one"}');
+  await fbq(page, '.modal [data-act="chk-import-go"]').click();
+  const bad = await fbq(page, '.modal .dval').innerText();
+  check('0.11.2 Import refuses text that isn\'t a shared check', /isn't a check copied with Share/.test(bad), bad);
+  await fbq(page, '.modal textarea.ckjson').fill(text.replace('Door open, timer on', 'From a friend'));
+  await fbq(page, '.modal [data-act="chk-import-go"]').click();
+  const list = await D((b, label) => b._layout(label).checks.map((x) => ({ id: x.id, name: x.name, steps: x.steps.length })), garage);
+  check('0.11.2 ... and adds a shared one as a new check with its own id', list.length === 2 && list[1].name === 'From a friend' && list[1].id !== 'fbck1' && list[1].steps === 2, list);
+  const rows = await fbq(page, '.drawer .sbchk').innerText();
+  check('0.11.2 ... listed with the others', /From a friend/.test(rows) && /Door open, timer on/.test(rows), rows);
+});

@@ -2285,6 +2285,11 @@ svg path.e.prob{stroke:var(--error-color,#db4437);stroke-dasharray:5 4}
 .sbchk .ckst.bad{color:var(--error-color,#db4437)}
 .sbchk .ckst.unsure{color:var(--warning-color,#b26a00)}
 .dlg.ckdlg .cksteps{margin:0;padding-left:20px;font-size:13px}
+.dlg.ckdlg .cked li{display:flex;align-items:center;gap:6px;margin:3px 0}
+.dlg.ckdlg .cked .cket{flex:1;min-width:0}
+.dlg.ckdlg .cked input{width:120px;box-sizing:border-box}
+.dlg.ckdlg .ckadd{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:8px}
+.dlg.ckdlg textarea.ckjson{width:100%;box-sizing:border-box;font-family:ui-monospace,monospace;font-size:12px;resize:vertical}
 .probs{padding:10px 14px;overflow:auto;display:flex;flex-direction:column;gap:8px}
 .prow{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border-radius:8px;background:var(--secondary-background-color)}
 .prow>ha-icon{--mdc-icon-size:20px;flex:none;margin-top:1px}
@@ -3760,6 +3765,38 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       chk_default: 'Check',
       chk_del_t: 'Delete this check',
       chk_deleted: 'Deleted the check "{name}"',
+      chk_edit_t: 'Edit this check: its name, its steps and what it expects',
+      chk_edit_h: 'Edit the check',
+      chk_edited: 'Check "{name}" saved',
+      chk_e_value: 'The state {name} is set to',
+      chk_e_seconds: 'Seconds to let pass',
+      chk_e_s: 's',
+      chk_e_up: 'Earlier',
+      chk_e_down: 'Later',
+      chk_e_drop_step: 'Take this step out',
+      chk_e_drop_x: 'Take this out',
+      chk_e_state: 'State',
+      chk_e_kind: 'What to expect',
+      chk_e_what: 'Of what',
+      chk_e_k_state: 'ends as',
+      chk_e_k_ran: 'runs to the end',
+      chk_e_k_stopped: 'is stopped by its conditions',
+      chk_e_k_notran: 'doesn\'t run',
+      chk_e_add: 'Add',
+      chk_e_need_state: 'Type the state it should end as.',
+      chk_e_need_run: 'Only an automation or a script runs: pick one, or expect a state.',
+      chk_export_t: 'Share this check: copy it as text',
+      chk_export_h: 'Share "{name}"',
+      chk_export_lead: 'Copy this and paste it into Import checks on another board (or keep it). It names the entities it uses and the states it starts from, so share it only where those names are fine to show.',
+      chk_copy: 'Copy',
+      chk_copied: 'Copied.',
+      chk_copy_by_hand: 'The browser didn\'t let the board copy it: it\'s selected, copy it yourself (Ctrl+C or ⌘C).',
+      chk_import_t: 'Import a check someone shared (pasted as text)',
+      chk_import_h: 'Import a check',
+      chk_import_lead: 'Paste a check copied with Share. It\'s added to this function\'s checks and run on its configs at once. Only what a check can hold is kept: steps, starting states, the clock, answers and what it expects.',
+      chk_import_b: 'Import',
+      chk_import_bad: 'That isn\'t a check copied with Share.',
+      chk_imported: 'Check "{name}" imported',
       chk_expect_h: 'What should come of it',
       chk_expect_none: 'Nothing changed and nothing ran in this run, so there\'s nothing to check yet.',
       chk_fails: 'Fails on the current configs',
@@ -6500,7 +6537,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     list: { owns: ['_findQ'], table: 'list' },
     functions: { owns: ['_watch', '_fnIcon', '_fnColor'], table: 'create' },
     manager: { owns: ['_mgr', '_pick'], table: 'manager' },
-    problems: { owns: ['_probs', '_checkRes', '_probScanning'], table: 'problems' },
+    problems: { owns: ['_probs', '_checkRes', '_probScanning', '_chkEdit'], table: 'problems' },
     tools: { owns: ['_pendingTest', '_tw', '_monSubs', '_monData', '_monCount', '_monKind', '_testLog', '_testOk', '_msgs'], table: 'tools' },
     debug: { owns: ['_dbg', '_dbgSel', '_dbgFlt', '_dbgScrolled', '_dbgSeq'], table: 'debug' },
     arrows: { owns: ['_arw', '_tt'], table: 'arrows' },
@@ -8696,6 +8733,17 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           'chk-run': (el) => { this._runChecks(this._data.ui.current, el.dataset.id ? [el.dataset.id] : null, true); },
           'chk-replay': (el) => { this._checkReplay(el.dataset.id); },
           'chk-del': (el) => { this._checkDel(el.dataset.id); },
+          'chk-edit': (el) => { this._checkEditDlg(el.dataset.id); },
+          'chk-edit-go': () => { this._checkEditGo(); },
+          'chk-st-up': (el) => { this._checkEditMove(+el.dataset.i, -1); },
+          'chk-st-down': (el) => { this._checkEditMove(+el.dataset.i, 1); },
+          'chk-st-del': (el) => { this._checkEditDrop('steps', +el.dataset.i); },
+          'chk-x-del': (el) => { this._checkEditDrop('expect', +el.dataset.i); },
+          'chk-x-add': () => { this._checkEditAdd(); },
+          'chk-export': (el) => { this._checkExport(el.dataset.id); },
+          'chk-copy': () => { this._checkCopy(); },
+          'chk-import': () => { this._checkImportDlg(); },
+          'chk-import-go': () => { this._checkImportGo(); },
           'problems': (el) => { if (this._drawer && this._drawer.mode === 'problems' && !this._drawer.dismissed && !el.closest('.drawer')) this._closeDrawer(); else this._openProblems(); },
           'pdis-list': (el) => { if (this._drawer && this._drawer.mode === 'problems' && this._drawer.dismissed && !el.closest('.drawer')) this._closeDrawer(); else this._openProblems(true); },
           'pdis': (el) => { this._probDismiss(el.dataset.k, 'off'); },
@@ -11057,8 +11105,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (soft && box.dataset.sig === sig) return;
       box.dataset.sig = sig;
       const mark = (c) => { const r = res.get(c.id); if (!r) return `<span class="ckst muted" title="${T('chk_not_run')}">·</span>`; if (r.unsure) return `<span class="ckst unsure" title="${esc(r.unsure)}">?</span>`; return r.ok ? `<span class="ckst ok" title="${T('chk_passes')}">&#10003;</span>` : `<span class="ckst bad" title="${T('chk_fails')}">&#10005;</span>`; };
-      const row = (c) => `<div class="ckrow" data-id="${esc(c.id)}">${mark(c)}<span class="ckname" title="${esc(c.steps.map((x) => this._chkStepText(x).replace(/<[^>]+>/g, '')).join(' → '))}">${esc(c.name)}</span><button class="ib" data-act="chk-run" data-id="${esc(c.id)}" title="${T('chk_run_t')}"><ha-icon icon="mdi:play-circle-outline"></ha-icon></button><button class="ib" data-act="chk-replay" data-id="${esc(c.id)}" title="${T('chk_replay_t')}"><ha-icon icon="mdi:movie-open-play-outline"></ha-icon></button><button class="ib" data-act="chk-del" data-id="${esc(c.id)}" title="${T('chk_del_t')}"><ha-icon icon="mdi:delete-outline"></ha-icon></button></div>`;
-      this._put(box, this._ver ? '' : `<div class="ckhead"><span>${P('chk_n', list.length)}</span>${list.length ? `<button class="ib" data-act="chk-run" title="${T('chk_run_all_t')}"><ha-icon icon="mdi:play-box-multiple-outline"></ha-icon></button>` : ''}<button class="chip" data-act="chk-save"${can ? '' : ' disabled'} title="${can ? T('chk_save_t') : T('chk_save_none')}"><ha-icon icon="mdi:content-save-check-outline"></ha-icon>${T('chk_save')}</button></div>${list.map(row).join('')}`);
+      const row = (c) => `<div class="ckrow" data-id="${esc(c.id)}">${mark(c)}<span class="ckname" title="${esc(c.steps.map((x) => this._chkStepText(x).replace(/<[^>]+>/g, '')).join(' → '))}">${esc(c.name)}</span><button class="ib" data-act="chk-run" data-id="${esc(c.id)}" title="${T('chk_run_t')}"><ha-icon icon="mdi:play-circle-outline"></ha-icon></button><button class="ib" data-act="chk-replay" data-id="${esc(c.id)}" title="${T('chk_replay_t')}"><ha-icon icon="mdi:movie-open-play-outline"></ha-icon></button><button class="ib" data-act="chk-edit" data-id="${esc(c.id)}" title="${T('chk_edit_t')}"><ha-icon icon="mdi:pencil-outline"></ha-icon></button><button class="ib" data-act="chk-export" data-id="${esc(c.id)}" title="${T('chk_export_t')}"><ha-icon icon="mdi:export-variant"></ha-icon></button><button class="ib" data-act="chk-del" data-id="${esc(c.id)}" title="${T('chk_del_t')}"><ha-icon icon="mdi:delete-outline"></ha-icon></button></div>`;
+      this._put(box, this._ver ? '' : `<div class="ckhead"><span>${P('chk_n', list.length)}</span>${list.length ? `<button class="ib" data-act="chk-run" title="${T('chk_run_all_t')}"><ha-icon icon="mdi:play-box-multiple-outline"></ha-icon></button>` : ''}<button class="chip" data-act="chk-save"${can ? '' : ' disabled'} title="${can ? T('chk_save_t') : T('chk_save_none')}"><ha-icon icon="mdi:content-save-check-outline"></ha-icon>${T('chk_save')}</button><button class="ib" data-act="chk-import" title="${T('chk_import_t')}"><ha-icon icon="mdi:import"></ha-icon></button></div>${list.map(row).join('')}`);
     }
     _checkSaveDlg() {
       const g = this._sbx;
@@ -11099,6 +11147,140 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._toast(T('chk_deleted', { name: c.name }));
     }
     _checksSoon(label) { this._clock.after('checks', 400, () => this._runChecks(label)); }
+    // ---- editing a saved check (0.11.2): its name, its steps (order, values, taking one out) and what it expects
+    // (each one's state, taking one out, adding one); saved through cleanCheck as a new one is
+    _checkEditDlg(id) {
+      const L = this._layout(this._data.ui.current), c = (L.checks || []).find((x) => x.id === id);
+      if (!c || this._ver) return;
+      this._chkEdit = { id, c: JSON.parse(JSON.stringify(c)) };
+      this._checkEditDraw();
+      const n = this._$.modal.querySelector('input[name="ckname"]'); if (n) n.focus();
+    }
+    // what's typed in the dialog, into the draft (before it's drawn again or saved)
+    _checkEditRead() {
+      const d = this._chkEdit, m = this._$.modal;
+      if (!d) return;
+      const n = m.querySelector('input[name="ckname"]'); if (n) d.c.name = n.value;
+      m.querySelectorAll('input[data-ckst]').forEach((x) => {
+        const s = d.c.steps[+x.dataset.ckst];
+        if (!s) return;
+        if (s.op === 'set') s.state = x.value;
+        else if (s.op === 'advance') { const v = parseFloat(x.value); if (isFinite(v) && v >= 0) s.ms = Math.round(v * 1000); }
+        else if (s.op === 'event') s.type = x.value;
+      });
+      m.querySelectorAll('input[data-ckx]').forEach((x) => { const e = d.c.expect[+x.dataset.ckx]; if (e && e.k === 'state') e.state = x.value; });
+    }
+    _checkEditDraw() {
+      const d = this._chkEdit, m = this._$.modal, c = d.c;
+      const field = (i, s) => (s.op === 'set' ? `<input data-ckst="${i}" aria-label="${esc(T('chk_e_value', { name: this._checkName(s.id) }))}" value="${esc(s.state == null ? '' : s.state)}">`
+        : s.op === 'advance' ? `<input data-ckst="${i}" type="number" min="0" step="1" aria-label="${esc(T('chk_e_seconds'))}" value="${Math.round((s.ms || 0) / 1000)}"><span class="muted">${T('chk_e_s')}</span>`
+          : s.op === 'event' ? `<input data-ckst="${i}" aria-label="${esc(T('sbx_event_type'))}" value="${esc(s.type || '')}">` : '');
+      const off = (x) => (x ? ' disabled' : '');
+      const steps = c.steps.map((s, i) => `<li class="ckeo" data-key="st${i}"><span class="cket">${this._chkStepText(s)}</span>${field(i, s)}`
+        + `<button class="ib" data-act="chk-st-up" data-i="${i}" title="${esc(T('chk_e_up'))}"${off(i === 0)}><ha-icon icon="mdi:arrow-up"></ha-icon></button>`
+        + `<button class="ib" data-act="chk-st-down" data-i="${i}" title="${esc(T('chk_e_down'))}"${off(i === c.steps.length - 1)}><ha-icon icon="mdi:arrow-down"></ha-icon></button>`
+        + `<button class="ib" data-act="chk-st-del" data-i="${i}" title="${esc(T('chk_e_drop_step'))}"${off(c.steps.length < 2)}><ha-icon icon="mdi:close"></ha-icon></button></li>`).join('');
+      const exps = c.expect.map((x, i) => `<li class="ckeo" data-key="x${i}"><span class="cket">${x.k === 'state' ? T('chk_x_state', { name: esc(this._checkName(x.id)), state: '' }) : this._expText(x)}</span>${x.k === 'state' ? `<input data-ckx="${i}" aria-label="${esc(T('chk_e_state'))}" value="${esc(x.state)}">` : ''}`
+        + `<button class="ib" data-act="chk-x-del" data-i="${i}" title="${esc(T('chk_e_drop_x'))}"${off(c.expect.length < 2)}><ha-icon icon="mdi:close"></ha-icon></button></li>`).join('');
+      // what an expectation can be about: what it starts from, what took part, and what's on the board
+      const ids = [...new Set(Object.keys(c.start).concat(c.items, this._model ? [...this._model.nodes.keys()].filter((k) => !k.includes(':')) : []))].sort((a, b) => this._checkName(a).localeCompare(this._checkName(b)));
+      const opt = (v, l) => `<option value="${esc(v)}">${esc(l)}</option>`;
+      m.hidden = false;
+      m.innerHTML = `<div class="dlg ckdlg"><h3>${T('chk_edit_h')}</h3>`
+        + `<label>${T('chk_name')}<input name="ckname" maxlength="160" value="${esc(c.name)}"></label>`
+        + `<h4>${T('chk_steps_h')}</h4><ol class="cksteps cked">${steps}</ol>`
+        + `<h4>${T('chk_expect_h')}</h4><ul class="cksteps cked">${exps}</ul>`
+        + `<div class="ckadd"><select name="ckxk" aria-label="${esc(T('chk_e_kind'))}">${opt('state', T('chk_e_k_state'))}${opt('ran', T('chk_e_k_ran'))}${opt('stopped', T('chk_e_k_stopped'))}${opt('notran', T('chk_e_k_notran'))}</select>`
+        + `<select name="ckxid" aria-label="${esc(T('chk_e_what'))}">${ids.map((k) => opt(k, this._checkName(k))).join('')}</select><input name="ckxs" aria-label="${esc(T('chk_e_state'))}" placeholder="${esc(T('chk_e_state'))}"><button class="chip" data-act="chk-x-add">${T('chk_e_add')}</button></div>`
+        + `<div class="dval"></div><div class="btns"><button data-act="modal-cancel">${T('cancel')}</button><button class="primary" data-act="chk-edit-go">${T('save')}</button></div></div>`;
+    }
+    _checkEditMove(i, by) {
+      const d = this._chkEdit;
+      if (!d) return;
+      this._checkEditRead();
+      const st = d.c.steps, j = i + by;
+      if (j < 0 || j >= st.length) return;
+      [st[i], st[j]] = [st[j], st[i]];
+      this._checkEditDraw();
+    }
+    _checkEditDrop(what, i) {
+      const d = this._chkEdit;
+      if (!d || d.c[what].length < 2) return;
+      this._checkEditRead();
+      d.c[what].splice(i, 1);
+      this._checkEditDraw();
+    }
+    _checkEditAdd() {
+      const d = this._chkEdit, m = this._$.modal;
+      if (!d) return;
+      this._checkEditRead();
+      const k = m.querySelector('select[name="ckxk"]').value, id = m.querySelector('select[name="ckxid"]').value, st = m.querySelector('input[name="ckxs"]').value.trim();
+      if (!id) return;
+      if (k === 'state' && !st) { m.querySelector('.dval').textContent = T('chk_e_need_state'); return; }
+      if (k !== 'state' && !/^(automation|script)\./.test(id)) { m.querySelector('.dval').textContent = T('chk_e_need_run'); return; }
+      d.c.expect.push(k === 'state' ? { k, id, state: st } : { k, id });
+      this._checkEditDraw();
+    }
+    _checkEditGo() {
+      const d = this._chkEdit, m = this._$.modal;
+      if (!d) return;
+      this._checkEditRead();
+      const c = cleanCheck(Object.assign({}, d.c, { name: (d.c.name || '').trim() || T('chk_default') }));
+      if (!c) { m.querySelector('.dval').textContent = T('chk_cant'); return; }
+      const label = this._data.ui.current, L = this._layout(label);
+      L.checks = (L.checks || []).map((x) => (x.id === d.id ? c : x));
+      const r = this._checkRes.get(label); if (r) r.res.delete(d.id);
+      this._chkEdit = null;
+      this._save();
+      this._closeModal();
+      this._toast(T('chk_edited', { name: c.name }));
+      this._renderChecks();
+      this._runChecks(label, [c.id], true);
+    }
+    // ---- sharing one (0.11.2): as text to copy, and back in from text (cleanCheck takes what's safe of it)
+    _checkExport(id) {
+      const L = this._layout(this._data.ui.current), c = (L.checks || []).find((x) => x.id === id);
+      if (!c) return;
+      const out = Object.assign({ functions_board_check: 1 }, c);
+      delete out.id;
+      const m = this._$.modal;
+      m.hidden = false;
+      m.innerHTML = `<div class="dlg ckdlg"><h3>${T('chk_export_h', { name: esc(c.name) })}</h3><p class="dtext">${T('chk_export_lead')}</p>`
+        + `<textarea class="ckjson" readonly rows="12" aria-label="${esc(T('chk_export_h', { name: c.name }))}">${esc(JSON.stringify(out, null, 2))}</textarea>`
+        + `<div class="dval"></div><div class="btns"><button data-act="modal-cancel">${T('close')}</button><button class="primary" data-act="chk-copy">${T('chk_copy')}</button></div></div>`;
+      const t = m.querySelector('textarea'); if (t) { t.focus(); t.select(); }
+    }
+    async _checkCopy() {
+      const m = this._$.modal, t = m.querySelector('textarea.ckjson');
+      if (!t) return;
+      try { await navigator.clipboard.writeText(t.value); m.querySelector('.dval').textContent = T('chk_copied'); }
+      catch (e) { t.focus(); t.select(); m.querySelector('.dval').textContent = T('chk_copy_by_hand'); }
+    }
+    _checkImportDlg() {
+      if (this._ver) return;
+      const m = this._$.modal;
+      m.hidden = false;
+      m.innerHTML = `<div class="dlg ckdlg"><h3>${T('chk_import_h')}</h3><p class="dtext">${T('chk_import_lead')}</p>`
+        + `<textarea class="ckjson" rows="12" aria-label="${esc(T('chk_import_h'))}" placeholder="{ &quot;functions_board_check&quot;: 1, … }"></textarea>`
+        + `<div class="dval"></div><div class="btns"><button data-act="modal-cancel">${T('cancel')}</button><button class="primary" data-act="chk-import-go">${T('chk_import_b')}</button></div></div>`;
+      const t = m.querySelector('textarea'); if (t) t.focus();
+    }
+    _checkImportGo() {
+      const m = this._$.modal, t = m.querySelector('textarea.ckjson'), say = (x) => { m.querySelector('.dval').textContent = x; };
+      if (!t) return;
+      let o;
+      try { o = JSON.parse(t.value); } catch (e) { say(T('chk_import_bad')); return; }
+      if (!o || typeof o !== 'object' || o.functions_board_check !== 1) { say(T('chk_import_bad')); return; }
+      const c = cleanCheck(Object.assign({}, o, { id: uid() }));
+      if (!c) { say(T('chk_cant')); return; }
+      const label = this._data.ui.current, L = this._layout(label);
+      L.checks = (L.checks || []).concat([c]);
+      this._save();
+      this._closeModal();
+      this._toast(T('chk_imported', { name: c.name }));
+      this._renderChecks();
+      this._runChecks(label, [c.id], true);
+    }
     // replay checks on the function's current configs; results kept until the configs change. given: the configs
     // the scan already read (another function's)
     async _runChecks(label, ids, force, given) {

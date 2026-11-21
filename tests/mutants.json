@@ -1776,5 +1776,59 @@
   "suite": "board-regress",
   "expect": "outside automations that took part",
   "only": "0.11.2 the sandbox, whole home"
+ },
+ {
+  "name": "checks: an edit saves without what was typed",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "    _checkEditGo() {\n      const d = this._chkEdit, m = this._$.modal;\n      if (!d) return;\n      this._checkEditRead();\n",
+  "replace": "    _checkEditGo() {\n      const d = this._chkEdit, m = this._$.modal;\n      if (!d) return;\n",
+  "suite": "board-regress",
+  "expect": "editing keeps the check",
+  "only": "0.11.2 saved checks: edit one"
+ },
+ {
+  "name": "checks: an edit is saved as another check",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      L.checks = (L.checks || []).map((x) => (x.id === d.id ? c : x));",
+  "replace": "      L.checks = (L.checks || []).concat([c]);",
+  "suite": "board-regress",
+  "expect": "editing keeps the check",
+  "only": "0.11.2 saved checks: edit one"
+ },
+ {
+  "name": "checks: Share keeps the id",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      delete out.id;\n",
+  "replace": "",
+  "suite": "board-regress",
+  "expect": "Share gives the check as text",
+  "only": "0.11.2 saved checks: edit one"
+ },
+ {
+  "name": "checks: Import takes any JSON",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      if (!o || typeof o !== 'object' || o.functions_board_check !== 1) { say(T('chk_import_bad')); return; }",
+  "replace": "      if (!o || typeof o !== 'object') { say(T('chk_import_bad')); return; }",
+  "suite": "board-regress",
+  "expect": "Import refuses text",
+  "only": "0.11.2 saved checks: edit one"
+ },
+ {
+  "name": "checks: a step moves the wrong way",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      const st = d.c.steps, j = i + by;",
+  "replace": "      const st = d.c.steps, j = i - by;",
+  "suite": "board-regress",
+  "expect": "Earlier moves a step up",
+  "only": "0.11.2 saved checks: edit one"
+ },
+ {
+  "name": "checks: a run expected of anything",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      if (k !== 'state' && !/^(automation|script)\\./.test(id)) { m.querySelector('.dval').textContent = T('chk_e_need_run'); return; }\n",
+  "replace": "",
+  "suite": "board-regress",
+  "expect": "needs an automation or a script",
+  "only": "0.11.2 saved checks: edit one"
  }
 ]

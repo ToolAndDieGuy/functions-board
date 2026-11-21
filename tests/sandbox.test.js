@@ -797,4 +797,18 @@ const st = (sb, id) => (sb.get(id) || {}).state;
     check('0.11.2 a template helper is rendered again when what it reads changes', st(sb, 'sensor.status') === 'open');
   }
 
+  // ---- 0.11.2 sharing a check: what Share copies comes back the same through Import; a pasted one keeps only what's safe
+  {
+    const { cleanCheck } = lib;
+    const c = cleanCheck({ id: 'abc123', name: 'Door shut by night', at: 1763700000000, start: { 'cover.garage_door': { state: 'open', attributes: { current_position: 100 } } }, items: ['automation.garage_left_open'],
+      steps: [{ op: 'set', id: 'cover.garage_door', state: 'open' }, { op: 'advance', ms: 900000 }], answers: [{ key: 'automation.garage_left_open', text: 'Is it dark?', value: true }], expect: [{ k: 'state', id: 'cover.garage_door', state: 'closed' }, { k: 'ran', id: 'automation.garage_left_open' }] });
+    const shared = JSON.parse(JSON.stringify(Object.assign({ functions_board_check: 1 }, c, { id: undefined })));
+    const back = cleanCheck(Object.assign({}, shared, { id: 'new1' }));
+    check('0.11.2 a shared check comes back the same through Import (but its own id)', !!back && back.id === 'new1' && JSON.stringify(Object.assign({}, back, { id: c.id })) === JSON.stringify(c), back);
+    const bad = cleanCheck({ id: 'x1', name: 'n'.repeat(500), at: 'soon', start: { 'not an id': { state: 'x' }, 'light.ok': { state: 's'.repeat(400) } }, items: ['automation.ok', 'rm -rf', 'script.fine'],
+      steps: [{ op: 'eval', code: 'alert(1)' }, { op: 'set', id: 'light.ok', state: 'on' }, { op: 'advance', ms: 1e15 }], answers: [], expect: [{ k: 'state', id: 'light.ok', state: 'on' }, { k: 'pwn', id: 'light.ok' }], extra: { evil: true } });
+    check('0.11.2 ... a pasted one keeps only what a check can hold: known steps, real entity ids, capped lengths and times', !!bad && bad.name.length === 160 && !('not an id' in bad.start) && bad.start['light.ok'].state.length === 255
+      && bad.items.join() === 'automation.ok,script.fine' && bad.steps.length === 2 && bad.steps[1].ms === 366 * 864e5 && bad.expect.length === 1 && !('extra' in bad) && Number.isFinite(bad.at), bad);
+  }
+
 })().catch((e) => check('the sandbox tests ran to the end', false, String(e && e.stack || e)));

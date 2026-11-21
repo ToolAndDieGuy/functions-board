@@ -1,4 +1,4 @@
-style {63007 chars, #4ee37e6e}
+style {63398 chars, #424f77ab}
 div.board.m-panel.pc.sbx
   aside.list
     div.lhead
@@ -583,6 +583,8 @@ Related, not in this function. Select it to add it."
               span | 0 saved checks
               button.chip data-act="chk-save" disabled title="Do something in the sandbox first; the run is what gets kept" | Save as a check
                 ha-icon icon="mdi:content-save-check-outline"
+              button.ib data-act="chk-import" title="Import a check someone shared (pasted as text)"
+                ha-icon icon="mdi:import"
           div.sbdue
             span.muted | Coming up:
             button.sbd data-act="sbx-to" data-at="<ms>" data-key="<ms>|<day>" title="Run the clock to <day>, <date>, <time>" | <day> · <time>

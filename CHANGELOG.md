@@ -96,6 +96,12 @@ the porch light, if another automation does that. They run in the sandbox only, 
 and are left out of the function's coverage. A check saved this way keeps them and replays them. The choice is kept
 with your display settings.
 
+Saved checks can be edited and shared. **Edit** changes a check's name, moves its steps earlier or later, changes
+what a step sets or how long it lets pass, takes a step or an expectation out, and adds an expectation ("Garage
+Door ends as closed", "Close garage runs to the end"). **Share** gives the check as text to copy, and **Import**
+adds one pasted from another board. An imported check keeps only what a check can hold, and runs at once on this
+function's configs.
+
 ## 0.11.0 (2026-11-20)
 
 Import finds more of the systems you've built, and lets you decide where one ends and the next begins.
