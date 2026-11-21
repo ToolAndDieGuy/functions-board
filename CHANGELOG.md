@@ -10,7 +10,9 @@ tracks it).
 
 In the sandbox, an action on a device shows on that device's box. Before, the board showed the device as one box but
 the sandbox looked for its entities, so it drew a temporary box marked "Not on this board" for something that was on
-it.
+it. When a step reaches a device's entities, or the lights of an area, it says over that box what it did: the action,
+which of the entities, and with what ("climate.set_fan_mode → Thermostat Zone (fan_mode: On)"), or which of them
+changed to what.
 
 ## 0.11.0 (2026-11-20)
 

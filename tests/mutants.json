@@ -1147,8 +1147,8 @@
  {
   "name": "sandbox: one arrow drawn twice",
   "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "          if (!a || !b || a === b || links.some((l) => l.a === a && l.b === b)) return;",
-  "replace": "          if (!a || !b || a === b) return;",
+  "find": "          if (old) { if (via && !old.via.includes(via)) old.via.push(via); return; }",
+  "replace": "",
   "suite": "board-regress",
   "only": "0.11.1",
   "expect": "the action goes from the automation to the device box, once"
@@ -1161,5 +1161,32 @@
   "suite": "board-regress",
   "only": "0.11.1",
   "expect": "the loop through it is still marked"
+ },
+ {
+  "name": "sandbox: no words over a stand-in box",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      const cs = f && f.at >= 0 ? f.steps[f.at] : null;",
+  "replace": "      const cs = null;",
+  "suite": "board-regress",
+  "only": "0.11.1",
+  "expect": "over the device box: the call"
+ },
+ {
+  "name": "sandbox: a call's words name only the first entity",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "          if (old) { if (via && !old.via.includes(via)) old.via.push(via); return; }",
+  "replace": "          if (old) return;",
+  "suite": "board-regress",
+  "only": "0.11.1",
+  "expect": "over the device box: the call"
+ },
+ {
+  "name": "sandbox: a call's words leave out its settings",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "return `${e.svc} → ${via.map(nm).join(', ')}${set.length ? ' (' + set.join(', ') + ')' : ''}`;",
+  "replace": "return `${e.svc} → ${via.map(nm).join(', ')}`;",
+  "suite": "board-regress",
+  "only": "0.11.1",
+  "expect": "over the device box: the call"
  }
 ]

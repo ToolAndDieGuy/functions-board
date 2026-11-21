@@ -2445,6 +2445,7 @@ circle.fdot{fill:var(--fb-blue);stroke:var(--card-background-color);stroke-width
 .flow .fnum.cur{background:color-mix(in srgb,var(--fb-blue) 70%,#000);color:#fff}
 .flow .fwait{position:absolute;transform:translate(-100%,-50%);display:flex;align-items:center;gap:3px;height:20px;padding:0 7px;border-radius:10px;background:var(--fb-amber);color:#000;font-size:11px;font-weight:600;white-space:nowrap;pointer-events:auto;z-index:2}
 .flow .fwait ha-icon{--mdc-icon-size:13px}
+.flow .fsay{position:absolute;transform:translate(-50%,-100%);width:max-content;max-width:380px;padding:3px 9px;border-radius:8px;box-sizing:border-box;background:var(--card-background-color);border:1.5px solid var(--fb-blue);color:var(--primary-text-color);font-size:11.5px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:0 2px 6px rgba(0,0,0,.25);pointer-events:auto;z-index:3}
 .litbar.flowbar{flex-direction:column;flex-wrap:nowrap;align-items:stretch;gap:6px}
 .litbar.flowbar .fhead{display:flex;align-items:center;gap:6px;min-width:0}
 .litbar.flowbar .fhead .fcur{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
@@ -4729,7 +4730,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       let ents = this._targets(Object.assign({}, a, { target: tgt }), data);
       const generic = dom === 'homeassistant';
       if (!generic && dom !== 'script' && dom !== 'automation') ents = ents.filter((e) => e.split('.')[0] === dom || (dom === 'counter' && e.startsWith('counter.')));
-      const cid = this._log({ kind: 'call', key: run.item.id, cause: run.cause, svc, ents: dom === 'script' && !['turn_on', 'turn_off', 'toggle'].includes(s) ? ['script.' + s] : ents });
+      const cid = this._log({ kind: 'call', key: run.item.id, cause: run.cause, svc, data: data && typeof data === 'object' && !Array.isArray(data) ? data : null, ents: dom === 'script' && !['turn_on', 'turn_off', 'toggle'].includes(s) ? ['script.' + s] : ents });
       const entry = this.log[this.log.length - 1];
       // scripts: called directly, the caller waits; started with script.turn_on, it doesn't
       if (dom === 'script') {
@@ -11689,15 +11690,19 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         const role = { trigger: 'trigger', cond: 'condition', call: 'call' }[e.kind];
         from.forEach((x) => to.forEach((y) => {
           const a = res(x), b = res(y);
-          if (!a || !b || a === b || links.some((l) => l.a === a && l.b === b)) return;
+          if (!a || !b || a === b) return;
+          // a box that stands in for what was reached (a device for its entity, an area for its lights) says which
+          const via = b !== y && b[0] !== '~' && !y.startsWith('mqtt:') ? y : null, old = links.find((l) => l.a === a && l.b === b);
+          if (old) { if (via && !old.via.includes(via)) old.via.push(via); return; }
           const ed = a[0] !== '~' && b[0] !== '~' ? edgeFor(a, b, role) : null;
-          links.push({ a, b, edge: ed ? ed.id : null, rev: !!ed && ed.from !== a });
+          links.push({ a, b, edge: ed ? ed.id : null, rev: !!ed && ed.from !== a, via: via ? [via] : [] });
           ghost(a, b, true); ghost(b, a, false);
           [a, b].forEach((k) => { if (k[0] !== '~') keys.add(k); });
         }));
+        const was = box;
         if (box) { box = res(box); ghost(box, links.length ? links[0].a : null, false); if (box[0] !== '~') keys.add(box); }
         if (!links.length && !box) return;
-        steps.push({ e, links, box: links.length ? null : box });
+        steps.push({ e, links, box: links.length ? null : box, via: box && box !== was && box[0] !== '~' && !was.startsWith('mqtt:') ? [was] : [] });
       });
       const f = { act, steps, ghosts, keys: [...keys], at: -1, cond: new Map(), reached: new Set() };
       this._flowPlace(f);
@@ -11784,6 +11789,15 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (e.kind === 'cond' && e.key) return T('sbx_f_checks', { a: nm(e.key), c: t });
       return t;
     }
+    // what a step did to the entities a box stands in for: the call, to which of them, with its settings; or the change
+    _flowSay(e, via) {
+      const nm = (k) => this._boxName(k);
+      if (e.kind === 'call') {
+        const set = Object.entries(e.data || {}).filter(([k, v]) => !/^(entity_id|device_id|area_id|floor_id|label_id)$/.test(k) && v != null && typeof v !== 'object').slice(0, 2).map(([k, v]) => `${k}: ${v}`);
+        return `${e.svc} → ${via.map(nm).join(', ')}${set.length ? ' (' + set.join(', ') + ')' : ''}`;
+      }
+      return this._sbxText(e).main;
+    }
     // the boxes of some steps, as one rectangle on the board
     _flowRects(f, idx) {
       const m = this._model, rs = [];
@@ -11869,6 +11883,13 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           });
           if (!s.links.length && s.box) { const R = rect(s.box); if (R) spot(R.x, R.y, i + 1, cur); }
         });
+      }
+      // the current step, in words over a box that stands in for what it reached: which of a device's entities was
+      // called and with what, or changed to what (0.11.1)
+      const cs = f && f.at >= 0 ? f.steps[f.at] : null;
+      if (cs) {
+        const says = cs.links.filter((l) => l.via.length).map((l) => [l.b, l.via]).concat(cs.box && cs.via.length ? [[cs.box, cs.via]] : []);
+        says.forEach(([k, via]) => { const R = rect(k), t = R && this._flowSay(cs.e, via); if (t) html.push(`<div class="fsay" data-key="${esc(k)}" style="left:${R.x + R.w / 2}px;top:${R.y - 12}px" title="${esc(t)}">${esc(t)}</div>`); });
       }
       // what's waiting in the sandbox, and for how long on its clock
       const due = new Map();

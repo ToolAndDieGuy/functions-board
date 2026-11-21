@@ -1181,14 +1181,14 @@ test('0.11.1 a loop through a scene is still found, with no arrow to what the sc
   check('0.11.1 scene loop: no errors', page.logs.length === 0, page.logs);
 });
 
-test('0.11.1 the sandbox finds the device box of what an action on a device changes, not a box "not on this board"', async ({ browser, fake }) => {
+test('0.11.1 the sandbox finds the device box of what an action on a device changes, not a box "not on this board", and says over it what was called', async ({ browser, fake }) => {
   const { page } = await imported(browser);
   const garage = await openFn(page, /garage/i);
   const dev = await el(page, (b) => b._ents.find((e) => e.entity_id === 'climate.heatpump').device_id);
   // a second climate entity on the device (a second zone): an action on the device reaches both, and the step is still one arrow
   fake.entities.set('climate.fb_heatpump_zone2', { entity_id: 'climate.fb_heatpump_zone2', id: 'fbidhpz2', platform: 'demo', unique_id: 'fbhpz2', labels: [], categories: {}, area_id: null, device_id: dev, config_entry_id: null, disabled_by: null, hidden_by: null, name: null, original_name: 'HeatPump zone 2', icon: null, has_entity_name: false, entity_category: null, options: {} });
   await fake.setState('climate.fb_heatpump_zone2', 'heat', { friendly_name: 'HeatPump zone 2', hvac_modes: ['off', 'heat'] });
-  await addAuto(page, fake, 'automation.fb_heat_off_open', { alias: 'Garage open: heat pump off', triggers: [{ trigger: 'state', entity_id: 'cover.garage_door', to: 'open' }], conditions: [], actions: [{ action: 'climate.turn_off', target: { device_id: dev } }] });
+  await addAuto(page, fake, 'automation.fb_heat_off_open', { alias: 'Garage open: heat pump off', triggers: [{ trigger: 'state', entity_id: 'cover.garage_door', to: 'open' }], conditions: [], actions: [{ action: 'climate.set_hvac_mode', target: { device_id: dev }, data: { hvac_mode: 'off' } }] });
   await ws(page, { type: 'config/entity_registry/update', entity_id: 'automation.fb_heat_off_open', labels: [garage] });
   await el(page, (b) => b._store.changed('reg'));
   const D = 'device:' + dev;
@@ -1209,6 +1209,20 @@ test('0.11.1 the sandbox finds the device box of what an action on a device chan
   check('0.11.1 no temporary box for the device\'s entity', !f.ghosts.includes('~climate.heatpump'), f);
   check('0.11.1 the action goes from the automation to the device box, once', f.links.filter((x) => x === 'automation.fb_heat_off_open>' + D).length === 1, f);
   check('0.11.1 ... and the entity\'s change shows on the device box', f.boxes.length > 0 && f.boxes.every((x) => x === D), f);
+  // the call's step, and each entity's change: in words over the device box
+  const say = async (re) => el(page, (b, [d, src]) => {
+    const i = b._flow.steps.findIndex((s) => new RegExp(src).test(b._flowText(s.e)) && (s.box === d || s.links.some((l) => l.b === d)));
+    if (i < 0) return { i };
+    b._flowGo(i, false);
+    return { i, says: [...b.shadowRoot.querySelectorAll('.flow .fsay')].map((x) => [x.dataset.key, x.textContent]) };
+  }, [D, re.source]);
+  await el(page, (b) => { b._clock.cancel('lit'); });
+  const call = await say(/set_hvac_mode/);
+  check('0.11.1 over the device box: the call, to which of its entities, with what', JSON.stringify(call.says) === JSON.stringify([[D, 'climate.set_hvac_mode → HeatPump, HeatPump zone 2 (hvac_mode: off)']]), call);
+  const ch = await say(/HeatPump zone 2 →/);
+  check('0.11.1 ... and on a change, which entity changed to what', ch.says && ch.says.length === 1 && ch.says[0][0] === D && /^HeatPump zone 2 → /i.test(ch.says[0][1]), ch);
+  const own = await el(page, (b) => { const i = b._flow.steps.findIndex((s) => s.e.kind === 'trigger'); b._flowGo(i, false); return b.shadowRoot.querySelectorAll('.flow .fsay').length; });
+  check('0.11.1 ... and nothing over a box that is what the step reached', own === 0, own);
   check('0.11.1 sandbox device: no errors', page.logs.length === 0, page.logs);
 });
 
