@@ -533,6 +533,10 @@ Related, not in this function. Select it to add it."
                 input.sbms aria-label="How long it takes" hidden placeholder="<dur>, <dur>" ·value=""
               button.chip data-act="sbx-behave" | Apply
             div.sbrow
+              span.sbl | Home
+              label.sbcb title="Also run the automations outside this function that start from what it reads or changes, and the ones those reach in turn. Turning it on or off starts the sandbox again." | Whole home
+                input.sbwhole type="checkbox" ·value="on" ·checked=false
+            div.sbrow
               span.sbl | Debug
               label.sbcb | Step through: pause before every condition and action
                 input.sbstep type="checkbox" ·value="on" ·checked=false

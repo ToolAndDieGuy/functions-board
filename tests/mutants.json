@@ -1740,5 +1740,41 @@
   "suite": "board-regress",
   "expect": "a saved check replays a threshold helper",
   "only": "0.11.2 a saved check replays a helper"
+ },
+ {
+  "name": "sandbox: whole home starts only from what the function changes",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      ids.forEach((id, i) => { if (cfgs[i]) ['trigger', 'condition', 'action'].forEach((role) => refs(cfgs[i], id, role).forEach((x) => reached.add(x))); });",
+  "replace": "      ids.forEach((id, i) => { if (cfgs[i]) refs(cfgs[i], id, 'action').forEach((x) => reached.add(x)); });",
+  "suite": "board-regress",
+  "expect": "including one that starts from what the function only reads",
+  "only": "0.11.2 the sandbox, whole home"
+ },
+ {
+  "name": "sandbox: whole home goes no further than one step",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "          refs(cfgOf.get(k), k, 'action').forEach((x) => reached.add(x));\n",
+  "replace": "",
+  "suite": "board-regress",
+  "expect": "whole home takes the automations the door reaches",
+  "only": "0.11.2 the sandbox, whole home"
+ },
+ {
+  "name": "sandbox: coverage counts the automations outside",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      return sbxCoverage(engs, g.opts.items.filter((x) => !x.outside), (k, x) =>",
+  "replace": "      return sbxCoverage(engs, g.opts.items, (k, x) =>",
+  "suite": "board-regress",
+  "expect": "left out of the function's coverage",
+  "only": "0.11.2 the sandbox, whole home"
+ },
+ {
+  "name": "sandbox: whole home isn't kept for a saved check",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      g.rec = { at: now, start: this._checkStart(states), items: ids.slice(), steps: [], answers: [] };",
+  "replace": "      g.rec = { at: now, start: this._checkStart(states), items: ids.filter((k) => !outside.has(k)), steps: [], answers: [] };",
+  "suite": "board-regress",
+  "expect": "outside automations that took part",
+  "only": "0.11.2 the sandbox, whole home"
  }
 ]

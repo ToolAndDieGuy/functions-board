@@ -1555,3 +1555,46 @@ test('0.11.2 a saved check replays a helper that follows what it reads', async (
   }, { garage, T, HOT });
   check('0.11.2 a saved check replays a threshold helper following its sensor', res.ok && res.got[0] === 'on', res);
 });
+
+test('0.11.2 the sandbox, whole home: the automations outside the function that its changes reach run too', async ({ browser, fake }) => {
+  const { page } = await imported(browser);
+  // outside the garage function: one the door reaches, one that reaches, and one nothing in it reaches
+  await fake.setState('input_boolean.fb_porch', 'off', { friendly_name: 'Porch light on' });
+  await fake.setState('input_boolean.fb_porch2', 'off', { friendly_name: 'Porch counted' });
+  await fake.setState('input_boolean.fb_far', 'off', { friendly_name: 'Far away' });
+  await addPiece(page, fake, 'automation.fb_porch_door', { alias: 'Porch with the garage door', mode: 'single', triggers: [{ trigger: 'state', entity_id: 'cover.garage_door', to: 'open' }], conditions: [], actions: [{ action: 'input_boolean.turn_on', target: { entity_id: 'input_boolean.fb_porch' } }] });
+  await addPiece(page, fake, 'automation.fb_porch_next', { alias: 'After the porch', mode: 'single', triggers: [{ trigger: 'state', entity_id: 'input_boolean.fb_porch', to: 'on' }], conditions: [], actions: [{ action: 'input_boolean.turn_on', target: { entity_id: 'input_boolean.fb_porch2' } }] });
+  // one that starts from what the function only reads, never changes or fires itself (the timer's finished event)
+  await fake.setState('input_boolean.fb_timer_note', 'off', { friendly_name: 'Timer noted' });
+  await addPiece(page, fake, 'automation.fb_timer_note', { alias: 'Note the timer', mode: 'single', triggers: [{ trigger: 'event', event_type: 'timer.finished' }], conditions: [], actions: [{ action: 'input_boolean.turn_on', target: { entity_id: 'input_boolean.fb_timer_note' } }] });
+  await addPiece(page, fake, 'automation.fb_far', { alias: 'Far away', mode: 'single', triggers: [{ trigger: 'state', entity_id: 'input_boolean.fb_far', to: 'on' }], conditions: [], actions: [{ action: 'input_boolean.turn_off', target: { entity_id: 'input_boolean.fb_far' } }] });
+  await fake.idle(400);
+  await openFn(page, /garage/i);
+  await fbq(page, '.tools [data-act="sandbox"]').click();
+  // the intro offers it
+  check('0.11.2 the sandbox\'s intro offers whole home', await fbq(page, '.modal input[name="sbxwhole"]').count() === 1);
+  await fbq(page, '.modal [data-act="sbx-start"]').click({ timeout: 3000 }).catch(() => {});
+  await fbq(page, '.drawer .sbctl .sbent').waitFor({ timeout: 10000 });
+  const D = (fn, arg) => el(page, fn, arg);
+  const settle = () => until(() => D((b) => (b._sbx && !b._sbx.busy) || null), 10000);
+  check('0.11.2 off by default: only the function\'s own run', (await D((b) => b._sbx.outside.size)) === 0);
+  await D((b) => { const c = b._$.drawer.querySelector('.sbwhole'); c.checked = true; c.dispatchEvent(new Event('change', { bubbles: true, composed: true })); });
+  await until(() => D((b) => (b._sbx && b._sbx.outside.size) || null), 10000);
+  await settle();
+  const got = await D((b) => ({ out: [...b._sbx.outside].sort(), kept: b._data.ui.sbxWhole, note: b._sbx.eng.log.filter((e) => e.kind === 'note').map((e) => e.text).join(' | '), row: b._$.drawer.querySelector('.sbctl').innerText }));
+  check('0.11.2 whole home takes the automations the door reaches, and the ones those reach, not the rest', got.out.join() === 'automation.fb_porch_door,automation.fb_porch_next,automation.fb_timer_note', got.out);
+  check('0.11.2 ... including one that starts from what the function only reads (an event it listens to)', got.out.includes('automation.fb_timer_note'), got.out);
+  check('0.11.2 ... says so when it starts, and in its row; the choice is kept with your display settings', /Whole home: 3 automations outside this function run too.*Porch with the garage door/.test(got.note) && /3 automations outside/.test(got.row) && got.kept === true, got);
+  const open = async () => { await D((b) => { const s = b._$.drawer.querySelector('.sbent'); s.value = 'cover.garage_door'; s.dispatchEvent(new Event('change', { bubbles: true, composed: true })); const v = b._$.drawer.querySelector('.sbval-sel'); v.value = 'open'; v.dispatchEvent(new Event('change', { bubbles: true, composed: true })); }); await fbq(page, '.drawer [data-act="sbx-set"]').click(); await settle(); };
+  await open();
+  const after = await D((b) => ({ p: b._sbx.eng.get('input_boolean.fb_porch').state, p2: b._sbx.eng.get('input_boolean.fb_porch2').state, real: b._hass.states['input_boolean.fb_porch'].state,
+    ghosts: [...b._$.flow.querySelectorAll('.ghost')].map((x) => x.textContent), cov: (() => { b._sbx.cov = { running: false, n: 0, engs: [] }; b._sbx.covMine = true; const l = b._sbxCovList(); return l.length > 0 && l.every((x) => !/fb_porch/.test(x.id)); })() }));
+  check('0.11.2 opening the door runs both outside automations, in the sandbox only', after.p === 'on' && after.p2 === 'on' && after.real === 'off', after);
+  check('0.11.2 ... shown beside the board as not on it, and left out of the function\'s coverage', after.ghosts.some((t) => /Porch with the garage door/.test(t)) && after.cov, after);
+  // a check saved in whole home replays the outside automations it had
+  const rec = await D((b) => b._sbx.rec.items.filter((k) => /fb_porch/.test(k)).sort());
+  check('0.11.2 what you did keeps the outside automations that took part, for a saved check', rec.join() === 'automation.fb_porch_door,automation.fb_porch_next', rec);
+  await D((b) => { const c = b._$.drawer.querySelector('.sbwhole'); c.checked = false; c.dispatchEvent(new Event('change', { bubbles: true, composed: true })); });
+  await until(() => D((b) => (b._sbx && b._sbx.outside.size === 0 && !b._data.ui.sbxWhole) || null), 10000);
+  check('0.11.2 turning it off starts again with the function alone', true);
+});

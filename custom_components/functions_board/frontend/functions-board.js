@@ -3005,6 +3005,12 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       sbx_ran_n: { one: 'ran once in the sandbox', other: 'ran {n} times in the sandbox' },
       sbx_not_run: 'not run in the sandbox yet',
       sbx_not_followed: 'Triggers that don\'t come from states the sandbox holds: fire them from the Press row (or use Run, as if that trigger fired): {list}.',
+      sbx_home: 'Home',
+      sbx_whole: 'Whole home',
+      sbx_whole_t: 'Also run the automations outside this function that start from what it reads or changes, and the ones those reach in turn. Turning it on or off starts the sandbox again.',
+      sbx_whole_k: { one: '1 automation outside', other: '{n} automations outside' },
+      sbx_whole_n: { one: 'Whole home: 1 automation outside this function runs too, because it starts from what this function reads or changes: {list}.', other: 'Whole home: {n} automations outside this function run too, because they start from what this function reads or changes (or from what those change): {list}.' },
+      sbxi_whole: 'Whole home: also run the automations outside this function that start from what it reads or changes',
       sbx_follows_list: 'These helpers follow what they read here, as in Home Assistant: {list}. Other helpers stay as they are unless you set them.',
       sbx_follows_partly: '(without its delay)',
       sbx_follows: 'follows {name}',
@@ -3224,7 +3230,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       sbxi_why: 'The sandbox lets you try this function without touching anything real. Change a state, fire an event, send an MQTT message, run an automation, or move the clock forward, and watch what the function would do: what triggers, which conditions pass and why, what each action would change, and what that sets off next. Use it to check a change before you rely on it, to see why something didn\'t happen, or to walk through a chain that takes hours in real life.',
       sbxi_safe: 'Nothing here reaches your home. The sandbox reads your states once when it opens and asks Home Assistant to render templates, which only reads. It never calls a service, fires an event, publishes to MQTT or sets a state: no device moves and no notification is sent.',
       sbxi_limits_h: 'What it can\'t show you',
-      sbxi_l_board: '<b>Only the automations and scripts on this board run.</b> Anything else that would react to the same change, such as automations in other functions, blueprints, Node-RED flows, alerts or an integration\'s own logic, doesn\'t run here, so a chain that leaves this function stops at its edge.',
+      sbxi_l_board: '<b>Only the automations and scripts on this board run</b>, unless you tick Whole home below: then automations elsewhere that start from what this function reads or changes run too. Node-RED flows, alerts and an integration\'s own logic never run here, so a chain through them stops at the edge.',
       sbxi_l_devices: '<b>Devices answer at once.</b> A light turned on is simply on, unless the Device row makes it slow, fail or go unavailable. Values don\'t change by themselves: a temperature stays where it is until you set it. Template, min/max, threshold and group helpers follow what they read, as in Home Assistant; other helpers worked out from something (a derivative, a utility meter) stay as they are.',
       sbxi_l_calls: '<b>Some calls change nothing here.</b> Notifications, TTS and log messages are listed as messages. Scenes, device actions and services the sandbox doesn\'t know are listed as calls it would make, without their effect.',
       sbxi_l_triggers: '<b>Some triggers are yours to fire.</b> A device\'s own buttons (ZHA, Z-Wave, Hue), webhooks, tags, calendars, Assist and Home Assistant starting have their own rows; one the sandbox can\'t see coming (Z-Wave value updated, geo location) is fired from the Press row. Zones and the sun follow the states and the clock. Calendar offsets and the sun\'s exact times are approximate.',
@@ -4609,6 +4615,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const not = [];
       this.items.forEach((it) => { if (it.kind === 'automation') this._trigs(it).forEach((t) => { const p = this._plat(t); if (t.enabled !== false && !SBX_PLATS.has(p) && !this._espec(p)) not.push(`${this._name(it.id)}: ${p}`); }); });
       if (not.length) this._log({ kind: 'note', text: T('sbx_not_followed', { list: [...new Set(not)].join(', ') }) });
+      toList(this.o.notes).forEach((text) => this._log({ kind: 'note', text: String(text) }));
       if (this.follow.size) this._log({ kind: 'note', text: T('sbx_follows_list', { list: [...this.follow].map(([id, f]) => this._name(id) + (f.rule.partly ? ' ' + T('sbx_follows_partly') : '')).join(', ') }) });
       this.items.forEach((it) => { if (it.kind === 'automation') this._trigs(it).forEach((t, i) => { this._armTime(it, t, i); this._armSun(it, t, i); }); });
       this._armSunState();
@@ -8739,8 +8746,13 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           'sandbox': (el, { need }) => { if (need()) { if (this._sbxOn()) this._closeDrawer(); else if (this._data.ui.sbxIntro === false) this._openSandbox(); else this._sbxIntro(); } },
           'sbx-start': () => {
             // "don't show this again" is yours alone (saved with your display settings); the i in the drawer shows it again
-            const skip = this._$.modal.querySelector('input[name="sbxskip"]');
-            if (skip) { if (skip.checked) this._data.ui.sbxIntro = false; else delete this._data.ui.sbxIntro; this._save(); }
+            const skip = this._$.modal.querySelector('input[name="sbxskip"]'), whole = this._$.modal.querySelector('input[name="sbxwhole"]');
+            if (skip) { if (skip.checked) this._data.ui.sbxIntro = false; else delete this._data.ui.sbxIntro; }
+            // whole home changes what runs: an open sandbox starts again with it
+            const was = !!this._data.ui.sbxWhole;
+            if (whole) { if (whole.checked) this._data.ui.sbxWhole = true; else delete this._data.ui.sbxWhole; }
+            if (skip || whole) this._save();
+            if (this._sbxOn() && was !== !!this._data.ui.sbxWhole) this._ha.soft(this._sbxReset(), 'starting the sandbox again (whole home)', null);
             this._closeModal();
             if (!this._sbxOn()) this._openSandbox();
           },
@@ -12534,6 +12546,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         + `<div class="okbox"><ha-icon icon="mdi:shield-check-outline"></ha-icon><span>${T('sbxi_safe')}</span></div>`
         + `<h4>${T('sbxi_limits_h')}</h4><ol class="sbxl">${li([T('sbxi_l_board'), T('sbxi_l_devices'), T('sbxi_l_calls'), T('sbxi_l_triggers'), T('sbxi_l_ask'), T('sbxi_l_tpl'), T('sbxi_l_nodered'), T('sbxi_l_copy'), T('sbxi_l_time')])}</ol>`
         + `<div class="warnbox"><ha-icon icon="mdi:alert-outline"></ha-icon><span>${T('sbxi_bottom')}</span></div>`
+        + `<label class="chk"><input type="checkbox" name="sbxwhole"${this._data.ui.sbxWhole ? ' checked' : ''}>${T('sbxi_whole')}</label>`
         + `<label class="chk"><input type="checkbox" name="sbxskip"${this._data.ui.sbxIntro === false ? ' checked' : ''}>${T('sbxi_skip')}</label>`
         + `<div class="btns">${open ? '' : `<button data-act="modal-cancel">${T('cancel')}</button>`}<button class="primary" data-act="sbx-start">${open ? T('close') : T('sbxi_go')}</button></div></div>`;
       const b = m.querySelector('[data-act="sbx-start"]');
@@ -12565,7 +12578,13 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const m = this._model;
       const ids = [...m.nodes.keys()].filter((k) => /^(automation|script)\./.test(k));
       const cfgs = await Promise.all(ids.map((k) => this._fetchConfig(k)));
-      const g = { label, asks: [], tplN: 0, pre: check ? check.answers.slice() : [] };
+      // whole home: the automations outside the function that its changes reach run too (a check that had some
+      // replays them as well)
+      const outside = new Set(check ? (check.items || []).filter((k) => k.startsWith('automation.') && !ids.includes(k)) : []);
+      if (this._data.ui.sbxWhole && !check) (await this._sbxReach(ids, cfgs)).forEach((k) => outside.add(k));
+      const more = [...outside], moreCfgs = await Promise.all(more.map((k) => this._fetchConfig(k)));
+      more.forEach((k, i) => { if (moreCfgs[i]) { ids.push(k); cfgs.push(moreCfgs[i]); } });
+      const g = { label, asks: [], tplN: 0, pre: check ? check.answers.slice() : [], outside };
       // what you do from here, so the run can be kept as a check: the states it starts from, the clock, the steps
       const now = check ? check.at : Date.now(), states = Object.assign({}, this._hass.states);
       if (check) Object.entries(check.start).forEach(([k, v]) => { states[k] = Object.assign({}, states[k] || {}, { state: v.state, attributes: Object.keys(v.attributes || {}).length ? v.attributes : (states[k] || {}).attributes || {} }); });
@@ -12579,8 +12598,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       // the engine's settings, kept: rewinding makes a new one from the same start, and so does the explorer (0.11.2)
       // the helpers that follow what they read: their rules, asked now if the board let go of them (a config changed)
       const derived = this._model ? await this._followRules(this._model.nodes, states) : {};
+      const wholeNote = outside.size ? [P('sbx_whole_n', outside.size, { list: [...outside].map((k) => this._boxName(k)).join(', ') })] : [];
       g.opts = {
-        states, items: ids.map((id, i) => ({ id, cfg: cfgs[i] })), now, tz: this._hass.config && this._hass.config.time_zone,
+        states, items: ids.map((id, i) => ({ id, cfg: cfgs[i], outside: outside.has(id) })), now, tz: this._hass.config && this._hass.config.time_zone, notes: wholeNote,
         tpl: (t, v, e) => this._sbxTpl(t, v, e), ask: (q) => this._sbxAsk(q), resolve, fetch: (id) => this._fetchConfig(id),
         name: (id) => this._boxName(id), condText: (c) => condText(c, (x) => this._boxName(x)), onLog: () => this._sbxLogged(),
         entityOf: (x) => this._entOfReg(x), scene: (id) => this._sceneCfg(id), actText: (a) => this._actText(a),
@@ -12637,6 +12657,33 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._refreshStates();
       this._renderNodebar();
       this._renderLegend();
+    }
+    // whole home (0.11.2): the automations outside the function that what it touches reaches, and those theirs reach in
+    // turn (at most 200). What it touches is everything its automations and scripts read or change (what you'd set in
+    // the sandbox, and what they set); one outside is reached when a trigger of it is on such an entity (an area's, a
+    // device's) or on an event fired, and then what it changes reaches further. Only automations that are loaded (have
+    // a state: not disabled) are looked at.
+    async _sbxReach(ids, cfgs) {
+      const ents = (ref) => (ref.startsWith('event:') ? [ref] : ref.startsWith('device:') ? this._ents.filter((e) => e.device_id === ref.slice(7)).map((e) => e.entity_id)
+        : /^(area|floor|label):/.test(ref) ? ((this._tgt.get(ref) || {}).entities || []) : ref.includes(':') ? [] : [ref]);
+      const known = (x) => this._known(x);
+      const refs = (cfg, id, role) => { const out = new Set(); analyze(cfg, id.startsWith('script.'), known).refs.filter((r) => r.role === role).forEach((r) => ents(r.ref).forEach((x) => out.add(x))); return out; };
+      const mine = new Set(ids), reached = new Set();
+      ids.forEach((id, i) => { if (cfgs[i]) ['trigger', 'condition', 'action'].forEach((role) => refs(cfgs[i], id, role).forEach((x) => reached.add(x))); });
+      const cands = Object.keys(this._hass.states).filter((k) => k.startsWith('automation.') && !mine.has(k)).sort();
+      const cfgOf = new Map(), got = await Promise.all(cands.map((k) => this._fetchConfig(k)));
+      cands.forEach((k, i) => { if (got[i]) cfgOf.set(k, got[i]); });
+      const out = [], left = new Set(cfgOf.keys());
+      for (let grew = true; grew && out.length < 200;) {
+        grew = false;
+        for (const k of [...left]) {
+          if (out.length >= 200) break;
+          if (![...refs(cfgOf.get(k), k, 'trigger')].some((x) => reached.has(x))) continue;
+          out.push(k); left.delete(k); grew = true;
+          refs(cfgOf.get(k), k, 'action').forEach((x) => reached.add(x));
+        }
+      }
+      return out;
     }
     async _sbxReset() {
       if (!this._sbx) return;
@@ -12728,6 +12775,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const outs = this._sbxOutputs();
       if (outs.length) rows.push(row(T('sbx_device'), sel('sbdev', T('sbx_device_what'), outs.map(opt).join('')) + sel('sbhow', T('sbx_how'), o2('ok', T('sbx_how_ok')) + o2('slow', T('sbx_how_slow')) + o2('fails', T('sbx_how_fails')) + o2('unavailable', T('sbx_how_unav'))) + this._sbxField('sbms', [[5e3, '5 s'], [15e3, '15 s'], [3e4, '30 s'], [6e4, '1 min'], [3e5, '5 min']].map(([v, l]) => ({ v: String(v), l: T('sbx_after_t', { t: l }), pick: v === 15e3 })), T('sbx_ms_ph'), T('sbx_after_a')) + `<button class="chip" data-act="sbx-behave">${T('sbx_apply')}</button>`));
       // step-through: pause before every condition and action (breakpoints: Pause here on a box)
+      rows.push(row(T('sbx_home'), `<label class="sbcb" title="${esc(T('sbx_whole_t'))}"><input type="checkbox" class="sbwhole"${this._data.ui.sbxWhole ? ' checked' : ''}>${T('sbx_whole')}</label>${g.outside.size ? `<span class="muted">${esc(P('sbx_whole_k', g.outside.size))}</span>` : ''}`));
       rows.push(row(T('sbx_debug'), `<label class="sbcb"><input type="checkbox" class="sbstep"${g.eng.stepping ? ' checked' : ''}>${T('sbx_step_through')}</label><span class="sbbrk muted">${g.eng.breaks.size ? P('sbx_breaks_n', g.eng.breaks.size) : T('sbx_breaks_how')}</span>`));
       const steps = [[1e3, '1 s'], [1e4, '10 s'], [6e4, '1 min'], [3e5, '5 min'], [6e5, '10 min'], [18e5, '30 min'], [36e5, '1 h'], [108e5, '3 h'], [216e5, '6 h'], [432e5, '12 h'], [864e5, T('sbx_1day')], [6048e5, T('sbx_1week')]];
       rows.push(row(T('sbx_clock'), this._sbxField('sbadv', steps.map(([v, l]) => ({ v: String(v), l: '+' + l, pick: v === 6e4 })), T('sbx_adv_ph'), T('sbx_adv_by')) + `<button class="chip" data-act="sbx-advby">${T('sbx_advance')}</button>` + `<button class="chip sbnext" data-act="sbx-next"></button>` + sel('sbspeed', T('sbx_speed'), [[0, T('sbx_speed_0')], [1, '1×'], [10, '10×'], [60, '60×'], [600, '600×']].map(([v, l]) => o2(String(v), l)).join(''))));
@@ -12970,6 +13018,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (t.classList.contains('sbattr')) { this._sbxVals(); return true; }
       if (t.classList.contains('sbrun')) { this._sbxTrigs(); return true; }
       if (t.classList.contains('sbhook')) { this._sbxHookM(); return true; }
+      if (t.classList.contains('sbwhole')) { if (t.checked) this._data.ui.sbxWhole = true; else delete this._data.ui.sbxWhole; this._save(); this._ha.soft(this._sbxReset(), 'starting the sandbox again (whole home)', null); return true; }
       if (t.classList.contains('sbstep')) { this._sbx.eng.stepping = t.checked; if (!t.checked) { this._sbx.eng.resumeAll(); this._sbxAfterResume(); } return true; }
       if (t.classList.contains('sbspeed')) { this._sbxSpeed(+t.value); return true; }
       if (t.classList.contains('sbstf')) { this._sbx.stf = t.value; this._sbxStates(); return true; }
@@ -13623,7 +13672,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const g = this._sbx;
       if (!g || !g.cov || g.cov.running) return null;
       const engs = g.cov.engs.concat(g.covMine ? [g.eng] : []);
-      return sbxCoverage(engs, g.opts.items, (k, x) => (k === 'trigger' ? this._trigWords(x) : k === 'cond' ? condText(x, (y) => this._boxName(y)) : k === 'option' ? T('sbx_cov_option') : k === 'branch' ? '' : this._actText(x)));
+      return sbxCoverage(engs, g.opts.items.filter((x) => !x.outside), (k, x) => (k === 'trigger' ? this._trigWords(x) : k === 'cond' ? condText(x, (y) => this._boxName(y)) : k === 'option' ? T('sbx_cov_option') : k === 'branch' ? '' : this._actText(x)));
     }
     _trigWords(t) {
       const p = t.trigger || t.platform || '';

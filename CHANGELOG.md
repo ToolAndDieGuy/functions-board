@@ -90,6 +90,12 @@ drawer lists them when it opens, and each change says what it followed. Saved ch
 Other helpers worked out from something (a derivative, a utility meter, statistics) stay as they are unless you set
 them. The integration's `functions_board/sources` answer now carries each helper's rule for this.
 
+**Whole home** (a box in the sandbox's intro and its Home row) also runs the automations outside the function that
+start from what it reads or changes, and the ones those reach in turn. Opening the garage door then also turns on
+the porch light, if another automation does that. They run in the sandbox only, show beside the board as not on it,
+and are left out of the function's coverage. A check saved this way keeps them and replays them. The choice is kept
+with your display settings.
+
 ## 0.11.0 (2026-11-20)
 
 Import finds more of the systems you've built, and lets you decide where one ends and the next begins.
