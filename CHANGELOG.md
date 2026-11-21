@@ -20,6 +20,27 @@ away from the states it lists, so `from: [off, on]` starts the automation when t
 turns off. It's listed with the function's problems, and the sandbox's timeline says so when it happens, with Dismiss
 beside it, in case it's meant.
 
+The sandbox can now drive every kind of trigger. Every field is a list of what fits the function, with Other… to
+type anything else:
+
+- **Set** lists every entity the automations read first (including ones reached through an area or a device), and
+  its values say why: "1101 · above 1100: CO2 high". An attribute a trigger reads, a light's brightness say, can be
+  set beside the state, and an event entity can be pressed with the event type its trigger waits for.
+- **Device triggers** made in the editor are followed: one on an entity (motion, opened, turned on, a sensor's value)
+  as the state trigger it stands for, with device conditions and actions too. A device's own buttons (ZHA, Z-Wave,
+  Hue, deCONZ, MQTT) are pressed from a new **Press** row, which also fires any other trigger the sandbox can't see
+  coming (Z-Wave value updated, geo location).
+- **Zones and the sun** are followed: a person entering or leaving a zone, sunrise and sunset with their offsets
+  (sun.sun rises and sets on the sandbox clock), and zone and sun conditions, which were asked before.
+- **Home Assistant starting or stopping, webhooks, tags, calendars and Assist sentences** each get a row when the
+  function has one.
+- **Scenes** set what they hold, **timers** fire Home Assistant's timer triggers, and a **script's fields** can be
+  given when you run it.
+- **The clock** shows the day and the time to the second. Advance by 1 second to a week, jump to what's due,
+  sunrise, sunset, a time trigger or the edge of a time condition, or type a time; each thing coming up is a
+  button that runs the clock to it.
+- Saved checks keep and replay all of it.
+
 Any problem can now be ignored for good. It leaves the count and isn't listed under Dismissed either, even if it goes
 away and comes back. The problems list says how many are ignored for good and can bring them back as dismissed.
 

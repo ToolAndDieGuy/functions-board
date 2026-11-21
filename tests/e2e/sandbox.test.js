@@ -170,9 +170,10 @@ test('sandbox', async ({ browser }) => {
   check('one Home Assistant can\'t render comes back as not rendered', !t4.ok, t4);
 
   // what it can't know, it asks
-  const asked = el(page, (b) => { const e = b._sbx.eng; const run = { item: { id: 'automation.garage_left_open' }, vars: {}, cause: null }; return e._cond({ condition: 'sun', after: 'sunset' }, run); });
+  // (an integration's own device condition: sun, zone and entity device conditions are worked out since 0.11.1)
+  const asked = el(page, (b) => { const e = b._sbx.eng; const run = { item: { id: 'automation.garage_left_open' }, vars: {}, cause: null }; return e._cond({ condition: 'device', device_id: 'fbx', domain: 'zha', type: 'is_device_ringing' }, run); });
   await fbq(page, '.drawer .sbq [data-v="1"]').waitFor({ timeout: 5000 });
-  check('a sun condition: the question shows in the drawer', /sun/i.test(await fbq(page, '.drawer .sbq').textContent()));
+  check('an integration\'s own device condition: the question shows in the drawer', /device/i.test(await fbq(page, '.drawer .sbq').textContent()));
   await fbq(page, '.drawer .sbq [data-v="1"]').click();
   check('... and your answer is used', (await asked).ok === true);
 
