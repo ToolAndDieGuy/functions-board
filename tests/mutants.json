@@ -180,7 +180,7 @@
  {
   "name": "board: Bring back does nothing",
   "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "'pdis-back': (el) => { this._probDismiss(el.dataset.k, true); },",
+  "find": "'pdis-back': (el) => { this._probDismiss(el.dataset.k, 'back'); },",
   "replace": "'pdis-back': () => {},",
   "suite": "board-regress",
   "only": "0.9.0 dismissing",
@@ -1107,5 +1107,187 @@
   "suite": "board-regress",
   "only": "restoring a version never",
   "expect": "restore warns that what it writes back"
+ },
+ {
+  "name": "scenes and groups: arrows to what they set or hold",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      const held = this._wireGroups(nodes);",
+  "replace": "      const held = this._wireGroups(nodes); [...nodes.keys()].forEach((k) => { const st = this._hass.states[k]; if (st && /^(scene|group)\\./.test(k)) toList(st.attributes.entity_id).forEach((x) => { if (nodes.has(x)) this._link(edges, k, x, { role: 'action', svc: '' }); }); });",
+  "suite": "board-regress",
+  "only": "0.11.1",
+  "expect": "a scene draws no arrow to anything it sets"
+ },
+ {
+  "name": "scenes: no count of what they set",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      if (n.setN) r.text += ' · ' + P('sets_n', n.setN);",
+  "replace": "",
+  "suite": "board-regress",
+  "only": "0.11.1",
+  "expect": "its box says how many it sets"
+ },
+ {
+  "name": "groups: no count of their members",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      if (n.memN) r.text += ' · ' + P('members_n', n.memN);",
+  "replace": "",
+  "suite": "board-regress",
+  "only": "0.11.1",
+  "expect": "its box says how many members it has"
+ },
+ {
+  "name": "sandbox: an entity shown only as its device gets a temporary box",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "        if (reg && reg.device_id && vis.has('device:' + reg.device_id)) return 'device:' + reg.device_id;",
+  "replace": "",
+  "suite": "board-regress",
+  "only": "0.11.1",
+  "expect": "no temporary box for the device"
+ },
+ {
+  "name": "sandbox: one arrow drawn twice",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "          if (old) { if (via && !old.via.includes(via)) old.via.push(via); return; }",
+  "replace": "",
+  "suite": "board-regress",
+  "only": "0.11.1",
+  "expect": "the action goes from the automation to the device box, once"
+ },
+ {
+  "name": "scenes: loops through them not found",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      const plain = list.filter((e) => !TGT_RE.test(e.from) && !TGT_RE.test(e.to)), extra = held.slice();",
+  "replace": "      const plain = list.filter((e) => !TGT_RE.test(e.from) && !TGT_RE.test(e.to)), extra = [];",
+  "suite": "board-regress",
+  "only": "0.11.1",
+  "expect": "the loop through it is still marked"
+ },
+ {
+  "name": "sandbox: no words over a stand-in box",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      if (f && f.at >= 0) {\n        const say = new Map();",
+  "replace": "      if (false) {\n        const say = new Map();",
+  "suite": "board-regress",
+  "only": "0.11.1",
+  "expect": "over the device box: the call"
+ },
+ {
+  "name": "sandbox: a call's words name only the first entity",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "          if (old) { if (via && !old.via.includes(via)) old.via.push(via); return; }",
+  "replace": "          if (old) return;",
+  "suite": "board-regress",
+  "only": "0.11.1",
+  "expect": "over the device box: the call"
+ },
+ {
+  "name": "sandbox: a call's words leave out its settings",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "return `${e.svc} → ${via.map(nm).join(', ')}${set.length ? ' (' + set.join(', ') + ')' : ''}`;",
+  "replace": "return `${e.svc} → ${via.map(nm).join(', ')}`;",
+  "suite": "board-regress",
+  "only": "0.11.1",
+  "expect": "over the device box: the call"
+ },
+ {
+  "name": "sandbox: no note on a trigger firing into a From state",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "&& trigger.from_state && to != null && from.includes(to)) {",
+  "replace": "&& trigger.from_state && to != null && from.includes(to) && false) {",
+  "suite": "sandbox",
+  "expect": "on is listed under From"
+ },
+ {
+  "name": "sandbox: the From note ignores To",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "if (this._plat(t) === 'state' && from.length && t.to == null && t.not_to == null",
+  "replace": "if (this._plat(t) === 'state' && from.length && t.not_to == null",
+  "suite": "sandbox",
+  "expect": "nothing said for From with a To"
+ },
+ {
+  "name": "problems: ignored for good is forgotten like a dismissal",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      if (d.ever) { out.push(d); return; }\n",
+  "replace": "",
+  "suite": "problems",
+  "expect": "never forgotten"
+ },
+ {
+  "name": "problems: ignored for good still shows",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "shown: problems.filter((p) => !off.has(probKey(p)) && !ever.has(probKey(p)))",
+  "replace": "shown: problems.filter((p) => !off.has(probKey(p)))",
+  "suite": "problems",
+  "expect": "ignored for good: neither shown"
+ },
+ {
+  "name": "problems: the layout drops ignored for good",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": ", d.ever ? { ever: true } : {}));",
+  "replace": "));",
+  "suite": "problems",
+  "expect": "the layout keeps ignored for good"
+ },
+ {
+  "name": "problems: one From state starts both ways",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "if (from.length >= 2 && !from.some((x) => TPL_RE.test(x)) && ents.length)",
+  "replace": "if (from.length >= 1 && !from.some((x) => TPL_RE.test(x)) && ents.length)",
+  "suite": "problems",
+  "expect": "one From state"
+ },
+ {
+  "name": "problems: both ways not reported",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "    for (const it of items) (it.both || []).forEach((b) => { const p = add('warn', 't_both', it.key, null); if (!p.ents) Object.assign(p, { ents: b.ents, from: b.from }); });\n",
+  "replace": "",
+  "suite": "problems",
+  "expect": "findProblems: one warning"
+ },
+ {
+  "name": "sandbox: a dismissed note is said again",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      const log = eng.log.filter((e) => !(e.pk && off.has(e.pk)));",
+  "replace": "      const log = eng.log;",
+  "suite": "board-regress",
+  "only": "0.11.1 a trigger that starts",
+  "expect": "the note isn't shown any more"
+ },
+ {
+  "name": "problems: Ignore for good does nothing",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "'pdis-ever': (el) => { this._probDismiss(el.dataset.k, 'ever'); },",
+  "replace": "'pdis-ever': () => {},",
+  "suite": "board-regress",
+  "only": "0.11.1 a trigger that starts",
+  "expect": "Ignore for good: neither a problem nor dismissed"
+ },
+ {
+  "name": "problems: Undo after Ignore for good brings it all the way back",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "this._probDismiss(k, was ? (was.ever ? 'ever' : 'off') : 'back')",
+  "replace": "this._probDismiss(k, 'back')",
+  "suite": "board-regress",
+  "only": "0.11.1 a trigger that starts",
+  "expect": "Undo after Ignore for good"
+ },
+ {
+  "name": "sandbox: words over a box don't hold the play",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "words ? Math.min(5000, 1200 + 45 * words) : 0);",
+  "replace": "0);",
+  "suite": "board-regress",
+  "only": "0.11.1 the sandbox finds",
+  "expect": "waits long enough to read them"
+ },
+ {
+  "name": "sandbox: words over a box only for the current step",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "f.steps.slice(0, f.at + 1).forEach((st, i) => this._flowSays(st)",
+  "replace": "f.steps.slice(f.at, f.at + 1).forEach((st, i) => this._flowSays(st)",
+  "suite": "board-regress",
+  "only": "0.11.1 the sandbox finds",
+  "expect": "the words stay over the box"
  }
 ]

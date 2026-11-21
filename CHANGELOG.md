@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased
+
+Scenes and groups no longer draw arrows to the lights and devices they set or hold. Before, they drew arrows only
+to the ones that happened to be on the board for other reasons, so a scene that sets a dozen lights looked as if it
+set two. A scene's box now says how many it sets and a group's how many members it has; click one to see them. Their
+arrows are the ones into what triggers on them or reads them (an automation started by the scene, a helper that
+tracks it).
+
+In the sandbox, an action on a device shows on that device's box. Before, the board showed the device as one box but
+the sandbox looked for its entities, so it drew a temporary box marked "Not on this board" for something that was on
+it. When a step reaches a device's entities, or the lights of an area, it says over that box what it did: the action,
+which of the entities, and with what ("climate.set_fan_mode → Thermostat Zone (fan_mode: On)"), or which of them
+changed to what. The words stay over the box until a later step there says more, and while the run plays, a step with words
+waits long enough to read them.
+
+A state trigger that starts both ways is a new problem (amber). A trigger with From and no To starts on any change
+away from the states it lists, so `from: [off, on]` starts the automation when the stove turns on and again when it
+turns off. It's listed with the function's problems, and the sandbox's timeline says so when it happens, with Dismiss
+beside it, in case it's meant.
+
+Any problem can now be ignored for good. It leaves the count and isn't listed under Dismissed either, even if it goes
+away and comes back. The problems list says how many are ignored for good and can bring them back as dismissed.
+
 ## 0.11.0 (2026-11-20)
 
 Import finds more of the systems you've built, and lets you decide where one ends and the next begins.

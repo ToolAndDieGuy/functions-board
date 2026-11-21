@@ -1130,4 +1130,187 @@ test('0.11.0 restoring a version never turns off or deletes what was added since
   check('0.11.0 restoring with what\'s shared: no errors', page.logs.length === 0, page.logs);
 });
 
+// an automation or script added to the fake Home Assistant, as its editor would make it
+async function addAuto(page, fake, id, config) {
+  const oid = id.split('.')[1], uid = 'fb' + oid;
+  fake.entities.set(id, { entity_id: id, id: 'fbid' + oid, platform: 'automation', unique_id: uid, labels: [], area_id: null, device_id: null, disabled_by: null, hidden_by: null, name: null, original_name: config.alias, icon: null, categories: {}, config_entry_id: null, has_entity_name: false, entity_category: null, options: {} });
+  fake.autos[uid] = Object.assign({ id: uid }, config);
+  await fake.setState(id, 'on', { friendly_name: config.alias, id: uid, last_triggered: null, mode: 'single', current: 0 });
+}
+
+test('0.11.1 a scene or group draws no arrows to what it sets or holds, only into what triggers on it or reads it', async ({ browser, fake }) => {
+  const { page } = await imported(browser);
+  const SC = 'scene.fb_sleep', GR = 'group.fb_morning_lights', HLP = 'sensor.fb_sleep_since';
+  const members = ['light.bed_light', 'light.ceiling_lights', 'light.kitchen_lights', 'light.office_rgbw_lights', 'cover.living_room_window', 'lock.front_door'];
+  await fake.setState(SC, '2026-11-20T03:00:00+00:00', { friendly_name: 'Sleep', entity_id: members });
+  await fake.setState(GR, 'on', { friendly_name: 'Morning lights', entity_id: ['light.kitchen_lights', 'light.bed_light'] });
+  await addAuto(page, fake, 'automation.fb_sleep_at_night', { alias: 'Morning: sleep scene at night', triggers: [{ trigger: 'time', at: '22:30:00' }], conditions: [], actions: [{ action: 'scene.turn_on', target: { entity_id: SC } }, { action: 'homeassistant.turn_on', target: { entity_id: GR } }] });
+  await addAuto(page, fake, 'automation.fb_after_sleep', { alias: 'Morning: after the sleep scene', triggers: [{ trigger: 'state', entity_id: SC }], conditions: [], actions: [{ action: 'light.turn_off', target: { entity_id: 'light.office_rgbw_lights' } }] });
+  fake.entities.set(HLP, { entity_id: HLP, id: 'fbidsince', platform: 'template', unique_id: 'fbsince', labels: [], categories: {}, area_id: null, device_id: null, config_entry_id: null, disabled_by: null, hidden_by: null, name: null, original_name: 'Sleep since', icon: null, has_entity_name: false, entity_category: null, options: {} });
+  await fake.setState(HLP, '3', { friendly_name: 'Sleep since' });
+  fake.sources[HLP] = { entities: [SC] };
+  const morning = await el(page, (b) => b._data.functions.find((l) => /morning/i.test(b._fnName(l))));
+  for (const id of ['automation.fb_sleep_at_night', 'automation.fb_after_sleep', HLP]) await ws(page, { type: 'config/entity_registry/update', entity_id: id, labels: [morning] });
+  await el(page, (b) => b._store.changed('reg'));
+  await openFn(page, /morning/i);
+  await until(() => el(page, (b, [sc, l]) => { if (b._model && b._model.nodes.get(sc) && b._model.edges.some((e) => e.from === sc && e.role === 'source')) return true; b._open(l, true); return null; }, [SC, morning]), 12000, 700);
+  const m = await el(page, (b, [sc, gr]) => ({ from: b._model.edges.filter((e) => e.from === sc).map((e) => e.role + ':' + e.to).sort(), group: b._model.edges.filter((e) => e.from === gr).map((e) => e.to).sort(),
+    status: b._status(b._model.nodes.get(sc)).text, gstatus: b._status(b._model.nodes.get(gr)).text, groupWant: ['light.bed_light', 'light.kitchen_lights'].filter((x) => b._model.nodes.has(x)), onBoard: ['light.kitchen_lights', 'cover.living_room_window', 'light.office_rgbw_lights'].filter((x) => b._model.nodes.has(x)) }), [SC, GR]);
+  check('0.11.1 the scene\'s members that are on the board are there (so arrows could have been drawn)', m.onBoard.length === 3, m);
+  check('0.11.1 a scene draws no arrow to anything it sets', !m.from.some((x) => /^action:/.test(x) && members.includes(x.slice(7))), m.from);
+  check('0.11.1 ... only into what triggers on it and what reads it', JSON.stringify(m.from) === JSON.stringify(['source:' + HLP, 'trigger:automation.fb_after_sleep']), m.from);
+  check('0.11.1 its box says how many it sets', /sets 6 entities/.test(m.status), m.status);
+  check('0.11.1 a group draws no arrow to its members either, those on the board included', m.groupWant.length > 0 && m.group.length === 0, m);
+  check('0.11.1 its box says how many members it has', /2 members/.test(m.gstatus), m.gstatus);
+  check('0.11.1 scenes: no errors', page.logs.length === 0, page.logs);
+});
+
+test('0.11.1 a loop through a scene is still found, with no arrow to what the scene sets', async ({ browser, fake }) => {
+  const { page } = await imported(browser);
+  const SC = 'scene.fb_evening', A = 'automation.fb_evening_again';
+  await fake.setState(SC, '2026-11-20T03:00:00+00:00', { friendly_name: 'Evening', entity_id: ['light.kitchen_lights', 'light.bed_light'] });
+  await addAuto(page, fake, A, { alias: 'Morning: evening scene when the kitchen lights come on', triggers: [{ trigger: 'state', entity_id: 'light.kitchen_lights', to: 'on' }], conditions: [], actions: [{ action: 'scene.turn_on', target: { entity_id: SC } }] });
+  const morning = await el(page, (b) => b._data.functions.find((l) => /morning/i.test(b._fnName(l))));
+  await ws(page, { type: 'config/entity_registry/update', entity_id: A, labels: [morning] });
+  await el(page, (b) => b._store.changed('reg'));
+  await openFn(page, /morning/i);
+  await until(() => el(page, (b, [a, l]) => { if (b._model && b._model.nodes.has(a) && b._model.nodes.has('light.kitchen_lights')) return true; b._open(l, true); return null; }, [A, morning]), 12000, 700);
+  const m = await el(page, (b, [a, sc]) => ({ loops: b._model.edges.filter((e) => e.loop).map((e) => e.from + '>' + e.to).sort(), fromScene: b._model.edges.filter((e) => e.from === sc).map((e) => e.to) }), [A, SC]);
+  check('0.11.1 the scene draws no arrow to the light it sets', !m.fromScene.includes('light.kitchen_lights'), m);
+  check('0.11.1 ... and the loop through it is still marked', m.loops.includes(A + '>' + SC) && m.loops.includes('light.kitchen_lights>' + A), m);
+  check('0.11.1 scene loop: no errors', page.logs.length === 0, page.logs);
+});
+
+test('0.11.1 the sandbox finds the device box of what an action on a device changes, not a box "not on this board", and says over it what was called', async ({ browser, fake }) => {
+  const { page } = await imported(browser);
+  const garage = await openFn(page, /garage/i);
+  const dev = await el(page, (b) => b._ents.find((e) => e.entity_id === 'climate.heatpump').device_id);
+  // a second climate entity on the device (a second zone): an action on the device reaches both, and the step is still one arrow
+  fake.entities.set('climate.fb_heatpump_zone2', { entity_id: 'climate.fb_heatpump_zone2', id: 'fbidhpz2', platform: 'demo', unique_id: 'fbhpz2', labels: [], categories: {}, area_id: null, device_id: dev, config_entry_id: null, disabled_by: null, hidden_by: null, name: null, original_name: 'HeatPump zone 2', icon: null, has_entity_name: false, entity_category: null, options: {} });
+  await fake.setState('climate.fb_heatpump_zone2', 'heat', { friendly_name: 'HeatPump zone 2', hvac_modes: ['off', 'heat'] });
+  await addAuto(page, fake, 'automation.fb_heat_off_open', { alias: 'Garage open: heat pump off', triggers: [{ trigger: 'state', entity_id: 'cover.garage_door', to: 'open' }], conditions: [], actions: [{ action: 'climate.set_hvac_mode', target: { device_id: dev }, data: { hvac_mode: 'off' } }] });
+  await ws(page, { type: 'config/entity_registry/update', entity_id: 'automation.fb_heat_off_open', labels: [garage] });
+  await el(page, (b) => b._store.changed('reg'));
+  const D = 'device:' + dev;
+  await until(() => el(page, (b, [d, l]) => { if (b._model && b._model.nodes.has(d)) return true; b._open(l, true); return null; }, [D, garage]), 12000, 700);
+  check('0.11.1 the device is a box on the board and its entity is not', await el(page, (b, d) => b._model.nodes.has(d) && !b._model.nodes.has('climate.heatpump'), D));
+  await fbq(page, '.tools [data-act="sandbox"]').click();
+  await fbq(page, '.modal [data-act="sbx-start"]').click({ timeout: 3000 }).catch(() => {});
+  await fbq(page, '.drawer .sbctl .sbent').waitFor({ timeout: 10000 });
+  await fbq(page, '.drawer .sbent').selectOption('cover.garage_door');
+  await fbq(page, '.drawer .sbval-sel').selectOption('open');
+  await fbq(page, '.drawer [data-act="sbx-set"]').click();
+  await until(() => el(page, (b) => (b._sbx && !b._sbx.busy && b._sbx.eng.log.some((e) => e.kind === 'call' && e.key === 'automation.fb_heat_off_open')) || null), 15000);
+  const f = await el(page, (b, d) => {
+    const a = b._sbx.eng.log.find((e) => e.kind === 'call' && e.key === 'automation.fb_heat_off_open'), act = b._sbx.acts.find((x) => a.id >= x.a && a.id <= x.b);
+    const fl = b._flowBuild(act);
+    return { ghosts: [...fl.ghosts.keys()], links: fl.steps.flatMap((s) => s.links.map((l) => l.a + '>' + l.b)), boxes: fl.steps.filter((s) => s.e.kind === 'state' && s.e.key === 'climate.heatpump').map((s) => s.box) };
+  }, D);
+  check('0.11.1 no temporary box for the device\'s entity', !f.ghosts.includes('~climate.heatpump'), f);
+  check('0.11.1 the action goes from the automation to the device box, once', f.links.filter((x) => x === 'automation.fb_heat_off_open>' + D).length === 1, f);
+  check('0.11.1 ... and the entity\'s change shows on the device box', f.boxes.length > 0 && f.boxes.every((x) => x === D), f);
+  // the call's step, and each entity's change: in words over the device box
+  const say = async (re) => el(page, (b, [d, src]) => {
+    const i = b._flow.steps.findIndex((s) => new RegExp(src).test(b._flowText(s.e)) && (s.box === d || s.links.some((l) => l.b === d)));
+    if (i < 0) return { i };
+    b._flowGo(i, false);
+    return { i, says: [...b.shadowRoot.querySelectorAll('.flow .fsay')].map((x) => [x.dataset.key, x.textContent]) };
+  }, [D, re.source]);
+  await el(page, (b) => { b._clock.cancel('lit'); });
+  const call = await say(/set_hvac_mode/);
+  check('0.11.1 over the device box: the call, to which of its entities, with what', JSON.stringify(call.says) === JSON.stringify([[D, 'climate.set_hvac_mode → HeatPump, HeatPump zone 2 (hvac_mode: off)']]), call);
+  const ch = await say(/HeatPump zone 2 →/);
+  check('0.11.1 ... and on a change, which entity changed to what', ch.says && ch.says.length === 1 && ch.says[0][0] === D && /^HeatPump zone 2 → /i.test(ch.says[0][1]), ch);
+  // a step after the call that says nothing over the device box: the call's words are still there, not marked
+  const later = await el(page, (b, d) => {
+    const c = b._flow.steps.findIndex((s) => s.e.kind === 'call' && b._flowSays(s).length), i = b._flow.steps.findIndex((s, j) => j > c && !b._flowSays(s).length);
+    if (i < 0) return { i };
+    b._flowGo(i, false);
+    return { i, says: [...b.shadowRoot.querySelectorAll('.flow .fsay')].map((x) => [x.dataset.key, x.classList.contains('now'), x.textContent]) };
+  }, D);
+  check('0.11.1 the words stay over the box after their step, unmarked, until a later step there says more', later.i > 0 && later.says.length === 1 && later.says[0][0] === D && later.says[0][1] === false, later);
+  // playing: each step's wait, up to the first with words over a box (played at once, not waited for)
+  const waits = await el(page, (b) => {
+    const got = [], after = b._clock.after.bind(b._clock), at = b._flow.steps.findIndex((s) => b._flowSays(s).length);
+    b._clock.after = (name, ms, fn) => { if (name !== 'lit') return after(name, ms, fn); got.push([b._flow.at, ms]); if (b._flow.at < at) fn(); return null; };
+    try { b._flowPlay(); } finally { b._clock.after = after; }
+    return { at, got };
+  });
+  const wSay = waits.got.find(([i]) => i === waits.at), wRest = waits.got.filter(([i]) => i !== waits.at);
+  check('0.11.1 playing: the step with words over a box waits long enough to read them (2 s or more), the others under 1 s', waits.at >= 0 && !!wSay && wSay[1] >= 2000 && wRest.length > 0 && wRest.every(([, ms]) => ms < 1000), waits);
+  const own = await el(page, (b) => { const i = b._flow.steps.findIndex((s) => s.e.kind === 'trigger'); b._flowGo(i, false); return b.shadowRoot.querySelectorAll('.flow .fsay').length; });
+  check('0.11.1 ... and nothing over a box that is what the step reached', own === 0, own);
+  check('0.11.1 sandbox device: no errors', page.logs.length === 0, page.logs);
+});
+
+test('0.11.1 a trigger that starts both ways: a problem, said in the sandbox with Dismiss; any problem can be ignored for good', async ({ browser, fake }) => {
+  const { page } = await imported(browser);
+  const garage = await openFn(page, /garage/i);
+  const A = 'automation.fb_door_moved', K = 't_both|' + A;
+  await addAuto(page, fake, A, { alias: 'Garage: door moved', triggers: [{ trigger: 'state', entity_id: 'cover.garage_door', from: ['closed', 'open'] }], conditions: [], actions: [] });
+  await ws(page, { type: 'config/entity_registry/update', entity_id: A, labels: [garage] });
+  await el(page, (b) => b._store.changed('reg'));
+  const probs = () => el(page, (b) => ({ shown: (b._model.problems || []).map((p) => p.kind + '|' + p.ref), dis: (b._model.dismissed || []).map((p) => p.kind + '|' + p.ref), ign: (b._model.ignored || []).map((p) => p.kind + '|' + p.ref) }));
+  await until(() => el(page, (b, [k, l]) => { if (b._model && (b._model.problems || []).some((p) => p.kind + '|' + p.ref === k)) return true; b._open(l, true); return null; }, [K, garage]), 12000, 700);
+  await fbq(page, '.pchip').click();
+  await fbq(page, '.drawer .probs .prow').first().waitFor({ timeout: 5000 });
+  const row = await el(page, (b, k) => { const r = b._$.drawer.querySelector(`[data-k="${k}"]`).closest('.prow'); return { text: r.querySelector('.ptxt').textContent, acts: [...r.querySelectorAll('[data-act]')].map((x) => x.dataset.act) }; }, K);
+  check('0.11.1 a state trigger with From [closed, open] and no To is a warning that says why', /Garage: door moved \(automation\.fb_door_moved\) starts both ways: its trigger on Garage Door lists closed, open under From and has no To/.test(row.text), row);
+  check('0.11.1 ... with Dismiss and Ignore for good', row.acts.includes('pdis') && row.acts.includes('pdis-ever'), row);
+  // the sandbox says it when it happens, with Dismiss
+  await el(page, (b) => b._closeDrawer());
+  await fbq(page, '.tools [data-act="sandbox"]').click();
+  await fbq(page, '.modal [data-act="sbx-start"]').click({ timeout: 3000 }).catch(() => {});
+  await fbq(page, '.drawer .sbctl .sbent').waitFor({ timeout: 10000 });
+  const setDoor = async (v) => {
+    await fbq(page, '.drawer .sbent').selectOption('cover.garage_door');
+    await fbq(page, '.drawer .sbval-sel').selectOption(v);
+    await fbq(page, '.drawer [data-act="sbx-set"]').click();
+    await until(() => el(page, (b, x) => (b._sbx && !b._sbx.busy && b._sbx.eng.get('cover.garage_door').state === x) || null, v), 10000);
+  };
+  await setDoor('open');
+  const note = await until(() => el(page, (b, k) => { const x = b._$.drawer.querySelector(`.sbtl [data-act="sbx-pdis"][data-k="${k}"]`); return x ? x.closest('.dbrow').textContent : null; }, K), 5000);
+  check('0.11.1 the sandbox says it started on a change into a From state, with Dismiss', /door moved started on Garage Door changing to open\. Its trigger lists open under From/.test(note || ''), note);
+  await fbq(page, `.drawer [data-act="sbx-pdis"][data-k="${K}"]`).click();
+  const p1 = await until(async () => { const v = await probs(); return v.dis.includes(K) ? v : null; }, 5000);
+  check('0.11.1 Dismiss in the sandbox: the problem goes under Dismissed', !!p1 && !p1.shown.includes(K), p1);
+  check('0.11.1 ... and the note isn\'t shown any more', !(await el(page, (b, k) => !!b._$.drawer.querySelector(`.sbtl [data-k="${k}"]`), K)));
+  await setDoor('closed');
+  const again = await el(page, (b) => ({ fired: b._sbx.eng.log.filter((e) => e.kind === 'trigger' && e.key === 'automation.fb_door_moved').length, notes: b._$.drawer.querySelectorAll('.sbtl [data-act="sbx-pdis"]').length }));
+  check('0.11.1 ... nor said again when it fires again', again.fired === 2 && again.notes === 0, again);
+  await el(page, (b) => b._closeDrawer());
+  // ignore for good, from the dismissed list
+  await fbq(page, '.pdchip').click();
+  await fbq(page, `.drawer [data-act="pdis-ever"][data-k="${K}"]`).click();
+  const p2 = await until(async () => { const v = await probs(); return v.ign.includes(K) ? v : null; }, 5000);
+  check('0.11.1 Ignore for good: neither a problem nor dismissed', !!p2 && !p2.shown.includes(K) && !p2.dis.includes(K), p2);
+  const kept = await until(async () => { const d = ((await store(page)).layouts[garage] || {}).dismissed || []; const x = d.find((y) => y.k === K); return x && x.ever ? x : null; }, 5000);
+  check('0.11.1 ... kept with the function as ignored for good', !!kept, kept);
+  await el(page, (b) => b._openProblems());
+  const foot = await el(page, (b) => { const x = b._$.drawer.querySelector('.pother .pever'); return x ? x.textContent : null; });
+  check('0.11.1 the problems drawer says how many are ignored for good, with a way back', /1 ignored for good · Bring them back as dismissed/.test(foot || ''), foot);
+  // fixed and a day on: an ignored one isn't forgotten, as a dismissal would be
+  await el(page, (b, [l, k]) => { const d = b._data.layouts[l].dismissed.find((x) => x.k === k); d.gone = Date.now() - 30 * 3600 * 1000; }, [garage, K]);
+  fake.autos.fbfb_door_moved.triggers = [{ trigger: 'state', entity_id: 'cover.garage_door', from: 'closed', to: 'open' }];
+  await el(page, (b, l) => { b._configChanged(); return b._open(l, true); }, garage);
+  const still = await until(async () => { const d = ((await store(page)).layouts[garage] || {}).dismissed || []; const v = await probs(); return !v.ign.includes(K) && !v.shown.includes(K) ? d : null; }, 10000);
+  check('0.11.1 ... and when the problem goes, it stays ignored for good (never forgotten)', !!still && still.some((x) => x.k === K && x.ever), still);
+  // back as dismissed
+  fake.autos.fbfb_door_moved.triggers = [{ trigger: 'state', entity_id: 'cover.garage_door', from: ['closed', 'open'] }];
+  await el(page, (b, l) => { b._configChanged(); return b._open(l, true); }, garage);
+  await until(async () => (await probs()).ign.includes(K) || null, 10000);
+  await el(page, (b) => b._openProblems());
+  await fbq(page, '.drawer [data-act="pdis-unever"]').click();
+  const p3 = await until(async () => { const v = await probs(); return v.dis.includes(K) ? v : null; }, 5000);
+  check('0.11.1 Bring them back as dismissed: under Dismissed again', !!p3 && !p3.ign.includes(K), p3);
+  // the toast's Undo after Ignore for good puts it back where it was
+  await fbq(page, '.pdchip').click();
+  await fbq(page, `.drawer [data-act="pdis-ever"][data-k="${K}"]`).click();
+  await until(async () => (await probs()).ign.includes(K) || null, 5000);
+  await fbq(page, '.toast:not([hidden]) [data-act="toast-act"]').click();
+  const p4 = await until(async () => { const v = await probs(); return v.dis.includes(K) ? v : null; }, 5000);
+  check('0.11.1 Undo after Ignore for good: dismissed again, as it was', !!p4 && !p4.ign.includes(K), p4);
+  check('0.11.1 both ways and ignoring: no errors', page.logs.length === 0, page.logs);
+});
+
 pwTest.afterAll(() => done());

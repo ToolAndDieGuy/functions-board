@@ -98,5 +98,27 @@ check('events, MQTT topics and unknown names inside templates aren\'t judged', f
   check('marks come only from what\'s shown: a dismissed missing thing marks no box or arrow', nodes.get('cover.gone').prob === null && nodes.get('sensor.flaky').prob === 'warn' && nodes.get('automation.a').prob === 'warn' && !edges[0].prob, [...nodes].map(([k, n]) => k + ':' + n.prob));
   const L = cleanLayout({ dismissed: [{ k: probKey(A), at: t0, gone: t0 + 1, extra: '<x>' }, { k: 5 }, null, { k: 'x'.repeat(500) }] });
   check('the layout keeps dismissals as what, when and since when gone, nothing else', JSON.stringify(L.dismissed) === JSON.stringify([{ k: probKey(A), at: t0, gone: t0 + 1 }]), L.dismissed);
+  // 0.11.1 ignored for good: shown nowhere, never forgotten
+  const ever = [{ k: probKey(A), at: t0, ever: true }];
+  r = splitDismissed([A, B], ever, t0);
+  check('0.11.1 ignored for good: neither shown nor among the dismissed', r.shown.length === 1 && r.shown[0] === B && r.hidden.length === 0 && r.ignored.length === 1 && r.ignored[0] === A, r);
+  r = splitDismissed([B], ever, t0 + 1);
+  check('0.11.1 ... gone: not marked gone', !r.changed && !r.dismissed[0].gone, r.dismissed);
+  r = splitDismissed([B], [{ k: probKey(A), at: t0, ever: true, gone: t0 }], t0 + 10 * day);
+  check('0.11.1 ... and never forgotten', r.dismissed.length === 1 && r.dismissed[0].ever, r.dismissed);
+  check('0.11.1 the layout keeps ignored for good', JSON.stringify(cleanLayout({ dismissed: ever }).dismissed) === JSON.stringify(ever));
+}
+{
+  // 0.11.1 a state trigger that starts both ways: From lists two or more states, no To
+  const { bothWays } = require('./lib/board-lib');
+  const W = (t) => bothWays({ triggers: [Object.assign({ trigger: 'state', entity_id: 'binary_sensor.stove' }, t)] });
+  check('0.11.1 from [off, on], no To: both ways', JSON.stringify(W({ from: ['off', 'on'] })) === JSON.stringify([{ ents: ['binary_sensor.stove'], from: ['off', 'on'] }]), W({ from: ['off', 'on'] }));
+  check('0.11.1 to: null (any state change) is still no To', W({ from: ['off', 'on'], to: null }).length === 1);
+  check('0.11.1 not when it has a To, a Not to, an attribute, one From state, no From, a template, or is disabled',
+    [{ from: ['off', 'on'], to: 'on' }, { from: ['off', 'on'], not_to: 'unavailable' }, { from: ['off', 'on'], attribute: 'x' }, { from: 'off' }, {}, { from: ['{{ a }}', 'on'] }, { from: ['off', 'on'], enabled: false }].every((t) => W(t).length === 0));
+  check('0.11.1 platform: state (the old key) too', bothWays({ trigger: [{ platform: 'state', entity_id: 'light.x', from: ['on', 'off'] }] }).length === 1);
+  const it = [Object.assign(item('automation.stove', { triggers: [{ trigger: 'state', entity_id: 'light.porch', from: ['off', 'on'] }], actions: [] }), { both: W({ from: ['off', 'on'] }) })];
+  const pb = findProblems(it, ['automation.stove'], ctx());
+  check('0.11.1 findProblems: one warning on the automation, with what and from which states', pb.length === 1 && pb[0].sev === 'warn' && pb[0].kind === 't_both' && pb[0].ref === 'automation.stove' && pb[0].from.join() === 'off,on' && pb[0].ents[0] === 'binary_sensor.stove', pb);
 }
 
