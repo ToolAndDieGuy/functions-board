@@ -14,7 +14,7 @@ async function setMode(page, mode) {
   await api(page, 'POST', 'config/config_entries/options/flow/' + flow.flow_id, { mode, card: false });
   await until(() => el(page, (b, m) => b._fbMode === m, mode), 8000);
 }
-const vlist = (page) => el(page, (b) => [...b._$.drawer.querySelectorAll('.vlist .vrow:not(.cur)')].map((r) => ({ id: r.dataset.id, name: r.querySelector('.vh b').textContent, on: r.classList.contains('on'), restore: !r.querySelector('[data-act="ver-restore"]').disabled })));
+const vlist = (page) => el(page, (b) => [...b._$.drawer.querySelectorAll('.vlist .vrow:not(.cur)')].map((r) => ({ id: r.dataset.id, name: r.querySelector('.vh b').textContent, on: r.classList.contains('on'), restore: (r.querySelector('[data-act="ver-restore"]') || { disabled: true }).disabled === false })));
 const settled = (page) => until(() => el(page, (b) => (b._model && !b._$.loading.hidden === false) || null), 15000);
 
 test('versions', async ({ browser }) => {
