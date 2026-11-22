@@ -40,7 +40,7 @@ FREE_TEXT_KEYS = frozenset({"message", "title", "text", "desc", "description", "
 # values under these keys name something: a stand-in, the same one wherever that name appears
 # "svc": a phone's mobile app action, kept by the notification builder (0.11.3: named after the phone)
 NAME_KEYS = frozenset({"alias", "name", "friendly_name", "name_by_user", "original_name", "by", "user", "tab", "tabLabel", "svc"})
-# service names many integrations share say nothing about a home (turn_on, set_value …); others may (notify.mobile_app_toms_phone)
+# service names many integrations share say nothing about a home (turn_on, set_value …); others may (notify.mobile_app_jamies_phone)
 CORE_DOMAINS = frozenset({"homeassistant", "automation", "script", "scene", "logbook", "persistent_notification", "input_boolean", "input_number", "input_select", "input_text", "input_datetime", "input_button", "timer", "counter", "schedule", "system_log", "logger", "recorder"})
 
 # domains with entities or services that aren't entity platforms
