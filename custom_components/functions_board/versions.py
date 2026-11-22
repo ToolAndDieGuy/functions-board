@@ -1,9 +1,14 @@
-"""Saved versions of functions: snapshots a person names and can restore.
+"""Saved versions of functions: snapshots a person names, and makes active.
 
 A snapshot is made by the board from what Home Assistant's own APIs return (the configs of the function's
 automations and scripts, its helpers' settings, which items are in it, its layout and the devices its steps
 use). The integration only keeps them, in a store of their own: it never reads or writes a config itself.
-Restoring is done by the board, through Home Assistant's own config APIs, in Full manager mode only.
+Making one active is done by the board, through Home Assistant's own config APIs, in Full manager mode only.
+
+A version changes only when someone saves over it on purpose (overwrite). Beside the versions, each function keeps
+which version it was last made from (0.11.3): that version's id and the fingerprint the function had right after
+(Home Assistant may write a config back a little differently from how it was saved, and what was added since may
+be turned off rather than deleted), so the board can say it's active even when the two don't match exactly.
 """
 
 from __future__ import annotations
@@ -37,6 +42,8 @@ class Versions:
         """Nothing loaded yet."""
         self.store: Store[dict[str, Any]] = Store(hass, STORAGE_VERSION, STORAGE_KEY)
         self.by_label: dict[str, list[dict[str, Any]]] = {}
+        # label → {"id": version id, "print": the function's fingerprint when it was made from that version}
+        self.active: dict[str, dict[str, str]] = {}
 
     async def async_load(self) -> None:
         """Read the store; anything not the shape it should be is dropped."""
@@ -47,9 +54,15 @@ class Versions:
                 if isinstance(label, str) and isinstance(vs, list):
                     out[label] = [v for v in vs if isinstance(v, dict) and isinstance(v.get("id"), str) and isinstance(v.get("snapshot"), dict)]
         self.by_label = out
+        act: dict[str, dict[str, str]] = {}
+        if isinstance(raw, dict) and isinstance(raw.get("active"), dict):
+            for label, a in raw["active"].items():
+                if isinstance(a, dict) and isinstance(a.get("id"), str) and isinstance(a.get("print"), str) and self.get(label, a["id"]):
+                    act[label] = {"id": a["id"], "print": a["print"]}
+        self.active = act
 
     def _save(self) -> None:
-        self.store.async_delay_save(lambda: {"functions": self.by_label}, 1)
+        self.store.async_delay_save(lambda: {"functions": self.by_label, "active": self.active}, 1)
 
     def _total(self) -> int:
         return sum(v.get("size", 0) for vs in self.by_label.values() for v in vs)
@@ -84,6 +97,31 @@ class Versions:
         self._save()
         return version, None
 
+    def overwrite(self, label: str, vid: str, by: str, snapshot: dict[str, Any], print_: str) -> tuple[dict[str, Any] | None, str | None]:
+        """Save over a version on purpose: its snapshot replaced, its name and description kept."""
+        v = self.get(label, vid)
+        if v is None:
+            return None, "not_found"
+        size = len(json_bytes(snapshot))
+        if size > MAX_VERSION_BYTES:
+            return None, "too_large"
+        if self._total() - v.get("size", 0) + size > MAX_VERSIONS_BYTES:
+            return None, "full"
+        v.update({"snapshot": snapshot, "print": print_, "size": size, "at": int(time.time() * 1000), "by": by, "auto": False})
+        self._save()
+        return v, None
+
+    def set_active(self, label: str, vid: str | None, print_: str = "") -> bool:
+        """Note which version the function was last made from (None: none)."""
+        if vid is None:
+            self.active.pop(label, None)
+        elif self.get(label, vid) is None:
+            return False
+        else:
+            self.active[label] = {"id": vid, "print": print_}
+        self._save()
+        return True
+
     def edit(self, label: str, vid: str, name: str | None, desc: str | None) -> dict[str, Any] | None:
         """Rename or describe a version."""
         v = self.get(label, vid)
@@ -103,11 +141,14 @@ class Versions:
             return False
         if vid is None:
             del self.by_label[label]
+            self.active.pop(label, None)
         else:
             keep = [v for v in vs if v["id"] != vid]
             if len(keep) == len(vs):
                 return False
             self.by_label[label] = keep
+            if (self.active.get(label) or {}).get("id") == vid:
+                self.active.pop(label, None)
         self._save()
         return True
 

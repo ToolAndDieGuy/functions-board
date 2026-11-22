@@ -196,12 +196,48 @@ async def test_versions_limit_and_automatic_ones_make_room(hass: HomeAssistant, 
     assert len(names) == 50 and "v0" not in names and names[-1] == "Before restoring"
 
 
+async def test_versions_save_over_and_the_active_one(hass: HomeAssistant, hass_ws_client, hass_storage) -> None:
+    """0.11.3: a version changes only when it's saved over on purpose; the one a function was last made from is kept."""
+    await _ready(hass)
+    ws = await hass_ws_client(hass)
+
+    async def call(msg):
+        await ws.send_json_auto_id(msg)
+        return await ws.receive_json()
+
+    good = (await call({"type": "functions_board/version_save", "label": "f", "name": "Good", "snapshot": {"n": 1}, "print": "p1"}))["result"]
+    listed = (await call({"type": "functions_board/versions", "label": "f"}))["result"]
+    assert listed["active"] == {"id": good["id"], "print": "p1"}, "a version saved from what's there is the active one"
+    bad = (await call({"type": "functions_board/version_save", "label": "f", "name": "Throwaway", "snapshot": {"n": 2}, "print": "p2"}))["result"]
+    # a backup taken on the way doesn't become the active one
+    await call({"type": "functions_board/version_save", "label": "f", "name": "Before", "snapshot": {"n": 3}, "print": "p3", "auto": True})
+    assert (await call({"type": "functions_board/versions", "label": "f"}))["result"]["active"]["id"] == bad["id"]
+    # made active again, with the fingerprint the function has after
+    assert (await call({"type": "functions_board/version_active", "label": "f", "version_id": good["id"], "print": "p1b"}))["success"]
+    listed = (await call({"type": "functions_board/versions", "label": "f"}))["result"]
+    assert listed["active"] == {"id": good["id"], "print": "p1b"}
+    assert (await call({"type": "functions_board/version_get", "label": "f", "version_id": bad["id"]}))["result"]["snapshot"] == {"n": 2}, "the throwaway is as it was"
+    # Save: over the good one, on purpose; name kept, content replaced, still active
+    over = (await call({"type": "functions_board/version_overwrite", "label": "f", "version_id": good["id"], "snapshot": {"n": 4}, "print": "p4"}))["result"]
+    assert over["id"] == good["id"] and over["name"] == "Good" and over["print"] == "p4"
+    assert (await call({"type": "functions_board/version_get", "label": "f", "version_id": good["id"]}))["result"]["snapshot"] == {"n": 4}
+    assert (await call({"type": "functions_board/versions", "label": "f"}))["result"]["active"] == {"id": good["id"], "print": "p4"}
+    # unknown ids, and deleting the active one forgets it
+    assert (await call({"type": "functions_board/version_overwrite", "label": "f", "version_id": "0" * 32, "snapshot": {}, "print": ""}))["error"]["code"] == "not_found"
+    assert (await call({"type": "functions_board/version_active", "label": "f", "version_id": "0" * 32}))["error"]["code"] == "not_found"
+    await call({"type": "functions_board/version_delete", "label": "f", "version_id": good["id"]})
+    assert (await call({"type": "functions_board/versions", "label": "f"}))["result"]["active"] is None
+
+
 async def test_versions_admin_only(hass: HomeAssistant, hass_ws_client, hass_read_only_access_token) -> None:
     """0.8.0: versions are for administrators only."""
     await _ready(hass)
     ws = await hass_ws_client(hass, hass_read_only_access_token)
     await ws.send_json_auto_id({"type": "functions_board/versions", "label": "garage"})
     assert (await ws.receive_json())["error"]["code"] == "unauthorized"
+    for msg in ({"type": "functions_board/version_overwrite", "label": "garage", "version_id": "0" * 32, "snapshot": {}, "print": ""}, {"type": "functions_board/version_active", "label": "garage", "version_id": None}):
+        await ws.send_json_auto_id(msg)
+        assert (await ws.receive_json())["error"]["code"] == "unauthorized", msg["type"]
 
 
 async def test_a_version_that_cant_be_kept_takes_nothing_with_it(hass: HomeAssistant, monkeypatch) -> None:

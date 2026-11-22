@@ -316,7 +316,7 @@ class FakeHA {
       case 'functions_board/sources': this._admin(); return { sources: Object.fromEntries((m.entity_ids || []).filter((k) => this.sources[k]).map((k) => [k, clone(this.sources[k])])) };
       case 'functions_board/nodered': this._admin(); return { kept: clone(this.nodered) };
       case 'functions_board/nodered_keep': this._admin(); this.nodered = { at: this._now(), slug: m.slug, groups: clone(m.groups) }; await this.notifyStore({ what: 'nodered', client: m.client || '' }); return null;
-      case 'functions_board/versions': this._admin(); return { versions: (this.versions[m.label] || []).map(meta) };
+      case 'functions_board/versions': this._admin(); return { versions: (this.versions[m.label] || []).map(meta), active: (this.vactive || {})[m.label] || null };
       case 'functions_board/version_get': { this._admin(); const v = (this.versions[m.label] || []).find((x) => x.id === m.version_id); if (!v) throw new HAError('not_found', 'No such version'); return clone(v); }
       case 'functions_board/version_save': {
         this._admin();
@@ -327,14 +327,35 @@ class FakeHA {
         if (vs.length >= 50) throw new HAError('too_many', 'A function can keep at most 50 versions');
         const v = { id: crypto.randomBytes(16).toString('hex'), name: m.name, desc: m.desc || '', at: this._now(), by: this.owner().name, size, auto: !!m.auto, print: m.print || '', snapshot: clone(m.snapshot) };
         vs.push(v);
+        if (!m.auto) (this.vactive = this.vactive || {})[m.label] = { id: v.id, print: m.print || '' };
         await this.notifyStore({ what: 'versions', label: m.label, client: m.client || '' });
         return meta(v);
+      }
+      // 0.11.3: Save over a version on purpose; which version the function was last made from
+      case 'functions_board/version_overwrite': {
+        this._admin();
+        const v = (this.versions[m.label] || []).find((x) => x.id === m.version_id);
+        if (!v) throw new HAError('not_found', 'No such version');
+        Object.assign(v, { snapshot: clone(m.snapshot), print: m.print, size: Buffer.byteLength(JSON.stringify(m.snapshot)), at: this._now(), by: this.owner().name, auto: false });
+        (this.vactive = this.vactive || {})[m.label] = { id: v.id, print: m.print };
+        await this.notifyStore({ what: 'versions', label: m.label, client: m.client || '' });
+        return meta(v);
+      }
+      case 'functions_board/version_active': {
+        this._admin();
+        this.vactive = this.vactive || {};
+        if (m.version_id == null) delete this.vactive[m.label];
+        else if (!(this.versions[m.label] || []).some((x) => x.id === m.version_id)) throw new HAError('not_found', 'No such version');
+        else this.vactive[m.label] = { id: m.version_id, print: m.print || '' };
+        await this.notifyStore({ what: 'versions', label: m.label, client: m.client || '' });
+        return null;
       }
       case 'functions_board/version_edit': { this._admin(); const v = (this.versions[m.label] || []).find((x) => x.id === m.version_id); if (!v) throw new HAError('not_found', 'No such version'); if (m.name != null) v.name = m.name; if (m.desc != null) v.desc = m.desc; await this.notifyStore({ what: 'versions', label: m.label, client: m.client || '' }); return meta(v); }
       case 'functions_board/version_delete': {
         this._admin();
         const vs = this.versions[m.label] || [];
         if (m.version_id) { const i = vs.findIndex((x) => x.id === m.version_id); if (i < 0) throw new HAError('not_found', 'No such version'); vs.splice(i, 1); } else delete this.versions[m.label];
+        if (this.vactive && this.vactive[m.label] && (!m.version_id || this.vactive[m.label].id === m.version_id)) delete this.vactive[m.label];
         await this.notifyStore({ what: 'versions', label: m.label, client: m.client || '' });
         return null;
       }

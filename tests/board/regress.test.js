@@ -909,6 +909,73 @@ test('0.10.0 an automation in the registry that isn\'t loaded: no config asked, 
   check('0.10.0 not loaded: no errors', page.logs.length === 0, page.logs);
 });
 
+// 0.11.3 versions: make active, Save and Save as copy (found on a real home: going back to a good version from a
+// throwaway left the good one not active)
+test('0.11.3 versions: a version is made active, never overwritten but by Save; unsaved changes; Save as copy', async ({ browser, fake }) => {
+  fake.store.mode = 'full';
+  const { page } = await imported(browser);
+  const garage = await openFn(page, /garage/i);
+  const LEFT = 'automation.garage_left_open', aid = fake.states.get(LEFT).attributes.id, orig = JSON.parse(JSON.stringify(fake.autos[aid]));
+  const setAlias = async (alias, extra) => { fake.autos[aid] = Object.assign({}, fake.autos[aid], { alias }, extra || {}); if (fake.autoByEntity[LEFT]) fake.autoByEntity[LEFT] = Object.assign({}, fake.autoByEntity[LEFT], { alias }, extra || {}); await el(page, (b) => b._store.changed('cfg:')); };
+  const rows = () => el(page, async (b) => { await b._renderVersions(); return [...b._$.drawer.querySelectorAll('.vlist .vrow')].map((r) => ({ id: r.dataset.id || null, name: r.querySelector('.vh b').textContent, on: r.classList.contains('on'), top: r.classList.contains('top'), save: !!r.querySelector('[data-act="ver-over"]') })); });
+  const snapOf = async (id) => (await ws(page, { type: 'functions_board/version_get', label: garage, version_id: id })).snapshot.items[LEFT].cfg;
+  const newVersion = async (name) => {
+    await fbq(page, '.drawer [data-act="ver-new"]').first().click();
+    await fbq(page, '.modal input[name="vname"]').fill(name);
+    await fbq(page, '.modal [data-act="ver-save"]').click();
+    await until(async () => (await rows()).some((r) => r.name === name) || null, 8000);
+  };
+  await fbq(page, '.tools [data-act="versions"]').click();
+  await fbq(page, '.drawer .vlist .vrow').first().waitFor({ timeout: 10000 });
+  await newVersion('Good');
+  await setAlias('Garage: left open (broken)', { actions: [] });
+  let R = await rows();
+  check('0.11.3 a change shows "Unsaved changes" at the top, with Save (over Good) and Save as copy', R[0].top && R[0].on && R[0].id === null && /Unsaved/.test(R[0].name) && R[0].save && !R.find((r) => r.name === 'Good').on, R);
+  await newVersion('Throwaway');
+  R = await rows();
+  check('0.11.3 Save as copy makes a new version, pinned at the top as the active one', R[0].name === 'Throwaway' && R[0].top && R[0].on && !R[0].save, R);
+  const good = R.find((r) => r.name === 'Good'), bad = R.find((r) => r.name === 'Throwaway');
+  // back to Good, with Home Assistant writing the config back a little differently from how it was saved (as it
+  // does: a field it adds), so what's there after isn't byte for byte the version
+  const saved = fake._automationSaved.bind(fake);
+  fake._automationSaved = async (id) => { fake.autos[id] = Object.assign({ description: 'as Home Assistant writes it' }, fake.autos[id]); return saved(id); };
+  await el(page, (b, id) => b._verRestore(id), good.id);
+  await fbq(page, '.modal .vrdlg').waitFor({ timeout: 15000 });
+  const dlg = await fbq(page, '.modal .vrdlg').innerText();
+  check('0.11.3 making Good active: the dialog says what\'s there now is saved as the throwaway, so nothing needs saving', /already saved as "Throwaway"/.test(dlg) && !(await fbq(page, '.modal input[name="vbackup"]').count()), dlg.slice(0, 300));
+  await fbq(page, '.modal [data-act="ver-restore-go"]').click();
+  await until(() => el(page, (b) => b._$.modal.hidden || null), 20000);
+  await fake.idle(400);
+  R = await rows();
+  check('0.11.3 ... Good is active, pinned at the top', R[0].id === good.id && R[0].on && R[0].top && !R.find((r) => r.id === bad.id).on, R);
+  check('0.11.3 ... though Home Assistant wrote it back with a field more', fake.autos[aid].description === 'as Home Assistant writes it');
+  check('0.11.3 ... and the throwaway is still there as it was saved', (await snapOf(bad.id)).alias === 'Garage: left open (broken)' && (await snapOf(good.id)).alias === orig.alias);
+  fake._automationSaved = saved;
+  // a real change, then Save over Good
+  await setAlias('Garage: left open (better)');
+  R = await rows();
+  check('0.11.3 a change after making Good active: "Unsaved changes", and Save is over Good', R[0].id === null && R[0].save && /Good/.test(await fbq(page, '.drawer .vrow.top .vm').textContent()), R);
+  await fbq(page, '.drawer [data-act="ver-over"]').click();
+  const over = await fbq(page, '.modal .dlg').innerText();
+  check('0.11.3 Save asks first, naming the version it replaces, and offers Save as copy instead', /Save over "Good"\?/.test(over) && /Save as copy/.test(over), over);
+  await fbq(page, '.modal [data-act="ver-over-go"]').click();
+  await until(() => el(page, (b) => b._$.modal.hidden || null), 8000);
+  R = await rows();
+  check('0.11.3 ... Good now holds the change and is active; the throwaway is untouched', R[0].id === good.id && R[0].on && (await snapOf(good.id)).alias === 'Garage: left open (better)' && (await snapOf(bad.id)).alias === 'Garage: left open (broken)', R);
+  // unsaved changes, then make the throwaway active: saving them first is ticked
+  await setAlias('Garage: left open (unsaved)');
+  await el(page, (b, id) => b._verRestore(id), bad.id);
+  await fbq(page, '.modal .vrdlg').waitFor({ timeout: 15000 });
+  check('0.11.3 making another version active with unsaved changes: saving them first is ticked', await fbq(page, '.modal input[name="vbackup"]').isChecked());
+  await fbq(page, '.modal [data-act="ver-restore-go"]').click();
+  await until(() => el(page, (b) => b._$.modal.hidden || null), 20000);
+  await fake.idle(400);
+  R = await rows();
+  const kept = R.find((r) => /Before making "Throwaway" active/.test(r.name));
+  check('0.11.3 ... they\'re kept as a new version, and the throwaway is active', R[0].id === bad.id && R[0].on && !!kept && (await snapOf(kept.id)).alias === 'Garage: left open (unsaved)', R);
+  check('0.11.3 versions: no errors', page.logs.length === 0, page.logs);
+});
+
 // an automation or script added to the fake Home Assistant, as its editor would make it
 async function addPiece(page, fake, id, config) {
   const [dom, oid] = id.split('.'), uid = 'fb' + oid;
@@ -1116,7 +1183,7 @@ test('0.11.0 restoring a version never turns off or deletes what was added since
   const sharedLine = (text.match(/Shared with another function[^\n]*/) || [''])[0];
   check('0.11.0 restore: what\'s only the function\'s is offered to turn off or delete, not listed as shared', !/Garage only check/.test(sharedLine) && /Garage only check[\s\S]*Turn them off/.test(text), text);
   const warn = (await fbq(page, '.modal .vwshared').count()) ? await fbq(page, '.modal .vwshared').innerText() : '';
-  check('0.11.0 restore warns that what it writes back changes in the other function too', /restoring changes them there too/.test(warn) && /Garage: left open \(also in Morning\)/.test(warn), warn);
+  check('0.11.0 restore warns that what it writes back changes in the other function too', /making this version active changes them there too/.test(warn) && /Garage: left open \(also in Morning\)/.test(warn), warn);
   check('0.11.0 ... and where something outside uses it', /Close garage \(used outside this function by Close at night\)/.test(warn), warn);
   check('0.11.0 ... but not for what only this function has (written back all the same)', !/stop timer/.test(warn) && /stop timer/.test(text), { warn, text });
   await fbq(page, '.modal input[name="vextra"][value="delete"]').check();

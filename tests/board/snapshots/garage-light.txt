@@ -1,4 +1,4 @@
-style {63690 chars, #cb96662e}
+style {63933 chars, #84b5c672}
 div.board.light.m-panel.pc
   aside.list
     div.lhead
@@ -98,7 +98,7 @@ div.board.light.m-panel.pc
         button.sec data-act="sandbox" title="Sandbox: try the function on a copy of its states. Nothing is sent to your devices."
           ha-icon icon="mdi:flask-outline"
           span | Sandbox
-        button.sec.vonly data-act="versions" title="Versions: save this function as it is, compare, try a saved version in the sandbox, and restore one"
+        button.sec.vonly data-act="versions" title="Versions: save this function as it is, compare, try a saved version in the sandbox, and make one active"
           ha-icon icon="mdi:history"
           span | Versions
         button.pause.sec data-act="pause" data-sig="3/3/-" title="Turn off the 3 automations that are on now and stop their runs; Resume turns only those back on"
