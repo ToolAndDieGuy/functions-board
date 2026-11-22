@@ -1670,8 +1670,8 @@
  {
   "name": "sandbox: a satisfied wait goes on in the middle of the handing out",
   "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "          if (this.dispatching) this.after.push(go); else go();",
-  "replace": "          go();",
+  "find": "          this._later(() => { this.busy++; this._moving(run); res(v); });",
+  "replace": "          this.busy++; this._moving(run); res(v);",
   "suite": "sandbox",
   "expect": "a waiting run is still running until the handing out is done"
  },
@@ -1938,5 +1938,111 @@
   "replace": "    if (p[1] === 'events_') {",
   "suite": "sandbox",
   "expect": "Frigate: its events"
+ },
+ {
+  "name": "sandbox awaits: a run woken from its delay goes on at once",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "const t = this._at(this.now + Math.max(0, ms), () => this._later(() => { this.busy++; this._moving(run); res(); }), run, label);",
+  "replace": "const t = this._at(this.now + Math.max(0, ms), () => { this.busy++; this._moving(run); res(); }, run, label);",
+  "suite": "sandbox",
+  "expect": "woken from its delay is still running"
+ },
+ {
+  "name": "sandbox awaits: the timers due at one moment are not one round",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      else if (this.round) this.round.push(go);\n",
+  "replace": "",
+  "suite": "sandbox",
+  "expect": "a for: due at the moment another run's delay ends"
+ },
+ {
+  "name": "sandbox awaits: a run that published goes on at once",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "data.payload != null ? data.payload : data.payload_template, cid); await this._yield(run); return; }",
+  "replace": "data.payload != null ? data.payload : data.payload_template, cid); return; }",
+  "suite": "sandbox",
+  "expect": "a run that published is still running"
+ },
+ {
+  "name": "sandbox awaits: a restarted run starts at once",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "if (restarting && (this.dispatching || this.round)) {",
+  "replace": "if (false) {",
+  "suite": "sandbox",
+  "expect": "restart: two triggers of one event"
+ },
+ {
+  "name": "backend: an MQTT entity's availability mode is always latest",
+  "file": "custom_components/functions_board/sources.py",
+  "find": "rule[\"avail\"] = {\"mode\": str(config.get(\"availability_mode\", \"latest\")), \"list\": avail}",
+  "replace": "rule[\"avail\"] = {\"mode\": \"latest\", \"list\": avail}",
+  "suite": "backend",
+  "expect": "discovery"
+ },
+ {
+  "name": "backend: an MQTT sensor's converted unit is followed anyway",
+  "file": "custom_components/functions_board/sources.py",
+  "find": "if getattr(entity, \"native_unit_of_measurement\", None) != getattr(entity, \"unit_of_measurement\", None):",
+  "replace": "if False:",
+  "suite": "backend",
+  "expect": "unit_is_converted"
+ },
+ {
+  "name": "backend: an MQTT entity's state topic is left out when it isn't followed",
+  "file": "custom_components/functions_board/sources.py",
+  "find": "topics: list[str] = [str(config[\"state_topic\"])] if config.get(\"state_topic\") else []",
+  "replace": "topics: list[str] = [str(config[\"state_topic\"])] if config.get(\"state_topic\") and how else []",
+  "suite": "backend",
+  "expect": "from_yaml|unit_is_converted"
+ },
+ {
+  "name": "backend: a binary sensor's off_delay is dropped",
+  "file": "custom_components/functions_board/sources.py",
+  "find": "rule[\"off_delay\"] = float(config[\"off_delay\"])",
+  "replace": "pass",
+  "suite": "backend",
+  "expect": "from_yaml"
+ },
+ {
+  "name": "wiring: a publish goes to an mqtt.publish action box, not its topic's",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "if (svc === 'mqtt.publish' && typeof data.topic === 'string' && data.topic && !TPL_RE.test(data.topic)) {",
+  "replace": "if (false) {",
+  "suite": "wiring",
+  "expect": "published to a topic is an arrow to the topic"
+ },
+ {
+  "name": "board: the board doesn't ask what an MQTT entity follows unless it's a member",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "['template', 'mqtt'].includes((this._entMap.get(k) || {}).platform)",
+  "replace": "['template'].includes((this._entMap.get(k) || {}).platform)",
+  "suite": "board-regress",
+  "only": "0.11.3 an MQTT entity",
+  "expect": "asked what it follows|arrow into the lock"
+ },
+ {
+  "name": "board: no arrow from a topic's box into the MQTT entity that follows it",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "toList(s.topics).forEach((tp) => { if (nodes.has('mqtt:' + tp)) this._link(",
+  "replace": "toList(s.topics).forEach((tp) => { if (false) this._link(",
+  "suite": "board-regress",
+  "only": "0.11.3 an MQTT entity",
+  "expect": "arrow into the lock"
+ },
+ {
+  "name": "static: a fourth mention of mqtt.publish in the board goes unreviewed",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "if (svc === 'mqtt.publish' && typeof data.topic === 'string' && data.topic && !TPL_RE.test(data.topic)) {",
+  "replace": "if (svc === 'mqtt.publish' && typeof data.topic === 'string' && data.topic && !TPL_RE.test(data.topic) && 'mqtt.publish') {",
+  "suite": "static",
+  "expect": "A4 MQTT"
+ },
+ {
+  "name": "sandbox: an MQTT entity on the board isn't given its topics",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "if (d && d.rule && d.rule.kind === 'mqtt') { this.mq.set(id, { rule: d.rule, mem: null }); return; }",
+  "replace": "if (d && d.rule && d.rule.kind === 'mqtt') { return; }",
+  "suite": "e2e-sandbox",
+  "expect": "the sandbox follows the lock's topic|published message unlocks the lock"
  }
 ]

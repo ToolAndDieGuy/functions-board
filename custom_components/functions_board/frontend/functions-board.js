@@ -906,6 +906,8 @@
           }));
           [t, node, data].forEach((o) => { const n0 = refs.length; targets(o, role, s); if (refs.length > n0) hit = true; });
           if (d === 'script' && !['turn_on', 'turn_off', 'toggle', 'reload'].includes(s)) { add('script.' + s, 'call', 'run'); hit = true; }
+          // a message published to a topic goes to that topic's box, as a fired event goes to the event's (0.11.3)
+          if (svc === 'mqtt.publish' && typeof data.topic === 'string' && data.topic && !TPL_RE.test(data.topic)) { add('mqtt:' + data.topic, 'action', s); hit = true; }
           if (!hit) add('svc:' + svc, 'action', s);
           // a notification with buttons: each button is an output of the notification (9.5)
           const acts = d === 'notify' && data.data && Array.isArray(data.data.actions) ? data.data.actions : [];
@@ -1565,6 +1567,7 @@
       toList(t.device_id).concat(toList(sd.device_id)).forEach((x) => { if (link(key, 'device:' + x)) hit = true; });
       Object.entries(TARGET_KEYS).forEach(([f, pre]) => toList(t[f]).concat(toList(sd[f])).forEach((x) => { if (link(key, pre + ':' + x)) hit = true; }));
       if (p.domain === 'script' && link(key, 'script.' + p.service)) hit = true;
+      if (p.domain === 'mqtt' && p.service === 'publish' && typeof sd.topic === 'string' && link(key, 'mqtt:' + sd.topic)) hit = true;
       if (!hit) link(key, 'svc:' + p.domain + '.' + p.service);
       // a notification's buttons hang off it
       const acts = p.domain === 'notify' && sd.data && Array.isArray(sd.data.actions) ? sd.data.actions : [];
@@ -4653,7 +4656,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this.busy = 0; this.seq = 0; this.steps = 0; this.halted = false; this.n = 0; this.devT = new WeakMap();
       // 0.11.2: step-through (paused runs, breakpoints), how devices answer, and what was reached (coverage)
       this.stepping = false; this.breaks = new Set(); this.paused = new Map(); this.behave = new Map();
-      this.hit = new WeakSet(); this.cres = new WeakMap(); this.fired = new Set(); this.dispatching = false; this.evq = []; this.after = [];
+      this.hit = new WeakSet(); this.cres = new WeakMap(); this.fired = new Set(); this.dispatching = false; this.evq = []; this.after = []; this.round = null;
       // helpers that follow what they read (sbxFollow): id → { rule, reads, mem }, and what each input feeds
       this.follow = new Map(); this.feeds = new Map();
       // MQTT entities that follow their topics (0.11.3): id → { rule, mem }, in the order Home Assistant set them up
@@ -4740,9 +4743,25 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       return t;
     }
     _drop(t) { const i = this.timers.indexOf(t); if (i >= 0) this.timers.splice(i, 1); if (t && t.run) t.run.timers.delete(t); }
+    // A run that awaits something goes on only once the work in hand is done (0.11.3, found by the differential test):
+    // the handing out of a change in progress (_dispatch), or every timer due at this moment (advance: Home
+    // Assistant's loop runs the callbacks that are ready before the tasks they wake). What awaits: a run woken from a
+    // delay or a wait, one that published an MQTT message (it waits for the broker's answer), and a run restarted
+    // while the old one stops. So a single-mode run woken at the moment its own `for:` trigger comes due is still
+    // running when that trigger is looked at, and is dropped.
+    _later(go) {
+      if (this.dispatching) this.after.push(go);
+      else if (this.round) this.round.push(go);
+      else go();
+    }
+    // a run that awaits here: it stops being work in hand until _later lets it go on
+    _yield(run) {
+      if (!this.dispatching && !this.round) return null;
+      return new Promise((res) => { this._parked(run); this.busy--; this._later(() => { this.busy++; this._moving(run); res(); }); });
+    }
     _sleep(ms, run, label) {
       return new Promise((res, rej) => {
-        const t = this._at(this.now + Math.max(0, ms), () => { this.busy++; this._moving(run); res(); }, run, label);
+        const t = this._at(this.now + Math.max(0, ms), () => this._later(() => { this.busy++; this._moving(run); res(); }), run, label);
         t.rej = (e) => { this.busy++; rej(e); };
         this._parked(run);
         this.busy--;
@@ -4756,12 +4775,19 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._fresh();
       for (let guard = 0; guard < 10000 && !this.halted; guard++) {
         this.timers.sort((a, b) => a.at - b.at || a.n - b.n);
-        const t = this.timers[0];
-        if (!t || t.at > end) break;
-        this._drop(t);
-        this.now = Math.max(this.now, t.at);
-        t.fn();
-        await this.settle();
+        const t0 = this.timers[0];
+        if (!t0 || t0.at > end) break;
+        this.now = Math.max(this.now, t0.at);
+        // the timers due now, in the order they were set, as one round; what they wake goes on in the rounds after
+        // (_later). A timer set meanwhile for this moment waits for the next turn of the loop.
+        let ready = this.timers.filter((t) => t.at === t0.at).map((t) => () => { if (!this.timers.includes(t)) return; this._drop(t); t.fn(); });
+        try {
+          for (let turn = 0; ready.length && turn < 1000 && !this.halted; turn++) {
+            this.round = [];
+            for (const go of ready) { go(); await this.settle(); }
+            ready = this.round;
+          }
+        } finally { this.round = null; }
       }
       this.now = Math.max(this.now, end);
       await this._timeTemplates();
@@ -5528,6 +5554,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       // an automation: its variables and conditions first (_triggered); the promise of the run, or null
       if (it.kind === 'automation' && !opt.checked) return this._task(() => this._triggered(it, vars, cause, opt));
       const cfg = it.cfg, mode = cfg.mode || 'single', max = cfg.max || 10, act = this._active(it.id);
+      const restarting = mode === 'restart' && act.length > 0;
       if (act.length) {
         if (mode === 'single') { this._log({ kind: 'note', key: it.id, cause, text: T('sbx_single', { name: this._name(it.id) }) }); return null; }
         if (mode === 'restart') act.forEach((r) => { this._cancel(r); this._log({ kind: 'note', key: it.id, cause, text: T('sbx_restart') }); });
@@ -5545,8 +5572,10 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._moving(run);
       const list = this.runs.get(it.id) || [];
       list.push(run); this.runs.set(it.id, list);
-      const p = this._task(() => this._run(run, opt || {}));
-      run.promise = p;
+      const go = () => { run.promise = this._task(() => this._run(run, opt || {})); };
+      // restarted: it waits for the old run to stop, so it starts after the work in hand (_later), and a restart
+      // meanwhile (another trigger of the same change) cancels it before it does anything
+      if (restarting && (this.dispatching || this.round)) { this._parked(run); this._later(() => { this._moving(run); go(); }); } else go();
       return run;
     }
     // an automation triggered (0.11.2, Home Assistant's order, found by the differential test): its variables and
@@ -5580,7 +5609,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     // Home Assistant's event bus (0.11.2, found by the differential test): a state change or an event made while
     // another is being handed out waits in a queue until that one is done, and is then handed out in turn. Handing one
     // out means every trigger it fires, in order, each automation's run going as far as it goes at once (to its first
-    // wait, or its end) before the next trigger is looked at. So a run started by a change that changes something
+    // wait, an MQTT publish, or its end; a restarted run not at all: _later) before the next trigger is looked at. So a run started by a change that changes something
     // its own automation triggers on has ended by the time that trigger is looked at (and runs again), while a run
     // going on after a delay changes it outside any handing out, so the trigger is looked at at once, with the run
     // still going (and single mode drops it). A wait that a change satisfies goes on once the handing out is done.
@@ -5942,7 +5971,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         if (!known) { entry.unknown = true; if (this.o.onLog) this.o.onLog(entry, true); }
         return;
       }
-      if (svc === 'mqtt.publish') { await this.mqtt(data.topic, data.payload != null ? data.payload : data.payload_template, cid); return; }
+      // the message is handed out at once; the run then waits for the broker's answer (_yield)
+      if (svc === 'mqtt.publish') { await this.mqtt(data.topic, data.payload != null ? data.payload : data.payload_template, cid); await this._yield(run); return; }
       if (SBX_MSG.has(dom)) { entry.msg = true; if (this.o.onLog) this.o.onLog(entry, true); return; }
       let known = ents.length > 0;
       for (const id of ents) {
@@ -6030,12 +6060,11 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         w.res = (v) => {
           if (w.fin) return;
           w.fin = true; this.waiters.delete(w); if (t) this._drop(t);
-          const go = () => { this.busy++; this._moving(run); res(v); };
-          if (this.dispatching) this.after.push(go); else go();
+          this._later(() => { this.busy++; this._moving(run); res(v); });
         };
         Object.assign(w, mk(w));
         this.waiters.add(w);
-        if (ms != null) t = this._at(this.now + ms, () => { if (!w.fin) { w.fin = true; this.waiters.delete(w); this.busy++; this._moving(run); res(false); } }, run, label);
+        if (ms != null) t = this._at(this.now + ms, () => { if (!w.fin) { w.fin = true; this.waiters.delete(w); this._later(() => { this.busy++; this._moving(run); res(false); }); } }, run, label);
         this._parked(run);
         this.busy--;
       });
@@ -7829,7 +7858,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     // nodes: the model's, or [entity id, { kind: 'member' }] pairs
     async _askSources(nodes) {
       if (this._storeMode !== 'shared') return;
-      const ask = [...nodes].filter(([k, n]) => !k.includes(':') && !/^(automation|script|scene|group)\./.test(k) && (n.kind === 'member' || this._scopeOf(k) === 'helpers' || (this._entMap.get(k) || {}).platform === 'template'))
+      // members, helpers, template entities, and MQTT entities (what topics they follow, 0.11.3), wherever they are
+      const ask = [...nodes].filter(([k, n]) => !k.includes(':') && !/^(automation|script|scene|group)\./.test(k) && (n.kind === 'member' || this._scopeOf(k) === 'helpers' || ['template', 'mqtt'].includes((this._entMap.get(k) || {}).platform)))
         .map(([k]) => k).filter((k) => !this._src.has(k)).slice(0, 500);
       if (!ask.length) return;
       try {
@@ -7857,6 +7887,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           }
           this._link(edges, k, src, { role: 'source', svc: '' });
         });
+        // an MQTT entity follows its topics: an arrow from each topic's box on the board (one a message is published
+        // to, or a trigger listens on: the same topic, not a wildcard that also matches it)
+        toList(s.topics).forEach((tp) => { if (nodes.has('mqtt:' + tp)) this._link(edges, k, 'mqtt:' + tp, { role: 'source', svc: '' }); });
       });
     }
 

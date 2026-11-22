@@ -169,14 +169,14 @@ def _mqtt(comps: dict[str, Any], entity_id: str) -> dict[str, Any] | None:
             else:
                 how.update({"numeric": bool(getattr(entity, "_numeric_state_expected", False)), "options": list(getattr(entity, "options", None) or [])})
         rule: dict[str, Any] = {"kind": "mqtt", "domain": domain}
-        topics: list[str] = []
+        # what it reads, followed or not (the board draws an arrow from each topic's box)
+        topics: list[str] = [str(config["state_topic"])] if config.get("state_topic") else []
         if how is not None and config.get("state_topic"):
             tpl_key = how.pop("tpl", "value_template")
             sub = {"topic": str(config["state_topic"]), **how}
             if (t := _tpl(config.get(tpl_key))) is not None:
                 sub["tpl"] = t
             rule["state"] = sub
-            topics.append(sub["topic"])
             if domain == "binary_sensor" and config.get("off_delay") is not None:
                 rule["off_delay"] = float(config["off_delay"])
             if domain in ("sensor", "binary_sensor") and config.get("expire_after"):
@@ -196,7 +196,7 @@ def _mqtt(comps: dict[str, Any], entity_id: str) -> dict[str, Any] | None:
             rule["avail"] = {"mode": str(config.get("availability_mode", "latest")), "list": avail}
             topics += [a["topic"] for a in avail]
         if len(rule) == 2:
-            return {"entities": [], "domains": [], "all": False, "how": "mqtt", "topics": topics}
+            return {"entities": [], "domains": [], "all": False, "how": "mqtt", "topics": sorted(set(topics))}
         return {"entities": [], "domains": [], "all": False, "how": "mqtt", "topics": sorted(set(topics)), "rule": rule}
     except Exception:  # noqa: BLE001 - private attributes: no rule beats a failed request
         return None

@@ -202,7 +202,9 @@ check('A4 events are fired only by the person\'s test steps', fires.length === 1
 const sup = [...code.matchAll(/type: 'supervisor\/api'[^\n]{0,120}/g)].map((m) => m[0]);
 check('A4 the Supervisor is only asked (method get), never told', sup.length > 0 && sup.every((x) => /method: 'get'/.test(x)), sup);
 const pubs = code.match(/[^\n]{0,40}'mqtt\.publish'[^\n]{0,20}/g) || [];
-check('A4 MQTT: the board listens; a message is published only by the person\'s own MQTT test step (the sandbox only simulates one)', !/mqtt\/publish|(callService|_svc)\(\s*'mqtt'/.test(code) && pubs.length === 2 && pubs.some((p) => /if \(svc === 'mqtt\.publish'\) \{ await this\.mqtt\(/.test(p)) && pubs.some((p) => /case 'mqtt': return call\('mqtt\.publish'/.test(p)), pubs);
+// 0.11.3: a third mention, the wiring reading a publish's topic from a config (analyze()) to draw the arrow to it
+check('A4 MQTT: the board listens; a message is published only by the person\'s own MQTT test step (the sandbox only simulates one, and the wiring only reads one)', !/mqtt\/publish|(callService|_svc)\(\s*'mqtt'/.test(code) && pubs.length === 3 && pubs.some((p) => /if \(svc === 'mqtt\.publish'\) \{ await this\.mqtt\(/.test(p)) && pubs.some((p) => /case 'mqtt': return call\('mqtt\.publish'/.test(p))
+  && pubs.some((p) => /^ *if \(svc === 'mqtt\.publish' && typeof data\.topi$/.test(p)), pubs);
 
 
 // 0.10.0: every wait the board sets goes through its clock (class Clock), so a board taken off the page stops them

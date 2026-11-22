@@ -233,4 +233,61 @@ test('sandbox', async ({ browser }) => {
   check('no errors', page.logs.length === 0, page.logs);
   await ctx.close();
 });
+// 0.11.3: an MQTT entity of the test home (the Shed lock, set up in YAML on the real broker, tests/home) in the
+// sandbox: what functions_board/sources says it follows, the board's chain publish → topic → lock, a message moving
+// it in the sandbox, and nothing published to the broker or sent to Home Assistant
+test('0.11.3 the sandbox: an MQTT entity on the real broker follows its topic, and nothing reaches the broker', async ({ browser }) => {
+  const home = require('../home/home');
+  const LOCK = 'lock.shed_lock', TOPIC = 'fbtest/shed/lock', LIGHT = 'light.bed_light';
+  const { ctx, page } = await session(browser, 'owner', { viewport: { width: 1500, height: 900 } });
+  await page.goto(BASE + '/');
+  await ready(page);
+  await reset(page);
+  await importAll(page);
+  await page.goto(BASE + '/functions');
+  await fbq(page, '.nodes .node').first().waitFor({ timeout: 20000 });
+  const garage = await openFn(page, /garage/i);
+  const api = (m, p, b) => page.evaluate(([m, p, b]) => document.querySelector('home-assistant').hass.callApi(m, p, b), [m, p, b]);
+  await api('POST', 'config/automation/config/fbmqtt_says', { alias: 'Garage: say the shed is unlocked', triggers: [{ trigger: 'time', at: '03:00:00' }], actions: [{ action: 'mqtt.publish', data: { topic: TOPIC, payload: 'UNLOCKED' } }] });
+  await api('POST', 'config/automation/config/fbmqtt_unlocks', { alias: 'Garage: when the shed unlocks', triggers: [{ trigger: 'state', entity_id: LOCK, to: 'unlocked' }], actions: [{ action: 'light.turn_on', target: { entity_id: LIGHT } }] });
+  const ents = ['automation.garage_say_the_shed_is_unlocked', 'automation.garage_when_the_shed_unlocks'];
+  await until(() => page.evaluate((ids) => ids.every((k) => !!document.querySelector('home-assistant').hass.states[k]), ents), 10000);
+  for (const id of ents) await ws(page, { type: 'config/entity_registry/update', entity_id: id, labels: [garage] });
+  const real0 = await page.evaluate((ids) => ids.map((i) => document.querySelector('home-assistant').hass.states[i].state), [LOCK, LIGHT]);
+  await until(() => el(page, (b, a) => { if (b._model && b._model.edges.some((e) => e.from === 'mqtt:' + a.TOPIC && e.to === a.LOCK)) return true; b._store.changed('reg'); b._open(a.garage, true); return null; }, { LOCK, TOPIC, garage }), 20000, 1500);
+  const src = await el(page, (b, k) => b._src.get(k), LOCK);
+  check('0.11.3 sources: the YAML lock on the real broker follows its state topic, with its own payloads', src && src.how === 'mqtt' && src.topics.includes(TOPIC) && src.rule && src.rule.state.topic === TOPIC
+    && src.rule.state.map.LOCKED === 'locked' && src.rule.state.map.UNLOCKED === 'unlocked', src);
+  check('0.11.3 the board: the publish points to the topic\'s box, the topic\'s box to the lock', await el(page, (b, a) => b._model.edges.some((e) => e.from === 'automation.garage_say_the_shed_is_unlocked' && e.to === 'mqtt:' + a.TOPIC)
+    && b._model.edges.some((e) => e.from === 'mqtt:' + a.TOPIC && e.to === a.LOCK && e.role === 'source'), { LOCK, TOPIC }));
+  // from here on: nothing published to the broker, nothing sent to Home Assistant that changes anything
+  const since = home.mqtt.mark();
+  const changes = [];
+  page.on('request', (r) => { if (r.method() === 'POST' && /\/api\/(states|services|events)\//.test(r.url())) changes.push(r.url()); });
+  page.sent.length = 0;
+  await fbq(page, '.tools [data-act="sandbox"]').click();
+  await fbq(page, '.modal [data-act="sbx-start"]').click({ timeout: 3000 }).catch(() => {});
+  await fbq(page, '.drawer .sbctl .sbent').waitFor({ timeout: 10000 });
+  const settle = () => until(() => el(page, (b) => (b._sbx && !b._sbx.busy) || null), 10000);
+  check('0.11.3 the sandbox follows the lock\'s topic', await el(page, (b, k) => b._sbx.eng.mq.has(k), LOCK));
+  // the publishing automation run in the sandbox: its message moves the lock, which starts the other one
+  await el(page, (b) => b._sbx.eng.userRun('automation.garage_say_the_shed_is_unlocked', false)); await settle();
+  const after = await el(page, (b, a) => ({ lock: b._sbx.eng.get(a.LOCK).state, light: b._sbx.eng.get(a.LIGHT).state, ran: b._sbx.eng.log.some((e) => e.kind === 'trigger' && e.key === 'automation.garage_when_the_shed_unlocks') }), { LOCK, LIGHT });
+  check('0.11.3 the published message unlocks the lock in the sandbox, and that starts the automation on it', after.lock === 'unlocked' && after.light === 'on' && after.ran, after);
+  // a message you send on the lock's topic, through its payloads
+  await el(page, (b, t) => b._sbx.eng.userMqtt(t, 'LOCKED'), TOPIC); await settle();
+  check('0.11.3 a message you send on the topic locks it again in the sandbox', (await el(page, (b, k) => b._sbx.eng.get(k).state, LOCK)) === 'locked');
+  await page.waitForTimeout(1500);
+  check('0.11.3 nothing was published to the real broker', home.mqtt.sent(null, since).length === 0, home.mqtt.sent(null, since));
+  check('0.11.3 nothing was sent to Home Assistant that changes anything', page.sent.filter((m) => /^(call_service|fire_event|execute_script)$/.test(m.type)).concat(changes).length === 0, page.sent.map((m) => m.type));
+  const real1 = await page.evaluate((ids) => ids.map((i) => document.querySelector('home-assistant').hass.states[i].state), [LOCK, LIGHT]);
+  check('0.11.3 the real lock and light are as they were', JSON.stringify(real0) === JSON.stringify(real1), [real0, real1]);
+  await fbq(page, '.drawer [data-act="close"]').click();
+  // the broker's log does see a real publish (a probe on a topic nothing reads), so "nothing published" can fail
+  await page.evaluate(() => document.querySelector('home-assistant').hass.callService('mqtt', 'publish', { topic: 'fbtest/e2e/probe', payload: 'x' }));
+  await until(() => home.mqtt.sent((m) => m.topic === 'fbtest/e2e/probe', since).length > 0 || null, 5000);
+  check('0.11.3 ... the broker\'s log does show a real publish', home.mqtt.sent((m) => m.topic === 'fbtest/e2e/probe', since).length === 1);
+  check('0.11.3 the MQTT sandbox: no errors', page.logs.length === 0, page.logs);
+  await ctx.close();
+});
 test.afterAll(() => done());

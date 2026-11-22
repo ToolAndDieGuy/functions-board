@@ -37,6 +37,7 @@ const M4 = Object.assign(mq('sensor.p', { state_topic: 'h/p', availability_topic
 const M5 = mq('binary_sensor.motion', { state_topic: 'h/motion', off_delay: 30 });
 const M6 = mq('sensor.e', { state_topic: 'h/e', expire_after: 60 });
 const M7 = Object.assign(mq('lock.l', { state_topic: 'h/lock' }), mq('cover.c', { state_topic: 'h/cover' }), mq('select.s', { state_topic: 'h/sel', options: ['Off', 'Lawn', 'Garden'] }), mq('switch.w', { state_topic: 'h/sw', payload_on: '1', payload_off: '0' }));
+const M14 = mq('binary_sensor.mb', { state_topic: 'h/mb' });
 const M8 = mq('number.n', { state_topic: 'h/num', min: 1, max: 5 });
 const M9 = mq('sensor.a', { state_topic: 'h/a', json_attributes_topic: 'h/a/attr' });
 const M10 = mq('event.btn', { state_topic: 'h/btn', event_types: ['press', 'hold'] });
@@ -78,6 +79,12 @@ const MQTT = [
   { name: 'two entities on one topic', mqtt: Object.assign({}, M1, M12), states: mqSt(Object.assign({}, M1, M12)),
     automations: { a: { triggers: [S('binary_sensor.occ', { to: 'on' })], actions: [inc('counter.c')] }, b: { triggers: [S('sensor.temp')], actions: [tog('input_boolean.x')] } },
     steps: [pub('h/climate', '{"t": 60, "occ": "ON"}'), pub('h/climate', '{"t": 61, "occ": "OFF"}'), pub('h/climate', '{"t": 62, "occ": true}'), pub('h/climate', '{"t": 63, "occ": "ON"}')] },
+  // 0.11.3: a run that published waits for the broker's answer, so it's still running while the rest of the change is
+  // handed out: single mode drops the start a group that follows the same change makes (random 101-159, 404-99)
+  { name: 'a run that published is still running when a group following the same change starts it', mqtt: M14, states: mqSt(M14, { 'binary_sensor.a': ['off'], 'binary_sensor.any': ['unknown'] }),
+    derived: { 'binary_sensor.any': { kind: 'group', entities: ['binary_sensor.a'], all: false } },
+    automations: { a: { triggers: [S('binary_sensor.a', { to: 'on' }), S('binary_sensor.any', { to: 'on' })], actions: [tog('input_boolean.x'), publish('h/other', 'ON')] } },
+    steps: [{ set: 'binary_sensor.a', to: 'on' }, { set: 'binary_sensor.a', to: 'off' }, { set: 'binary_sensor.a', to: 'on' }] },
 ];
 
 module.exports = [
@@ -254,6 +261,18 @@ module.exports = [
     steps: [{ set: 'binary_sensor.b', to: 'on' }, { wait: 15 }] },
   { name: 'a waiting run is still running until the handing out is done', states: st({ 'binary_sensor.a': ['off'], 'binary_sensor.b': ['off'], 'input_boolean.q': ['off'], 'counter.k': ['0'] }), automations: { w: { triggers: [S('binary_sensor.a', { to: 'on' }), S('input_boolean.z', { to: 'on' })], actions: [inc('counter.k'), { wait_for_trigger: [S('input_boolean.x', { to: 'on' })] }, inc('counter.c')] }, b: { triggers: [S('binary_sensor.b', { to: 'on' })], actions: [on('input_boolean.x')] }, r: { triggers: [S('input_boolean.x', { to: 'on' })], actions: [{ repeat: { count: 20, sequence: [tog('input_boolean.q')] } }, on('input_boolean.z')] } },
     steps: [{ set: 'binary_sensor.a', to: 'on' }, { set: 'binary_sensor.b', to: 'on' }] },
+  // 0.11.3: a run woken from its delay goes on only after every timer due at that moment, so a single-mode run is still
+  // running when its own for: trigger comes due at the second its delay ends (random 101-41)
+  { name: 'a run woken from a delay is still running when its for: trigger comes due at the same moment', states: st({ 'binary_sensor.a': ['off'], 'sensor.t': ['15'] }),
+    automations: { a: { triggers: [S('binary_sensor.a', { to: 'on' }), N('sensor.t', { above: 30, for: { seconds: 20 } })], actions: [{ delay: { seconds: 20 } }, inc('counter.c')] },
+      b: { triggers: [N('sensor.t', { above: 30, for: { seconds: 40 } })], actions: [{ delay: { seconds: 20 } }, inc('counter.c')] },
+      c: { triggers: [S('binary_sensor.a', { to: 'off' })], actions: [{ delay: { seconds: 20 } }, on('input_boolean.y')] }, d: { triggers: [S('binary_sensor.a', { to: 'off', for: { seconds: 20 } })], conditions: [{ condition: 'state', entity_id: 'input_boolean.y', state: 'off' }], actions: [on('input_boolean.z')] } },
+    steps: [{ set: 'binary_sensor.a', to: 'on' }, { set: 'sensor.t', to: '35' }, { wait: 30 }, { set: 'binary_sensor.a', to: 'off' }, { wait: 30 }, { wait: 30 }] },
+  // 0.11.3: a restarted run waits for the old one to stop, so it starts after the change is handed out, and a second
+  // trigger of the same event restarts it before it does anything (random 404-247)
+  { name: 'restart: two triggers of one event while a run waits, the first restart cancelled by the second', states: st({ 'binary_sensor.b': ['off'] }),
+    automations: { a: { mode: 'restart', triggers: [{ trigger: 'event', event_type: 'fb_go', event_data: { kind: 'press' } }, { trigger: 'event', event_type: 'fb_go' }], actions: [tog('input_boolean.x'), inc('counter.c'), { wait_for_trigger: [S('binary_sensor.b', { to: 'on' })], timeout: { seconds: 30 } }, tog('input_boolean.y')] } },
+    steps: [{ event: 'fb_go', data: { kind: 'hold' } }, { event: 'fb_go', data: { kind: 'press' } }, { set: 'binary_sensor.b', to: 'on' }, { event: 'fb_go', data: { kind: 'press' } }, { wait: 40 }] },
   // ---- helpers that follow what they read (each scenario's derived: the rule functions_board/sources gives)
   { name: 'a min/max mean follows its sensors, and an automation reads it', states: st({ 'sensor.t1': ['20'], 'sensor.t2': ['24'], 'sensor.avg': ['unknown'] }),
     derived: { 'sensor.avg': { kind: 'min_max', type: 'mean', round: 2, entities: ['sensor.t1', 'sensor.t2'] } },
