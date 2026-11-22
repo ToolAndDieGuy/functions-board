@@ -3015,6 +3015,19 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       sbx_ran_n: { one: 'ran once in the sandbox', other: 'ran {n} times in the sandbox' },
       sbx_not_run: 'not run in the sandbox yet',
       sbx_not_followed: 'Triggers that don\'t come from states the sandbox holds: fire them from the Press row (or use Run, as if that trigger fired): {list}.',
+      sbx_payload_known: 'What it sends: {what}',
+      sbx_fr_person: 'Frigate sees a person',
+      sbx_fr_car: 'Frigate sees a car',
+      sbx_fr_end: 'the person is gone',
+      sbx_fr_motion_on: 'motion',
+      sbx_fr_motion_off: 'no motion',
+      sbx_fr_count: 'one {label} in view',
+      sbx_fr_none: 'no {label} in view',
+      sbx_nact: 'Notification',
+      sbx_nact_what: 'A button on a notification',
+      sbx_nact_opt: '{t} ({id})',
+      sbx_nact_b: 'Press',
+      sbx_nact_t: 'Press a notification\'s button, as your phone would: the board fires the event the companion app does',
       sbx_replay: 'Replay',
       sbx_replay_when: 'Which period to replay',
       sbx_replay_b: 'Replay',
@@ -4494,6 +4507,26 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
   }
   // calls that only send or log a message: nothing for the sandbox to change
   const SBX_MSG = new Set(['notify', 'persistent_notification', 'tts', 'system_log', 'logbook', 'assist_satellite', 'telegram_bot', 'mobile_app']);
+  // the message an MQTT trigger fires on (0.11.2): its payload, or, when it compares a value_template's field with
+  // it (Zigbee2MQTT's {{ value_json.action }}), the JSON with that field: {"action": "single"}
+  function sbxPayloadFor(t) {
+    const p = String(t.payload), vt = typeof t.value_template === 'string' ? t.value_template : '';
+    const m = vt.match(/^\s*\{\{\s*value_json(?:\.([A-Za-z_][\w]*)|\[\s*['"]([^'"]+)['"]\s*\])\s*\}\}\s*$/);
+    return m ? JSON.stringify({ [m[1] || m[2]]: p }) : p;
+  }
+  // what well-known integrations publish on a topic (0.11.2): Frigate's events (a person or a car seen, and gone), the
+  // count of a label on a camera, and its motion. [{ v: payload, what: words }]
+  function sbxKnownPayloads(topic) {
+    const p = String(topic || '').split('/');
+    if (p[0] !== 'frigate') return [];
+    if (p[1] === 'events') {
+      const ev = (type, label) => JSON.stringify({ type, before: { label, camera: 'camera', current_zones: [] }, after: { label, camera: 'camera', current_zones: [], score: 0.82, has_snapshot: true } });
+      return [{ v: ev('new', 'person'), what: T('sbx_fr_person') }, { v: ev('new', 'car'), what: T('sbx_fr_car') }, { v: ev('end', 'person'), what: T('sbx_fr_end') }];
+    }
+    if (p.length === 3 && p[2] === 'motion') return [{ v: 'ON', what: T('sbx_fr_motion_on') }, { v: 'OFF', what: T('sbx_fr_motion_off') }];
+    if (p.length === 3 && /^[a-z_]+$/.test(p[2])) return [{ v: '1', what: T('sbx_fr_count', { label: p[2] }) }, { v: '0', what: T('sbx_fr_none', { label: p[2] }) }];
+    return [];
+  }
   const sbxTopic = (pat, topic) => {
     const p = String(pat).split('/'), t = String(topic).split('/');
     for (let i = 0; i < p.length; i++) {
@@ -8912,6 +8945,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           'sbx-behave': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
           'sbx-st-set': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
           'sbx-st-reset': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
+          'sbx-nact': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
           'sbx-history': () => { if (!this._sbxOn()) return; const s = this._$.drawer.querySelector('.sbhist'); this._ha.soft(this._sbxHistory(s ? s.value : 'night'), 'replaying from history', null); },
           'sbx-explore': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
           'sbx-ex-stop': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
@@ -12950,6 +12984,22 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       }
       return out;
     }
+    // a notification's buttons (0.11.2): every button the function's automations and scripts would put on one (not
+    // one whose id is a template), by its title; pressed in the sandbox, the phone's answer is fired
+    _sbxButtons() {
+      const g = this._sbx, out = new Map(), known = (x) => this._known(x);
+      g.opts.items.forEach((it) => {
+        if (!it.cfg) return;
+        analyze(it.cfg, it.id.startsWith('script.'), known).refs.forEach((r) => { if (r.role === 'action' && r.ref.startsWith('nact:') && !out.has(r.ref.slice(5))) out.set(r.ref.slice(5), r.title || r.ref.slice(5)); });
+      });
+      return [...out].map(([action, title]) => ({ action, title }));
+    }
+    // the event a phone fires for a button: the companion apps' mobile_app_notification_action, or the old iOS one if
+    // that's what the function listens to
+    _sbxNotifyEvent() {
+      const txt = JSON.stringify(this._sbx.opts.items.map((x) => x.cfg));
+      return txt.includes('ios.notification_action_fired') && !txt.includes('mobile_app_notification_action') ? ['ios.notification_action_fired', 'actionName'] : ['mobile_app_notification_action', 'action'];
+    }
     // the entities a reference stands for: itself, a device's, an area's, floor's or label's (none for anything else)
     _refEnts(ref) {
       if (ref.startsWith('device:')) return this._ents.filter((e) => e.device_id === ref.slice(7)).map((e) => e.entity_id);
@@ -13095,6 +13145,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       ];
       if (ins.presses.length) rows.push(row(T('sbx_press'), sel('sbpress', T('sbx_press_what'), ins.presses.map((x) => o2(x.key, x.label)).join('')) + `<button class="chip" data-act="sbx-press">${T('sbx_press_b')}</button>`));
       rows.push(row(T('sbx_event'), this._sbxField('sbev', evs.map((x) => ({ v: x, l: x })), T('sbx_event_type')) + this._sbxField('sbevd', [], T('sbx_event_data_ph')) + `<button class="chip" data-act="sbx-fire">${T('sbx_fire')}</button>`));
+      const btns = this._sbxButtons();
+      if (btns.length) rows.push(row(T('sbx_nact'), sel('sbnact', T('sbx_nact_what'), btns.map((x) => o2(x.action, x.title === x.action ? x.title : T('sbx_nact_opt', { t: x.title, id: x.action }))).join('')) + `<button class="chip" data-act="sbx-nact" title="${esc(T('sbx_nact_t'))}">${T('sbx_nact_b')}</button>`));
       if (topics.size) rows.push(row('MQTT', this._sbxField('sbtop', [...topics].map((x) => ({ v: x, l: x })), T('sbx_topic')) + this._sbxField('sbpay', [], T('sbx_payload')) + `<button class="chip" data-act="sbx-mqtt">${T('sbx_send')}</button>`));
       if (ins.hooks.length) rows.push(row(T('sbx_webhook'), sel('sbhook', T('sbx_webhook'), ins.hooks.map((x) => o2(x.id, x.id)).join('')) + sel('sbhookm', T('sbx_method'), '') + this._sbxField('sbhookd', [{ v: '{}', l: T('sbx_body_empty') }], T('sbx_body_ph')) + `<button class="chip" data-act="sbx-hook">${T('sbx_call')}</button>`));
       if (ins.tags.length) rows.push(row(T('sbx_tag'), this._sbxField('sbtag', ins.tags.map((x) => ({ v: x, l: x })), T('sbx_tag_id')) + `<button class="chip" data-act="sbx-tag">${T('sbx_scan')}</button>`));
@@ -13313,12 +13365,14 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         if (it.kind !== 'automation') return;
         g.eng._trigs(it).forEach((t) => {
           if (g.eng._plat(t) !== 'mqtt' || t.payload == null || !(t.topic === topic || sbxTopic(String(t.topic || ''), topic))) return;
-          const v = String(t.payload);
+          const v = sbxPayloadFor(t);
           if (seen.has(v)) return;
           seen.add(v);
           out.push({ v, l: T('sbx_payload_as', { name: this._boxName(it.id), payload: shorten(v, 50) }), pick: true });
         });
       });
+      // what well-known integrations send on their topics (Frigate's events, counts and motion)
+      sbxKnownPayloads(topic).forEach((x) => { if (!seen.has(x.v)) { seen.add(x.v); out.push({ v: x.v, l: T('sbx_payload_known', { what: x.what }) }); } });
       out.push({ v: '', l: T('sbx_payload_none') });
       this._sbxOpts('sbpay', out, 'pick');
     }
@@ -13487,6 +13541,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           break;
         }
         case 'sbx-explore': this._sbxExplore(); break;
+        case 'sbx-nact': { const id = q('.sbnact') && q('.sbnact').value; if (!id) return; const [type, key] = this._sbxNotifyEvent(); this._sbxStep({ op: 'event', type, data: { [key]: id } }); break; }
         case 'sbx-ex-stop': this._sbx.exStop = true; break;
         case 'sbx-ex-show': this._sbxExShow(+el.dataset.i); break;
         case 'sbx-cov-run': this._sbxCovRun(); break;

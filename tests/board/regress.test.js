@@ -1686,3 +1686,35 @@ test('0.11.2 the sandbox: replay a period from history, and how it compares with
   // what was replayed can be kept as a check
   check('0.11.2 ... and can be saved as a check (Save as a check is on)', await D((b) => !b._$.drawer.querySelector('[data-act="chk-save"]').disabled));
 });
+
+test('0.11.2 the sandbox: a notification\'s buttons to press, and the messages Zigbee2MQTT and Frigate send', async ({ browser, fake }) => {
+  const { page } = await imported(browser);
+  const garage = await openFn(page, /garage/i);
+  // in the garage: a notification with a button, the automation that answers it, a Zigbee2MQTT button and Frigate
+  await addPiece(page, fake, 'automation.fb_ask_close', { alias: 'Ask to close', mode: 'single', triggers: [{ trigger: 'state', entity_id: 'cover.garage_door', to: 'open' }], conditions: [],
+    actions: [{ action: 'notify.mobile_app_phone', data: { message: 'The garage is open', data: { actions: [{ action: 'FB_CLOSE_GARAGE', title: 'Close it' }, { action: 'URI', title: 'Open the app', uri: '/lovelace' }] } } }] });
+  await addPiece(page, fake, 'automation.fb_on_close', { alias: 'Close when asked', mode: 'single', triggers: [{ trigger: 'event', event_type: 'mobile_app_notification_action', event_data: { action: 'FB_CLOSE_GARAGE' } }], conditions: [], actions: [{ action: 'script.close_garage' }] });
+  await addPiece(page, fake, 'automation.fb_z2m', { alias: 'Garage button', mode: 'single', triggers: [{ trigger: 'mqtt', topic: 'zigbee2mqtt/garage_button', payload: 'single', value_template: '{{ value_json.action }}' }], conditions: [], actions: [{ action: 'script.close_garage' }] });
+  await addPiece(page, fake, 'automation.fb_frigate', { alias: 'Someone at the garage', mode: 'single', triggers: [{ trigger: 'mqtt', topic: 'frigate/events' }], conditions: [], actions: [] });
+  for (const id of ['automation.fb_ask_close', 'automation.fb_on_close', 'automation.fb_z2m', 'automation.fb_frigate']) await ws(page, { type: 'config/entity_registry/update', entity_id: id, labels: [garage] });
+  await fake.idle(400);
+  await until(() => el(page, (b) => (b._model && b._model.nodes.has('automation.fb_on_close')) || null), 10000);
+  await fbq(page, '.tools [data-act="sandbox"]').click();
+  await fbq(page, '.modal [data-act="sbx-start"]').click({ timeout: 3000 }).catch(() => {});
+  await fbq(page, '.drawer .sbctl .sbent').waitFor({ timeout: 10000 });
+  const D = (fn, arg) => el(page, fn, arg);
+  const settle = () => until(() => D((b) => (b._sbx && !b._sbx.busy) || null), 10000);
+  const opts = await D((b) => [...(b._$.drawer.querySelector('.sbnact') || { options: [] }).options].map((o) => [o.value, o.textContent]));
+  check('0.11.2 the Notification row lists the buttons the function would put on one (not a link button)', opts.length === 1 && opts[0][0] === 'FB_CLOSE_GARAGE' && /Close it/.test(opts[0][1]), opts);
+  // the door open in the sandbox, then the button pressed: the answering automation closes it
+  await D((b) => b._sbx.eng.userSet('cover.garage_door', 'open')); await settle();
+  await fbq(page, '.drawer [data-act="sbx-nact"]').click(); await settle();
+  const after = await D((b) => ({ door: b._sbx.eng.get('cover.garage_door').state, ran: b._sbx.eng.log.some((e) => e.kind === 'trigger' && e.key === 'automation.fb_on_close'), step: b._sbx.rec.steps[b._sbx.rec.steps.length - 1] }));
+  check('0.11.2 pressing it fires the phone\'s event: the automation answering it runs and closes the door', after.ran && /clos/.test(after.door) && after.step.op === 'event' && after.step.type === 'mobile_app_notification_action' && after.step.data.action === 'FB_CLOSE_GARAGE', after);
+  // the MQTT row: Zigbee2MQTT's action as the JSON it sends; Frigate's events
+  const pays = async (topic) => D((b, t) => { const d = b._$.drawer; const f = d.querySelector('.sbtop-sel'); if (f) { f.value = t; f.dispatchEvent(new Event('change', { bubbles: true, composed: true })); } b._sbxPayloads(); return [...d.querySelector('.sbpay-sel').options].map((o) => [o.value, o.textContent]); }, topic);
+  const z = await pays('zigbee2mqtt/garage_button');
+  check('0.11.2 a Zigbee2MQTT button\'s action is suggested as the JSON it sends', z.some(([v]) => v === '{"action":"single"}'), z);
+  const fr = await pays('frigate/events');
+  check('0.11.2 Frigate\'s events are suggested: a person, a car, gone', fr.filter(([, l]) => /What it sends/.test(l)).length === 3 && fr.some(([v]) => /"label":"person"/.test(v)), fr);
+});

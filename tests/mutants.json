@@ -1880,5 +1880,39 @@
   "suite": "board-regress",
   "expect": "asks Home Assistant's history for what the function reads and its automations",
   "only": "0.11.2 the sandbox: replay a period from history"
+ },
+ {
+  "name": "integrations: no notification buttons",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "        analyze(it.cfg, it.id.startsWith('script.'), known).refs.forEach((r) => { if (r.role === 'action' && r.ref.startsWith('nact:')",
+  "replace": "        analyze(it.cfg, it.id.startsWith('script.'), known).refs.forEach((r) => { if (r.role === 'trigger' && r.ref.startsWith('nact:')",
+  "suite": "board-regress",
+  "expect": "lists the buttons the function would put on one",
+  "only": "0.11.2 the sandbox: a notification's buttons"
+ },
+ {
+  "name": "integrations: a button press fires the wrong event",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "        case 'sbx-nact': { const id = q('.sbnact') && q('.sbnact').value; if (!id) return; const [type, key] = this._sbxNotifyEvent(); this._sbxStep({ op: 'event', type, data: { [key]: id } }); break; }",
+  "replace": "        case 'sbx-nact': { const id = q('.sbnact') && q('.sbnact').value; if (!id) return; const [, key] = this._sbxNotifyEvent(); this._sbxStep({ op: 'event', type: 'notification_pressed', data: { [key]: id } }); break; }",
+  "suite": "board-regress",
+  "expect": "pressing it fires the phone's event",
+  "only": "0.11.2 the sandbox: a notification's buttons"
+ },
+ {
+  "name": "integrations: a value_template's field isn't made JSON",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "    return m ? JSON.stringify({ [m[1] || m[2]]: p }) : p;",
+  "replace": "    return p;",
+  "suite": "sandbox",
+  "expect": "as the JSON its value_template reads"
+ },
+ {
+  "name": "integrations: no Frigate events",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "    if (p[1] === 'events') {",
+  "replace": "    if (p[1] === 'events_') {",
+  "suite": "sandbox",
+  "expect": "Frigate: its events"
  }
 ]

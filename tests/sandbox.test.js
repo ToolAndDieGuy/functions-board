@@ -840,4 +840,14 @@ const st = (sb, id) => (sb.get(id) || {}).state;
     check('0.11.2 ... a changed one doesn\'t: it says where (the light went off 5 minutes later, the second run then too)', !light.same && light.first.i === 1 && light.first.here.t === from + 20 * M && !runs.same && runs.first.here.t === from + 20 * M, diff);
   }
 
+  // ---- 0.11.2 integrations: the MQTT message a trigger fires on, and what well-known ones send
+  {
+    const { sbxPayloadFor, sbxKnownPayloads } = lib;
+    check('0.11.2 an MQTT trigger\'s payload as it is, or as the JSON its value_template reads (Zigbee2MQTT\'s action)', sbxPayloadFor({ payload: 'on' }) === 'on' && sbxPayloadFor({ payload: 'single', value_template: '{{ value_json.action }}' }) === '{"action":"single"}'
+      && sbxPayloadFor({ payload: 'true', value_template: "{{ value_json['occupancy'] }}" }) === '{"occupancy":"true"}' && sbxPayloadFor({ payload: 'x', value_template: '{{ value_json.a | lower }}' }) === 'x');
+    const ev = sbxKnownPayloads('frigate/events'), cnt = sbxKnownPayloads('frigate/driveway/person'), mo = sbxKnownPayloads('frigate/driveway/motion');
+    check('0.11.2 Frigate: its events (a person, a car, gone), a label\'s count on a camera, and motion; nothing for other topics', ev.length === 3 && JSON.parse(ev[0].v).type === 'new' && JSON.parse(ev[0].v).after.label === 'person' && JSON.parse(ev[2].v).type === 'end'
+      && cnt.map((x) => x.v).join() === '1,0' && mo.map((x) => x.v).join() === 'ON,OFF' && sbxKnownPayloads('zigbee2mqtt/hall').length === 0);
+  }
+
 })().catch((e) => check('the sandbox tests ran to the end', false, String(e && e.stack || e)));

@@ -102,6 +102,13 @@ reads, in order. Afterwards it shows how that compares with what really happened
 automations ran in your home and in the sandbox, and what the function changed on its own. Anything that differs is
 listed with when. It only reads the history, and the replay can be saved as a check.
 
+The sandbox knows a few integrations better. A **Notification** row lists the buttons the function's notifications
+would have. Pressing one fires the event your phone's companion app does (`mobile_app_notification_action`, or the old
+iOS one if that's what the function listens to), so the automation answering it runs. A link button isn't listed.
+The MQTT row now suggests a Zigbee2MQTT button's action as the JSON it really sends (`{"action": "single"}` for a
+trigger reading `value_json.action`). For Frigate's topics it offers what Frigate sends: a person or a car seen and
+gone, a label's count on a camera, and motion.
+
 Saved checks can be edited and shared. **Edit** changes a check's name, moves its steps earlier or later, changes
 what a step sets or how long it lets pass, takes a step or an expectation out, and adds an expectation ("Garage
 Door ends as closed", "Close garage runs to the end"). **Share** gives the check as text to copy, and **Import**
