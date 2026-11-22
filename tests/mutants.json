@@ -1670,8 +1670,8 @@
  {
   "name": "sandbox: a satisfied wait goes on in the middle of the handing out",
   "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "          if (this.dispatching) this.after.push(go); else go();",
-  "replace": "          go();",
+  "find": "          this._later(() => { this.busy++; this._moving(run); res(v); });",
+  "replace": "          this.busy++; this._moving(run); res(v);",
   "suite": "sandbox",
   "expect": "a waiting run is still running until the handing out is done"
  },
@@ -1938,5 +1938,37 @@
   "replace": "    if (p[1] === 'events_') {",
   "suite": "sandbox",
   "expect": "Frigate: its events"
+ },
+ {
+  "name": "sandbox awaits: a run woken from its delay goes on at once",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "const t = this._at(this.now + Math.max(0, ms), () => this._later(() => { this.busy++; this._moving(run); res(); }), run, label);",
+  "replace": "const t = this._at(this.now + Math.max(0, ms), () => { this.busy++; this._moving(run); res(); }, run, label);",
+  "suite": "sandbox",
+  "expect": "woken from its delay is still running"
+ },
+ {
+  "name": "sandbox awaits: the timers due at one moment are not one round",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      else if (this.round) this.round.push(go);\n",
+  "replace": "",
+  "suite": "sandbox",
+  "expect": "a for: due at the moment another run's delay ends"
+ },
+ {
+  "name": "sandbox awaits: a run that published goes on at once",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "data.payload != null ? data.payload : data.payload_template, cid); await this._yield(run); return; }",
+  "replace": "data.payload != null ? data.payload : data.payload_template, cid); return; }",
+  "suite": "sandbox",
+  "expect": "a run that published is still running"
+ },
+ {
+  "name": "sandbox awaits: a restarted run starts at once",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "if (restarting && (this.dispatching || this.round)) {",
+  "replace": "if (false) {",
+  "suite": "sandbox",
+  "expect": "restart: two triggers of one event"
  }
 ]

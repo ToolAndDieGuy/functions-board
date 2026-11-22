@@ -692,6 +692,50 @@ const st = (sb, id) => (sb.get(id) || {}).state;
     check('0.11.3 ... a template that reads sun.sun makes it follow sunrise', st(sb, 'sun.sun') === 'above_horizon');
   }
 
+  // ---- 0.11.3 a run that awaits goes on only after the work in hand (found by the differential test's random homes,
+  // seeds 101 and 404; the corpus has each in Home Assistant's core too)
+  {
+    const inc = { action: 'counter.increment', target: { entity_id: 'counter.c' } };
+    const tog = (id) => ({ action: 'input_boolean.toggle', target: { entity_id: id } });
+    const runs = (sb, id) => sb.log.filter((e) => e.kind === 'run' && e.key === id && e.outcome === 'finished').length;
+    // woken from its delay at the moment its own for: trigger comes due: still running, so single mode drops that start
+    let sb = make({ 'binary_sensor.a': S('off'), 'sensor.t': S('15'), 'counter.c': S('0') }, { 'automation.a': {
+      triggers: [{ trigger: 'state', entity_id: 'binary_sensor.a', to: 'on' }, { trigger: 'numeric_state', entity_id: 'sensor.t', above: 30, for: { seconds: 20 } }],
+      actions: [{ delay: { seconds: 20 } }, inc] } });
+    await sb.start();
+    await sb.userSet('binary_sensor.a', 'on');
+    await sb.userSet('sensor.t', '35');
+    await sb.advance(60000);
+    check('0.11.3 a run woken from its delay is still running when its for: trigger comes due at the same moment: one run, not two', st(sb, 'counter.c') === '1' && runs(sb, 'automation.a') === 1
+      && sb.log.some((e) => e.kind === 'note' && e.key === 'automation.a' && /already running/i.test(e.text)), sb.log.filter((e) => e.key === 'automation.a').map((e) => [e.kind, e.text || e.outcome]));
+    // a timer callback due at the moment a delay ends sees the world before the woken run goes on
+    sb = make({ 'binary_sensor.a': S('on'), 'input_boolean.y': S('off'), 'input_boolean.z': S('off') }, {
+      'automation.c': { triggers: [{ trigger: 'state', entity_id: 'binary_sensor.a', to: 'off' }], actions: [{ delay: { seconds: 20 } }, { action: 'input_boolean.turn_on', target: { entity_id: 'input_boolean.y' } }] },
+      'automation.d': { triggers: [{ trigger: 'state', entity_id: 'binary_sensor.a', to: 'off', for: { seconds: 20 } }], conditions: [{ condition: 'state', entity_id: 'input_boolean.y', state: 'off' }], actions: [{ action: 'input_boolean.turn_on', target: { entity_id: 'input_boolean.z' } }] } });
+    await sb.start();
+    await sb.userSet('binary_sensor.a', 'off');
+    await sb.advance(30000);
+    check('0.11.3 ... a for: due at the moment another run\'s delay ends is looked at before that run goes on', st(sb, 'input_boolean.z') === 'on' && st(sb, 'input_boolean.y') === 'on', [st(sb, 'input_boolean.y'), st(sb, 'input_boolean.z')]);
+    // published: still running while the rest of the change is handed out (a group following the same change)
+    sb = make({ 'binary_sensor.a': S('off'), 'binary_sensor.any': S('off'), 'input_boolean.x': S('off') }, { 'automation.a': {
+      triggers: [{ trigger: 'state', entity_id: 'binary_sensor.a', to: 'on' }, { trigger: 'state', entity_id: 'binary_sensor.any', to: 'on' }],
+      actions: [tog('input_boolean.x'), { action: 'mqtt.publish', data: { topic: 'h/other', payload: 'ON' } }] } },
+    { o: { derived: { 'binary_sensor.any': { rule: { kind: 'group', entities: ['binary_sensor.a'], all: false }, reads: ['binary_sensor.a'] } } } });
+    await sb.start();
+    await sb.userSet('binary_sensor.a', 'on');
+    check('0.11.3 a run that published is still running when a group following the same change starts it: one toggle', st(sb, 'binary_sensor.any') === 'on' && st(sb, 'input_boolean.x') === 'on' && runs(sb, 'automation.a') === 1,
+      sb.log.map((e) => [e.kind, e.key, e.text || e.outcome || e.to]));
+    // restarted: it starts after the change is handed out, and a second trigger of the same event cancels it first
+    sb = make({ 'binary_sensor.b': S('off'), 'input_boolean.x': S('off'), 'counter.c': S('0') }, { 'automation.a': { mode: 'restart',
+      triggers: [{ trigger: 'event', event_type: 'fb_go', event_data: { kind: 'press' } }, { trigger: 'event', event_type: 'fb_go' }],
+      actions: [tog('input_boolean.x'), inc, { wait_for_trigger: [{ trigger: 'state', entity_id: 'binary_sensor.b', to: 'on' }], timeout: { seconds: 30 } }] } });
+    await sb.start();
+    await sb.userEvent('fb_go', { kind: 'hold' });
+    await sb.userEvent('fb_go', { kind: 'press' });
+    check('0.11.3 restart: two triggers of one event while a run waits make one new run, the first restart cancelled before it did anything', st(sb, 'counter.c') === '2' && st(sb, 'input_boolean.x') === 'off',
+      sb.log.filter((e) => e.key === 'automation.a').map((e) => [e.kind, e.text || e.outcome]));
+  }
+
   // ---- 0.11.2 Home Assistant's order and what it refuses (each found by the differential test, tests/diff)
   {
     const sw = (id, to) => ({ trigger: 'state', entity_id: id, to });

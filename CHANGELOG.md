@@ -9,6 +9,17 @@ availability topics, JSON attributes, `off_delay` and `expire_after`. Home Assis
 triggers hear a message before the entities on that topic change), and so are its quirks: a sensor that expects a
 number and gets text keeps its state until a number comes.
 
+In the sandbox, an automation in single mode is no longer started twice where Home Assistant starts it once. A run
+that waits for something goes on only after what's in hand is done, as in Home Assistant. There are three such
+waits: the end of a delay, an `mqtt.publish` waiting for the broker's answer, and a restart waiting for the old run
+to stop. Before, the sandbox let such a run finish at once, so it could start again when:
+- its own `for:` trigger came due the second its delay ended;
+- a group or min/max helper following the same change started it again after it published;
+- two triggers of one event both restarted it (it toggled twice).
+
+Home Assistant drops the second start in the first two cases and runs only once in the third, and now so does the
+sandbox.
+
 In the sandbox, the sun moves at sunrise and sunset only when something in the function reads it (an automation, a
 script or a helper). Before, it moved every day whatever the function was, so a run of a few days filled the timeline
 with sun changes nothing heard. The explorer also ran each of its tries on until nothing was due, and the sun is always
