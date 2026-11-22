@@ -1,0 +1,280 @@
+{
+ "//": "Published retained by tests/home/mqtt.mjs before anyone connects: the test home's MQTT devices (discovery) and the first state of every state topic. Invented devices only.",
+ "retained": [
+  {
+   "topic": "homeassistant/sensor/fbtest_workshop/temperature/config",
+   "payload": {
+    "name": "Temperature",
+    "unique_id": "fbtest_workshop_temperature",
+    "state_topic": "fbtest/workshop/climate",
+    "value_template": "{{ value_json.temperature }}",
+    "unit_of_measurement": "°F",
+    "device_class": "temperature",
+    "state_class": "measurement",
+    "device": {
+     "identifiers": [
+      "fbtest_workshop_climate"
+     ],
+     "name": "Workshop climate",
+     "manufacturer": "Test Home",
+     "model": "FB-TH1",
+     "suggested_area": "Workshop"
+    }
+   }
+  },
+  {
+   "topic": "homeassistant/sensor/fbtest_workshop/humidity/config",
+   "payload": {
+    "name": "Humidity",
+    "unique_id": "fbtest_workshop_humidity",
+    "state_topic": "fbtest/workshop/climate",
+    "value_template": "{{ value_json.humidity }}",
+    "unit_of_measurement": "%",
+    "device_class": "humidity",
+    "state_class": "measurement",
+    "device": {
+     "identifiers": [
+      "fbtest_workshop_climate"
+     ],
+     "name": "Workshop climate",
+     "manufacturer": "Test Home",
+     "model": "FB-TH1",
+     "suggested_area": "Workshop"
+    }
+   }
+  },
+  {
+   "topic": "homeassistant/binary_sensor/fbtest_workshop/occupancy/config",
+   "payload": {
+    "name": "Occupancy",
+    "unique_id": "fbtest_workshop_occupancy",
+    "state_topic": "fbtest/workshop/climate",
+    "value_template": "{{ 'ON' if value_json.occupancy else 'OFF' }}",
+    "device_class": "occupancy",
+    "device": {
+     "identifiers": [
+      "fbtest_workshop_climate"
+     ],
+     "name": "Workshop climate",
+     "manufacturer": "Test Home",
+     "model": "FB-TH1",
+     "suggested_area": "Workshop"
+    }
+   }
+  },
+  {
+   "topic": "homeassistant/device_automation/fbtest_hall_remote/action_on_single/config",
+   "payload": {
+    "automation_type": "trigger",
+    "type": "button_short_press",
+    "subtype": "on",
+    "topic": "fbtest/hall_remote/action",
+    "payload": "on_single",
+    "device": {
+     "identifiers": [
+      "fbtest_hall_remote"
+     ],
+     "name": "Hall remote",
+     "manufacturer": "Test Home",
+     "model": "FB-R4",
+     "suggested_area": "Hall"
+    }
+   }
+  },
+  {
+   "topic": "homeassistant/device_automation/fbtest_hall_remote/action_on_hold/config",
+   "payload": {
+    "automation_type": "trigger",
+    "type": "button_long_press",
+    "subtype": "on",
+    "topic": "fbtest/hall_remote/action",
+    "payload": "on_hold",
+    "device": {
+     "identifiers": [
+      "fbtest_hall_remote"
+     ],
+     "name": "Hall remote",
+     "manufacturer": "Test Home",
+     "model": "FB-R4",
+     "suggested_area": "Hall"
+    }
+   }
+  },
+  {
+   "topic": "homeassistant/device_automation/fbtest_hall_remote/action_off_single/config",
+   "payload": {
+    "automation_type": "trigger",
+    "type": "button_short_press",
+    "subtype": "off",
+    "topic": "fbtest/hall_remote/action",
+    "payload": "off_single",
+    "device": {
+     "identifiers": [
+      "fbtest_hall_remote"
+     ],
+     "name": "Hall remote",
+     "manufacturer": "Test Home",
+     "model": "FB-R4",
+     "suggested_area": "Hall"
+    }
+   }
+  },
+  {
+   "topic": "homeassistant/device_automation/fbtest_hall_remote/action_off_hold/config",
+   "payload": {
+    "automation_type": "trigger",
+    "type": "button_long_press",
+    "subtype": "off",
+    "topic": "fbtest/hall_remote/action",
+    "payload": "off_hold",
+    "device": {
+     "identifiers": [
+      "fbtest_hall_remote"
+     ],
+     "name": "Hall remote",
+     "manufacturer": "Test Home",
+     "model": "FB-R4",
+     "suggested_area": "Hall"
+    }
+   }
+  },
+  {
+   "topic": "homeassistant/event/fbtest_hall_remote/action/config",
+   "payload": {
+    "name": "Action",
+    "unique_id": "fbtest_hall_remote_action",
+    "state_topic": "fbtest/hall_remote/action",
+    "value_template": "{\"event_type\": \"{{ value }}\"}",
+    "event_types": [
+     "on_single",
+     "on_hold",
+     "off_single",
+     "off_hold"
+    ],
+    "device": {
+     "identifiers": [
+      "fbtest_hall_remote"
+     ],
+     "name": "Hall remote",
+     "manufacturer": "Test Home",
+     "model": "FB-R4",
+     "suggested_area": "Hall"
+    }
+   }
+  },
+  {
+   "topic": "homeassistant/sensor/fbtest_hall_remote/battery/config",
+   "payload": {
+    "name": "Battery",
+    "unique_id": "fbtest_hall_remote_battery",
+    "state_topic": "fbtest/hall_remote/state",
+    "value_template": "{{ value_json.battery }}",
+    "unit_of_measurement": "%",
+    "device_class": "battery",
+    "entity_category": "diagnostic",
+    "device": {
+     "identifiers": [
+      "fbtest_hall_remote"
+     ],
+     "name": "Hall remote",
+     "manufacturer": "Test Home",
+     "model": "FB-R4",
+     "suggested_area": "Hall"
+    }
+   }
+  },
+  {
+   "topic": "homeassistant/switch/fbtest_pond_pump/pump/config",
+   "payload": {
+    "name": "Pump",
+    "unique_id": "fbtest_pond_pump",
+    "command_topic": "fbtest/pond_pump/set",
+    "state_topic": "fbtest/pond_pump/state",
+    "payload_on": "ON",
+    "payload_off": "OFF",
+    "device": {
+     "identifiers": [
+      "fbtest_pond_pump"
+     ],
+     "name": "Pond pump",
+     "manufacturer": "Test Home",
+     "model": "FB-P1",
+     "suggested_area": "Garden"
+    }
+   }
+  },
+  {
+   "topic": "homeassistant/sensor/fbtest_pond_pump/power/config",
+   "payload": {
+    "name": "Power",
+    "unique_id": "fbtest_pond_pump_power",
+    "state_topic": "fbtest/pond_pump/power",
+    "value_template": "{{ value | float(0) | round(1) }}",
+    "unit_of_measurement": "W",
+    "device_class": "power",
+    "state_class": "measurement",
+    "device": {
+     "identifiers": [
+      "fbtest_pond_pump"
+     ],
+     "name": "Pond pump",
+     "manufacturer": "Test Home",
+     "model": "FB-P1",
+     "suggested_area": "Garden"
+    }
+   }
+  },
+  {
+   "topic": "fbtest/workshop/climate",
+   "payload": {
+    "temperature": 64.2,
+    "humidity": 41,
+    "occupancy": false
+   }
+  },
+  {
+   "topic": "fbtest/hall_remote/state",
+   "payload": {
+    "battery": 87
+   }
+  },
+  {
+   "topic": "fbtest/pond_pump/state",
+   "payload": "OFF"
+  },
+  {
+   "topic": "fbtest/pond_pump/power",
+   "payload": "0"
+  },
+  {
+   "topic": "fbtest/rain/total",
+   "payload": "12.34"
+  },
+  {
+   "topic": "fbtest/mailbox",
+   "payload": "closed"
+  },
+  {
+   "topic": "fbtest/porch/state",
+   "payload": {
+    "state": "OFF"
+   }
+  },
+  {
+   "topic": "fbtest/shed/lock",
+   "payload": "LOCKED"
+  },
+  {
+   "topic": "fbtest/sprinkler/program",
+   "payload": "Off"
+  },
+  {
+   "topic": "fbtest/coop/door",
+   "payload": "closed"
+  },
+  {
+   "topic": "fbtest/feeder/portion",
+   "payload": "2"
+  }
+ ]
+}

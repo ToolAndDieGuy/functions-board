@@ -183,7 +183,7 @@ const WS_OK = new Set(('automation/config blueprint/substitute config/area_regis
   + 'frontend/set_user_data functions_board/diagnostics functions_board/get functions_board/nodered functions_board/nodered_keep '
   + 'functions_board/set functions_board/set_functions functions_board/set_layout functions_board/sources functions_board/subscribe '
   + 'functions_board/version_delete functions_board/version_edit functions_board/version_get functions_board/version_save '
-  + 'functions_board/versions logbook/event_stream logbook/get_action_calls manifest/list mqtt/subscribe render_template '
+  + 'functions_board/versions history/history_during_period logbook/event_stream logbook/get_action_calls manifest/list mqtt/subscribe render_template '
   + 'subscribe_events subscribe_trigger supervisor/api test_condition trace/get trace/list validate_config').split(' '));
 // Home Assistant's websocket commands without a slash, so a new one is noticed even though it looks like a word
 const WS_PLAIN = /^(render_template|subscribe_trigger|fire_event|call_service|test_condition|validate_config|extract_from_target|execute_script|subscribe_events|get_states|get_config|get_services|get_panels|subscribe_entities|ping)$/;
@@ -202,7 +202,9 @@ check('A4 events are fired only by the person\'s test steps', fires.length === 1
 const sup = [...code.matchAll(/type: 'supervisor\/api'[^\n]{0,120}/g)].map((m) => m[0]);
 check('A4 the Supervisor is only asked (method get), never told', sup.length > 0 && sup.every((x) => /method: 'get'/.test(x)), sup);
 const pubs = code.match(/[^\n]{0,40}'mqtt\.publish'[^\n]{0,20}/g) || [];
-check('A4 MQTT: the board listens; a message is published only by the person\'s own MQTT test step (the sandbox only simulates one)', !/mqtt\/publish|(callService|_svc)\(\s*'mqtt'/.test(code) && pubs.length === 2 && pubs.some((p) => /if \(svc === 'mqtt\.publish'\) \{ await this\.mqtt\(/.test(p)) && pubs.some((p) => /case 'mqtt': return call\('mqtt\.publish'/.test(p)), pubs);
+// 0.11.3: a third mention, the wiring reading a publish's topic from a config (analyze()) to draw the arrow to it
+check('A4 MQTT: the board listens; a message is published only by the person\'s own MQTT test step (the sandbox only simulates one, and the wiring only reads one)', !/mqtt\/publish|(callService|_svc)\(\s*'mqtt'/.test(code) && pubs.length === 3 && pubs.some((p) => /if \(svc === 'mqtt\.publish'\) \{ await this\.mqtt\(/.test(p)) && pubs.some((p) => /case 'mqtt': return call\('mqtt\.publish'/.test(p))
+  && pubs.some((p) => /^ *if \(svc === 'mqtt\.publish' && typeof data\.topi$/.test(p)), pubs);
 
 
 // 0.10.0: every wait the board sets goes through its clock (class Clock), so a board taken off the page stops them
@@ -332,6 +334,10 @@ check('A4 MQTT: the board listens; a message is published only by the person\'s 
   const quick = ((runsh.match(/^for s in ([\w ]+); do want "\$s" && nodetest/m) || [])[1] || '').split(/\s+/).filter(Boolean);
   const qpat = (wf.match(/run: sh tests\/run\.sh --only '(selftest\|static[^']*)'/) || [])[1];
   check('every quick node suite runs in CI', quick.length >= 5 && !!qpat && quick.every((q) => new RegExp('^(' + qpat + ')$').test(q)), { quick, qpat });
+  // 0.11.2: and the Python suites (the units and the sandbox against Home Assistant's core) in the backend job's
+  const py = ['backend', 'diff'].filter((x) => new RegExp('^if want ' + x + '; then', 'm').test(runsh));
+  const ppat = (wf.match(/run: sh tests\/run\.sh --only '(selftest\|backend[^']*)'/) || [])[1];
+  check('the Python suites (backend, diff) run in CI', py.length === 2 && !!ppat && py.every((q) => new RegExp('^(' + ppat + ')$').test(q)), { py, ppat });
   // and a browser test file's suite is named after it (board-<x> in tests/board, <x> in tests/e2e): a fixture finds a
   // test's own suite by its file (suiteOf in tests/e2e/lib.js), since one worker runs tests from several files
   const named = [['board', 'board-'], ['e2e', '']].flatMap(([dir, pre]) => fs.readdirSync(path.join(root, 'tests', dir)).filter((f) => f.endsWith('.test.js')).map((f) => {

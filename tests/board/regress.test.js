@@ -1313,4 +1313,430 @@ test('0.11.1 a trigger that starts both ways: a problem, said in the sandbox wit
   check('0.11.1 both ways and ignoring: no errors', page.logs.length === 0, page.logs);
 });
 
+test('0.11.1 the sandbox: what the automations read, with values either side of a threshold, attributes, presses, the other triggers, script fields and the clock', async ({ browser, fake }) => {
+  const { page } = await imported(browser);
+  const garage = await openFn(page, /garage/i);
+  const ent = (id, extra) => Object.assign({ entity_id: id, id: 'fbid' + id.replace(/\W/g, ''), platform: 'demo', unique_id: 'u' + id, labels: [], categories: {}, area_id: null, device_id: null, config_entry_id: null, disabled_by: null, hidden_by: null, name: null, original_name: id, icon: null, has_entity_name: false, entity_category: null, options: {} }, extra || {});
+  fake.entities.set('sensor.fb_co2', ent('sensor.fb_co2'));
+  await fake.setState('sensor.fb_co2', '760', { friendly_name: 'Garage CO2', device_class: 'carbon_dioxide', unit_of_measurement: 'ppm' });
+  const zha = { trigger: 'device', device_id: 'fbzha1', domain: 'zha', type: 'remote_button_short_press', subtype: 'turn_on' };
+  const autos = {
+    'automation.fb_co2_high': { alias: 'Garage: CO2 high', triggers: [{ trigger: 'air_quality.co2_crossed_threshold', target: { entity_id: 'sensor.fb_co2' }, options: { behavior: 'each', threshold: { type: 'above', value: { active_choice: 'number', number: 1100 } } } }], actions: [] },
+    'automation.fb_dim': { alias: 'Garage: light dimmed', triggers: [{ trigger: 'light.brightness_crossed_threshold', target: { entity_id: 'light.garage_light' }, options: { threshold: { type: 'below', value: { number: 50 } } } }], actions: [] },
+    'automation.fb_remote': { alias: 'Garage: remote button', triggers: [zha], actions: [] },
+    'automation.fb_boot': { alias: 'Garage: after a restart', triggers: [{ trigger: 'homeassistant', event: 'start' }, { trigger: 'webhook', webhook_id: 'fb-garage', allowed_methods: ['POST'] }, { trigger: 'tag', tag_id: 'fb-tag' }, { trigger: 'conversation', command: ['open the garage [door]'] }], actions: [] },
+  };
+  for (const [id, cfg] of Object.entries(autos)) { await addAuto(page, fake, id, Object.assign({ conditions: [] }, cfg)); await ws(page, { type: 'config/entity_registry/update', entity_id: id, labels: [garage] }); }
+  if (!fake.states.has('light.garage_light')) { fake.entities.set('light.garage_light', ent('light.garage_light')); await fake.setState('light.garage_light', 'on', { friendly_name: 'Garage light', brightness: 180 }); }
+  await fake.setState('light.garage_light', 'on', Object.assign({}, (fake.states.get('light.garage_light') || {}).attributes, { brightness: 180 }));
+  fake.scripts.fb_open_to = { alias: 'Open the garage to', fields: { height: { example: 50, selector: { number: {} } } }, sequence: [{ action: 'cover.set_cover_position', target: { entity_id: 'cover.garage_door' }, data: { position: '{{ height }}' } }] };
+  fake.entities.set('script.fb_open_to', ent('script.fb_open_to', { platform: 'script', unique_id: 'fb_open_to' }));
+  await fake.setState('script.fb_open_to', 'off', { friendly_name: 'Open the garage to' });
+  await ws(page, { type: 'config/entity_registry/update', entity_id: 'script.fb_open_to', labels: [garage] });
+  await el(page, (b) => b._store.changed('reg'));
+  await until(() => el(page, (b, l) => { if (b._model && b._model.nodes.has('automation.fb_boot') && b._model.nodes.has('automation.fb_co2_high') && b._model.nodes.has('script.fb_open_to')) return true; b._open(l, true); return null; }, garage), 15000, 700);
+  await fbq(page, '.tools [data-act="sandbox"]').click();
+  await fbq(page, '.modal [data-act="sbx-start"]').click({ timeout: 3000 }).catch(() => {});
+  await fbq(page, '.drawer .sbctl .sbent').waitFor({ timeout: 10000 });
+  const D = (fn, arg) => el(page, fn, arg);
+  // Set: grouped, the CO2 sensor among what the automations read, with 1101 picked
+  const co2 = await D((b) => {
+    const r = b._$.drawer, sel = r.querySelector('.sbent');
+    sel.value = 'sensor.fb_co2'; sel.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+    const v = r.querySelector('.sbval-sel');
+    const at = r.querySelector('.sbattr');
+    return { group: sel.querySelector('option[value="sensor.fb_co2"]').parentNode.label, picked: v.value, opts: [...v.options].map((o) => o.textContent), attr: at.hidden, attrs: [...at.options].map((o) => o.value), groups: at.querySelectorAll('optgroup').length };
+  });
+  check('0.11.1 Set: the CO2 sensor is under "Read by the automations"', co2.group === 'Read by the automations', co2);
+  check('0.11.1 ... its values say why: 1101 above 1100 (picked) and 1100 at it', co2.picked === '1101' && co2.opts.includes('1101 · above 1100: Garage: CO2 high') && co2.opts.includes('1100 · at 1100, not past it: Garage: CO2 high'), co2);
+  check('0.11.2 ... its attribute choice has its other attributes (none of them read, so no groups)', co2.attr === false && co2.groups === 0 && co2.attrs.join() === ',device_class,unit_of_measurement', co2);
+  const fired = (k) => D((b, x) => b._sbx.eng.log.filter((e) => e.kind === 'trigger' && e.key === x).length, k);
+  const settle = () => until(() => D((b) => (b._sbx && !b._sbx.busy) || null), 10000);
+  await fbq(page, '.drawer [data-act="sbx-set"]').click(); await settle();
+  check('0.11.1 Set 1101: the CO2 trigger fires', (await fired('automation.fb_co2_high')) === 1);
+  // an attribute: brightness
+  const br = await D((b) => {
+    const r = b._$.drawer, sel = r.querySelector('.sbent');
+    sel.value = 'light.garage_light'; sel.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+    const at = r.querySelector('.sbattr'), opts = [...at.options].map((o) => o.value);
+    at.value = 'brightness'; at.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+    return { hidden: at.hidden, opts, vals: [...r.querySelector('.sbval-sel').options].map((o) => o.value), picked: r.querySelector('.sbval-sel').value };
+  });
+  check('0.11.1 an attribute a trigger reads (brightness) can be picked beside the state', !br.hidden && br.opts.join() === ',brightness', br);
+  check('0.11.1 ... with 49 (below 50) picked', br.picked === '49' && br.vals.includes('50'), br);
+  await fbq(page, '.drawer [data-act="sbx-set"]').click(); await settle();
+  check('0.11.1 Set brightness 49: the light keeps its state, the attribute changes, the trigger fires', (await D((b) => [b._sbx.eng.get('light.garage_light').state, b._sbx.eng.get('light.garage_light').attributes.brightness])).join() === 'on,49' && (await fired('automation.fb_dim')) === 1);
+  // a ZHA button, Home Assistant starting, a webhook, a tag, a sentence
+  const rows = await D((b) => [...b._$.drawer.querySelectorAll('.sbctl .sbl')].map((x) => x.textContent));
+  check('0.11.1 rows for a device\'s button, the webhook, the tag, Assist and HA, as the function has them', ['Press', 'Webhook', 'Tag', 'Assist', 'HA'].every((x) => rows.includes(x)) && !rows.includes('Calendar'), rows);
+  const press = await D((b) => [...b._$.drawer.querySelector('.sbpress').options].map((o) => o.textContent));
+  check('0.11.1 the button is named by its type and subtype', press.length === 1 && /remote button short press · turn on/.test(press[0]), press);
+  await fbq(page, '.drawer [data-act="sbx-press"]').click(); await settle();
+  await fbq(page, '.drawer [data-act="sbx-ha"]').click(); await settle();
+  await fbq(page, '.drawer [data-act="sbx-hook"]').click(); await settle();
+  await fbq(page, '.drawer [data-act="sbx-tag"]').click(); await settle();
+  check('0.11.1 pressing it, HA starting, the webhook and the tag each fire theirs', (await fired('automation.fb_remote')) === 1 && (await fired('automation.fb_boot')) === 3);
+  await fbq(page, '.drawer .sbsay-sel').selectOption({ index: 0 }); await fbq(page, '.drawer [data-act="sbx-say"]').click(); await settle();
+  check('0.11.1 ... and saying its sentence fires the conversation trigger', (await fired('automation.fb_boot')) === 4);
+  // a script's fields
+  const vars = await D((b) => { const r = b._$.drawer, run = r.querySelector('.sbrun'); run.value = 'script.fb_open_to'; run.dispatchEvent(new Event('change', { bubbles: true, composed: true })); return { hidden: r.querySelector('.sbvarsw').hidden, v: r.querySelector('.sbvars-sel').value }; });
+  check('0.11.1 Run a script with fields: its examples to start from', !vars.hidden && vars.v === '{"height":50}', vars);
+  // the clock: the day and time, Advance by (1 min picked), what's due as buttons, Jump to
+  const t0 = await D((b) => ({ now: b._sbx.eng.now, head: b._$.drawer.querySelector('.sbclock').textContent, adv: b._$.drawer.querySelector('.sbadv-sel').value, jump: [...b._$.drawer.querySelector('.sbjump-sel').options].map((o) => o.textContent) }));
+  check('0.11.1 the clock shows the day, the date and the time to the second', /\d{2}:\d{2}:\d{2}$/.test(t0.head) && /,/.test(t0.head), t0.head);
+  check('0.11.1 Advance by: 1 min picked; Jump to: midnight among the times', t0.adv === '60000' && t0.jump.some((x) => /Midnight/.test(x)), t0);
+  await fbq(page, '.drawer [data-act="sbx-advby"]').click(); await settle();
+  check('0.11.1 Advance runs the clock 1 minute', (await D((b) => b._sbx.eng.now)) - t0.now === 60000);
+  const mid = await D((b) => { const s = b._$.drawer.querySelector('.sbjump-sel'), o = [...s.options].find((x) => /Midnight/.test(x.textContent)); s.value = o.value; s.dispatchEvent(new Event('change', { bubbles: true, composed: true })); return +o.value; });
+  await fbq(page, '.drawer [data-act="sbx-jump"]').click(); await settle();
+  check('0.11.1 Jump to midnight', (await D((b) => b._sbx.eng.now)) === mid);
+  await D((b) => { const s = b._$.drawer.querySelector('.sbjump-sel'); s.value = '\u0001other'; s.dispatchEvent(new Event('change', { bubbles: true, composed: true })); b._$.drawer.querySelector('input.sbjump').value = '+90 min'; });
+  const before = await D((b) => b._sbx.eng.now);
+  await fbq(page, '.drawer [data-act="sbx-jump"]').click(); await settle();
+  check('0.11.1 Jump to, typed: +90 min', (await D((b) => b._sbx.eng.now)) - before === 90 * 60000);
+  check('0.11.1 the new sandbox controls: no errors', page.logs.length === 0, page.logs);
+});
+
+test('0.11.2 the sandbox: summaries, variables, undo and again, states, step-through, breakpoints, how a device answers, what if, the clock at speed, the explorer and coverage', async ({ browser, fake }) => {
+  const { page } = await imported(browser);
+  await openFn(page, /garage/i);
+  await fbq(page, '.tools [data-act="sandbox"]').click();
+  await fbq(page, '.modal [data-act="sbx-start"]').click({ timeout: 3000 }).catch(() => {});
+  await fbq(page, '.drawer .sbctl .sbent').waitFor({ timeout: 10000 });
+  const D = (fn, arg) => el(page, fn, arg);
+  const settle = () => until(() => D((b) => (b._sbx && !b._sbx.busy) || null), 10000);
+  const open = async () => { await D((b) => { const s = b._$.drawer.querySelector('.sbent'); s.value = 'cover.garage_door'; s.dispatchEvent(new Event('change', { bubbles: true, composed: true })); const v = b._$.drawer.querySelector('.sbval-sel'); v.value = 'open'; v.dispatchEvent(new Event('change', { bubbles: true, composed: true })); }); await fbq(page, '.drawer [data-act="sbx-set"]').click(); await settle(); };
+  await open();
+  // a sentence of what came of it, before its rows
+  const sum = await D((b) => { const x = b._$.drawer.querySelector('.sbtl .sbsum'); return x ? x.textContent : null; });
+  check('0.11.2 each thing you do starts with a sentence of what came of it', /Started 2 automations: Garage: start open timer/.test(sum || '') && /changed Garage open timer → active/.test(sum || '') && /next: .*at/.test(sum || ''), sum);
+  // variables at a row
+  const vars = await D((b) => { const row = [...b._$.drawer.querySelectorAll('.sbtl .dbrow.k-call')][0]; row.click(); const p = b._$.drawer.querySelector('.sbvp'); return { hidden: p.hidden, text: p.textContent }; });
+  check('0.11.2 picking a row shows its variables: the trigger that started the run', !vars.hidden && /"to_state"/.test(vars.text) && /"open"/.test(vars.text), vars);
+  // Again, and Undo
+  const again = await D((b) => [...b._$.drawer.querySelectorAll('.sbrec [data-act="sbx-again"]')].map((x) => x.textContent));
+  check('0.11.2 Again lists what you did', again.length === 1 && /Garage Door/.test(again[0]), again);
+  await fbq(page, '.drawer [data-act="sbx-undo"]').click(); await settle();
+  const undone = await D((b) => ({ st: b._sbx.eng.get('cover.garage_door').state, steps: b._sbx.rec.steps.length, rows: b._sbx.eng.log.length }));
+  check('0.11.2 Undo: back to the start, the door as it was, no steps kept', undone.st !== 'open' && undone.steps === 0, undone);
+  await open();
+  await fbq(page, '.drawer [data-act="sbx-again"]').click(); await settle();
+  check('0.11.2 Again with nothing to change says so (the door is already open)', (await D((b) => b._sbx.eng.log.some((e) => e.kind === 'note' && /already/.test(e.text)))));
+  // the flow bar: back to before this
+  await D((b) => b._sbxRewind(0)); await settle();
+  await open();
+  check('0.11.2 the flow bar offers Back to before this', await D((b) => !!b._$.litbar.querySelector('[data-act="flow-undo"]')));
+  await D((b) => b._$.litbar.querySelector('[data-act="flow-undo"]').click()); await settle();
+  check('0.11.2 ... which undoes it', (await D((b) => b._sbx.rec.steps.length)) === 0);
+  // the states tab
+  await open();
+  await fbq(page, '.drawer .sbtabs [data-tab="st"]').click();
+  const sts = await D((b) => { const r = b._$.drawer.querySelector('.sbst'); const rows = [...r.querySelectorAll('.sbsr')]; return { hidden: r.hidden, changed: rows.filter((x) => x.classList.contains('ch')).map((x) => x.dataset.key), first: rows.slice(0, rows.filter((x) => x.classList.contains('ch')).length).every((x) => x.classList.contains('ch')), all: rows.length }; });
+  check('0.11.2 States: every entity, the ones changed in the sandbox marked and first', !sts.hidden && sts.first && sts.changed.includes('cover.garage_door') && sts.changed.includes('timer.garage_open') && sts.all > sts.changed.length, sts);
+  await D((b) => { const x = b._$.drawer.querySelector('.sbst [data-act="sbx-st-reset"][data-k="cover.garage_door"]'); x.click(); }); await settle();
+  check('0.11.2 Put back: the door as it is in your home', await D((b) => b._sbx.eng.get('cover.garage_door').state === b._sbx.eng.real['cover.garage_door'].state));
+  await fbq(page, '.drawer .sbtabs [data-tab="tl"]').click();
+  // step-through
+  await D((b) => b._sbxRewind(0)); await settle();
+  await D((b) => { const c = b._$.drawer.querySelector('.sbstep'); c.checked = true; c.dispatchEvent(new Event('change', { bubbles: true, composed: true })); });
+  await open();
+  const p1 = await D((b) => ({ n: b._sbx.eng.paused.size, q: b._$.drawer.querySelector('.sbask .sbpause') ? b._$.drawer.querySelector('.sbask .sbpause').textContent : null, timer: b._sbx.eng.get('timer.garage_open').state }));
+  check('0.11.2 Step through: both runs pause before their action, each shown with Step and Continue', p1.n === 2 && /Paused before: timer.start/.test(p1.q || '') && p1.timer !== 'active', p1);
+  await fbq(page, '.drawer .sbpause [data-act="sbx-stepone"]').first().click();
+  await until(() => D((b) => (b._sbx.eng.get('timer.garage_open').state === 'active' && b._sbx.eng.paused.size === 1) || null), 5000);
+  check('0.11.2 Step: one goes on (the timer starts), the other still waits', true);
+  await fbq(page, '.drawer [data-act="sbx-continue"]').first().click(); await settle();
+  check('0.11.2 Continue: none waits', (await D((b) => b._sbx.eng.paused.size)) === 0);
+  await D((b) => { const c = b._$.drawer.querySelector('.sbstep'); c.checked = false; c.dispatchEvent(new Event('change', { bubbles: true, composed: true })); });
+  // a breakpoint on one automation, from its box
+  await D((b) => b._sbxRewind(0)); await settle();
+  await D((b) => { b._sel = 'automation.garage_start_open_timer'; b._renderNodebar(); });
+  await D((b) => b._$.nodebar.querySelector('[data-act="sbx-break"]').click());
+  await open();
+  check('0.11.2 Pause here on a box: that automation pauses', (await D((b) => [b._sbx.eng.paused.size, b._sbx.eng.breaks.has('automation.garage_start_open_timer')])).join() === '1,true');
+  await fbq(page, '.drawer [data-act="sbx-continue"]').click(); await settle();
+  await D((b) => { b._sbx.eng.breaks.clear(); });
+  // how a device answers
+  await D((b) => b._sbxRewind(0)); await settle();
+  await D((b) => { const r = b._$.drawer; r.querySelector('.sbdev').value = 'cover.garage_door'; r.querySelector('.sbhow').value = 'slow'; });
+  await fbq(page, '.drawer [data-act="sbx-behave"]').click();
+  await D((b) => b._sbxStep({ op: 'run', id: 'script.close_garage', conds: true, ti: null })); await settle();
+  const slow = await D((b) => ({ st: b._sbx.eng.get('cover.garage_door').state, due: b._sbx.eng.pending().map((x) => x.label), rec: b._sbx.rec.steps.map((x) => x.op) }));
+  check('0.11.2 a door set to answer slowly is closing first, its end due, and the set-up kept as a step', /clos/.test(slow.st) && slow.due.some((x) => /Garage Door answers/.test(x)) && slow.rec[0] === 'behave', slow);
+  // what if
+  await D((b) => b._sbxRewind(0)); await settle();
+  await D((b) => { const s = b._$.drawer.querySelector('.sbwhat'); s.value = 'cut'; });
+  await fbq(page, '.drawer [data-act="sbx-whatif"]').click(); await settle();
+  const cut = await D((b) => ({ door: b._sbx.eng.get('cover.garage_door').state, back: [...b._$.drawer.querySelector('.sbwhat').options].some((o) => o.value === 'back') }));
+  check('0.11.2 What if a power cut: what the automations read goes unavailable, and The power comes back is offered', cut.door === 'unavailable' && cut.back, cut);
+  await D((b) => { const s = b._$.drawer.querySelector('.sbwhat'); s.value = 'back'; });
+  await fbq(page, '.drawer [data-act="sbx-whatif"]').click(); await settle();
+  check('0.11.2 ... and back', await D((b) => b._sbx.eng.get('cover.garage_door').state !== 'unavailable'));
+  // the clock at speed
+  const t0 = await D((b) => b._sbx.eng.now);
+  await D((b) => { const s = b._$.drawer.querySelector('.sbspeed'); s.value = '60'; s.dispatchEvent(new Event('change', { bubbles: true, composed: true })); });
+  await page.waitForTimeout(2300);
+  await D((b) => { const s = b._$.drawer.querySelector('.sbspeed'); s.value = '0'; s.dispatchEvent(new Event('change', { bubbles: true, composed: true })); });
+  await settle();
+  const ran = (await D((b) => b._sbx.eng.now)) - t0;
+  check('0.11.2 the clock at 60×: a minute a second', ran >= 60000 && ran <= 180000 && (await D((b) => b._sbx.rec.steps.filter((x) => x.op === 'advance').length)) === 1, ran);
+  // the explorer
+  await D((b) => b._sbxRewind(0)); await settle();
+  await fbq(page, '.drawer .sbtabs [data-tab="ex"]').click();
+  await fbq(page, '.drawer .sbex [data-act="sbx-explore"]').click();
+  await until(() => D((b) => (b._sbx.ex && !b._sbx.ex.running) || null), 60000);
+  const ex = await D((b) => ({ runs: b._sbx.ex.runs.length, text: b._$.drawer.querySelector('.sbex').textContent, opened: b._sbx.ex.runs.find((r) => r.step.id === 'cover.garage_door' && r.step.state === 'open') }));
+  check('0.11.2 Explore: each thing tried from the start, opening the door among them, starting the timer', ex.runs > 3 && !!ex.opened && ex.opened.started.includes('automation.garage_start_open_timer'), ex);
+  const i = await D((b) => b._sbx.ex.runs.findIndex((r) => r.step.id === 'cover.garage_door' && r.step.state === 'open'));
+  await D((b, n) => b._$.drawer.querySelector(`.sbex [data-act="sbx-ex-show"][data-i="${n}"]`).click(), i);
+  await until(() => D((b) => (b._sbx.tab === 'tl' && !b._sbx.busy && b._sbx.rec.steps.length >= 1) || null), 15000);
+  check('0.11.2 ... Show plays one in the sandbox: the door open, and the clock run on as it went', await D((b) => b._sbx.rec.steps[0].id === 'cover.garage_door' && b._sbx.eng.log.some((e) => e.kind === 'trigger' && e.key === 'automation.garage_left_open')));
+  // coverage: what you did here
+  await fbq(page, '.drawer .sbtabs [data-tab="cov"]').click();
+  await D((b) => { const c = b._$.drawer.querySelector('.sbcovmine'); c.checked = true; c.dispatchEvent(new Event('change', { bubbles: true, composed: true })); });
+  await fbq(page, '.drawer [data-act="sbx-cov-run"]').click();
+  await until(() => D((b) => (b._sbx.cov && !b._sbx.cov.running) || null), 15000);
+  const cov = await D((b) => { const r = b._$.drawer.querySelector('.sbcov'); return { sum: r.querySelector('p b') ? r.querySelector('p b').textContent : '', started: [...r.querySelectorAll('.sbcv[data-key="automation.garage_start_open_timer"] li')].map((x) => x.className), uncov: [...b._$.board.querySelectorAll('.node.uncov')].map((x) => x.dataset.key) }; });
+  check('0.11.2 Coverage: what you did reaches the open-timer automation fully', cov.started.length > 0 && cov.started.every((c) => c === 'cv-ok') && /reached fully/.test(cov.sum), cov);
+  check('0.11.2 ... and nothing on the board is marked unreached that was reached', !cov.uncov.includes('automation.garage_start_open_timer'), cov.uncov);
+  check('0.11.2 the sandbox\'s new tools: no errors', page.logs.length === 0, page.logs);
+});
+
 pwTest.afterAll(() => done());
+
+test('0.11.2 the sandbox: a helper follows what it reads, by the rule functions_board/sources gives', async ({ browser, fake }) => {
+  const { page } = await imported(browser);
+  const garage = await openFn(page, /garage/i);
+  // a threshold helper in the garage function, on a sensor the garage reads; the integration says how it follows it
+  const HOT = 'binary_sensor.fb_garage_hot', T = 'sensor.fb_garage_temp';
+  for (const [id, platform, st] of [[HOT, 'threshold', 'off'], [T, 'template', '20']]) {
+    fake.entities.set(id, { entity_id: id, id: 'fbid' + id.length + platform, platform, unique_id: id, labels: [], categories: {}, area_id: null, device_id: null, config_entry_id: null, disabled_by: null, hidden_by: null, name: null, original_name: id === HOT ? 'Garage hot' : 'Garage temperature', icon: null, has_entity_name: false, entity_category: null, options: {} });
+    await fake.setState(id, st, { friendly_name: id === HOT ? 'Garage hot' : 'Garage temperature' });
+  }
+  fake.sources[HOT] = { entities: [T], domains: [], all: false, how: 'options', rule: { kind: 'threshold', entity: T, lower: null, upper: 25, hysteresis: 1 } };
+  await ws(page, { type: 'config/entity_registry/update', entity_id: HOT, labels: [garage] });
+  await fake.idle(400);
+  await until(() => el(page, (b, h) => !!(b._model && b._model.nodes.has(h) && b._src.get(h)) || null, HOT), 10000);
+  // a config changed just now: the board let go of what helpers read, and the sandbox starts before it asks again
+  await el(page, (b) => { b._src = new Map(); });
+  await fbq(page, '.tools [data-act="sandbox"]').click();
+  await fbq(page, '.modal [data-act="sbx-start"]').click({ timeout: 3000 }).catch(() => {});
+  await fbq(page, '.drawer .sbctl .sbent').waitFor({ timeout: 10000 });
+  const said = await el(page, (b) => b._sbx.eng.log.filter((e) => e.kind === 'note').map((e) => e.text).join(' | '));
+  check('0.11.2 the sandbox says which helpers follow what they read', /follow what they read here.*Garage hot/.test(said), said);
+  await el(page, (b, t) => b._sbx.eng.userSet(t, '26.5'), T);
+  await until(() => el(page, (b) => (b._sbx && !b._sbx.busy) || null), 10000);
+  const got = await el(page, (b, h) => ({ st: b._sbx.eng.get(h).state, row: (b._sbx.eng.log.find((e) => e.kind === 'state' && e.key === h) || {}).follows, real: b._hass.states[h].state }), HOT);
+  check('0.11.2 a threshold helper turns on when its sensor passes the limit and the hysteresis, here only', got.st === 'on' && got.real === 'off' && got.row === T, got);
+  await el(page, (b) => b._renderSbx());
+  const text = await fbq(page, '.drawer .sbtl').innerText();
+  check('0.11.2 ... and its row says what it follows', /Garage hot → on[\s\S]*follows Garage temperature/.test(text), text.slice(0, 600));
+});
+
+test('0.11.2 a saved check replays a helper that follows what it reads', async ({ browser, fake }) => {
+  const { page } = await imported(browser);
+  const garage = await openFn(page, /garage/i);
+  const HOT = 'binary_sensor.fb_garage_hot', T = 'sensor.fb_garage_temp';
+  for (const [id, platform, st] of [[HOT, 'threshold', 'off'], [T, 'template', '20']]) {
+    fake.entities.set(id, { entity_id: id, id: 'fbid' + id.length + platform, platform, unique_id: id, labels: [], categories: {}, area_id: null, device_id: null, config_entry_id: null, disabled_by: null, hidden_by: null, name: null, original_name: id, icon: null, has_entity_name: false, entity_category: null, options: {} });
+    await fake.setState(id, st, {});
+  }
+  fake.sources[HOT] = { entities: [T], domains: [], all: false, how: 'options', rule: { kind: 'threshold', entity: T, lower: null, upper: 25, hysteresis: 1 } };
+  await ws(page, { type: 'config/entity_registry/update', entity_id: HOT, labels: [garage] });
+  await fake.idle(400);
+  await until(() => el(page, (b, h) => !!(b._model && b._model.nodes.has(h)) || null, HOT), 10000);
+  const res = await el(page, async (b, a) => {
+    b._src = new Map();  // as after a config change: the replay asks for the rules itself
+    const L = b._layout(a.garage);
+    L.checks = [{ id: 'fbhot1', name: 'Hot when warm', at: Date.now(), start: {}, items: [], steps: [{ op: 'set', id: a.T, state: '26.5' }], answers: [], expect: [{ k: 'state', id: a.HOT, state: 'on' }] }];
+    await b._runChecks(a.garage, null, true);
+    const r = b._checkRes.get(a.garage).res.get('fbhot1');
+    return { ok: r.ok, got: r.res.map((x) => x.got) };
+  }, { garage, T, HOT });
+  check('0.11.2 a saved check replays a threshold helper following its sensor', res.ok && res.got[0] === 'on', res);
+});
+
+test('0.11.2 the sandbox, whole home: the automations outside the function that its changes reach run too', async ({ browser, fake }) => {
+  const { page } = await imported(browser);
+  // outside the garage function: one the door reaches, one that reaches, and one nothing in it reaches
+  await fake.setState('input_boolean.fb_porch', 'off', { friendly_name: 'Porch light on' });
+  await fake.setState('input_boolean.fb_porch2', 'off', { friendly_name: 'Porch counted' });
+  await fake.setState('input_boolean.fb_far', 'off', { friendly_name: 'Far away' });
+  await addPiece(page, fake, 'automation.fb_porch_door', { alias: 'Porch with the garage door', mode: 'single', triggers: [{ trigger: 'state', entity_id: 'cover.garage_door', to: 'open' }], conditions: [], actions: [{ action: 'input_boolean.turn_on', target: { entity_id: 'input_boolean.fb_porch' } }] });
+  await addPiece(page, fake, 'automation.fb_porch_next', { alias: 'After the porch', mode: 'single', triggers: [{ trigger: 'state', entity_id: 'input_boolean.fb_porch', to: 'on' }], conditions: [], actions: [{ action: 'input_boolean.turn_on', target: { entity_id: 'input_boolean.fb_porch2' } }] });
+  // one that starts from what the function only reads, never changes or fires itself (the timer's finished event)
+  await fake.setState('input_boolean.fb_timer_note', 'off', { friendly_name: 'Timer noted' });
+  await addPiece(page, fake, 'automation.fb_timer_note', { alias: 'Note the timer', mode: 'single', triggers: [{ trigger: 'event', event_type: 'timer.finished' }], conditions: [], actions: [{ action: 'input_boolean.turn_on', target: { entity_id: 'input_boolean.fb_timer_note' } }] });
+  await addPiece(page, fake, 'automation.fb_far', { alias: 'Far away', mode: 'single', triggers: [{ trigger: 'state', entity_id: 'input_boolean.fb_far', to: 'on' }], conditions: [], actions: [{ action: 'input_boolean.turn_off', target: { entity_id: 'input_boolean.fb_far' } }] });
+  await fake.idle(400);
+  await openFn(page, /garage/i);
+  await fbq(page, '.tools [data-act="sandbox"]').click();
+  // the intro offers it
+  check('0.11.2 the sandbox\'s intro offers whole home', await fbq(page, '.modal input[name="sbxwhole"]').count() === 1);
+  await fbq(page, '.modal [data-act="sbx-start"]').click({ timeout: 3000 }).catch(() => {});
+  await fbq(page, '.drawer .sbctl .sbent').waitFor({ timeout: 10000 });
+  const D = (fn, arg) => el(page, fn, arg);
+  const settle = () => until(() => D((b) => (b._sbx && !b._sbx.busy) || null), 10000);
+  check('0.11.2 off by default: only the function\'s own run', (await D((b) => b._sbx.outside.size)) === 0);
+  await D((b) => { const c = b._$.drawer.querySelector('.sbwhole'); c.checked = true; c.dispatchEvent(new Event('change', { bubbles: true, composed: true })); });
+  await until(() => D((b) => (b._sbx && b._sbx.outside.size) || null), 10000);
+  await settle();
+  const got = await D((b) => ({ out: [...b._sbx.outside].sort(), kept: b._data.ui.sbxWhole, note: b._sbx.eng.log.filter((e) => e.kind === 'note').map((e) => e.text).join(' | '), row: b._$.drawer.querySelector('.sbctl').innerText }));
+  check('0.11.2 whole home takes the automations the door reaches, and the ones those reach, not the rest', got.out.join() === 'automation.fb_porch_door,automation.fb_porch_next,automation.fb_timer_note', got.out);
+  check('0.11.2 ... including one that starts from what the function only reads (an event it listens to)', got.out.includes('automation.fb_timer_note'), got.out);
+  check('0.11.2 ... says so when it starts, and in its row; the choice is kept with your display settings', /Whole home: 3 automations outside this function run too.*Porch with the garage door/.test(got.note) && /3 automations outside/.test(got.row) && got.kept === true, got);
+  const open = async () => { await D((b) => { const s = b._$.drawer.querySelector('.sbent'); s.value = 'cover.garage_door'; s.dispatchEvent(new Event('change', { bubbles: true, composed: true })); const v = b._$.drawer.querySelector('.sbval-sel'); v.value = 'open'; v.dispatchEvent(new Event('change', { bubbles: true, composed: true })); }); await fbq(page, '.drawer [data-act="sbx-set"]').click(); await settle(); };
+  await open();
+  const after = await D((b) => ({ p: b._sbx.eng.get('input_boolean.fb_porch').state, p2: b._sbx.eng.get('input_boolean.fb_porch2').state, real: b._hass.states['input_boolean.fb_porch'].state,
+    ghosts: [...b._$.flow.querySelectorAll('.ghost')].map((x) => x.textContent), cov: (() => { b._sbx.cov = { running: false, n: 0, engs: [] }; b._sbx.covMine = true; const l = b._sbxCovList(); return l.length > 0 && l.every((x) => !/fb_porch/.test(x.id)); })() }));
+  check('0.11.2 opening the door runs both outside automations, in the sandbox only', after.p === 'on' && after.p2 === 'on' && after.real === 'off', after);
+  check('0.11.2 ... shown beside the board as not on it, and left out of the function\'s coverage', after.ghosts.some((t) => /Porch with the garage door/.test(t)) && after.cov, after);
+  // a check saved in whole home replays the outside automations it had
+  const rec = await D((b) => b._sbx.rec.items.filter((k) => /fb_porch/.test(k)).sort());
+  check('0.11.2 what you did keeps the outside automations that took part, for a saved check', rec.join() === 'automation.fb_porch_door,automation.fb_porch_next', rec);
+  await D((b) => { const c = b._$.drawer.querySelector('.sbwhole'); c.checked = false; c.dispatchEvent(new Event('change', { bubbles: true, composed: true })); });
+  await until(() => D((b) => (b._sbx && b._sbx.outside.size === 0 && !b._data.ui.sbxWhole) || null), 10000);
+  check('0.11.2 turning it off starts again with the function alone', true);
+});
+
+test('0.11.2 saved checks: edit one (name, step order and values, what it expects), share it as text, import one', async ({ browser, fake }) => {
+  const { page } = await imported(browser);
+  const garage = await openFn(page, /garage/i);
+  const D = (fn, arg) => el(page, fn, arg);
+  await D((b, label) => {
+    b._layout(label).checks = [{ id: 'fbck1', name: 'Door left open', at: Date.now(), start: {}, items: [], answers: [],
+      steps: [{ op: 'advance', ms: 60000 }, { op: 'set', id: 'cover.garage_door', state: 'open' }],
+      expect: [{ k: 'state', id: 'timer.garage_open', state: 'active' }, { k: 'ran', id: 'automation.garage_start_open_timer' }] }];
+  }, garage);
+  await fbq(page, '.tools [data-act="sandbox"]').click();
+  await fbq(page, '.modal [data-act="sbx-start"]').click({ timeout: 3000 }).catch(() => {});
+  await fbq(page, '.drawer .sbchk [data-act="chk-edit"]').click();
+  // the set step up, its value changed; the time step's seconds changed; one expectation out, one added
+  await fbq(page, '.modal [data-act="chk-st-up"][data-i="1"]').click();
+  const first = await fbq(page, '.modal .cked li >> nth=0').innerText();
+  check('0.11.2 Earlier moves a step up', /Garage Door/.test(first), first);
+  await D((b) => { const m = b._$.modal; const v = (sel, x) => { const i = m.querySelector(sel); if (i) i.value = x; }; v('input[data-ckst="0"]', 'opening'); v('input[data-ckst="1"]', '120'); });
+  await fbq(page, '.modal [data-act="chk-x-del"][data-i="1"]').click();
+  await D((b) => { const m = b._$.modal; m.querySelector('select[name="ckxk"]').value = 'state'; m.querySelector('select[name="ckxid"]').value = 'cover.garage_door'; m.querySelector('input[name="ckxs"]').value = 'opening'; });
+  await fbq(page, '.modal [data-act="chk-x-add"]').click();
+  // adding a run expectation on something that doesn't run says so
+  await D((b) => { const m = b._$.modal; m.querySelector('select[name="ckxk"]').value = 'ran'; m.querySelector('select[name="ckxid"]').value = 'cover.garage_door'; });
+  await fbq(page, '.modal [data-act="chk-x-add"]').click();
+  const said = await fbq(page, '.modal .dval').innerText();
+  check('0.11.2 an expectation that something runs needs an automation or a script', /Only an automation or a script runs/.test(said), said);
+  // typed last, so only saving reads it
+  await fbq(page, '.modal .ckdlg input[name="ckname"]').fill('Door open, timer on');
+  await fbq(page, '.modal [data-act="chk-edit-go"]').click();
+  const c = await D((b, label) => JSON.parse(JSON.stringify(b._layout(label).checks[0])), garage);
+  check('0.11.2 editing keeps the check (same id) with the new name, step order and values, and expectations', c.id === 'fbck1' && c.name === 'Door open, timer on'
+    && c.steps[0].op === 'set' && c.steps[0].state === 'opening' && c.steps[1].op === 'advance' && c.steps[1].ms === 120000
+    && c.expect.length === 2 && c.expect[0].k === 'state' && c.expect[0].id === 'timer.garage_open' && c.expect[1].id === 'cover.garage_door' && c.expect[1].state === 'opening', c);
+  // share: the check as text, without its id
+  await fbq(page, '.drawer .sbchk [data-act="chk-export"]').click();
+  const text = await fbq(page, '.modal textarea.ckjson').inputValue();
+  const o = JSON.parse(text);
+  check('0.11.2 Share gives the check as text, marked as one, without its id', o.functions_board_check === 1 && !('id' in o) && o.name === 'Door open, timer on' && o.steps.length === 2, o);
+  await fbq(page, '.modal [data-act="modal-cancel"]').click();
+  // import: what was shared comes back as a new check; something else doesn't
+  await fbq(page, '.drawer .sbchk [data-act="chk-import"]').click();
+  await fbq(page, '.modal textarea.ckjson').fill('{"name": "not one"}');
+  await fbq(page, '.modal [data-act="chk-import-go"]').click();
+  const bad = await fbq(page, '.modal .dval').innerText();
+  check('0.11.2 Import refuses text that isn\'t a shared check', /isn't a check copied with Share/.test(bad), bad);
+  await fbq(page, '.modal textarea.ckjson').fill(text.replace('Door open, timer on', 'From a friend'));
+  await fbq(page, '.modal [data-act="chk-import-go"]').click();
+  const list = await D((b, label) => b._layout(label).checks.map((x) => ({ id: x.id, name: x.name, steps: x.steps.length })), garage);
+  check('0.11.2 ... and adds a shared one as a new check with its own id', list.length === 2 && list[1].name === 'From a friend' && list[1].id !== 'fbck1' && list[1].steps === 2, list);
+  const rows = await fbq(page, '.drawer .sbchk').innerText();
+  check('0.11.2 ... listed with the others', /From a friend/.test(rows) && /Door open, timer on/.test(rows), rows);
+});
+
+test('0.11.2 the sandbox: replay a period from history, and how it compares with what really happened', async ({ browser, fake }) => {
+  const { page } = await imported(browser);
+  await openFn(page, /garage/i);
+  const iso = (ms) => new Date(ms).toISOString();
+  let asked = null;
+  // the door opened an hour in; the open timer's automation ran then; the closed one ran at two hours in, which the
+  // sandbox can't (nothing closes the door here)
+  fake.history = (from, to, ids) => {
+    asked = asked || [];
+    asked.push(ids);
+    const H = 3600e3;
+    return {
+      'cover.garage_door': [{ s: 'closed', a: { friendly_name: 'Garage Door' }, lu: from / 1000 }, { s: 'open', lu: (from + H) / 1000 }],
+      'automation.garage_start_open_timer': [{ s: 'on', a: { last_triggered: iso(from - 24 * H) }, lu: from / 1000 }, { s: 'on', a: { last_triggered: iso(from + H) }, lu: (from + H) / 1000 }],
+      'automation.garage_closed_stop_timer': [{ s: 'on', a: { last_triggered: iso(from - 24 * H) }, lu: from / 1000 }, { s: 'on', a: { last_triggered: iso(from + 2 * H) }, lu: (from + 2 * H) / 1000 }],
+    };
+  };
+  await fbq(page, '.tools [data-act="sandbox"]').click();
+  await fbq(page, '.modal [data-act="sbx-start"]').click({ timeout: 3000 }).catch(() => {});
+  await fbq(page, '.drawer .sbctl .sbhist').waitFor({ timeout: 10000 });
+  const D = (fn, arg) => el(page, fn, arg);
+  await D((b) => { const s = b._$.drawer.querySelector('.sbhist'); s.value = 'h6'; });
+  const t0 = Date.now();
+  await fbq(page, '.drawer [data-act="sbx-history"]').click();
+  await until(() => D((b) => (b._sbx && b._sbx.hist && !b._sbx.busy) || null), 20000);
+  const r = await D((b) => ({ at: b._sbx.rec.at, steps: b._sbx.rec.steps, door: b._sbx.eng.get('cover.garage_door').state, real: b._hass.states['cover.garage_door'].state,
+    pane: (b._$.drawer.querySelector('.sbhp') || {}).innerText || '', cmp: b._sbx.hist.cmp.map((x) => [x.id, x.same]) }));
+  check('0.11.2 a replay asks Home Assistant\'s history for what the function reads and its automations', !!asked && asked.flat().includes('cover.garage_door') && asked.flat().includes('automation.garage_start_open_timer'), asked);
+  check('0.11.2 ... starts from the home six hours ago and replays the door opening, in the sandbox only', Math.abs(r.at - (t0 - 6 * 3600e3)) < 120e3 && r.steps.some((x) => x.op === 'set' && x.id === 'cover.garage_door' && x.state === 'open') && r.door === 'open' && r.real !== 'open', r);
+  check('0.11.2 ... says how many real changes it replayed, and over what time', /Replayed 1 real change from/.test(r.pane), r.pane);
+  check('0.11.2 ... the open timer\'s automation ran when it did in your home', r.cmp.some(([id, same]) => id === 'automation.garage_start_open_timer' && same) && /The same as in your home:.*Garage: start open timer/.test(r.pane), r);
+  check('0.11.2 ... and the one that ran in your home but not here is listed, with when', r.cmp.some(([id, same]) => id === 'automation.garage_closed_stop_timer' && !same) && /Garage: closed, stop timer ran 1× in your home and 0× here/.test(r.pane), r.pane);
+  // what was replayed can be kept as a check
+  check('0.11.2 ... and can be saved as a check (Save as a check is on)', await D((b) => !b._$.drawer.querySelector('[data-act="chk-save"]').disabled));
+});
+
+test('0.11.2 the sandbox: a notification\'s buttons to press, and the messages Zigbee2MQTT and Frigate send', async ({ browser, fake }) => {
+  const { page } = await imported(browser);
+  const garage = await openFn(page, /garage/i);
+  // in the garage: a notification with a button, the automation that answers it, a Zigbee2MQTT button and Frigate
+  await addPiece(page, fake, 'automation.fb_ask_close', { alias: 'Ask to close', mode: 'single', triggers: [{ trigger: 'state', entity_id: 'cover.garage_door', to: 'open' }], conditions: [],
+    actions: [{ action: 'notify.mobile_app_phone', data: { message: 'The garage is open', data: { actions: [{ action: 'FB_CLOSE_GARAGE', title: 'Close it' }, { action: 'URI', title: 'Open the app', uri: '/lovelace' }] } } }] });
+  await addPiece(page, fake, 'automation.fb_on_close', { alias: 'Close when asked', mode: 'single', triggers: [{ trigger: 'event', event_type: 'mobile_app_notification_action', event_data: { action: 'FB_CLOSE_GARAGE' } }], conditions: [], actions: [{ action: 'script.close_garage' }] });
+  await addPiece(page, fake, 'automation.fb_z2m', { alias: 'Garage button', mode: 'single', triggers: [{ trigger: 'mqtt', topic: 'zigbee2mqtt/garage_button', payload: 'single', value_template: '{{ value_json.action }}' }], conditions: [], actions: [{ action: 'script.close_garage' }] });
+  await addPiece(page, fake, 'automation.fb_frigate', { alias: 'Someone at the garage', mode: 'single', triggers: [{ trigger: 'mqtt', topic: 'frigate/events' }], conditions: [], actions: [] });
+  for (const id of ['automation.fb_ask_close', 'automation.fb_on_close', 'automation.fb_z2m', 'automation.fb_frigate']) await ws(page, { type: 'config/entity_registry/update', entity_id: id, labels: [garage] });
+  await fake.idle(400);
+  await until(() => el(page, (b) => (b._model && b._model.nodes.has('automation.fb_on_close')) || null), 10000);
+  await fbq(page, '.tools [data-act="sandbox"]').click();
+  await fbq(page, '.modal [data-act="sbx-start"]').click({ timeout: 3000 }).catch(() => {});
+  await fbq(page, '.drawer .sbctl .sbent').waitFor({ timeout: 10000 });
+  const D = (fn, arg) => el(page, fn, arg);
+  const settle = () => until(() => D((b) => (b._sbx && !b._sbx.busy) || null), 10000);
+  const opts = await D((b) => [...(b._$.drawer.querySelector('.sbnact') || { options: [] }).options].map((o) => [o.value, o.textContent]));
+  check('0.11.2 the Notification row lists the buttons the function would put on one (not a link button)', opts.length === 1 && opts[0][0] === 'FB_CLOSE_GARAGE' && /Close it/.test(opts[0][1]), opts);
+  // the door open in the sandbox, then the button pressed: the answering automation closes it
+  await D((b) => b._sbx.eng.userSet('cover.garage_door', 'open')); await settle();
+  await fbq(page, '.drawer [data-act="sbx-nact"]').click(); await settle();
+  const after = await D((b) => ({ door: b._sbx.eng.get('cover.garage_door').state, ran: b._sbx.eng.log.some((e) => e.kind === 'trigger' && e.key === 'automation.fb_on_close'), step: b._sbx.rec.steps[b._sbx.rec.steps.length - 1] }));
+  check('0.11.2 pressing it fires the phone\'s event: the automation answering it runs and closes the door', after.ran && /clos/.test(after.door) && after.step.op === 'event' && after.step.type === 'mobile_app_notification_action' && after.step.data.action === 'FB_CLOSE_GARAGE', after);
+  // the MQTT row: Zigbee2MQTT's action as the JSON it sends; Frigate's events
+  const pays = async (topic) => D((b, t) => { const d = b._$.drawer; const f = d.querySelector('.sbtop-sel'); if (f) { f.value = t; f.dispatchEvent(new Event('change', { bubbles: true, composed: true })); } b._sbxPayloads(); return [...d.querySelector('.sbpay-sel').options].map((o) => [o.value, o.textContent]); }, topic);
+  const z = await pays('zigbee2mqtt/garage_button');
+  check('0.11.2 a Zigbee2MQTT button\'s action is suggested as the JSON it sends', z.some(([v]) => v === '{"action":"single"}'), z);
+  const fr = await pays('frigate/events');
+  check('0.11.2 Frigate\'s events are suggested: a person, a car, gone', fr.filter(([, l]) => /What it sends/.test(l)).length === 3 && fr.some(([v]) => /"label":"person"/.test(v)), fr);
+});
+
+test('0.11.3 an MQTT entity on the board follows its topic: an arrow from the topic\'s box, which a publish points to', async ({ browser, fake }) => {
+  const { page } = await imported(browser);
+  const garage = await openFn(page, /garage/i);
+  const LOCK = 'lock.shed_lock', TOPIC = 'fbtest/shed/lock';
+  // what functions_board/sources says for the test home's MQTT lock (its state topic, as configuration.yaml has it)
+  fake.sources[LOCK] = { entities: [], domains: [], all: false, how: 'mqtt', topics: [TOPIC], rule: { kind: 'mqtt', domain: 'lock', state: { topic: TOPIC, how: 'map', map: { LOCKED: 'locked', UNLOCKED: 'unlocked', None: 'unknown' }, blank: 'skip' } } };
+  await addPiece(page, fake, 'automation.fb_shed_says', { alias: 'Shed: say it is locked', mode: 'single', triggers: [{ trigger: 'time', at: '22:00:00' }], conditions: [], actions: [{ action: 'mqtt.publish', data: { topic: TOPIC, payload: 'LOCKED' } }] });
+  await addPiece(page, fake, 'automation.fb_shed_locked', { alias: 'Shed: when it locks', mode: 'single', triggers: [{ trigger: 'state', entity_id: LOCK, to: 'locked' }], conditions: [], actions: [{ action: 'light.turn_off', target: { entity_id: 'light.bed_light' } }] });
+  for (const id of ['automation.fb_shed_says', 'automation.fb_shed_locked']) await ws(page, { type: 'config/entity_registry/update', entity_id: id, labels: [garage] });
+  await fake.idle(400);
+  await until(() => el(page, (b, a) => (b._model && b._model.nodes.has(a.LOCK) && b._model.edges.some((e) => e.from === 'mqtt:' + a.TOPIC && e.to === a.LOCK)) || null, { LOCK, TOPIC }), 10000);
+  const m = await el(page, (b, a) => ({
+    member: b._model.nodes.get(a.LOCK).kind, asked: b._src.has(a.LOCK), light: b._src.has('light.bed_light'),
+    pub: b._model.edges.filter((e) => e.from === 'automation.fb_shed_says').map((e) => e.role + ':' + e.to),
+    into: b._model.edges.filter((e) => e.to === a.LOCK).map((e) => e.role + ':' + e.from).sort(),
+  }), { LOCK, TOPIC });
+  check('0.11.3 the MQTT lock isn\'t a member, and the board asked what it follows (and not for a plain light)', m.member !== 'member' && m.asked && !m.light, m);
+  check('0.11.3 the publish is an arrow to the topic\'s box, not to an mqtt.publish action box', m.pub.length === 1 && m.pub[0] === 'action:mqtt:' + TOPIC, m.pub);
+  check('0.11.3 the topic\'s box has an arrow into the lock that follows it', m.into.includes('source:mqtt:' + TOPIC), m.into);
+  check('0.11.3 the MQTT chain: no errors', page.logs.length === 0, page.logs);
+});

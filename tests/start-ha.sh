@@ -4,13 +4,15 @@
 #   sh tests/start-ha.sh demo     the demo instance (ha-demo/config), for screens.js and demo-video.js
 #   sh tests/start-ha.sh stop     stops whichever is running
 # Its log goes to ha/hass.log or ha-demo/hass.log. A restart through Home Assistant's API makes hass exit (code
-# 100); run this again. Only one runs at a time: they share the port.
+# 100); run this again. Only one runs at a time: they share the port. What it talks to (an MQTT broker, Z-Wave JS on
+# a mock controller, Node-RED: tests/home) is started first, its state and logs in ha/home or ha-demo/home.
 cd "$(dirname "$0")/.."
 pkill -f "venv314/bin/hass -c" 2>/dev/null && sleep 3
-[ "$1" = "stop" ] && { echo "stopped"; exit 0; }
+[ "$1" = "stop" ] && { sh tests/home/start.sh stop >/dev/null; echo "stopped"; exit 0; }
 dir=ha/config
 [ "$1" = "demo" ] && dir=ha-demo/config
 [ -d "$dir" ] || { echo "$dir is missing: run sh tests/setup.sh${1:+ $1} first"; exit 1; }
+sh tests/home/start.sh "$(dirname "$dir")/home" || exit 1
 # which one is running, for apitest.py (each keeps its own login)
 mkdir -p tests/e2e/.state && { [ "$1" = "demo" ] && echo demo || echo test; } > tests/e2e/.state/instance
 # every outgoing connection and name lookup is logged with the code behind it (tests/netguard; test-only)

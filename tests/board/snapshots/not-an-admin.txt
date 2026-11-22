@@ -1,4 +1,4 @@
-style {59346 chars, #cb3e8fb5}
+style {63690 chars, #cb96662e}
 div.board.m-panel
   div.noadmin
     ha-icon icon="mdi:shield-account-outline"

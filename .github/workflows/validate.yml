@@ -65,12 +65,15 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: tests/setup.sh
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - name: Set up (versions as in tests/setup.sh)
         run: |
           uv venv --python 3.14 venvtest
           uv pip install --python venvtest/bin/python pytest-homeassistant-custom-component==0.13.375 home-assistant-frontend
-      - name: Self-test and the Python units
-        run: sh tests/run.sh --only 'selftest|backend'
+      - name: Self-test, the Python units, and the sandbox against Home Assistant's core
+        run: sh tests/run.sh --only 'selftest|backend|diff'
       - name: Test reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -117,6 +120,10 @@ jobs:
         with:
           node-version: 22
           cache: npm
+          # the test home (tests/home) has a lockfile of its own
+          cache-dependency-path: |
+            package-lock.json
+            tests/home/package-lock.json
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
@@ -151,6 +158,8 @@ jobs:
           name: e2e-failure
           path: |
             ha/hass.log
+            ha/home/*.log
+            ha/home/zwave/*.log
             tests/e2e/.state/shots/
             tests/.results/
 
@@ -164,6 +173,10 @@ jobs:
         with:
           node-version: 22
           cache: npm
+          # the test home (tests/home) has a lockfile of its own
+          cache-dependency-path: |
+            package-lock.json
+            tests/home/package-lock.json
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
@@ -198,5 +211,7 @@ jobs:
           name: e2e2-failure
           path: |
             ha/hass.log
+            ha/home/*.log
+            ha/home/zwave/*.log
             tests/e2e/.state/shots/
             tests/.results/

@@ -57,6 +57,12 @@ const finished = (timer) => ({ trigger: 'event', event_type: 'timer.finished', e
 {
   const { edges } = edgesOf({ 'automation.m': { triggers: [{ trigger: 'mqtt', topic: 'home/door' }, { trigger: 'event', event_type: 'my_event' }], actions: [{ event: 'done_event' }] } });
   check('mqtt and event triggers, fired events', ['mqtt:home/door', 'event:my_event'].every((k) => edges.some((e) => e.from === k)) && edges.some((e) => e.to === 'event:done_event'));
+  {
+    // 0.11.3: a publish goes to its topic's box; a templated topic stays the action's box
+    const { edges: pe } = edgesOf({ 'automation.p': { triggers: [], actions: [{ action: 'mqtt.publish', data: { topic: 'home/lock/set', payload: 'LOCK' } }, { action: 'mqtt.publish', data: { topic: "{{ 'home/' ~ x }}", payload: '1' } }] } });
+    check('0.11.3 a message published to a topic is an arrow to the topic\'s box; a templated topic the action\'s', pe.some((e) => e.from === 'automation.p' && e.to === 'mqtt:home/lock/set' && e.role === 'action')
+      && pe.some((e) => e.to === 'svc:mqtt.publish') && !pe.some((e) => /^mqtt:\{/.test(e.to)), pe.map((e) => e.from + '>' + e.to));
+  }
 }
 
 // ---- loops ----

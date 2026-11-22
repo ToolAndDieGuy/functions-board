@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+In the sandbox, MQTT entities follow their topics. A message on a sensor's state topic (sent by you, or by an
+automation's `mqtt.publish`) changes the sensor through its own value template, as Home Assistant would: binary
+sensors, switches, locks, covers, selects, numbers, texts, device trackers, event entities and lights, with
+availability topics, JSON attributes, `off_delay` and `expire_after`. Home Assistant's own order is kept (its MQTT
+triggers hear a message before the entities on that topic change), and so are its quirks: a sensor that expects a
+number and gets text keeps its state until a number comes.
+
+On the board, an MQTT entity follows its topic there too. An automation that publishes to a topic now points to
+that topic's box (it pointed to a box for the `mqtt.publish` action), and the topic's box points to each MQTT entity
+on the board that follows it. The board asks Home Assistant which topics an MQTT entity follows whether or not the
+entity is in the function, so the sandbox moves it when a message comes, wherever it sits on the board.
+
+In the sandbox, an automation in single mode is no longer started twice where Home Assistant starts it once. A run
+that waits for something goes on only after what's in hand is done, as in Home Assistant. There are three such
+waits: the end of a delay, an `mqtt.publish` waiting for the broker's answer, and a restart waiting for the old run
+to stop. Before, the sandbox let such a run finish at once, so it could start again when:
+- its own `for:` trigger came due the second its delay ended;
+- a group or min/max helper following the same change started it again after it published;
+- two triggers of one event both restarted it (it toggled twice).
+
+Home Assistant drops the second start in the first two cases and runs only once in the third, and now so does the
+sandbox.
+
+In the sandbox, the sun moves at sunrise and sunset only when something in the function reads it (an automation, a
+script or a helper). Before, it moved every day whatever the function was, so a run of a few days filled the timeline
+with sun changes nothing heard. The explorer also ran each of its tries on until nothing was due, and the sun is always
+due, so each try ran a month ahead and **Show** replayed that month. Each try now stops a day after it starts, as the
+explorer says.
+
 Scenes and groups no longer draw arrows to the lights and devices they set or hold. Before, they drew arrows only
 to the ones that happened to be on the board for other reasons, so a scene that sets a dozen lights looked as if it
 set two. A scene's box now says how many it sets and a group's how many members it has; click one to see them. Their
@@ -20,8 +49,100 @@ away from the states it lists, so `from: [off, on]` starts the automation when t
 turns off. It's listed with the function's problems, and the sandbox's timeline says so when it happens, with Dismiss
 beside it, in case it's meant.
 
+The sandbox can now drive every kind of trigger. Every field is a list of what fits the function, with Other… to
+type anything else:
+
+- **Set** lists every entity the automations read first (including ones reached through an area or a device), and
+  its values say why: "1101 · above 1100: CO2 high". An attribute a trigger reads, a light's brightness say, can be
+  set beside the state, and an event entity can be pressed with the event type its trigger waits for.
+- **Device triggers** made in the editor are followed: one on an entity (motion, opened, turned on, a sensor's value)
+  as the state trigger it stands for, with device conditions and actions too. A device's own buttons (ZHA, Z-Wave,
+  Hue, deCONZ, MQTT) are pressed from a new **Press** row, which also fires any other trigger the sandbox can't see
+  coming (Z-Wave value updated, geo location).
+- **Zones and the sun** are followed: a person entering or leaving a zone, sunrise and sunset with their offsets
+  (sun.sun rises and sets on the sandbox clock), and zone and sun conditions, which were asked before.
+- **Home Assistant starting or stopping, webhooks, tags, calendars and Assist sentences** each get a row when the
+  function has one.
+- **Scenes** set what they hold, **timers** fire Home Assistant's timer triggers, and a **script's fields** can be
+  given when you run it.
+- **The clock** shows the day and the time to the second. Advance by 1 second to a week, jump to what's due,
+  sunrise, sunset, a time trigger or the edge of a time condition, or type a time; each thing coming up is a
+  button that runs the clock to it.
+- Saved checks keep and replay all of it.
+
 Any problem can now be ignored for good. It leaves the count and isn't listed under Dismissed either, even if it goes
 away and comes back. The problems list says how many are ignored for good and can bring them back as dismissed.
+
+The sandbox is now a debugger. Its drawer has four tabs:
+
+- **Timeline**, as before, with a plain sentence over each thing you did ("Motion turned on: Hall light on, timer
+  started"). Click any line to see the run's variables at that moment (`trigger`, `repeat`, `wait`, a response).
+  **Undo** takes back your last step and **Again** repeats it.
+- **States**: every entity in the sandbox with its state and attributes, the ones that changed first, each one
+  editable in place.
+- **Explore** tries everything the function can be given, one thing at a time from the same start (a day passing,
+  every value Set offers, every button, webhook, tag and sentence), and reports what never happens, conditions that
+  are never true, two automations fighting over one entity, and loops.
+- **Coverage** marks on the board what ran and what didn't: triggers never fired, conditions only ever true or only
+  ever false, choose options and else branches never taken.
+
+**Step** runs one step at a time: each run waits before every condition and action until you press Continue.
+**Pause here** on a box's bar makes runs of that automation wait at each step. **How a device answers** makes a
+device slow (a cover is opening first), fail (a lock jams) or go unavailable. **What if** has ready-made situations:
+everyone leaves or comes home, a power cut and power back, sunset, sunrise, the night, a morning, a day, a week. The
+clock can run by itself, from real time to 600 times faster. A box's bar suggests values to set, and Enter in a value
+sets it.
+
+The sandbox now does what Home Assistant does in places it didn't. Every case below was found by a new test that runs
+the same homes in the sandbox and in Home Assistant itself, step by step, and compares them:
+
+- An automation's conditions are checked when it's triggered, before its mode. A restart-mode automation whose
+  conditions fail no longer cancels the run it already has going, and a queued run keeps what its conditions said
+  when it was triggered.
+- When one change starts several runs, they go in Home Assistant's order: each run goes as far as it can at once
+  before the next trigger is looked at, and a change a run makes meanwhile waits its turn. So two triggers of one
+  automation on the same change both run; an automation that turns on what it triggers on runs again once it has
+  finished (but is "already running" if it changes it after a delay); and a wait doesn't hear the change that
+  started its own run. In the garage example, opening the door now also runs "restart timer when reopened", as it
+  does in Home Assistant: the timer the first automation just started is already active when its condition is
+  checked.
+- Queued mode's maximum counts the runs waiting in the queue, as Home Assistant's does.
+- A paused timer started again goes on from where it was paused. Before, it started over with the wrong time.
+- Setting a number outside its range, or a select to an option it doesn't have, stops the run with Home Assistant's
+  error. Before, the sandbox clamped the number or set the option and carried on.
+- `automation.trigger` waits for the run it starts, as a script call does.
+
+Helpers that follow what they read now do so in the sandbox: template sensors and binary sensors, min/max sensors,
+threshold sensors, and binary sensor, light and switch groups. They use Home Assistant's own rules (a min/max's
+rounding, a threshold's hysteresis, a group's "all"), and they change before any automation hears the change. The
+drawer lists them when it opens, and each change says what it followed. Saved checks replay them the same way.
+Other helpers worked out from something (a derivative, a utility meter, statistics) stay as they are unless you set
+them. The integration's `functions_board/sources` answer now carries each helper's rule for this.
+
+**Whole home** (a box in the sandbox's intro and its Home row) also runs the automations outside the function that
+start from what it reads or changes, and the ones those reach in turn. Opening the garage door then also turns on
+the porch light, if another automation does that. They run in the sandbox only, show beside the board as not on it,
+and are left out of the function's coverage. A check saved this way keeps them and replays them. The choice is kept
+with your display settings.
+
+**Replay** in the sandbox replays a period from Home Assistant's history: last night (18:00 to 08:00), or the last 6,
+12 or 24 hours. The sandbox starts from your home as it was then and gets the real changes of everything the function
+reads, in order. Afterwards it shows how that compares with what really happened: when each of the function's
+automations ran in your home and in the sandbox, and what the function changed on its own. Anything that differs is
+listed with when. It only reads the history, and the replay can be saved as a check.
+
+The sandbox knows a few integrations better. A **Notification** row lists the buttons the function's notifications
+would have. Pressing one fires the event your phone's companion app does (`mobile_app_notification_action`, or the old
+iOS one if that's what the function listens to), so the automation answering it runs. A link button isn't listed.
+The MQTT row now suggests a Zigbee2MQTT button's action as the JSON it really sends (`{"action": "single"}` for a
+trigger reading `value_json.action`). For Frigate's topics it offers what Frigate sends: a person or a car seen and
+gone, a label's count on a camera, and motion.
+
+Saved checks can be edited and shared. **Edit** changes a check's name, moves its steps earlier or later, changes
+what a step sets or how long it lets pass, takes a step or an expectation out, and adds an expectation ("Garage
+Door ends as closed", "Close garage runs to the end"). **Share** gives the check as text to copy, and **Import**
+adds one pasted from another board. An imported check keeps only what a check can hold, and runs at once on this
+function's configs.
 
 ## 0.11.0 (2026-11-20)
 

@@ -1,4 +1,5 @@
-"""Print the Python requirements of Home Assistant's demo integration and everything it sets up.
+"""Print the Python requirements of Home Assistant's demo integration and everything it sets up, with those of the
+integrations the test home adds (MQTT, Z-Wave JS, the mobile app: tests/home).
 
 The demo's manifest lists few of them: it sets up platforms (camera, image_processing, ...) whose integrations
 bring their own requirements, and imports numpy without listing it. On a fresh install Home Assistant installs
@@ -10,7 +11,7 @@ import os
 import homeassistant
 
 BASE = os.path.join(os.path.dirname(homeassistant.__file__), "components")
-todo = ["demo"] + [f[:-3] for f in os.listdir(os.path.join(BASE, "demo")) if f.endswith(".py") and not f.startswith("_")]
+todo = ["demo", "mqtt", "zwave_js", "mobile_app"] + [f[:-3] for f in os.listdir(os.path.join(BASE, "demo")) if f.endswith(".py") and not f.startswith("_")]
 seen, reqs = set(), {"numpy"}
 while todo:
     d = todo.pop()

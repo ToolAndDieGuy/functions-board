@@ -18,7 +18,7 @@ The tests are layers. Each one tests what the layer below can't, and is as fast 
 | Layer | Where | Runs on | What it is for |
 |---|---|---|---|
 | 1. Rules | `static.test.js` | the source | things that must never be true of the code (missing words, outside requests, ingress cookies), and the board's structure (below) |
-| 2. Units | `wiring`, `import`, `problems`, `sandbox`, `clock`, `link`, `store` `.test.js`; `backend/` | Node; pytest | the board's library (pure functions) and the Python side, case by case |
+| 2. Units | `wiring`, `import`, `problems`, `sandbox`, `clock`, `link`, `store` `.test.js`; `backend/`; `diff/` | Node; pytest | the board's library (pure functions) and the Python side, case by case; the sandbox against Home Assistant's own core |
 | 3. The board | `board/` | Chromium, a fake Home Assistant | everything the board draws and does, in parallel, in seconds per test |
 | 4. Home Assistant | `e2e/` | Chromium, a real Home Assistant | what only the real thing can show: its API, its frontend, templates, isolation, privacy |
 | 5. Weekly | `.github/workflows/weekly.yml` | a real Home Assistant (pinned, and the newest beta) | Home Assistant changing under us; checks that went blind (mutants); flaky tests; the size budget; README pictures out of date |
@@ -100,6 +100,25 @@ parallel (`tests/board.config.js`, one worker per CPU).
 | `board/leak.test.js` | the board taken off the page and put back 50 times: no subscription, interval, running timer or window listener left, every board let go (garbage collected), the 50th asking no more than the 2nd |
 | `board/draw.test.js` | `morph()`, which draws the board's views in place: the same result as innerHTML, elements kept with their focus, scroll and listeners, form fields, SVG |
 
+### The sandbox against Home Assistant's own core (0.11.2)
+
+`tests/diff/` holds the sandbox to what Home Assistant really does. Every scenario in `corpus.js` (a few helpers
+and input sensors, one or more automations, a list of steps: set a state, let seconds pass, fire an event) runs
+twice: in the sandbox engine (`sandbox.js`, through node) and in Home Assistant's core (`test_diff.py`, through
+pytest-homeassistant-custom-component in `venvtest`), with its real helpers and automations and a frozen clock moved
+a second at a time. After every step the two must agree on the service calls made and the state of every entity
+in the scenario; a test fails at the first step where they don't, and says which.
+
+The core side doesn't use `async_block_till_done`: with the clock frozen it would wait for ever for a run sitting in
+a delay. It turns the loop until nothing is ready to run and no thread is working for it (`_done()`).
+
+The corpus has no templates (the sandbox renders those through Home Assistant, which this test doesn't have) and
+covers state, numeric, time, time pattern and event triggers, conditions, every action, the four modes, waits,
+helpers and their chains, timers, errors Home Assistant refuses, and the order things happen in when one change
+starts several runs. Each scenario that once found a difference stays in it. Weekly, `random.js` adds 1,000 random
+small homes (`FB_DIFF_RANDOM=1000 FB_DIFF_SEED=<seed>`: the same seed makes the same homes); one that differs opens
+an issue with the seed, and its smallest form goes into the corpus with the fix.
+
 ### Layer 4: a real Home Assistant
 
 `--ha` rebuilds `ha/config` from `tests/e2e/config` and starts Home Assistant new (`tests/start-ha.sh`, its log
@@ -149,7 +168,7 @@ them all to pass:
 | Job | What | Time |
 |---|---|---|
 | Board script | self-test, rules, library units (`selftest\|static\|wiring\|import\|problems\|sandbox\|clock\|link\|store`) | about 1 min |
-| Backend unit tests | the Python side, in `venvtest` | about 1 min |
+| Backend unit tests | the Python side and the sandbox against Home Assistant's core (`selftest\|backend\|diff`), in `venvtest` | about 2 min |
 | The board on a fake Home Assistant | `selftest\|board-`, every core | about 3 min |
 | Browser suites on a real Home Assistant | apitest, isolation, contract, ui, regress, sync, one at a time | about 7 min |
 | Browser suites on a real Home Assistant, part 2 | tools, sandbox, versions, privacy, on a Home Assistant of its own | about 7 min |
@@ -160,7 +179,8 @@ one). uv's downloads, npm's and Playwright's Chromium are cached between runs. E
 (`summary.md`: results, times, flaky tests, quarantined checks), and its `tests/.results/` is kept as an artifact.
 
 `.github/workflows/weekly.yml` runs once a week (and by hand): the beta, mutants, strict (with the size test),
-jitter (every board suite on shaken fakes, a new seed each week, no retries) and README pictures jobs. None is a required check; a failure opens or adds to an issue.
+jitter (every board suite on shaken fakes, a new seed each week, no retries), diff (the sandbox against Home
+Assistant's core on 1,000 random homes, a new seed each week) and README pictures jobs. None is a required check; a failure opens or adds to an issue.
 
 ## Adding a test
 

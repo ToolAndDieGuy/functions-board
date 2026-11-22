@@ -42,6 +42,9 @@ class FakeHA {
     this.versions = {};
     this.nodered = null;
     this.sources = {};  // what a derived helper reads (functions_board/sources), as a test sets it: id → { entities }
+    // the recorder's history (history/history_during_period), as a test sets it: id → compressed rows, or a function
+    // (from ms, to ms, ids) → that; an entity without any is its state now, at the start (nothing changed)
+    this.history = {};
     this.helperEntries = [];  // helpers set up as config entries (config_entries/get by domain), as a test sets them
     this.userData = {};
     this.admin = opts.admin !== false;
@@ -304,6 +307,12 @@ class FakeHA {
         await this.notifyStore({ what: 'layout', label: m.label, rev: cur + 1, client: m.client || '' });
         return { rev: cur + 1 };
       }
+      case 'history/history_during_period': {
+        const from = Date.parse(m.start_time), to = m.end_time ? Date.parse(m.end_time) : Date.now(), ids = m.entity_ids || [];
+        const h = typeof this.history === 'function' ? this.history(from, to, ids) : this.history;
+        return Object.fromEntries(ids.filter((k) => (h && h[k]) || this.states.has(k)).map((k) => [k, h && h[k] ? clone(h[k])
+          : [Object.assign({ s: this.states.get(k).state, lu: from / 1000 }, m.no_attributes ? {} : { a: clone(this.states.get(k).attributes || {}) })]]));
+      }
       case 'functions_board/sources': this._admin(); return { sources: Object.fromEntries((m.entity_ids || []).filter((k) => this.sources[k]).map((k) => [k, clone(this.sources[k])])) };
       case 'functions_board/nodered': this._admin(); return { kept: clone(this.nodered) };
       case 'functions_board/nodered_keep': this._admin(); this.nodered = { at: this._now(), slug: m.slug, groups: clone(m.groups) }; await this.notifyStore({ what: 'nodered', client: m.client || '' }); return null;
@@ -353,6 +362,8 @@ class FakeHA {
       if (method === 'POST') { this.autos[id] = Object.assign({ id }, clone(body)); await this._automationSaved(id); return { result: 'ok' }; }
       if (method === 'DELETE') { if (!this.autos[id]) throw new HAError('not_found', 'Resource not found'); delete this.autos[id]; await this._automationGone(id); return { result: 'ok' }; }
     }
+    // a scene made in the editor: what it sets (the sandbox applies it)
+    if ((m = p.match(/^config\/scene\/config\/(.+)$/)) && method === 'GET') { const c = (this.sceneCfgs || {})[decodeURIComponent(m[1])]; if (!c) throw new HAError('not_found', 'Resource not found'); return clone(c); }
     if ((m = p.match(/^config\/script\/config\/(.+)$/))) {
       const oid = decodeURIComponent(m[1]);
       if (method === 'GET') { if (!this.scripts[oid]) throw new HAError('not_found', 'Resource not found'); return clone(this.scripts[oid]); }
