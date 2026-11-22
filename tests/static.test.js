@@ -183,7 +183,7 @@ const WS_OK = new Set(('automation/config blueprint/substitute config/area_regis
   + 'frontend/set_user_data functions_board/diagnostics functions_board/get functions_board/nodered functions_board/nodered_keep '
   + 'functions_board/set functions_board/set_functions functions_board/set_layout functions_board/sources functions_board/subscribe '
   + 'functions_board/version_delete functions_board/version_edit functions_board/version_get functions_board/version_save '
-  + 'functions_board/versions logbook/event_stream logbook/get_action_calls manifest/list mqtt/subscribe render_template '
+  + 'functions_board/versions history/history_during_period logbook/event_stream logbook/get_action_calls manifest/list mqtt/subscribe render_template '
   + 'subscribe_events subscribe_trigger supervisor/api test_condition trace/get trace/list validate_config').split(' '));
 // Home Assistant's websocket commands without a slash, so a new one is noticed even though it looks like a word
 const WS_PLAIN = /^(render_template|subscribe_trigger|fire_event|call_service|test_condition|validate_config|extract_from_target|execute_script|subscribe_events|get_states|get_config|get_services|get_panels|subscribe_entities|ping)$/;

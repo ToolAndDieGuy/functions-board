@@ -1650,3 +1650,39 @@ test('0.11.2 saved checks: edit one (name, step order and values, what it expect
   const rows = await fbq(page, '.drawer .sbchk').innerText();
   check('0.11.2 ... listed with the others', /From a friend/.test(rows) && /Door open, timer on/.test(rows), rows);
 });
+
+test('0.11.2 the sandbox: replay a period from history, and how it compares with what really happened', async ({ browser, fake }) => {
+  const { page } = await imported(browser);
+  await openFn(page, /garage/i);
+  const iso = (ms) => new Date(ms).toISOString();
+  let asked = null;
+  // the door opened an hour in; the open timer's automation ran then; the closed one ran at two hours in, which the
+  // sandbox can't (nothing closes the door here)
+  fake.history = (from, to, ids) => {
+    asked = asked || [];
+    asked.push(ids);
+    const H = 3600e3;
+    return {
+      'cover.garage_door': [{ s: 'closed', a: { friendly_name: 'Garage Door' }, lu: from / 1000 }, { s: 'open', lu: (from + H) / 1000 }],
+      'automation.garage_start_open_timer': [{ s: 'on', a: { last_triggered: iso(from - 24 * H) }, lu: from / 1000 }, { s: 'on', a: { last_triggered: iso(from + H) }, lu: (from + H) / 1000 }],
+      'automation.garage_closed_stop_timer': [{ s: 'on', a: { last_triggered: iso(from - 24 * H) }, lu: from / 1000 }, { s: 'on', a: { last_triggered: iso(from + 2 * H) }, lu: (from + 2 * H) / 1000 }],
+    };
+  };
+  await fbq(page, '.tools [data-act="sandbox"]').click();
+  await fbq(page, '.modal [data-act="sbx-start"]').click({ timeout: 3000 }).catch(() => {});
+  await fbq(page, '.drawer .sbctl .sbhist').waitFor({ timeout: 10000 });
+  const D = (fn, arg) => el(page, fn, arg);
+  await D((b) => { const s = b._$.drawer.querySelector('.sbhist'); s.value = 'h6'; });
+  const t0 = Date.now();
+  await fbq(page, '.drawer [data-act="sbx-history"]').click();
+  await until(() => D((b) => (b._sbx && b._sbx.hist && !b._sbx.busy) || null), 20000);
+  const r = await D((b) => ({ at: b._sbx.rec.at, steps: b._sbx.rec.steps, door: b._sbx.eng.get('cover.garage_door').state, real: b._hass.states['cover.garage_door'].state,
+    pane: (b._$.drawer.querySelector('.sbhp') || {}).innerText || '', cmp: b._sbx.hist.cmp.map((x) => [x.id, x.same]) }));
+  check('0.11.2 a replay asks Home Assistant\'s history for what the function reads and its automations', !!asked && asked.flat().includes('cover.garage_door') && asked.flat().includes('automation.garage_start_open_timer'), asked);
+  check('0.11.2 ... starts from the home six hours ago and replays the door opening, in the sandbox only', Math.abs(r.at - (t0 - 6 * 3600e3)) < 120e3 && r.steps.some((x) => x.op === 'set' && x.id === 'cover.garage_door' && x.state === 'open') && r.door === 'open' && r.real !== 'open', r);
+  check('0.11.2 ... says how many real changes it replayed, and over what time', /Replayed 1 real change from/.test(r.pane), r.pane);
+  check('0.11.2 ... the open timer\'s automation ran when it did in your home', r.cmp.some(([id, same]) => id === 'automation.garage_start_open_timer' && same) && /The same as in your home:.*Garage: start open timer/.test(r.pane), r);
+  check('0.11.2 ... and the one that ran in your home but not here is listed, with when', r.cmp.some(([id, same]) => id === 'automation.garage_closed_stop_timer' && !same) && /Garage: closed, stop timer ran 1× in your home and 0× here/.test(r.pane), r.pane);
+  // what was replayed can be kept as a check
+  check('0.11.2 ... and can be saved as a check (Save as a check is on)', await D((b) => !b._$.drawer.querySelector('[data-act="chk-save"]').disabled));
+});

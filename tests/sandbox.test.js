@@ -811,4 +811,33 @@ const st = (sb, id) => (sb.get(id) || {}).state;
       && bad.items.join() === 'automation.ok,script.fine' && bad.steps.length === 2 && bad.steps[1].ms === 366 * 864e5 && bad.expect.length === 1 && !('extra' in bad) && Number.isFinite(bad.at), bad);
   }
 
+  // ---- 0.11.2 replay from history: the real changes of what a function reads, then what it did against what happened
+  {
+    const { sbxHistory, sbxCompare, sbxDoStep } = lib;
+    const from = Date.parse('2026-11-20T23:00:00Z'), to = from + 3600e3, s = (ms) => (from + ms) / 1000, M = 60e3;
+    const lt = (ms) => new Date(from + ms).toISOString();
+    const hist = {
+      'binary_sensor.motion': [{ s: 'off', a: { device_class: 'motion' }, lu: (from - 3600e3) / 1000 }, { s: 'on', a: { device_class: 'motion' }, lu: s(10 * M) }, { s: 'off', lu: s(12 * M) }, { s: 'on', lu: (to + 60e3) / 1000 }],
+      'light.hall': [{ s: 'off', lu: (from - 7200e3) / 1000 }, { s: 'on', lu: s(10 * M) }, { s: 'on', lu: s(11 * M) }, { s: 'off', lu: s(15 * M) }],
+      'automation.hall': [{ s: 'on', a: { last_triggered: lt(-3600e3) }, lu: (from - 3600e3) / 1000 }, { s: 'on', a: { last_triggered: lt(10 * M) }, lu: s(10 * M) }, { s: 'on', a: { last_triggered: lt(15 * M) }, lu: s(15 * M) }, { s: 'off', a: { last_triggered: lt(15 * M) }, lu: s(30 * M) }],
+    };
+    const h = sbxHistory(hist, { inputs: ['binary_sensor.motion'], outputs: ['light.hall'], autos: ['automation.hall'], from, to });
+    check('0.11.2 history: the states at the start, then time passing and each change of what it reads, in order (none after the end)', h.start['binary_sensor.motion'].state === 'off' && h.start['light.hall'].state === 'off'
+      && JSON.stringify(h.steps.map((x) => [x.op, x.ms || x.state])) === JSON.stringify([['advance', 10 * M], ['set', 'on'], ['advance', 2 * M], ['set', 'off'], ['advance', 48 * M]]) && h.steps[1].attrs.device_class === 'motion' && h.n === 2, h.steps);
+    check('0.11.2 ... what an output really did (an attribute-only row is no change), and when an automation ran (last_triggered)', JSON.stringify(h.real['light.hall'].map((x) => x.s)) === '["on","off"]' && h.runs['automation.hall'].length === 2 && h.runs['automation.hall'][1].t === from + 15 * M, h);
+    const replay = async (cfg) => {
+      const eng = new Sandbox({ states: Object.fromEntries(Object.entries(h.start).map(([k, v]) => [k, Object.assign({ last_changed: new Date(from - 3600e3).toISOString() }, v)])), items: [{ id: 'automation.hall', cfg }], now: from, tz: 'UTC', tpl: async () => ({ ok: false }), ask: async () => true, name: (x) => x, condText: () => 'c' });
+      await eng.start();
+      for (const st of h.steps) await sbxDoStep(eng, st);
+      return sbxCompare(h, eng.log);
+    };
+    const hall = (offAfter) => ({ triggers: [{ trigger: 'state', entity_id: 'binary_sensor.motion', to: 'on', id: 'on' }, { trigger: 'state', entity_id: 'binary_sensor.motion', to: 'off', for: { minutes: offAfter }, id: 'off' }],
+      actions: [{ choose: [{ conditions: [{ condition: 'trigger', id: 'on' }], sequence: [{ action: 'light.turn_on', target: { entity_id: 'light.hall' } }] }], default: [{ action: 'light.turn_off', target: { entity_id: 'light.hall' } }] }] });
+    const same = await replay(hall(3));
+    check('0.11.2 replayed, the same automation does what the home did: the light and the runs match', same.length === 2 && same.every((x) => x.same), same);
+    const diff = await replay(hall(8));
+    const light = diff.find((x) => x.id === 'light.hall'), runs = diff.find((x) => x.kind === 'runs');
+    check('0.11.2 ... a changed one doesn\'t: it says where (the light went off 5 minutes later, the second run then too)', !light.same && light.first.i === 1 && light.first.here.t === from + 20 * M && !runs.same && runs.first.here.t === from + 20 * M, diff);
+  }
+
 })().catch((e) => check('the sandbox tests ran to the end', false, String(e && e.stack || e)));

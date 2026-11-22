@@ -1,4 +1,4 @@
-style {63398 chars, #424f77ab}
+style {63690 chars, #cb96662e}
 div.board.m-panel.pc.sbx
   aside.list
     div.lhead
@@ -533,6 +533,14 @@ Related, not in this function. Select it to add it."
                 input.sbms aria-label="How long it takes" hidden placeholder="<dur>, <dur>" ·value=""
               button.chip data-act="sbx-behave" | Apply
             div.sbrow
+              span.sbl | Replay
+              select.sbhist aria-label="Which period to replay" ·value="night"
+                option value="night" | Last night (<time> to <time>)
+                option value="h6" | The last <dur>
+                option value="h12" | The last <dur>
+                option value="h24" | The last <dur>
+              button.chip data-act="sbx-history" title="Start again from your home as it was then, give the sandbox the real changes of what this function reads, in order, and compare what it did with what really happened" | Replay
+            div.sbrow
               span.sbl | Home
               label.sbcb title="Also run the automations outside this function that start from what it reads or changes, and the ones those reach in turn. Turning it on or off starts the sandbox again." | Whole home
                 input.sbwhole type="checkbox" ·value="on" ·checked=false
@@ -593,6 +601,7 @@ Related, not in this function. Select it to add it."
             button aria-selected="false" data-act="sbx-tab" data-tab="st" role="tab" tabindex="-1" | States
             button aria-selected="false" data-act="sbx-tab" data-tab="ex" role="tab" tabindex="-1" | Explore
             button aria-selected="false" data-act="sbx-tab" data-tab="cov" role="tab" tabindex="-1" | Coverage
+          div.sbhp hidden
           div.dtl.sbtl role="tabpanel"
             div.muted.pad | Set a state, fire an event or run an automation, and watch what the function does. Nothing changes in your home.
           div.sbvp hidden

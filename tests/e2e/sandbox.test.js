@@ -216,6 +216,12 @@ test('sandbox', async ({ browser }) => {
   });
   check('0.7.1 ... a message to a topic under one on the board (…/set) goes to that board box', under);
 
+  // 0.11.2: the last 6 hours replayed from Home Assistant's own history (a read: nothing in the home changes)
+  await el(page, (b) => { const s = b._$.drawer.querySelector('.sbhist'); s.value = 'h6'; });
+  await fbq(page, '.drawer [data-act="sbx-history"]').click();
+  await until(() => el(page, (b) => (b._sbx && b._sbx.hist && !b._sbx.busy) || null), 30000);
+  const hr = await el(page, (b) => ({ n: b._sbx.hist.n, at: b._sbx.rec.at, cmp: b._sbx.hist.cmp.length, pane: (b._$.drawer.querySelector('.sbhp') || {}).innerText || '' }));
+  check('0.11.2 a replay reads Home Assistant\'s own history, from six hours ago, and says how it compares', /Replayed \d+ real changes? from/.test(hr.pane) && hr.cmp > 0 && Date.now() - hr.at > 5.9 * 3600e3, hr);
   await page.screenshot({ path: path.join(STATE, 'shots', 'sandbox.png') });
   check('nothing was sent to Home Assistant that changes anything', changing().length === 0, changing());
   const real1 = await page.evaluate((ids) => Object.fromEntries(ids.map((i) => [i, document.querySelector('home-assistant').hass.states[i].state])), [DOOR, TIMER, AUTO]);

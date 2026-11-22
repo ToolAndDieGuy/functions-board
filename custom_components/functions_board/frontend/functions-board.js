@@ -2241,6 +2241,11 @@ svg path.e.prob{stroke:var(--error-color,#db4437);stroke-dasharray:5 4}
 .sbtabs [role="tab"]{font:inherit;font-size:12.5px;padding:6px 10px;border:none;background:none;color:var(--secondary-text-color);border-bottom:2px solid transparent;cursor:pointer}
 .sbtabs [role="tab"][aria-selected="true"]{color:var(--primary-text-color);border-bottom-color:var(--fb-blue);font-weight:500}
 .sbrec{display:flex;flex-wrap:wrap;gap:4px 6px;align-items:center;padding:4px 10px;font-size:12px}.sbrec:empty{display:none}
+.sbhp{margin:6px 0;padding:8px 10px;border-radius:8px;background:color-mix(in srgb,var(--fb-blue) 8%,transparent);font-size:12.5px;line-height:1.4}
+.sbhp ul{margin:4px 0 0;padding-left:18px}
+.sbhp li.bad{color:var(--fb-red-ink)}
+.sbhp .warn{color:var(--fb-amber-ink)}
+.sbhp p{margin:4px 0 0}
 .sbrec .chip ha-icon{--mdc-icon-size:14px}
 .sbsum{display:flex;gap:6px;align-items:flex-start;padding:6px 10px 2px;font-size:12px;color:var(--secondary-text-color);border-top:1px solid var(--divider-color)}
 .sbsum ha-icon{--mdc-icon-size:15px;flex:none}
@@ -3010,6 +3015,24 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       sbx_ran_n: { one: 'ran once in the sandbox', other: 'ran {n} times in the sandbox' },
       sbx_not_run: 'not run in the sandbox yet',
       sbx_not_followed: 'Triggers that don\'t come from states the sandbox holds: fire them from the Press row (or use Run, as if that trigger fired): {list}.',
+      sbx_replay: 'Replay',
+      sbx_replay_when: 'Which period to replay',
+      sbx_replay_b: 'Replay',
+      sbx_replay_t: 'Start again from your home as it was then, give the sandbox the real changes of what this function reads, in order, and compare what it did with what really happened',
+      sbx_hist_night: 'Last night (18:00 to 08:00)',
+      sbx_hist_h6: 'The last 6 hours',
+      sbx_hist_h12: 'The last 12 hours',
+      sbx_hist_h24: 'The last 24 hours',
+      sbx_hist_none: 'Home Assistant\'s history couldn\'t be read (it needs the recorder and history integrations).',
+      sbx_hist_done: { one: 'Replayed 1 real change from {from} to {to}.', other: 'Replayed {n} real changes from {from} to {to}.' },
+      sbx_hist_cut: 'Only the first 2,000 were replayed.',
+      sbx_hist_same: 'What this function did here is what it did in your home.',
+      sbx_hist_same_list: 'The same as in your home: {list}.',
+      sbx_hist_nothing_to: 'Nothing to compare: this function changed nothing of its own and none of its automations ran.',
+      sbx_hist_runs_diff: '<b>{name}</b> ran {nr}× in your home and {nh}× here. The first that differs: in your home {real}, here {here}.',
+      sbx_hist_state_diff: '<b>{name}</b>: in your home {real}, here {here}.',
+      sbx_hist_never: 'not then',
+      sbx_hist_nothing: 'no change',
       sbx_home: 'Home',
       sbx_whole: 'Whole home',
       sbx_whole_t: 'Also run the automations outside this function that start from what it reads or changes, and the ones those reach in turn. Turning it on or off starts the sandbox again.',
@@ -5286,7 +5309,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           return null;
         }
       }
-      const run = { item: it, vars: Object.assign({ this: this.obj(it.id) }, vars), cause, timers: new Set(), done: false, cancelled: false };
+      // t0: when it started (an automation's last_triggered, to compare with a replay from history)
+      const run = { item: it, vars: Object.assign({ this: this.obj(it.id) }, vars), cause, timers: new Set(), done: false, cancelled: false, t0: this.now };
       this._moving(run);
       const list = this.runs.get(it.id) || [];
       list.push(run); this.runs.set(it.id, list);
@@ -5373,7 +5397,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         this._parked(run);
         const list = (this.runs.get(it.id) || []).filter((r) => r !== run);
         this.runs.set(it.id, list);
-        if (outcome !== 'cancelled' || !this.halted) this._log({ kind: 'run', key: it.id, outcome, why, cause: run.cause, vars: this._snap(run.vars) });
+        if (outcome !== 'cancelled' || !this.halted) this._log({ kind: 'run', key: it.id, outcome, why, cause: run.cause, vars: this._snap(run.vars), started: run.t0 });
         const q = this.queue.get(it.id);
         if (q && q.length && !this.halted) { const [v, c, o] = q.shift(); this._start(it, v, c, o); }
         if (run.onDone) run.onDone(outcome);
@@ -6073,6 +6097,65 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       return { ok: !r.includes('finished'), got };
     });
     return { ok: !unsure && res.every((r) => r.ok), unsure, res, log: eng.log, eng };
+  }
+
+  // ---- replay from history (0.11.2): Home Assistant's history (history/history_during_period, compressed rows: s
+  // the state, a its attributes, lu and lc the times in seconds) made into what the sandbox needs. o: { inputs (read
+  // by the function: their real changes are replayed), outputs (only changed by it: compared), autos (its automations:
+  // their runs, from last_triggered, compared), from, to (ms), max (changes at most) }. Returns the states at the start,
+  // the steps (time passing, then each input's change, in order), what the outputs and automations really did, how
+  // many changes there were and whether they were cut at max.
+  const histT = (r) => Math.round(((r.lu != null ? r.lu : r.lc) || 0) * 1000);
+  function sbxHistory(hist, o) {
+    const start = {}, changes = [], real = {}, runs = {}, max = o.max || 2000;
+    const rows = (id) => (Array.isArray(hist && hist[id]) ? hist[id] : []);
+    // each row's state with the attributes as they stand (a row without "a" keeps the last)
+    const walk = (id, each) => { let A = {}; rows(id).forEach((r, i) => { if (r.a && typeof r.a === 'object') A = r.a; each({ t: histT(r), state: String(r.s), attributes: Object.assign({}, A) }, i); }); };
+    const ins = new Set(o.inputs || []);
+    [...ins, ...(o.outputs || []), ...(o.autos || [])].forEach((id) => walk(id, (x, i) => { if (i === 0 || !start[id]) start[id] = { state: x.state, attributes: x.attributes }; }));
+    ins.forEach((id) => walk(id, (x, i) => { if (i > 0 && x.t > o.from && x.t <= o.to) changes.push(Object.assign({ id }, x)); }));
+    (o.outputs || []).forEach((id) => {
+      const out = [];
+      walk(id, (x, i) => { if (i > 0 && x.t > o.from && x.t <= o.to && (!out.length || out[out.length - 1].s !== x.state)) out.push({ t: x.t, s: x.state }); });
+      real[id] = out;
+    });
+    (o.autos || []).forEach((id) => {
+      const out = [];
+      let last = null;
+      walk(id, (x, i) => { const lt = x.attributes.last_triggered; if (i === 0) { last = lt; return; } if (lt && lt !== last) { const t = Date.parse(lt); if (t > o.from && t <= o.to) out.push({ t }); } last = lt; });
+      runs[id] = out;
+    });
+    changes.sort((a, b) => a.t - b.t);
+    const cut = changes.length > max, steps = [];
+    let at = o.from;
+    changes.slice(0, max).forEach((x) => {
+      if (x.t > at) steps.push({ op: 'advance', ms: x.t - at });
+      at = Math.max(at, x.t);
+      steps.push(Object.assign({ op: 'set', id: x.id, state: x.state }, Object.keys(x.attributes).length ? { attrs: x.attributes } : {}));
+    });
+    if (!cut && o.to > at) steps.push({ op: 'advance', ms: o.to - at });
+    return { start, steps, real, runs, n: changes.length, cut };
+  }
+  // what the sandbox did against what the home did: per output, its states in order (each within slack ms of the
+  // real one); per automation, its runs. [{ id, kind: 'state' | 'runs', real, here, same, first: the first that
+  // differs }]
+  function sbxCompare(h, log, slack) {
+    const sl = slack == null ? 60e3 : slack, out = [];
+    const near = (a, b) => Math.abs(a - b) <= sl;
+    Object.entries(h.real).forEach(([id, real]) => {
+      const here = [];
+      log.filter((e) => e.kind === 'state' && e.key === id && e.by !== 'you').forEach((e) => { if (!here.length || here[here.length - 1].s !== String(e.to)) here.push({ t: e.t, s: String(e.to) }); });
+      let first = null;
+      for (let i = 0; i < Math.max(real.length, here.length) && !first; i++) if (!real[i] || !here[i] || real[i].s !== here[i].s || !near(real[i].t, here[i].t)) first = { i, real: real[i] || null, here: here[i] || null };
+      out.push({ id, kind: 'state', real, here, same: !first, first });
+    });
+    Object.entries(h.runs).forEach(([id, real]) => {
+      const here = log.filter((e) => e.kind === 'run' && e.key === id && e.outcome !== 'stopped' && e.started != null).map((e) => ({ t: e.started })).sort((a, b) => a.t - b.t);
+      let first = null;
+      for (let i = 0; i < Math.max(real.length, here.length) && !first; i++) if (!real[i] || !here[i] || !near(real[i].t, here[i].t)) first = { i, real: real[i] || null, here: here[i] || null };
+      out.push({ id, kind: 'runs', real, here, same: !first, first });
+    });
+    return out;
   }
 
   // ---- coverage (0.11.2): what runs reached of each automation and script, every trigger, condition, action and
@@ -8829,6 +8912,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           'sbx-behave': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
           'sbx-st-set': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
           'sbx-st-reset': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
+          'sbx-history': () => { if (!this._sbxOn()) return; const s = this._$.drawer.querySelector('.sbhist'); this._ha.soft(this._sbxHistory(s ? s.value : 'night'), 'replaying from history', null); },
           'sbx-explore': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
           'sbx-ex-stop': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
           'sbx-ex-show': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
@@ -12743,7 +12827,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._drawer = { mode: 'sandbox' };
       const d = this._$.drawer;
       d.hidden = false;
-      this._put(d, `<div class="dhead"><span class="dtitle">${T('sbx_title', { fnName: esc(this._fnName(label) + (this._ver ? ' · ' + this._ver.name : '')) })}</span><span class="sbclock"></span><button data-act="sbx-about" title="${T('sbx_about_t')}"><ha-icon icon="mdi:information-outline"></ha-icon></button><button data-act="sbx-reset" title="${T('sbx_reset_t')}"><ha-icon icon="mdi:restore"></ha-icon></button><button data-act="close" title="${T('sbx_close_t')}"><ha-icon icon="mdi:close"></ha-icon></button></div><div class="dbg sbx"><div class="sbnote">${T('sbx_note')}</div><div class="sbask"></div><div class="sbctl"></div><div class="sbrec"></div><div class="sbchk"></div><div class="sbdue"></div><div class="sbtabs" role="tablist" aria-label="${T('sbx_tabs')}"><button role="tab" data-act="sbx-tab" data-tab="tl" aria-selected="true">${T('sbx_tab_tl')}</button><button role="tab" data-act="sbx-tab" data-tab="st" aria-selected="false">${T('sbx_tab_st')}</button><button role="tab" data-act="sbx-tab" data-tab="ex" aria-selected="false">${T('sbx_tab_ex')}</button><button role="tab" data-act="sbx-tab" data-tab="cov" aria-selected="false">${T('sbx_tab_cov')}</button></div><div class="dtl sbtl" role="tabpanel"><div class="muted pad">${T('reading_configs')}</div></div><div class="sbvp" hidden></div><div class="dtl sbpane sbst" role="tabpanel" hidden></div><div class="dtl sbpane sbex" role="tabpanel" hidden></div><div class="dtl sbpane sbcov" role="tabpanel" hidden></div></div>`);
+      this._put(d, `<div class="dhead"><span class="dtitle">${T('sbx_title', { fnName: esc(this._fnName(label) + (this._ver ? ' · ' + this._ver.name : '')) })}</span><span class="sbclock"></span><button data-act="sbx-about" title="${T('sbx_about_t')}"><ha-icon icon="mdi:information-outline"></ha-icon></button><button data-act="sbx-reset" title="${T('sbx_reset_t')}"><ha-icon icon="mdi:restore"></ha-icon></button><button data-act="close" title="${T('sbx_close_t')}"><ha-icon icon="mdi:close"></ha-icon></button></div><div class="dbg sbx"><div class="sbnote">${T('sbx_note')}</div><div class="sbask"></div><div class="sbctl"></div><div class="sbrec"></div><div class="sbchk"></div><div class="sbdue"></div><div class="sbtabs" role="tablist" aria-label="${T('sbx_tabs')}"><button role="tab" data-act="sbx-tab" data-tab="tl" aria-selected="true">${T('sbx_tab_tl')}</button><button role="tab" data-act="sbx-tab" data-tab="st" aria-selected="false">${T('sbx_tab_st')}</button><button role="tab" data-act="sbx-tab" data-tab="ex" aria-selected="false">${T('sbx_tab_ex')}</button><button role="tab" data-act="sbx-tab" data-tab="cov" aria-selected="false">${T('sbx_tab_cov')}</button></div><div class="sbhp" hidden></div><div class="dtl sbtl" role="tabpanel"><div class="muted pad">${T('reading_configs')}</div></div><div class="sbvp" hidden></div><div class="dtl sbpane sbst" role="tabpanel" hidden></div><div class="dtl sbpane sbex" role="tabpanel" hidden></div><div class="dtl sbpane sbcov" role="tabpanel" hidden></div></div>`);
       this._$.board.classList.add('sbx');
       this._$.sbxpill.hidden = false;
       this._fitLitbar();
@@ -12846,8 +12930,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     // device's) or on an event fired, and then what it changes reaches further. Only automations that are loaded (have
     // a state: not disabled) are looked at.
     async _sbxReach(ids, cfgs) {
-      const ents = (ref) => (ref.startsWith('event:') ? [ref] : ref.startsWith('device:') ? this._ents.filter((e) => e.device_id === ref.slice(7)).map((e) => e.entity_id)
-        : /^(area|floor|label):/.test(ref) ? ((this._tgt.get(ref) || {}).entities || []) : ref.includes(':') ? [] : [ref]);
+      const ents = (ref) => (ref.startsWith('event:') ? [ref] : this._refEnts(ref));
       const known = (x) => this._known(x);
       const refs = (cfg, id, role) => { const out = new Set(); analyze(cfg, id.startsWith('script.'), known).refs.filter((r) => r.role === role).forEach((r) => ents(r.ref).forEach((x) => out.add(x))); return out; };
       const mine = new Set(ids), reached = new Set();
@@ -12866,6 +12949,75 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         }
       }
       return out;
+    }
+    // the entities a reference stands for: itself, a device's, an area's, floor's or label's (none for anything else)
+    _refEnts(ref) {
+      if (ref.startsWith('device:')) return this._ents.filter((e) => e.device_id === ref.slice(7)).map((e) => e.entity_id);
+      if (/^(area|floor|label):/.test(ref)) return (this._tgt.get(ref) || {}).entities || [];
+      return ref.includes(':') ? [] : [ref];
+    }
+    // ---- replay from history (0.11.2): the sandbox starts from the home's states at the start of a period and is
+    // given the real changes of what the function reads, in order, with the clock; then what it changed only itself,
+    // and when its automations ran, are put beside what really happened (sbxHistory, sbxCompare)
+    _sbxPeriod(kind) {
+      const now = Date.now(), H = 3600e3, tz = this._hass.config && this._hass.config.time_zone;
+      if (kind === 'night') {
+        let to = localAt(now, [8, 0], tz);
+        if (to > now) to = localAt(now - 24 * H, [8, 0], tz);
+        return { from: localAt(to - 12 * H, [18, 0], tz), to };
+      }
+      return { from: now - (kind === 'h6' ? 6 : kind === 'h12' ? 12 : 24) * H, to: now };
+    }
+    async _sbxHistory(kind) {
+      const g = this._sbx;
+      if (!g || g.busy || this._ver) return;
+      const { from, to } = this._sbxPeriod(kind), known = (x) => this._known(x), reads = new Set(), writes = new Set();
+      g.opts.items.forEach((it) => {
+        if (!it.cfg) return;
+        analyze(it.cfg, it.id.startsWith('script.'), known).refs.forEach((r) => {
+          const set = r.role === 'trigger' || r.role === 'condition' ? reads : r.role === 'action' ? writes : null;
+          if (set) this._refEnts(r.ref).forEach((x) => set.add(x));
+        });
+      });
+      const have = (k) => !!this._hass.states[k] && !/^(automation|script)\./.test(k);
+      const inputs = [...reads].filter(have).slice(0, 300), outputs = [...writes].filter((k) => have(k) && !reads.has(k)).slice(0, 300);
+      const autos = g.opts.items.filter((x) => x.id.startsWith('automation.') && !x.outside).map((x) => x.id);
+      const ask = (ids, attrs) => (ids.length ? this._ws({ type: 'history/history_during_period', start_time: new Date(from).toISOString(), end_time: new Date(to).toISOString(), entity_ids: ids,
+        include_start_time_state: true, significant_changes_only: false, minimal_response: false, no_attributes: !attrs }) : Promise.resolve({}));
+      g.busy = true;
+      this._renderSbx();
+      let hist;
+      try { const [a, b] = await Promise.all([ask(inputs.concat(autos), true), ask(outputs, false)]); hist = Object.assign({}, a, b); }
+      catch (e) { g.busy = false; this._renderSbx(); this._toast(T('sbx_hist_none')); return; }
+      g.busy = false;
+      if (this._sbx !== g) return;
+      const h = sbxHistory(hist, { inputs, outputs, autos, from, to });
+      // from the home as it was then, the same automations (and outside ones, whole home), the real changes in order
+      await this._sbxNew(g.label, { at: from, start: h.start, answers: [], items: g.opts.items.map((x) => x.id) });
+      const g2 = this._sbx;
+      if (!g2) return;
+      this._renderSbxCtl();
+      await this._sbxDo(async (e) => { for (const st of h.steps) { this._sbxRec(st); await sbxDoStep(e, st); } });
+      if (this._sbx !== g2) return;
+      g2.hist = { kind, from, to, n: h.n, cut: h.cut, inputs: inputs.length, cmp: sbxCompare(h, g2.eng.log) };
+      g2.tab = 'tl';
+      this._renderSbxCtl();
+      this._renderSbx();
+    }
+    // how the replay compares, over the timeline
+    _sbxHistPane() {
+      const g = this._sbx, H = g && g.hist;
+      if (!H) return '';
+      const t = (ms) => esc(this._sbxWhen(ms, true)), nm = (k) => esc(this._boxName(k));
+      const diff = H.cmp.filter((x) => !x.same), same = H.cmp.filter((x) => x.same && (x.real.length || x.here.length));
+      const row = (x) => {
+        const f = x.first;
+        if (x.kind === 'runs') return `<li class="bad">${T('sbx_hist_runs_diff', { name: nm(x.id), real: f.real ? t(f.real.t) : T('sbx_hist_never'), here: f.here ? t(f.here.t) : T('sbx_hist_never'), nr: x.real.length, nh: x.here.length })}</li>`;
+        return `<li class="bad">${T('sbx_hist_state_diff', { name: nm(x.id), real: f.real ? esc(this._fmtState(x.id, f.real.s)) + ' ' + t(f.real.t) : T('sbx_hist_nothing'), here: f.here ? esc(this._fmtState(x.id, f.here.s)) + ' ' + t(f.here.t) : T('sbx_hist_nothing') })}</li>`;
+      };
+      return `<div class="sbhistp" role="status"><b>${P('sbx_hist_done', H.n, { from: t(H.from), to: t(H.to) })}</b>${H.cut ? ` <span class="warn">${T('sbx_hist_cut')}</span>` : ''}`
+        + (H.cmp.length ? (diff.length ? `<ul>${diff.map(row).join('')}</ul>` : `<p>${T('sbx_hist_same')}</p>`) + (same.length ? `<p class="muted">${T('sbx_hist_same_list', { list: same.map((x) => nm(x.id)).join(', ') })}</p>` : '') : `<p class="muted">${T('sbx_hist_nothing_to')}</p>`)
+        + '</div>';
     }
     async _sbxReset() {
       if (!this._sbx) return;
@@ -12957,6 +13109,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const outs = this._sbxOutputs();
       if (outs.length) rows.push(row(T('sbx_device'), sel('sbdev', T('sbx_device_what'), outs.map(opt).join('')) + sel('sbhow', T('sbx_how'), o2('ok', T('sbx_how_ok')) + o2('slow', T('sbx_how_slow')) + o2('fails', T('sbx_how_fails')) + o2('unavailable', T('sbx_how_unav'))) + this._sbxField('sbms', [[5e3, '5 s'], [15e3, '15 s'], [3e4, '30 s'], [6e4, '1 min'], [3e5, '5 min']].map(([v, l]) => ({ v: String(v), l: T('sbx_after_t', { t: l }), pick: v === 15e3 })), T('sbx_ms_ph'), T('sbx_after_a')) + `<button class="chip" data-act="sbx-behave">${T('sbx_apply')}</button>`));
       // step-through: pause before every condition and action (breakpoints: Pause here on a box)
+      rows.push(row(T('sbx_replay'), sel('sbhist', T('sbx_replay_when'), [['night', T('sbx_hist_night')], ['h6', T('sbx_hist_h6')], ['h12', T('sbx_hist_h12')], ['h24', T('sbx_hist_h24')]].map(([v, l]) => o2(v, l)).join('')) + `<button class="chip" data-act="sbx-history" title="${esc(T('sbx_replay_t'))}">${T('sbx_replay_b')}</button>`));
       rows.push(row(T('sbx_home'), `<label class="sbcb" title="${esc(T('sbx_whole_t'))}"><input type="checkbox" class="sbwhole"${this._data.ui.sbxWhole ? ' checked' : ''}>${T('sbx_whole')}</label>${g.outside.size ? `<span class="muted">${esc(P('sbx_whole_k', g.outside.size))}</span>` : ''}`));
       rows.push(row(T('sbx_debug'), `<label class="sbcb"><input type="checkbox" class="sbstep"${g.eng.stepping ? ' checked' : ''}>${T('sbx_step_through')}</label><span class="sbbrk muted">${g.eng.breaks.size ? P('sbx_breaks_n', g.eng.breaks.size) : T('sbx_breaks_how')}</span>`));
       const steps = [[1e3, '1 s'], [1e4, '10 s'], [6e4, '1 min'], [3e5, '5 min'], [6e5, '10 min'], [18e5, '30 min'], [36e5, '1 h'], [108e5, '3 h'], [216e5, '6 h'], [432e5, '12 h'], [864e5, T('sbx_1day')], [6048e5, T('sbx_1week')]];
@@ -13724,6 +13877,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         this._put(rec, g.rec.steps.length ? `<span class="muted">${T('sbx_again')}</span>` + last.map(([i, t]) => `<button class="chip" data-act="sbx-again" data-i="${i}" data-key="again-${esc(t)}" title="${esc(T('sbx_again_t', { what: t }))}">${esc(shorten(t, 36))}</button>`).join('') + `<button class="chip" data-act="sbx-undo" title="${T('sbx_undo_t')}"><ha-icon icon="mdi:undo"></ha-icon>${T('sbx_undo')}</button>` : '');
         rec.querySelectorAll('button').forEach((b) => { b.disabled = !!g.busy; });
       }
+      // how a replay from history compares, over the timeline
+      const hp = d.querySelector('.sbhp');
+      if (hp) { const h = this._sbxHistPane(); hp.hidden = !h || (g.tab || 'tl') !== 'tl'; this._put(hp, h); }
       // the tabs: the timeline, the states, the explorer, coverage
       d.querySelectorAll('.sbtabs [role="tab"]').forEach((b) => { const on = b.dataset.tab === (g.tab || 'tl'); b.setAttribute('aria-selected', on ? 'true' : 'false'); b.tabIndex = on ? 0 : -1; });
       [['tl', '.sbtl'], ['st', '.sbst'], ['ex', '.sbex'], ['cov', '.sbcov']].forEach(([k, q]) => { const p = d.querySelector(q); if (p) p.hidden = (g.tab || 'tl') !== k; });

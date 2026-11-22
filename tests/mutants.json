@@ -1830,5 +1830,55 @@
   "suite": "board-regress",
   "expect": "needs an automation or a script",
   "only": "0.11.2 saved checks: edit one"
+ },
+ {
+  "name": "history: changes after the end are replayed",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "    ins.forEach((id) => walk(id, (x, i) => { if (i > 0 && x.t > o.from && x.t <= o.to) changes.push(Object.assign({ id }, x)); }));",
+  "replace": "    ins.forEach((id) => walk(id, (x, i) => { if (i > 0 && x.t > o.from) changes.push(Object.assign({ id }, x)); }));",
+  "suite": "sandbox",
+  "expect": "none after the end"
+ },
+ {
+  "name": "history: an attribute-only row is a change of an output",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "&& x.t <= o.to && (!out.length || out[out.length - 1].s !== x.state)) out.push({ t: x.t, s: x.state }); });",
+  "replace": "&& x.t <= o.to) out.push({ t: x.t, s: x.state }); });",
+  "suite": "sandbox",
+  "expect": "attribute-only row is no change"
+ },
+ {
+  "name": "history: every automation row is a run",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "if (lt && lt !== last) { const t = Date.parse(lt);",
+  "replace": "if (lt) { const t = Date.parse(lt);",
+  "suite": "sandbox",
+  "expect": "when an automation ran"
+ },
+ {
+  "name": "history: the comparison ignores times",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "    const near = (a, b) => Math.abs(a - b) <= sl;",
+  "replace": "    const near = () => true;",
+  "suite": "sandbox",
+  "expect": "a changed one doesn't"
+ },
+ {
+  "name": "board: a replay starts now, not at the period's start",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      await this._sbxNew(g.label, { at: from, start: h.start, answers: [], items: g.opts.items.map((x) => x.id) });",
+  "replace": "      await this._sbxNew(g.label, { at: Date.now(), start: h.start, answers: [], items: g.opts.items.map((x) => x.id) });",
+  "suite": "board-regress",
+  "expect": "starts from the home six hours ago",
+  "only": "0.11.2 the sandbox: replay a period from history"
+ },
+ {
+  "name": "board: a replay doesn't ask for the automations' runs",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      try { const [a, b] = await Promise.all([ask(inputs.concat(autos), true), ask(outputs, false)]);",
+  "replace": "      try { const [a, b] = await Promise.all([ask(inputs, true), ask(outputs, false)]);",
+  "suite": "board-regress",
+  "expect": "asks Home Assistant's history for what the function reads and its automations",
+  "only": "0.11.2 the sandbox: replay a period from history"
  }
 ]

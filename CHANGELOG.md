@@ -96,6 +96,12 @@ the porch light, if another automation does that. They run in the sandbox only, 
 and are left out of the function's coverage. A check saved this way keeps them and replays them. The choice is kept
 with your display settings.
 
+**Replay** in the sandbox replays a period from Home Assistant's history: last night (18:00 to 08:00), or the last 6,
+12 or 24 hours. The sandbox starts from your home as it was then and gets the real changes of everything the function
+reads, in order. Afterwards it shows how that compares with what really happened: when each of the function's
+automations ran in your home and in the sandbox, and what the function changed on its own. Anything that differs is
+listed with when. It only reads the history, and the replay can be saved as a check.
+
 Saved checks can be edited and shared. **Edit** changes a check's name, moves its steps earlier or later, changes
 what a step sets or how long it lets pass, takes a step or an expectation out, and adds an expectation ("Garage
 Door ends as closed", "Close garage runs to the end"). **Share** gives the check as text to copy, and **Import**
