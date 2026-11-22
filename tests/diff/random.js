@@ -3,7 +3,11 @@
 // same scenarios, so a difference the weekly run finds can be run again: FB_DIFF_RANDOM=<n> FB_DIFF_SEED=<seed>.
 //
 // Nothing loops for ever: an automation that starts on a helper only changes helpers after it in the order x, y, z
-// (and the counter, which starts nothing), so every chain ends.
+// (and the counter, which starts nothing), so every chain ends. MQTT (0.11.3): now and then a sensor and a binary
+// sensor on topics, triggers on them and their topics, and a publish to the binary sensor's topic, last, from one
+// automation that doesn't start on it (two runs publishing at once land in an order that depends on how far each got,
+// which Home Assistant decides await by await and the sandbox doesn't model).
+const { mq } = require('./mqtt');
 
 function rng(seed) {
   let a = seed >>> 0;
@@ -107,7 +111,29 @@ function one(r, n) {
     else if (r.maybe(0.5)) a.conditions = (a.conditions || []).concat([id === 'sensor.avg' ? { condition: 'numeric_state', entity_id: id, below: r.pick([14, 18, 25]) } : { condition: 'state', entity_id: id, state: r.pick(['on', 'off']) }]);
   });
   if (states['sensor.u']) for (let i = 0; i < 2; i++) steps.splice(r.int(0, steps.length - 1), 0, { set: 'sensor.u', to: String(r.pick([3, 11.5, 17, 24.25])) });
-  return Object.assign({ name: `random ${n}`, states, automations: autos, steps }, ids.length ? { derived } : {});
+  let mqtt = null;
+  if (r.maybe(0.35)) {
+    mqtt = Object.assign(mq('sensor.mq', Object.assign({ state_topic: 'r/mq', unit_of_measurement: '%' }, r.maybe(0.3) ? { availability_topic: 'r/av' } : {})),
+      mq('binary_sensor.mb', Object.assign({ state_topic: 'r/mb' }, r.maybe(0.4) ? { off_delay: r.pick([5, 15, 30]) } : {}, r.maybe(0.3) ? { expire_after: r.pick([20, 60]) } : {})));
+    Object.entries(mqtt).forEach(([id, x]) => { states[id] = [x.state]; });
+    let published = false;
+    Object.values(autos).forEach((a) => {
+      const k = r.int(0, 5);
+      if (k === 0) a.triggers.push({ trigger: 'mqtt', topic: 'r/mq' });
+      else if (k === 1) a.triggers.push({ trigger: 'mqtt', topic: 'r/mb', payload: r.pick(['ON', 'OFF']) });
+      else if (k === 2) a.triggers.push({ trigger: 'numeric_state', entity_id: 'sensor.mq', above: r.pick([20, 50, 80]) });
+      else if (k === 3) a.triggers.push({ trigger: 'state', entity_id: 'binary_sensor.mb', to: r.pick(['on', 'off']) });
+      else if (k === 4) a.conditions = (a.conditions || []).concat([{ condition: 'state', entity_id: 'binary_sensor.mb', state: r.pick(['on', 'off']) }]);
+      const hears = a.triggers.some((t) => t.topic === 'r/mb' || t.entity_id === 'binary_sensor.mb');
+      if (!hears && !published && r.maybe(0.4)) { published = true; a.actions.push({ action: 'mqtt.publish', data: { topic: 'r/mb', payload: r.pick(['ON', 'OFF']) } }); }
+    });
+    for (let i = r.int(2, 5); i > 0; i--) {
+      const k = r.int(0, 3);
+      const step = k <= 1 ? { mqtt: 'r/mq', payload: r.pick(['10', '35', '55.5', '90', 'abc', '', 'None']) } : k === 2 ? { mqtt: 'r/mb', payload: r.pick(['ON', 'OFF', 'ON', 'x']) } : { mqtt: 'r/av', payload: r.pick(['online', 'offline']) };
+      steps.splice(r.int(0, steps.length - 1), 0, step);
+    }
+  }
+  return Object.assign({ name: `random ${n}`, states, automations: autos, steps }, ids.length ? { derived } : {}, mqtt ? { mqtt } : {});
 }
 
 function make(n, seed) {

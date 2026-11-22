@@ -16,6 +16,9 @@ recompute it (0.11.2): a template entity's state template; a min/max sensor's ty
 threshold sensor's entity, limits and hysteresis; a binary sensor, light or switch group's members and whether
 all must be on. Read from the live entity's private attributes as above: a release that moves them leaves the rule
 out, and the sandbox keeps the helper as it is.
+
+MQTT entities (0.11.3) read topics, not entities: their answer is the topics and a rule saying how each message
+changes the entity, as Home Assistant's MQTT platforms do it (`_mqtt_rule`), so the sandbox's MQTT messages move them.
 """
 
 from __future__ import annotations
@@ -44,6 +47,9 @@ async def async_sources(hass: HomeAssistant, entity_ids: Iterable[str]) -> dict[
     helper_domains = await _helper_domains(hass, {e.domain for e in entries.values()})
     out: dict[str, Any] = {}
     for entity_id in ids:
+        if (mqtt := _mqtt(comps, entity_id)) is not None:
+            out[entity_id] = mqtt
+            continue
         found = _template_listeners(comps, entity_id)
         if found is None:
             found = _trigger_template(hass, reg, comps, entity_id)
@@ -99,6 +105,101 @@ def _rule(comps: dict[str, Any], entity_id: str) -> dict[str, Any] | None:
     except Exception:  # noqa: BLE001 - private attributes: no rule beats a failed request
         return None
     return None
+
+
+# what an MQTT entity's state message means, per platform: payload (after its value template) → state. A payload not
+# here is ignored, as Home Assistant ignores it; "None" resets the state to unknown where the platform says so
+def _mqtt_map(domain: str, module: str, c: dict[str, Any]) -> dict[str, Any] | None:
+    get = c.get
+    if domain == "sensor":
+        return {"how": "sensor"}
+    if domain == "binary_sensor":
+        return {"how": "map", "map": {get("payload_on", "ON"): "on", get("payload_off", "OFF"): "off", "None": "unknown"}, "blank": "skip"}
+    if domain == "switch":
+        return {"how": "map", "map": {get("state_on") or get("payload_on", "ON"): "on", get("state_off") or get("payload_off", "OFF"): "off", "None": "unknown"}}
+    if domain == "fan":
+        return {"how": "map", "map": {get("payload_on", "ON"): "on", get("payload_off", "OFF"): "off", "None": "unknown"}, "blank": "skip", "tpl": "state_value_template"}
+    if domain == "lock":
+        states = {get("state_locked", "LOCKED"): "locked", get("state_locking", "LOCKING"): "locking", get("state_unlocked", "UNLOCKED"): "unlocked", get("state_unlocking", "UNLOCKING"): "unlocking", get("state_open", "OPEN"): "open", get("state_opening", "OPENING"): "opening", get("state_jammed", "JAMMED"): "jammed"}
+        states[get("payload_reset", "None")] = "unknown"
+        return {"how": "map", "map": states, "blank": "skip"}
+    if domain == "cover":
+        return {"how": "cover", "map": {get("state_opening", "opening"): "opening", get("state_closing", "closing"): "closing", get("state_open", "open"): "open", get("state_closed", "closed"): "closed", "None": "unknown"}, "stopped": get("state_stopped", "stopped"), "position": get("position_topic") is not None}
+    if domain == "select":
+        return {"how": "select", "options": list(get("options") or [])}
+    if domain == "number":
+        return {"how": "number", "min": float(get("min", 1)), "max": float(get("max", 100)), "reset": get("payload_reset", "None")}
+    if domain == "text":
+        return {"how": "text", "min": int(get("min", 0)), "max": int(get("max", 255))}
+    if domain == "device_tracker":
+        return {"how": "tracker", "map": {get("payload_home", "home"): "home", get("payload_not_home", "not_home"): "not_home", get("payload_reset", "None"): "unknown"}}
+    if domain == "event":
+        return {"how": "event", "types": list(get("event_types") or [])}
+    if domain == "light" and module.endswith(".schema_basic"):
+        return {"how": "map", "map": {get("payload_on", "ON"): "on", get("payload_off", "OFF"): "off", "None": "unknown"}, "blank": "skip", "tpl": "state_value_template"}
+    if domain == "light" and module.endswith(".schema_json"):
+        return {"how": "json_light"}
+    return None
+
+
+def _tpl(value: Any) -> str | None:
+    text = getattr(value, "template", value)
+    return text if isinstance(text, str) else None
+
+
+def _mqtt(comps: dict[str, Any], entity_id: str) -> dict[str, Any] | None:
+    """An MQTT entity's topics and the rule its state follows them by; None for an entity that isn't MQTT's."""
+    domain = split_entity_id(entity_id)[0]
+    comp = comps.get(domain)
+    if comp is None:
+        return None
+    try:
+        entity = comp.get_entity(entity_id)
+        module = type(entity).__module__ if entity is not None else ""
+        config = getattr(entity, "_config", None)
+        if not module.startswith("homeassistant.components.mqtt.") or not isinstance(config, dict):
+            return None
+        how = _mqtt_map(domain, module, config)
+        # a sensor whose unit Home Assistant converts (°C shown in °F) or whose state is a date: not followed
+        if how and how["how"] == "sensor":
+            if getattr(entity, "native_unit_of_measurement", None) != getattr(entity, "unit_of_measurement", None):
+                how = None
+            elif str(getattr(entity, "device_class", None) or "") in ("timestamp", "date"):
+                how = None
+            else:
+                how.update({"numeric": bool(getattr(entity, "_numeric_state_expected", False)), "options": list(getattr(entity, "options", None) or [])})
+        rule: dict[str, Any] = {"kind": "mqtt", "domain": domain}
+        topics: list[str] = []
+        if how is not None and config.get("state_topic"):
+            tpl_key = how.pop("tpl", "value_template")
+            sub = {"topic": str(config["state_topic"]), **how}
+            if (t := _tpl(config.get(tpl_key))) is not None:
+                sub["tpl"] = t
+            rule["state"] = sub
+            topics.append(sub["topic"])
+            if domain == "binary_sensor" and config.get("off_delay") is not None:
+                rule["off_delay"] = float(config["off_delay"])
+            if domain in ("sensor", "binary_sensor") and config.get("expire_after"):
+                rule["expire_after"] = float(config["expire_after"])
+        if domain == "cover" and config.get("position_topic"):
+            rule["position"] = {"topic": str(config["position_topic"]), "tpl": _tpl(config.get("position_template")), "closed": int(config.get("position_closed", 0)), "open": int(config.get("position_open", 100)), "state": bool(config.get("state_topic"))}
+            topics.append(rule["position"]["topic"])
+        if config.get("json_attributes_topic"):
+            rule["attrs"] = {"topic": str(config["json_attributes_topic"]), "tpl": _tpl(config.get("json_attributes_template"))}
+            topics.append(rule["attrs"]["topic"])
+        avail = []
+        if config.get("availability_topic"):
+            avail.append({"topic": str(config["availability_topic"]), "on": str(config.get("payload_available", "online")), "off": str(config.get("payload_not_available", "offline")), "tpl": _tpl(config.get("availability_template"))})
+        for a in config.get("availability") or []:
+            avail.append({"topic": str(a["topic"]), "on": str(a.get("payload_available", "online")), "off": str(a.get("payload_not_available", "offline")), "tpl": _tpl(a.get("value_template"))})
+        if avail:
+            rule["avail"] = {"mode": str(config.get("availability_mode", "latest")), "list": avail}
+            topics += [a["topic"] for a in avail]
+        if len(rule) == 2:
+            return {"entities": [], "domains": [], "all": False, "how": "mqtt", "topics": topics}
+        return {"entities": [], "domains": [], "all": False, "how": "mqtt", "topics": sorted(set(topics)), "rule": rule}
+    except Exception:  # noqa: BLE001 - private attributes: no rule beats a failed request
+        return None
 
 
 async def _helper_domains(hass: HomeAssistant, domains: set[str]) -> set[str]:

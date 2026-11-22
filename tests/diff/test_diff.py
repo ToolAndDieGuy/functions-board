@@ -5,6 +5,10 @@ sandbox (tests/diff/sandbox.js, run by this file through node) and here, in a re
 real helpers and automations and a frozen clock moved a second at a time. After every step the two must agree on
 the calls made (service and entities) and the state of every entity in the scenario.
 
+MQTT entities (0.11.3) are set up here by MQTT discovery on pytest-homeassistant's mocked broker, which hands what's
+published straight back; before the steps, the rule functions_board/sources gives for each must be the one the
+sandbox was given.
+
     venvtest/bin/python -m pytest tests/diff -q            # the corpus
     FB_DIFF_RANDOM=200 FB_DIFF_SEED=7 ... pytest tests/diff  # plus 200 random scenarios (weekly)
 """
@@ -20,9 +24,12 @@ import time
 
 import pytest
 from homeassistant.const import EVENT_CALL_SERVICE
+from homeassistant.util import dt as dt_util
 from homeassistant.core import HomeAssistant
 from homeassistant.setup import async_setup_component
-from pytest_homeassistant_custom_component.common import async_fire_time_changed
+from pytest_homeassistant_custom_component.common import async_fire_mqtt_message, async_fire_time_changed
+
+from custom_components.functions_board.sources import async_sources
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 HELPERS = ("input_boolean", "counter", "input_number", "input_select", "timer")
@@ -46,13 +53,15 @@ DATA = _load()
 
 
 def _same(a, b) -> bool:
-    """States agree: the same text, or the same number ('10' and '10.0')."""
+    """States agree: the same text, the same number ('10' and '10.0'), or the same moment (an event entity's)."""
     if a == b:
         return True
     try:
         return float(a) == float(b)
     except (TypeError, ValueError):
-        return False
+        pass
+    x, y = (dt_util.parse_datetime(str(v)) if v else None for v in (a, b))
+    return x is not None and y is not None and x == y
 
 
 def _helpers(states: dict) -> dict:
@@ -92,12 +101,40 @@ def _derived(derived: dict) -> dict:
     return conf
 
 
-async def _run_core(hass: HomeAssistant, freezer, sc: dict, start: str, tz: str) -> list:
+# a command topic for the MQTT platforms that must have one (the sandbox's rule doesn't read it)
+_COMMAND = ("switch", "lock", "select", "number", "light")
+
+
+async def _mqtt(hass: HomeAssistant, mqtt_mock_entry, ents: dict) -> None:
+    """The scenario's MQTT entities, by discovery, in its order; then their rules, as functions_board/sources says."""
+    await mqtt_mock_entry()
+    for eid, x in ents.items():
+        dom, obj = eid.split(".", 1)
+        cfg = dict(x["config"], name=obj, unique_id="fbdiff_" + obj, default_entity_id=eid)
+        if dom in _COMMAND and "command_topic" not in cfg:
+            cfg["command_topic"] = cfg["state_topic"] + "/set"
+        async_fire_mqtt_message(hass, f"homeassistant/{dom}/{obj}/config", json.dumps(cfg))
+        # each made before the next is announced: they subscribe in the corpus's order, as the sandbox has them (a
+        # platform set up for the first of its kind can take a while)
+        for _ in range(200):
+            await _done(hass)
+            if hass.states.get(eid) is not None:
+                break
+            await asyncio.sleep(0.01)
+    got = (await async_sources(hass, list(ents)))
+    for eid, x in ents.items():
+        assert hass.states.get(eid) is not None, f"MQTT discovery made no {eid}"
+        rule = (got.get(eid) or {}).get("rule")
+        assert rule == x["rule"], f"{eid}: functions_board/sources says\n{json.dumps(rule)}\nthe corpus gave the sandbox\n{json.dumps(x['rule'])}"
+
+
+async def _run_core(hass: HomeAssistant, freezer, mqtt_mock_entry, sc: dict, start: str, tz: str) -> list:
     _count_threads(hass)
     await hass.config.async_set_time_zone(tz)
     freezer.move_to(start)
     derived = sc.get("derived") or {}
-    plain = {k: v for k, v in sc["states"].items() if k not in derived}
+    mqtt_ents = sc.get("mqtt") or {}
+    plain = {k: v for k, v in sc["states"].items() if k not in derived and k not in mqtt_ents}
     for dom, items in _helpers(plain).items():
         if items:
             assert await async_setup_component(hass, dom, {dom: items})
@@ -109,6 +146,10 @@ async def _run_core(hass: HomeAssistant, freezer, sc: dict, start: str, tz: str)
     for dom, items in _derived(derived).items():
         assert await async_setup_component(hass, dom, {dom: items})
     await hass.async_block_till_done()
+    if mqtt_ents:
+        await _mqtt(hass, mqtt_mock_entry, mqtt_ents)
+        for eid, x in mqtt_ents.items():
+            assert hass.states.get(eid).state == x["state"], f"{eid} starts {hass.states.get(eid).state}, the corpus says {x['state']}"
     autos = [dict(cfg, id="fb_" + name, alias=name) for name, cfg in sc["automations"].items()]
     assert await async_setup_component(hass, "automation", {"automation": autos})
     await hass.async_block_till_done()
@@ -139,6 +180,10 @@ async def _run_core(hass: HomeAssistant, freezer, sc: dict, start: str, tz: str)
                 await _done(hass)
         elif "event" in step:
             hass.loop.call_soon(hass.bus.async_fire, step["event"], step.get("data") or {})
+            await _done(hass)
+        elif "mqtt" in step:
+            # as the broker hands a message to Home Assistant's client
+            hass.loop.call_soon(async_fire_mqtt_message, hass, step["mqtt"], step["payload"])
             await _done(hass)
         st = {}
         for eid in sorted(sc["states"]):
@@ -192,14 +237,16 @@ def _say(step: dict) -> str:
         return f"{step['set']} → {step['to']}" + (f" {step['attrs']}" if step.get("attrs") else "")
     if "wait" in step:
         return f"{step['wait']} s pass"
+    if "mqtt" in step:
+        return f"MQTT {step['mqtt']}: {step['payload']!r}"
     return f"event {step['event']} {step.get('data') or {}}"
 
 
 @pytest.mark.parametrize("sc", DATA["scenarios"], ids=[s["name"].replace(" ", "_") for s in DATA["scenarios"]])
-async def test_scenario(hass: HomeAssistant, freezer, sc: dict) -> None:
+async def test_scenario(hass: HomeAssistant, freezer, mock_hass_config: None, mqtt_mock_entry, sc: dict) -> None:
     """The sandbox does what Home Assistant does, step by step."""
     assert not sc.get("error"), sc.get("error")
-    core = await _run_core(hass, freezer, sc, DATA["start"], DATA["tz"])
+    core = await _run_core(hass, freezer, mqtt_mock_entry, sc, DATA["start"], DATA["tz"])
     diffs = []
     for i, (step, a, b) in enumerate(zip(sc["steps"], sc["sandbox"], core)):
         if a["calls"] != b["calls"]:

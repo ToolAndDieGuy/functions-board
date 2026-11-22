@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+In the sandbox, MQTT entities follow their topics. A message on a sensor's state topic (sent by you, or by an
+automation's `mqtt.publish`) changes the sensor through its own value template, as Home Assistant would: binary
+sensors, switches, locks, covers, selects, numbers, texts, device trackers, event entities and lights, with
+availability topics, JSON attributes, `off_delay` and `expire_after`. Home Assistant's own order is kept (its MQTT
+triggers hear a message before the entities on that topic change), and so are its quirks: a sensor that expects a
+number and gets text keeps its state until a number comes.
+
 In the sandbox, the sun moves at sunrise and sunset only when something in the function reads it (an automation, a
 script or a helper). Before, it moved every day whatever the function was, so a run of a few days filled the timeline
 with sun changes nothing heard. The explorer also ran each of its tries on until nothing was due, and the sun is always

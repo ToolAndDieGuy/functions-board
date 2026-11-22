@@ -3055,6 +3055,10 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       sbx_follows_list: 'These helpers follow what they read here, as in Home Assistant: {list}. Other helpers stay as they are unless you set them.',
       sbx_follows_partly: '(without its delay)',
       sbx_follows: 'follows {name}',
+      sbx_mqtt_list: 'These MQTT entities follow their topics, as in Home Assistant: {list}. A message on one changes them through their own templates.',
+      sbx_mqtt_tpl_failed: '{name} couldn\'t read an MQTT message with its template, so it stays as it was: {e}',
+      sbx_mqtt_expire: '{name} expires (no message)',
+      sbx_mqtt_off_delay: '{name} turns off by itself',
       sbx_follow_failed: '{name} couldn\'t be worked out here, so it stays as it is: {e}',
       sbx_g_read: 'Read by the automations',
       sbx_g_rest: 'Also on the board',
@@ -4237,6 +4241,78 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     }
     return null;
   }
+  // MQTT entities that follow their topics (0.11.3): what a message does to one, as Home Assistant's MQTT platforms do
+  // it (the rule comes from functions_board/sources). sub: the rule's state subscription; p: the payload after its
+  // template; cur: the entity's state as the entity holds it. [state, attributes] or null (the message changes
+  // nothing: Home Assistant ignores it or logs it as invalid)
+  const SBX_MQ_BLOCKED = new Set(['available', 'device_info', 'entity_category', 'entity_id', 'entity_registry_enabled_default', 'extra_state_attributes', 'force_update', 'should_poll', 'state', 'unique_id', 'group_entities', 'assumed_state', 'device_class', 'entity_picture', 'friendly_name', 'icon', 'supported_features', 'unit_of_measurement']);
+  const SBX_MQ_BAD = '\u0000not a number';
+  // Python's str.isnumeric (digits only), int() and float() of a payload, and how Home Assistant writes the number
+  const pyNumber = (p) => {
+    const t = String(p).replace(/_/g, '').trim();
+    if (/^[+-]?(inf(inity)?|nan)$/i.test(t)) return null;
+    return PYNUM_RE.test(t) ? Number(t) : null;
+  };
+  function sbxMqttState(sub, p, cur, msg) {
+    const blank = !String(p).trim(), st = cur ? cur.state : null;
+    switch (sub.how) {
+      case 'sensor': {
+        if (p === 'None') return ['unknown', {}];
+        // a number expected and something else sent: the sensor keeps it, and every write fails until a number comes
+        // (found by the differential test)
+        if (sub.numeric) return p === '' ? null : pyNumber(p) == null ? [SBX_MQ_BAD, {}] : [p, {}];
+        if (sub.options && sub.options.length && !sub.options.includes(p)) return null;
+        return [p.length > 255 ? 'unknown' : p, {}];
+      }
+      case 'map': {
+        if (sub.blank === 'skip' && blank) return null;
+        return Object.prototype.hasOwnProperty.call(sub.map, p) ? [sub.map[p], {}] : null;
+      }
+      case 'cover': {
+        if (!p) return null;
+        if (p === sub.stopped) {
+          if (sub.position) return [cur && (cur.attributes || {}).current_position === 0 ? 'closed' : 'open', {}];
+          return [st === 'closed' || st === 'closing' ? 'closed' : 'open', {}];
+        }
+        return Object.prototype.hasOwnProperty.call(sub.map, p) ? [sub.map[p], {}] : null;
+      }
+      case 'select': {
+        if (blank) return null;
+        if (p.toLowerCase() === 'none') return ['unknown', {}];
+        return toList(sub.options).includes(p) ? [p, {}] : null;
+      }
+      case 'number': {
+        if (blank) return null;
+        if (p === sub.reset) return ['unknown', {}];
+        const isInt = /^\d+$/.test(p), n = isInt ? Number(p) : pyNumber(p);
+        if (n == null || !isFinite(n)) return null;
+        if (n < sub.min || n > sub.max) return null;
+        return [isInt ? String(BigInt(p)) : pyFloat(n), {}];
+      }
+      case 'text': return p.length < sub.min || p.length > sub.max ? null : [p, {}];
+      case 'tracker': {
+        if (blank) return null;
+        return Object.prototype.hasOwnProperty.call(sub.map, p) ? [sub.map[p], {}] : [String(msg.payload), {}];
+      }
+      case 'json_light': {
+        let v = null;
+        try { v = JSON.parse(String(msg.payload)); } catch (e) { return null; }
+        if (!v || typeof v !== 'object' || Array.isArray(v) || !('state' in v)) return null;
+        return v.state === 'ON' ? ['on', {}] : v.state === 'OFF' ? ['off', {}] : v.state == null ? ['unknown', {}] : null;
+      }
+      default: return null;
+    }
+  }
+  // an MQTT event entity's message: [event type, its other data] or null
+  function sbxMqttEvent(sub, p, msg) {
+    if (msg.retain || !p || p === 'None' || p === '{}') return null;
+    let v = null;
+    try { v = JSON.parse(p); } catch (e) { return null; }
+    if (!v || typeof v !== 'object' || Array.isArray(v) || v.event_type == null) return null;
+    const type = String(v.event_type), rest = Object.assign({}, v);
+    delete rest.event_type;
+    return toList(sub.types).includes(type) ? [type, rest] : null;
+  }
   // what a followed helper reads
   const sbxFeeds = (d) => (d.rule.kind === 'template' ? toList(d.reads) : d.rule.kind === 'threshold' ? [d.rule.entity] : toList(d.rule.entities)).map(String);
   // what Home Assistant refuses (0.11.2, found by the differential test): the call is made, fails, and the run stops
@@ -4580,7 +4656,10 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this.hit = new WeakSet(); this.cres = new WeakMap(); this.fired = new Set(); this.dispatching = false; this.evq = []; this.after = [];
       // helpers that follow what they read (sbxFollow): id → { rule, reads, mem }, and what each input feeds
       this.follow = new Map(); this.feeds = new Map();
+      // MQTT entities that follow their topics (0.11.3): id → { rule, mem }, in the order Home Assistant set them up
+      this.mq = new Map();
       Object.entries(o.derived || {}).forEach(([id, d]) => {
+        if (d && d.rule && d.rule.kind === 'mqtt') { this.mq.set(id, { rule: d.rule, mem: null }); return; }
         if (!d || !d.rule || !SBX_FOLLOW.has(d.rule.kind)) return;
         const cur = this.real[id], mem = {};
         // a threshold remembers which side it was on: the helper's state as it is now
@@ -4709,6 +4788,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this.items.forEach((it) => { if (it.kind === 'automation') this._trigs(it).forEach((t) => { const p = this._plat(t); if (t.enabled !== false && !SBX_PLATS.has(p) && !this._espec(p)) not.push(`${this._name(it.id)}: ${p}`); }); });
       if (not.length) this._log({ kind: 'note', text: T('sbx_not_followed', { list: [...new Set(not)].join(', ') }) });
       toList(this.o.notes).forEach((text) => this._log({ kind: 'note', text: String(text) }));
+      if (this.mq.size) this._log({ kind: 'note', text: T('sbx_mqtt_list', { list: [...this.mq.keys()].map((id) => this._name(id)).join(', ') }) });
       if (this.follow.size) this._log({ kind: 'note', text: T('sbx_follows_list', { list: [...this.follow].map(([id, f]) => this._name(id) + (f.rule.partly ? ' ' + T('sbx_follows_partly') : '')).join(', ') }) });
       this.items.forEach((it) => { if (it.kind === 'automation') this._trigs(it).forEach((t, i) => { this._armTime(it, t, i); this._armSun(it, t, i); }); });
       this._armSunState();
@@ -4865,9 +4945,11 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       await this.settle();
     }
     // ---- states and events
-    async setState(id, state, attrs, cause, byYou, follows) {
-      const old = this.get(id), was = old ? old.state : null;
-      const A = Object.assign({}, old ? old.attributes : {}, attrs || {});
+    // how.whole: attrs are all the attributes (not added to the old); how.now: handed out at once, inside the handing
+    // out in progress (an MQTT entity's write, which Home Assistant makes as it hands out the message)
+    async setState(id, state, attrs, cause, byYou, follows, how) {
+      const old = this.get(id), was = old ? old.state : null, h = how || {};
+      const A = h.whole ? Object.assign({}, attrs || {}) : Object.assign({}, old ? old.attributes : {}, attrs || {});
       // a cover's opened and closed triggers read is_closed
       if (id.startsWith('cover.') && !(attrs && 'is_closed' in attrs) && ['open', 'closed', 'opening', 'closing'].includes(state)) A.is_closed = state === 'closed';
       const sameAttrs = canon(A) === canon(old ? old.attributes : {});
@@ -4878,7 +4960,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const nu = { state, attributes: A, last_changed: was === state && old ? old.last_changed : this.iso(), last_updated: this.iso() };
       this.changed.set(id, nu);
       const lid = this._log({ kind: 'state', key: id, from: was, to: state, cause, by: byYou ? 'you' : null, follows: follows || null });
-      await this._dispatch(() => this._onState(id, old, nu, lid));
+      if (h.now && this.dispatching) await this._onState(id, old, nu, lid);
+      else await this._dispatch(() => this._onState(id, old, nu, lid));
       return lid;
     }
     async fireEvent(type, data, cause, byYou) {
@@ -4923,6 +5006,10 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
             if (ts[i].enabled !== false && this._plat(ts[i]) === 'mqtt' && await this._mqttMatch(ts[i], msg)) await this._fire(it, i, Object.assign({ platform: 'mqtt' }, msg), lid);
           }
         }
+        // then the MQTT entities on the topic: Home Assistant writes their states once every subscriber has had the
+        // message, one after another, each handed out as it's written (found by the differential test): the
+        // triggers' runs saw them as they were, and what starts on the first sees the second as it was
+        await this._mqttEnts(msg, lid);
         ws().forEach((w) => w.onMqtt && w.onMqtt(msg, lid));
       });
       return lid;
@@ -4931,6 +5018,111 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._fresh();
       this._task(() => this.mqtt(topic, payload, null, true));
       await this.settle();
+    }
+    // ---- MQTT entities following their topics (0.11.3): availability, then attributes, then the state, as each
+    // entity subscribed to them; each that changes the entity writes its state
+    _mqMem(id, f) {
+      if (f.mem) return f.mem;
+      const cur = this.get(id), r = f.rule, off = cur && cur.state === 'unavailable';
+      const avail = {};
+      ((r.avail && r.avail.list) || []).forEach((a) => { avail[a.topic] = !off; });
+      f.mem = { st: off ? 'unknown' : cur ? cur.state : 'unknown', attrs: {}, avail, latest: !off, expired: false, extra: [] };
+      return f.mem;
+    }
+    _mqOn(f) {
+      const m = f.mem, r = f.rule;
+      if (m.expired) return false;
+      if (!r.avail) return true;
+      const vals = r.avail.list.map((a) => m.avail[a.topic]);
+      return r.avail.mode === 'all' ? vals.every(Boolean) : r.avail.mode === 'any' ? vals.some(Boolean) : m.latest;
+    }
+    async _mqRender(tpl, msg, id) {
+      if (!tpl) return { ok: true, value: msg.payload };
+      const vars = { value: msg.payload, entity_id: id, name: this._name(id) };
+      if (msg.payload_json != null) vars.value_json = msg.payload_json;
+      const r = await this.o.tpl(String(tpl), vars, this, { raw: true });
+      if (!r || !r.ok) return { ok: false, err: r && r.err };
+      return { ok: true, value: r.value == null ? '' : typeof r.value === 'object' ? JSON.stringify(r.value) : String(r.value) };
+    }
+    // the entity as it shows now: its own state, or unavailable
+    async _mqWrite(id, f, lid) {
+      const m = f.mem, on = this._mqOn(f);
+      if (on && m.st === SBX_MQ_BAD) return;
+      const A = Object.assign({}, (this.get(id) || {}).attributes || {});
+      m.extra.forEach((k) => { delete A[k]; });
+      Object.assign(A, m.attrs);
+      await this.setState(id, on ? m.st : 'unavailable', A, lid, false, lid ? 'mqtt:' + f.topic : null, { whole: true, now: !!lid });
+    }
+    async _mqttEnts(msg, lid) {
+      // each entity that wants its state written, in the order they asked; Home Assistant writes them last first
+      // (its write requests are a dict it pops), each handed out as it's written (found by the differential test).
+      // Of two entities on one topic, which asks first changes from one start of Home Assistant to the next (its
+      // subscriptions come in no fixed order): here, the one set up first
+      const writes = [];
+      const want = (id, f) => { if (!writes.some((w) => w[0] === id)) writes.push([id, f]); };
+      for (const [id, f] of this.mq) {
+        const r = f.rule, hit = (t) => t && sbxTopic(String(t), msg.topic);
+        if (!(r.avail && r.avail.list.some((a) => hit(a.topic))) && !(r.attrs && hit(r.attrs.topic)) && !(r.state && hit(r.state.topic)) && !(r.position && hit(r.position.topic))) continue;
+        const m = this._mqMem(id, f);
+        f.topic = msg.topic;
+        const said = (e) => { if (!f.said) { f.said = true; this._log({ kind: 'note', key: id, warn: true, text: T('sbx_mqtt_tpl_failed', { name: this._name(id), e: e || '' }) }); } };
+        if (r.avail) {
+          let changed = false;
+          for (const a of r.avail.list) {
+            if (!hit(a.topic)) continue;
+            const v = await this._mqRender(a.tpl, msg, id);
+            if (!v.ok) { said(v.err); continue; }
+            if (v.value === a.on) { m.avail[a.topic] = true; m.latest = true; changed = true; } else if (v.value === a.off) { m.avail[a.topic] = false; m.latest = false; changed = true; }
+          }
+          if (changed) want(id, f);
+        }
+        if (r.attrs && hit(r.attrs.topic)) {
+          const v = await this._mqRender(r.attrs.tpl, msg, id);
+          let o = null;
+          if (v.ok) { try { o = JSON.parse(v.value); } catch (e) { o = null; } } else said(v.err);
+          if (o && typeof o === 'object' && !Array.isArray(o)) {
+            const keep = Object.fromEntries(Object.entries(o).filter(([k]) => !SBX_MQ_BLOCKED.has(k)));
+            m.extra = Object.keys(m.attrs); m.attrs = keep;
+            want(id, f);
+          }
+        }
+        if (r.state && hit(r.state.topic)) {
+          const sub = r.state;
+          if (r.expire_after) {
+            m.expired = false;
+            this.timers.filter((x) => x.slot === 'expire:' + id).forEach((x) => this._drop(x));
+            this._at(this.now + r.expire_after * 1000, () => this._task(async () => { m.expired = true; await this._mqWrite(id, f, null); }), null, T('sbx_mqtt_expire', { name: this._name(id) }), id).slot = 'expire:' + id;
+          }
+          const v = await this._mqRender(sub.tpl, msg, id);
+          if (!v.ok) { said(v.err); continue; }
+          let out = null;
+          if (sub.how === 'event') {
+            const ev = sbxMqttEvent(sub, v.value, msg);
+            if (ev) { m.extra = Object.keys(m.attrs); m.attrs = Object.assign({ event_type: ev[0] }, ev[1]); out = [this.iso(), {}]; }
+          } else out = sbxMqttState(sub, v.value, { state: m.st, attributes: (this.get(id) || {}).attributes || {} }, msg);
+          if (out) {
+            m.st = out[0];
+            if (r.off_delay != null) {
+              this.timers.filter((x) => x.slot === 'offdelay:' + id).forEach((x) => this._drop(x));
+              if (m.st === 'on') this._at(this.now + r.off_delay * 1000, () => this._task(async () => { m.st = 'off'; await this._mqWrite(id, f, null); }), null, T('sbx_mqtt_off_delay', { name: this._name(id) }), id).slot = 'offdelay:' + id;
+            }
+          }
+          if (out || r.expire_after) want(id, f);
+        }
+        if (r.position && hit(r.position.topic)) {
+          const v = await this._mqRender(r.position.tpl, msg, id);
+          if (!v.ok) { said(v.err); continue; }
+          let pos = v.value;
+          try { const o = JSON.parse(pos); if (o && typeof o === 'object' && !Array.isArray(o)) { if (!('position' in o)) continue; pos = o.position; } } catch (e) { /* a number */ }
+          const n = pyNumber(pos);
+          if (!pos || n == null) continue;
+          const lo = r.position.closed + 1, hi = r.position.open, pct = Math.min(100, Math.max(0, Math.floor((n * 100) / (hi - lo + 1))));
+          m.attrs = Object.assign({}, m.attrs, { current_position: pct });
+          if (!r.position.state) m.st = pct === 0 ? 'closed' : 'open';
+          want(id, f);
+        }
+      }
+      for (const [id, f] of writes.reverse()) await this._mqWrite(id, f, lid);
     }
     _sval(t, s) { return s == null ? null : t.attribute != null ? s.attributes[t.attribute] : s.state; }
     _stateMatch(t, id, old, nu) {
@@ -5980,6 +6172,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
      The template's state functions are renamed to stand-ins that read fb_s (the sandbox's states) first and the
      real ones for everything else; the clock functions read fb_t (the sandbox clock). What still reads Home
      Assistant directly is reported, so a result built partly on the real house is never passed off as the sandbox's. */
+  // the ends of a template rendered as text (_sbxTpl's opt.raw)
+  const SBX_RAW = '\u27eafb\u27eb';
   const SBX_PRELUDE = [
     "{%- macro _fb_obj(e, returns) -%}{%- if e in fb_s -%}{%- set s = fb_s[e] -%}{%- do returns({'entity_id': e, 'domain': e.split('.')[0], 'object_id': e.split('.')[1], 'name': s.attributes.get('friendly_name', e), 'state': s.state, 'attributes': s.attributes, 'last_changed': as_datetime(s.last_changed), 'last_updated': as_datetime(s.last_updated), 'last_reported': as_datetime(s.last_updated)}) -%}{%- elif e is string and '.' in e -%}{%- do returns(states[e.split('.')[0]][e.split('.')[1]]) -%}{%- endif -%}{%- endmacro -%}",
     '{%- set fb_obj = _fb_obj | as_function -%}',
@@ -11423,7 +11617,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       };
       const resolve = (ref) => { if (ref.startsWith('device:')) return this._ents.filter((e) => e.device_id === ref.slice(7)).map((e) => e.entity_id); const t = this._tgt.get(ref); return t ? t.entities : []; };
       const own = this._ents.filter((e) => (e.labels || []).includes(label)).map((e) => [e.entity_id, { kind: 'member' }]);
-      const o = { states: this._hass.states, tz: this._hass.config && this._hass.config.time_zone, tpl: (t, v, e) => this._sbxTpl(t, v, e), resolve,
+      const o = { states: this._hass.states, tz: this._hass.config && this._hass.config.time_zone, tpl: (t, v, e, o) => this._sbxTpl(t, v, e, o), resolve,
         fetch: (id) => this._fetchConfig(id), name: (id) => this._boxName(id), condText: (c) => condText(c, (x) => this._boxName(x)),
         entityOf: (x) => this._entOfReg(x), scene: (id) => this._sceneCfg(id), derived: await this._followRules(own, this._hass.states) };
       const rec = have && have.gen === gen ? have : { gen, res: new Map() };
@@ -12909,7 +13103,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const wholeNote = outside.size ? [P('sbx_whole_n', outside.size, { list: [...outside].map((k) => this._boxName(k)).join(', ') })] : [];
       g.opts = {
         states, items: ids.map((id, i) => ({ id, cfg: cfgs[i], outside: outside.has(id) })), now, tz: this._hass.config && this._hass.config.time_zone, notes: wholeNote,
-        tpl: (t, v, e) => this._sbxTpl(t, v, e), ask: (q) => this._sbxAsk(q), resolve, fetch: (id) => this._fetchConfig(id),
+        tpl: (t, v, e, o) => this._sbxTpl(t, v, e, o), ask: (q) => this._sbxAsk(q), resolve, fetch: (id) => this._fetchConfig(id),
         name: (id) => this._boxName(id), condText: (c) => condText(c, (x) => this._boxName(x)), onLog: () => this._sbxLogged(),
         entityOf: (x) => this._entOfReg(x), scene: (id) => this._sceneCfg(id), actText: (a) => this._actText(a),
         onPause: () => this._renderSbx(),
@@ -13093,8 +13287,10 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._refreshStates();
     }
     // Home Assistant renders the template, pointed at the sandbox's states and clock (sbxRewrite)
-    // the engine that asks (the open sandbox's, or a saved check's being replayed) is the one whose states are read
-    async _sbxTpl(t, vars, engine) {
+    // the engine that asks (the open sandbox's, or a saved check's being replayed) is the one whose states are read.
+    // opt.raw: the text as rendered, as Home Assistant's MQTT platforms take it (render_template would read "64.0" as
+    // the number 64; marked at both ends it stays text)
+    async _sbxTpl(t, vars, engine, opt) {
       const g = this._sbx, eng = engine || (g && g.eng);
       if (!eng) return { ok: false, err: 'closed' };
       if (this._asFn == null) this._asFn = await this._renderRaw('{%- macro m(returns) -%}{%- do returns(1) -%}{%- endmacro -%}{{ (m | as_function)() }}', {}).then((v) => String(v) === '1', () => false);
@@ -13107,8 +13303,11 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       try { variables = JSON.parse(JSON.stringify(vars || {})); } catch (e) { /* only what can be sent */ }
       Object.assign(variables, { fb_s, fb_t: new Date(eng.now).toISOString() });
       if (g && eng === g.eng) g.tplN++;
-      try { return { ok: true, value: await this._renderRaw(SBX_PRELUDE + rw.text, variables), partly: rw.leftovers }; }
-      catch (e) { return { ok: false, err: (e && e.message) || String(e) }; }
+      const raw = !!(opt && opt.raw);
+      try {
+        const v = await this._renderRaw(SBX_PRELUDE + (raw ? SBX_RAW + rw.text + SBX_RAW : rw.text), variables);
+        return { ok: true, value: raw ? String(v).slice(SBX_RAW.length, -SBX_RAW.length) : v, partly: rw.leftovers };
+      } catch (e) { return { ok: false, err: (e && e.message) || String(e) }; }
     }
     // what the sandbox can't know, answered by you
     _sbxAsk(q) {

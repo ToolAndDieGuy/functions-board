@@ -3,10 +3,15 @@
 // states of every entity in the scenario. Nothing here comes from a real home.
 //
 // A scenario: { name, states: { id: [state, attributes?] }, automations: { name: config }, steps: [step] }
-//   step: { set: id, to: state, attrs? } | { wait: seconds } | { event: type, data? }
+//   step: { set: id, to: state, attrs? } | { wait: seconds } | { event: type, data? } | { mqtt: topic, payload }
+// MQTT entities (0.11.3, a scenario's mqtt: { id: { config, rule } }, made by mq() below): set up in the core run by
+// MQTT discovery from config, on a mocked broker that hands back what's published; the sandbox gets rule, which
+// test_diff.py checks is what functions_board/sources says for the entity Home Assistant made.
 // Entities: binary_sensor.* and sensor.* are inputs (set by the steps); input_boolean, input_number, input_select,
 // counter and timer are Home Assistant's real helpers in the core run, so what the automations do to them shows.
-// No templates: the sandbox renders those through Home Assistant, which this test doesn't have.
+// No templates: the sandbox renders those through Home Assistant, which this test doesn't have. The exception is an
+// MQTT entity's own: {{ value }} and {{ value_json.a.b }} only, which tests/diff/sandbox.js renders as Home Assistant
+// writes Python's values.
 
 const on = (id) => ({ action: 'input_boolean.turn_on', target: { entity_id: id } });
 const off = (id) => ({ action: 'input_boolean.turn_off', target: { entity_id: id } });
@@ -16,6 +21,64 @@ const B = { 'input_boolean.x': ['off'], 'input_boolean.y': ['off'], 'input_boole
 const st = (x) => Object.assign({}, B, { 'counter.c': ['0'] }, x || {});
 const S = (entity_id, more) => Object.assign({ trigger: 'state', entity_id }, more);
 const N = (entity_id, more) => Object.assign({ trigger: 'numeric_state', entity_id }, more);
+
+const { mq } = require('./mqtt');
+// the states an MQTT scenario starts from: its entities as Home Assistant has them before any message
+const mqSt = (ents, more) => Object.assign(st(more), Object.fromEntries(Object.entries(ents).map(([id, x]) => [id, [x.state]])));
+const pub = (topic, payload) => ({ mqtt: topic, payload });
+const mqT = (topic, more) => Object.assign({ trigger: 'mqtt', topic }, more);
+const publish = (topic, payload) => ({ action: 'mqtt.publish', data: { topic, payload } });
+
+// ---- MQTT entities that follow their topics (0.11.3)
+const M1 = mq('sensor.temp', { state_topic: 'h/climate', value_template: '{{ value_json.t }}', unit_of_measurement: '°C', device_class: 'temperature' });
+const M2 = mq('binary_sensor.door', { state_topic: 'h/door', payload_on: 'open', payload_off: 'closed' });
+const M3 = mq('sensor.lvl', { state_topic: 'h/lvl', unit_of_measurement: '%' });
+const M4 = Object.assign(mq('sensor.p', { state_topic: 'h/p', availability_topic: 'h/avail' }), mq('sensor.q', { state_topic: 'h/q', availability: [{ topic: 'h/av1' }, { topic: 'h/av2', payload_available: 'up', payload_not_available: 'down' }], availability_mode: 'all' }));
+const M5 = mq('binary_sensor.motion', { state_topic: 'h/motion', off_delay: 30 });
+const M6 = mq('sensor.e', { state_topic: 'h/e', expire_after: 60 });
+const M7 = Object.assign(mq('lock.l', { state_topic: 'h/lock' }), mq('cover.c', { state_topic: 'h/cover' }), mq('select.s', { state_topic: 'h/sel', options: ['Off', 'Lawn', 'Garden'] }), mq('switch.w', { state_topic: 'h/sw', payload_on: '1', payload_off: '0' }));
+const M8 = mq('number.n', { state_topic: 'h/num', min: 1, max: 5 });
+const M9 = mq('sensor.a', { state_topic: 'h/a', json_attributes_topic: 'h/a/attr' });
+const M10 = mq('event.btn', { state_topic: 'h/btn', event_types: ['press', 'hold'] });
+const M11 = Object.assign(mq('device_tracker.ph', { state_topic: 'h/ph' }), mq('light.l', { schema: 'json', state_topic: 'h/light', command_topic: 'h/light/set' }));
+const M12 = mq('binary_sensor.occ', { state_topic: 'h/climate', value_template: '{{ value_json.occ }}' });
+
+const MQTT = [
+  { name: 'an MQTT sensor follows its topic through its template', mqtt: M1, states: mqSt(M1), automations: { a: { triggers: [N('sensor.temp', { above: 70 })], actions: [inc('counter.c')] } },
+    steps: [pub('h/climate', '{"t": 64.0}'), pub('h/climate', '{"t": 71.5}'), pub('h/climate', '{"t": "warm"}'), pub('h/climate', '{}'), pub('h/climate', '{"t": 69}'), pub('h/climate', '{"t": 72.25}'), pub('h/climate', 'None')] },
+  { name: 'a binary sensor\'s payloads, and one that is not for it', mqtt: M2, states: mqSt(M2), automations: { a: { triggers: [S('binary_sensor.door', { to: 'on' })], actions: [inc('counter.c')] } },
+    steps: [pub('h/door', 'open'), pub('h/door', 'ajar'), pub('h/door', 'closed'), pub('h/door', ''), pub('h/door', 'open'), pub('h/door', 'None')] },
+  { name: 'an MQTT trigger and the entity the same message moves', mqtt: M3, states: mqSt(M3), automations: { a: { triggers: [mqT('h/lvl')], conditions: [{ condition: 'numeric_state', entity_id: 'sensor.lvl', above: 50 }], actions: [inc('counter.c')] } },
+    steps: [pub('h/lvl', '60'), pub('h/lvl', '40'), pub('h/lvl', '55')] },
+  { name: 'a state trigger on the entity and an MQTT trigger on its topic, in order', mqtt: M3, states: mqSt(M3),
+    automations: { m: { triggers: [mqT('h/lvl')], actions: [tog('input_boolean.x')] }, s: { triggers: [S('sensor.lvl')], conditions: [{ condition: 'state', entity_id: 'input_boolean.x', state: 'on' }], actions: [inc('counter.c')] } },
+    steps: [pub('h/lvl', '10'), pub('h/lvl', '20'), pub('h/lvl', '20'), pub('h/lvl', '30')] },
+  { name: 'a publish in an automation reaches an entity and a trigger', mqtt: M3, states: mqSt(M3, { 'binary_sensor.b': ['off'] }),
+    automations: { p: { triggers: [S('binary_sensor.b', { to: 'on' })], actions: [publish('h/lvl', '75')] }, t: { triggers: [N('sensor.lvl', { above: 70 })], actions: [on('input_boolean.x')] }, q: { triggers: [mqT('h/lvl', { payload: '75' })], actions: [inc('counter.c')] } },
+    steps: [{ set: 'binary_sensor.b', to: 'on' }, pub('h/lvl', '5')] },
+  { name: 'availability: unavailable until it says so, and back with its state', mqtt: M4, states: mqSt(M4), automations: { a: { triggers: [S('sensor.p', { to: 'unavailable' })], actions: [inc('counter.c')] } },
+    steps: [pub('h/p', '5'), pub('h/avail', 'online'), pub('h/avail', 'offline'), pub('h/p', '7'), pub('h/avail', 'online'), pub('h/q', 'a'), pub('h/av1', 'online'), pub('h/av2', 'up'), pub('h/av1', 'offline'), pub('h/av1', 'online'), pub('h/av2', 'online')] },
+  { name: 'off_delay turns a binary sensor off by itself', mqtt: M5, states: mqSt(M5), automations: { a: { triggers: [S('binary_sensor.motion', { to: 'off' })], actions: [inc('counter.c')] } },
+    steps: [pub('h/motion', 'ON'), { wait: 20 }, pub('h/motion', 'ON'), { wait: 20 }, { wait: 15 }, pub('h/motion', 'ON'), pub('h/motion', 'OFF'), { wait: 40 }] },
+  { name: 'expire_after makes a sensor unavailable without messages', mqtt: M6, states: mqSt(M6), automations: { a: { triggers: [S('sensor.e', { to: 'unavailable' })], actions: [inc('counter.c')] } },
+    steps: [pub('h/e', '5'), { wait: 50 }, pub('h/e', '6'), { wait: 50 }, { wait: 20 }, pub('h/e', '6')] },
+  { name: 'a lock, a cover, a select and a switch read their payloads', mqtt: M7, states: mqSt(M7), automations: { a: { triggers: [S('lock.l', { to: 'jammed' }), S('cover.c', { to: 'closed' }), S('select.s', { to: 'Garden' }), S('switch.w', { to: 'on' })], actions: [inc('counter.c')] } },
+    steps: [pub('h/lock', 'LOCKED'), pub('h/lock', 'JAMMED'), pub('h/lock', 'None'), pub('h/cover', 'opening'), pub('h/cover', 'stopped'), pub('h/cover', 'closing'), pub('h/cover', 'stopped'), pub('h/cover', 'bad'),
+      pub('h/sel', 'Lawn'), pub('h/sel', 'Patio'), pub('h/sel', 'Garden'), pub('h/sel', 'none'), pub('h/sw', '1'), pub('h/sw', 'ON'), pub('h/sw', '0')] },
+  { name: 'a number in range, out of range, and as text', mqtt: M8, states: mqSt(M8), automations: { a: { triggers: [N('number.n', { above: 2 })], actions: [inc('counter.c')] } },
+    steps: [pub('h/num', '3'), pub('h/num', '7'), pub('h/num', '2.5'), pub('h/num', 'x'), pub('h/num', '1'), pub('h/num', '4.0'), pub('h/num', 'None')] },
+  { name: 'json attributes replace the ones before', mqtt: M9, states: mqSt(M9), automations: { a: { triggers: [S('sensor.a', { attribute: 'level', to: 'high' })], actions: [inc('counter.c')] }, b: { triggers: [S('sensor.a')], actions: [tog('input_boolean.x')] } },
+    steps: [pub('h/a', 'ok'), pub('h/a/attr', '{"level": "high", "n": 1}'), pub('h/a/attr', '{"level": "low"}'), pub('h/a/attr', '[1, 2]'), pub('h/a/attr', '{"level": "high", "friendly_name": "x"}'), pub('h/a/attr', 'not json')] },
+  { name: 'an event entity: its types, and one it does not have', mqtt: M10, states: mqSt(M10), automations: { a: { triggers: [S('event.btn')], actions: [inc('counter.c')] }, b: { triggers: [S('event.btn', { attribute: 'event_type', to: 'hold' })], actions: [on('input_boolean.x')] } },
+    steps: [pub('h/btn', '{"event_type": "press"}'), { wait: 1 }, pub('h/btn', '{"event_type": "spin"}'), pub('h/btn', '{"event_type": "hold"}'), { wait: 1 }, pub('h/btn', 'press'), pub('h/btn', '{"event_type": "press", "x": 2}')] },
+  { name: 'a device tracker and a JSON light', mqtt: M11, states: mqSt(M11), automations: { a: { triggers: [S('device_tracker.ph', { to: 'home' })], actions: [inc('counter.c')] }, b: { triggers: [S('light.l', { to: 'on' })], actions: [on('input_boolean.x')] } },
+    steps: [pub('h/ph', 'home'), pub('h/ph', 'not_home'), pub('h/ph', 'Work'), pub('h/ph', 'home'), pub('h/light', '{"state": "ON", "brightness": 50}'), pub('h/light', '{"state": "OFF"}')] },
+  // (which of two entities on one topic Home Assistant writes first changes from one start to the next: its
+  // subscriptions to a topic come in no fixed order. So nothing here reads one from what starts on the other.)
+  { name: 'two entities on one topic', mqtt: Object.assign({}, M1, M12), states: mqSt(Object.assign({}, M1, M12)),
+    automations: { a: { triggers: [S('binary_sensor.occ', { to: 'on' })], actions: [inc('counter.c')] }, b: { triggers: [S('sensor.temp')], actions: [tog('input_boolean.x')] } },
+    steps: [pub('h/climate', '{"t": 60, "occ": "ON"}'), pub('h/climate', '{"t": 61, "occ": "OFF"}'), pub('h/climate', '{"t": 62, "occ": true}'), pub('h/climate', '{"t": 63, "occ": "ON"}')] },
+];
 
 module.exports = [
   // ---- state triggers
@@ -214,4 +277,5 @@ module.exports = [
     derived: { 'binary_sensor.doors': { kind: 'group', entities: ['binary_sensor.d1', 'binary_sensor.d2'], all: false }, 'binary_sensor.both': { kind: 'group', entities: ['binary_sensor.d1', 'binary_sensor.d2'], all: true } },
     automations: { a: { triggers: [S('binary_sensor.doors', { to: 'on' })], conditions: [{ condition: 'state', entity_id: 'binary_sensor.both', state: 'off' }], actions: [inc('counter.c')] } },
     steps: [{ set: 'binary_sensor.d1', to: 'on' }, { set: 'binary_sensor.d2', to: 'on' }, { set: 'binary_sensor.d1', to: 'off' }, { set: 'binary_sensor.d2', to: 'unknown' }, { set: 'binary_sensor.d1', to: 'unavailable' }, { set: 'binary_sensor.d2', to: 'unavailable' }, { set: 'binary_sensor.d1', to: 'on' }] },
+  ...MQTT,
 ];
