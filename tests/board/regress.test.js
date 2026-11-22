@@ -933,7 +933,19 @@ test('0.11.3 versions: a version is made active, never overwritten but by Save; 
   check('0.11.3 a change shows "Unsaved changes" at the top, with Save (over Good) and Save as copy', R[0].top && R[0].on && R[0].id === null && /Unsaved/.test(R[0].name) && R[0].save && !R.find((r) => r.name === 'Good').on, R);
   await newVersion('Throwaway');
   R = await rows();
-  check('0.11.3 Save as copy makes a new version, pinned at the top as the active one', R[0].name === 'Throwaway' && R[0].top && R[0].on && !R[0].save, R);
+  check('0.11.3 Save as copy makes a new version, pinned at the top as the active one, with Save and Save as copy on it', R[0].name === 'Throwaway' && R[0].top && R[0].on && R[0].save
+    && !(await fbq(page, '.drawer .vrow.top [data-act="ver-restore"]').count()) && (await fbq(page, '.drawer .vrow.top [data-act="ver-new"]').count()) === 1, R);
+  // only the layout changed (no wiring): the version is still the active one, and Save keeps the layout in it
+  await el(page, (b, l) => { b._data.layouts[l].dir = 'down'; b._save(); }, garage);
+  R = await rows();
+  check('0.11.3 only the layout changed: still the active version, with Save on it', R[0].name === 'Throwaway' && R[0].on && R[0].save, R);
+  await fbq(page, '.drawer .vrow.top [data-act="ver-over"]').click();
+  await fbq(page, '.modal [data-act="ver-over-go"]').click();
+  await until(() => el(page, (b) => b._$.modal.hidden || null), 8000);
+  const throwLayout = (await ws(page, { type: 'functions_board/version_get', label: garage, version_id: R[0].id })).snapshot.layout;
+  check('0.11.3 ... Save puts the layout in the version', !!throwLayout && throwLayout.dir === 'down', throwLayout && throwLayout.dir);
+  await el(page, (b, l) => { delete b._data.layouts[l].dir; b._save(); }, garage);
+  R = await rows();
   const good = R.find((r) => r.name === 'Good'), bad = R.find((r) => r.name === 'Throwaway');
   // back to Good, with Home Assistant writing the config back a little differently from how it was saved (as it
   // does: a field it adds), so what's there after isn't byte for byte the version
@@ -1814,9 +1826,13 @@ test('0.11.3 the notification builder: a script made from what\'s picked, opened
   const garage = await openFn(page, /garage/i);
   const KEY = 'script.garage_left_open_2', OID = 'garage_left_open_2';
   fake.states.delete(KEY);
-  await fbq(page, '.tools [data-act="new-script"]').click();
+  const rcp = fbq(page, '.tools [data-act="recipes"]');
+  const hasRcp = (await rcp.isVisible()) && /Recipes/.test(await rcp.innerText());
+  check('0.11.3 the toolbar has a Recipes menu', hasRcp);
+  if (!hasRcp) return;
+  await rcp.click();
   const menu = await fbq(page, '.menu').innerText();
-  check('0.11.3 Script offers Home Assistant\'s editor or the notification builder', /Blank script/.test(menu) && /Notification…/.test(menu), menu);
+  check('0.11.3 ... with Notification in it', /Notification/.test(menu), menu);
   await fbq(page, '.menu [data-act="nb-new"]').click();
   await fbq(page, '.modal .nbdlg').waitFor({ timeout: 5000 });
   const dlg = await fbq(page, '.modal .nbdlg').innerText();
@@ -1883,4 +1899,25 @@ test('0.11.3 the notification builder: a script made from what\'s picked, opened
   await until(() => el(page, (b) => !b._full() || null), 5000);
   await el(page, (b) => b._bldNew());
   check('0.11.3 in Organise only mode the builder can\'t save', await fbq(page, '.modal [data-act="nb-save"]').isDisabled());
+});
+
+test('0.11.3 versions: Save is there when no version is noted as the one made (saved before the board noted it), and the open drawer follows a change', async ({ browser, fake }) => {
+  fake.store.mode = 'full';
+  const { page } = await imported(browser);
+  const garage = await openFn(page, /garage/i);
+  const LEFT = 'automation.garage_left_open', aid = fake.states.get(LEFT).attributes.id;
+  const rows = () => el(page, (b) => [...b._$.drawer.querySelectorAll('.vlist .vrow')].map((r) => ({ id: r.dataset.id || null, name: r.querySelector('.vh b').textContent, on: r.classList.contains('on'), save: !!r.querySelector('[data-act="ver-over"]') })));
+  await fbq(page, '.tools [data-act="versions"]').click();
+  await fbq(page, '.drawer .vlist .vrow').first().waitFor({ timeout: 10000 });
+  await fbq(page, '.drawer [data-act="ver-new"]').first().click();
+  await fbq(page, '.modal input[name="vname"]').fill('Old');
+  await fbq(page, '.modal [data-act="ver-save"]').click();
+  await until(async () => (await rows()).some((r) => r.name === 'Old' && r.on) || null, 8000);
+  // as for versions saved before the board noted which one is active
+  delete fake.vactive[garage];
+  // a change saved in Home Assistant, the drawer open: it follows, without being opened again
+  await api(page, 'POST', `config/automation/config/${aid}`, Object.assign({}, fake.autos[aid], { alias: 'Garage: left open (rewired)' }));
+  const R = await until(async () => { const r = await rows(); return r[0] && r[0].id === null ? r : null; }, 10000) || await rows();
+  check('0.11.3 the open Versions drawer follows a change saved in Home Assistant: Unsaved changes', R[0] && R[0].id === null && /Unsaved/.test(R[0].name), R);
+  check('0.11.3 ... and Save is there, over the newest version (none was noted as the one made)', R[0] && R[0].save && /Old/.test(await fbq(page, '.drawer .vrow.top .vm').textContent()), R);
 });

@@ -1,4 +1,4 @@
-style {65195 chars, #555575a8}
+style {64988 chars, #93bbbd21}
 div.board.firstrun.m-panel
   aside.list
     div.lhead
@@ -36,6 +36,9 @@ div.board.firstrun.m-panel
         button data-act="new-script" title="New script in this function"
           ha-icon icon="mdi:script-text-outline"
           span | Script
+        button aria-haspopup="menu" data-act="recipes" title="Ready-made scripts built from what you pick: a notification, and more to come"
+          ha-icon icon="mdi:chef-hat"
+          span | Recipes
         button data-act="new-helper" title="New helper in this function"
           ha-icon icon="mdi:tune-variant"
           span | Helper

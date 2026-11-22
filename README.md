@@ -141,7 +141,7 @@ The **Auto-arrange** button's menu sets which way a function flows: **left to ri
 
 ### Versions
 
-**Versions** (in the function's toolbar) keeps named snapshots of a function: the configs of its automations and scripts, its helpers' settings, what's in it, the devices its steps use, and its layout. Save one before you change things ("Winter timings", "Before the new sensor"). The active version, the one the function is right now, is pinned at the top of the drawer. Once you change something, the top row says **Unsaved changes** instead, with **Save** (over the version they came from, after asking) and **Save as copy** (a new version). A saved version never changes any other way.
+**Versions** (in the function's toolbar) keeps named snapshots of a function: the configs of its automations and scripts, its helpers' settings, what's in it, the devices its steps use, and its layout. Save one before you change things ("Winter timings", "Before the new sensor"). The active version, the one the function is right now, is pinned at the top of the drawer, with **Save** (what's there now over it, the layout too) and **Save as copy**. Moving boxes leaves it the active version. Once you change an automation, script or helper (or what's in the function), the top row says **Unsaved changes** instead, with **Save** (over the version they came from, after asking) and **Save as copy** (a new version). A saved version never changes any other way.
 
 ![A saved version, "Reminder only", open in a tab beside Now (active): a banner says it's not active and counts what changed since, "Garage: left open" is marked changed since, and the Versions drawer lists "Close at night" (active, the same as what's there now) and "Reminder only", each with Open, Try in sandbox, Restore, edit and delete](https://raw.githubusercontent.com/ToolAndDieGuy/functions-board/main/docs/images/versions.png)
 
@@ -151,7 +151,7 @@ The **Auto-arrange** button's menu sets which way a function flows: **left to ri
 
 ### Notifications
 
-**Script → Notification…** (in the function's toolbar) opens the notification builder. It writes an ordinary Home Assistant script that you run from any automation or script; nothing of the board runs it. Its description says the builder made it, and **Edit** on its box opens it in the builder again while it's what the builder made. Once it's edited by hand in Home Assistant's editor, it opens there instead.
+**Recipes → Notification** in the function's toolbar opens the notification builder. Recipes is the home for purpose-built scripts made from what you pick; the notification builder is the first. It writes an ordinary Home Assistant script that you run from any automation or script; nothing of the board runs it. Its description says the builder made it, and **Edit** on its box opens it in the builder again while it's what the builder made. Once it's edited by hand in Home Assistant's editor, it opens there instead.
 
 - **Who gets it:** people (their phones with the Home Assistant app, optionally only when they're away), phones themselves, and speakers through text-to-speech (only when someone's home, unless you say otherwise).
 - **How urgent:** normal, time-sensitive (high priority on Android, the time-sensitive level on iOS) or critical (Android's alarm stream, an iOS critical alert). The builder sends each phone what its app understands.

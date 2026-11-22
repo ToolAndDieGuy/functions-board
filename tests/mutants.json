@@ -2091,8 +2091,8 @@
  {
   "name": "versions: the active one not pinned at the top",
   "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "        ? `<div class=\"vact\">${copy}</div>${row(active, true)}`",
-  "replace": "        ? `<div class=\"vact\">${copy}</div>`",
+  "find": "        ? row(active, true, saveOver + copy)",
+  "replace": "        ? ''",
   "suite": "board-regress",
   "only": "0.11.3 versions",
   "expect": "pinned at the top as the active one"
@@ -2220,5 +2220,41 @@
   "replace": "        } else {\n          run.vars.context = this._ctx();\n          if (cfg.variables) Object.assign(run.vars, await this._render(cfg.variables, run));\n          run.vars.context",
   "suite": "builder",
   "expect": "own variables don't see"
+ },
+ {
+  "name": "versions: no Save on the active version's row",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "        ? row(active, true, saveOver + copy)",
+  "replace": "        ? row(active, true, copy)",
+  "suite": "board-regress",
+  "only": "0.11.3 versions",
+  "expect": "only the layout changed"
+ },
+ {
+  "name": "toolbar: no Recipes menu",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "        <button data-act=\"recipes\" title=\"${T('rcp_t')}\"",
+  "replace": "        <button hidden data-act=\"recipes\" title=\"${T('rcp_t')}\"",
+  "suite": "board-regress",
+  "only": "notification builder",
+  "expect": "Recipes menu"
+ },
+ {
+  "name": "versions: no Save when no version is noted as made",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "base: active || from || vs[vs.length - 1] || null,",
+  "replace": "base: active || from || null,",
+  "suite": "board-regress",
+  "only": "0.11.3 versions",
+  "expect": "Save is there, over the newest"
+ },
+ {
+  "name": "versions: the open drawer doesn't follow a change",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "    _verRefresh() { if (this._drawer && this._drawer.mode === 'versions') this._renderVersions(); }",
+  "replace": "    _verRefresh() { }",
+  "suite": "board-regress",
+  "only": "0.11.3 versions",
+  "expect": "follows a change saved in Home Assistant"
  }
 ]

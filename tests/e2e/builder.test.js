@@ -46,7 +46,7 @@ test('builder', async ({ browser }) => {
   const pushes = () => page.evaluate(() => window.__push.slice());
 
   // made in the builder
-  await fbq(page, '.tools [data-act="new-script"]').click();
+  await fbq(page, '.tools [data-act="recipes"]').click();
   await fbq(page, '.menu [data-act="nb-new"]').click();
   await fbq(page, '.modal .nbdlg').waitFor({ timeout: 5000 });
   await fbq(page, '.modal input[name="nbname"]').fill('Garage open notify');

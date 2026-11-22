@@ -2638,9 +2638,6 @@ svg path.e.prob{stroke:var(--error-color,#db4437);stroke-dasharray:5 4}
 .node.vd-only{outline:2px dashed var(--fb-red);outline-offset:2px}.node.vd-only .vdtag{background:color-mix(in srgb,var(--fb-red) 70%,#000);color:#fff}
 .vers{display:flex;flex-direction:column;min-height:0;flex:1;overflow:auto}
 .vers .vnote{padding:10px 14px;font-size:12.5px;color:var(--secondary-text-color);border-bottom:1px solid var(--divider-color)}
-.vers .vact{padding:10px 14px}
-.vers .vact button{display:inline-flex;align-items:center;gap:6px}
-.vers .vact button.primary{background:var(--fb-primary-fill);border-color:var(--fb-primary-fill);color:#fff}
 .vers .vrow{padding:10px 14px;border-top:1px solid var(--divider-color);font-size:13px}
 .vers .vrow.on{box-shadow:inset 3px 0 0 var(--success-color,#43a047)}
 .vers .vrow.view{background:color-mix(in srgb,var(--primary-color) 8%,transparent)}
@@ -3599,11 +3596,12 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       ver_save_b: 'Save as a version',
       ver_copy_b: 'Save as copy',
       ver_over_b: 'Save',
-      ver_over_t: 'Save over "{name}": it becomes the function as it is now',
+      ver_over_t: 'Save over "{name}": it becomes the function as it is now, its layout too',
       ver_over_h: 'Save over "{name}"?',
-      ver_over_text: '"{name}" is replaced with the function as it is now, and what it held before is gone. Save as copy keeps it and makes a new version instead.',
+      ver_over_text: '"{name}" is replaced with the function as it is now (its automations, scripts and helpers, and how its board is laid out), and what it held before is gone. Save as copy keeps it and makes a new version instead.',
       ver_unsaved: 'Unsaved changes',
       ver_unsaved_from: 'Changed since "{name}" was made active or saved: Save writes over it, Save as copy keeps it.',
+      ver_unsaved_newest: 'Not the same as any version: Save writes over "{name}", the newest, Save as copy keeps it.',
       ver_not_noted: 'not noted as the active version ({e})',
       ver_save_h: 'Save as a new version',
       ver_save_hint: 'Kept by the integration, with the function as it is now. Nothing in Home Assistant changes.',
@@ -3611,8 +3609,10 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       ver_title: 'Versions · {fnName}',
       ver_try: 'Try in sandbox',
       nb_mark: 'Made with the Functions Board notification builder.',
-      nb_blank: 'Blank script (Home Assistant\'s editor)',
-      nb_new: 'Notification…',
+      rcp_button: 'Recipes',
+      rcp_t: 'Ready-made scripts built from what you pick: a notification, and more to come',
+      rcp_h: 'A script built from what you pick',
+      nb_button: 'Notification',
       nb_new_t: 'A script that sends a notification: to people, phones or speakers, with buttons, quiet hours and how urgent it is. Written as an ordinary Home Assistant script.',
       nb_h: 'New notification',
       nb_h_edit: 'Notification: {name}',
@@ -7513,6 +7513,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       <div class="tools" role="toolbar" aria-label="${T('function_tools')}">
         <button data-act="new-automation" title="${T('new_automation_in_this_function')}"><ha-icon icon="mdi:robot-outline"></ha-icon><span>${T('automation')}</span></button>
         <button data-act="new-script" title="${T('new_script_in_this_function')}"><ha-icon icon="mdi:script-text-outline"></ha-icon><span>${T('script')}</span></button>
+        <button data-act="recipes" title="${T('rcp_t')}" aria-haspopup="menu"><ha-icon icon="mdi:chef-hat"></ha-icon><span>${T('rcp_button')}</span></button>
         <button data-act="new-helper" title="${T('new_helper_in_this_function')}"><ha-icon icon="mdi:tune-variant"></ha-icon><span>${T('helper')}</span></button>
         <button data-act="add-existing" title="${T('bring_automations_scripts_helpers_or')}"><ha-icon icon="mdi:link-variant-plus"></ha-icon><span>${T('existing')}</span></button>
         <span class="sep"></span>
@@ -7722,7 +7723,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._clock.once('cfg', 1000, () => {
         if (this._drag) { this._configChanged(); return; }
         const cur = this._data && this._data.ui.current;
-        if (cur && this._data.functions.includes(cur)) this._open(cur, true);
+        if (cur && this._data.functions.includes(cur)) this._open(cur, true).then(() => this._verRefresh());
       });
     }
     _unsubscribe() {
@@ -7753,7 +7754,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       // every change to the registry makes what's held older than it (as of now waits for the reload)
       this._store.changed('reg');
       const relevant = d.action !== 'update' || (this._model && this._model.nodes.has(id)) || (d.changes && 'labels' in d.changes);
-      if (relevant) this._clock.after('reg', 1200, () => this._reload());
+      if (relevant) this._clock.after('reg', 1200, () => this._reload().then(() => this._verRefresh()));
     }
 
     async _open(label, keep, opt = {}) {
@@ -9212,8 +9213,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         // making new things for the open function
         create: {
           'new-automation': (el, { need }) => { if (need()) this._create('automation'); },
-          'new-script': (el, { need }) => { if (need()) { if (this._menuEl && this._menuAnchor === el) this._closeMenu(); else this._scriptMenu(el); } },
-          'mk-script': (el, { need }) => { if (need()) this._create('script'); },
+          'new-script': (el, { need }) => { if (need()) this._create('script'); },
           'new-helper': (el, { need }) => { if (need()) { if (this._menuEl && this._menuAnchor === el) this._closeMenu(); else this._helperMenu(el); } },
           'mk-helper': (el, { need }) => { if (need()) this._create('helper', el.dataset.domain, el.dataset.name); },
           'mk-scene': (el, { need }) => { if (need()) this._create('scene'); },
@@ -9222,6 +9222,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         },
         // the builders (0.11.3)
         builders: {
+          'recipes': (el, { need }) => { if (need()) { if (this._menuEl && this._menuAnchor === el) this._closeMenu(); else this._bldMenu(el); } },
           'nb-new': (el, { need }) => { if (need() && !this._ver) this._bldNew(); },
           'nb-add-btn': () => { this._bldButton(true); },
           'nb-del-btn': (el) => { this._bldButton(false, +el.dataset.i); },
@@ -10958,14 +10959,6 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         helper: domain ? [`/config/helpers/add?domain=${encodeURIComponent(domain)}`, T('new', { name: (name || domain).toLowerCase() })] : ['/config/helpers', T('helpers')],
       };
       this._openDrawer(map[kind][0], map[kind][1], { capture: true });
-    }
-    // Script: Home Assistant's script editor, or a builder (0.11.3) that writes the script from what's picked
-    _scriptMenu(btn) {
-      const full = this._full();
-      this._menu(btn, [
-        { act: 'mk-script', icon: 'mdi:script-text-outline', text: T('nb_blank') },
-        { act: 'nb-new', icon: 'mdi:bell-plus-outline', text: T('nb_new'), title: full ? T('nb_new_t') : T('nb_new_t') + ' ' + T('full_manager_only_switch_it') },
-      ], T('create_in_this_function'));
     }
     _helperMenu(btn) {
       const items = HELPER_TYPES.map(([d, t, i]) => ({ act: 'mk-helper', data: { domain: d, name: t }, icon: i, text: t }));
@@ -14769,6 +14762,12 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (!spec || !nbSame(cfg, spec)) { if (spec) this._toast(T('nb_by_hand')); this._openItem(n, true); return; }
       this._bldOpen({ key: n.key, oid: this._itemId(n), spec: JSON.parse(JSON.stringify(spec)), name: cfg.alias || n.name, icon: cfg.icon || null, desc: nbDesc(cfg.description) });
     }
+    // Recipes: the builders, each a script made from what's picked (the notification builder first)
+    _bldMenu(btn) {
+      this._menu(btn, [
+        { act: 'nb-new', icon: 'mdi:bell-plus-outline', text: T('nb_button'), title: this._full() ? T('nb_new_t') : T('nb_new_t') + ' ' + T('full_manager_only_switch_it') },
+      ], T('rcp_h'));
+    }
     // a new notification for the open function
     _bldNew() {
       const tg = this._bldTargets();
@@ -15001,11 +15000,15 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     // last made from, if nothing has changed since (Home Assistant may write a config back a little differently from
     // how it was saved, and what was added since may only be turned off). The base is the version unsaved changes
     // came from: Save writes over it.
+    // base: what Save writes over. The active version, else the one the function was made from, else (0.11.3: none
+    // noted, as for versions saved before the board noted them) the newest; the dialog names it before it's saved
     _verActiveOf(vs, made, print) {
       const from = made && vs.find((v) => v.id === made.id);
       const active = (from && print && (from.print === print || made.print === print) ? from : null) || (print && vs.slice().reverse().find((v) => v.print && v.print === print)) || null;
-      return { active, base: active || from || null };
+      return { active, base: active || from || vs[vs.length - 1] || null, guess: !active && !from };
     }
+    // the open Versions drawer follows a change to the function (a config saved, something in or out of it)
+    _verRefresh() { if (this._drawer && this._drawer.mode === 'versions') this._renderVersions(); }
     _verGet(label, id) { return this._ws({ type: 'functions_board/version_get', label, version_id: id }); }
     // a saved config as the board reads it: a blueprint automation or script is filled in by Home Assistant
     async _verCfg(k, it) {
@@ -15073,18 +15076,19 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       let print = null;
       try { print = verPrint(await this._verSnapshot(label)); } catch (e) { /* no match shown */ }
       if (!this._drawer || this._drawer.mode !== 'versions' || label !== this._data.ui.current) return;
-      const { active, base } = this._verActiveOf(vs, made, print), full = this._full(), viewing = this._ver && this._ver.label === label ? this._ver.id : null;
+      const { active, base, guess } = this._verActiveOf(vs, made, print), full = this._full(), viewing = this._ver && this._ver.label === label ? this._ver.id : null;
       this._verCache = { label, vs, active: active ? active.id : null, base: base ? base.id : null, print };
-      const row = (v, top) => `<div class="vrow${active && active.id === v.id ? ' on' : ''}${top ? ' top' : ''}${viewing === v.id ? ' view' : ''}" data-id="${esc(v.id)}"><div class="vh"><b>${esc(v.name)}</b>${active && active.id === v.id ? `<span class="vbadge">${T('ver_active')}</span>` : ''}${v.auto ? `<span class="vauto">${T('ver_auto')}</span>` : ''}</div>${v.desc ? `<div class="vdesc">${esc(v.desc)}</div>` : ''}<div class="vm">${esc(this._verWhen(v.at))}${v.by ? ' · ' + esc(v.by) : ''}</div>`
+      const row = (v, top, mine) => `<div class="vrow${active && active.id === v.id ? ' on' : ''}${top ? ' top' : ''}${viewing === v.id ? ' view' : ''}" data-id="${esc(v.id)}"><div class="vh"><b>${esc(v.name)}</b>${active && active.id === v.id ? `<span class="vbadge">${T('ver_active')}</span>` : ''}${v.auto ? `<span class="vauto">${T('ver_auto')}</span>` : ''}</div>${v.desc ? `<div class="vdesc">${esc(v.desc)}</div>` : ''}<div class="vm">${esc(this._verWhen(v.at))}${v.by ? ' · ' + esc(v.by) : ''}</div>`
         + `<div class="vb"><button data-act="ver-open" data-id="${esc(v.id)}"><ha-icon icon="mdi:tab"></ha-icon>${T('ver_open')}</button><button data-act="ver-sbx" data-id="${esc(v.id)}"><ha-icon icon="mdi:flask-outline"></ha-icon>${T('ver_try')}</button>`
-        + `<button data-act="ver-restore" data-id="${esc(v.id)}"${full && !(active && active.id === v.id) ? '' : ' disabled'} title="${full ? (active && active.id === v.id ? T('ver_is_active') : T('ver_restore_t')) : T('ver_restore_full')}"><ha-icon icon="mdi:check-circle-outline"></ha-icon>${T('ver_restore')}</button>`
+        + (mine || `<button data-act="ver-restore" data-id="${esc(v.id)}"${full && !(active && active.id === v.id) ? '' : ' disabled'} title="${full ? (active && active.id === v.id ? T('ver_is_active') : T('ver_restore_t')) : T('ver_restore_full')}"><ha-icon icon="mdi:check-circle-outline"></ha-icon>${T('ver_restore')}</button>`)
         + `<button class="ib" data-act="diag" data-ver="${esc(v.id)}" title="${T('diag_ver_t')}"><ha-icon icon="mdi:file-download-outline"></ha-icon></button><button class="ib" data-act="ver-edit" data-id="${esc(v.id)}" title="${T('ver_edit_t')}"><ha-icon icon="mdi:pencil-outline"></ha-icon></button><button class="ib" data-act="ver-del" data-id="${esc(v.id)}" title="${T('ver_del_t')}"><ha-icon icon="mdi:delete-outline"></ha-icon></button></div></div>`;
-      // Save is offered only when there's something to save; Save as copy always
+      // Save (over the active version, or the one unsaved changes came from: what's there now, its layout too) and
+      // Save as copy; on the active version's row they stand in for Make active
       const saveOver = base ? `<button class="primary" data-act="ver-over" title="${T('ver_over_t', { name: esc(base.name) })}"><ha-icon icon="mdi:content-save-outline"></ha-icon>${T('ver_over_b')}</button>` : '';
       const copy = `<button${saveOver || !vs.length ? ' class="' + (saveOver ? '' : 'primary') + '"' : ''} data-act="ver-new"><ha-icon icon="mdi:content-copy"></ha-icon>${vs.length ? T('ver_copy_b') : T('ver_save_b')}</button>`;
       const head = active
-        ? `<div class="vact">${copy}</div>${row(active, true)}`
-        : `<div class="vrow cur on top"><div class="vh"><b>${vs.length ? T('ver_unsaved') : T('ver_now')}</b><span class="vbadge">${T('ver_active')}</span></div><div class="vm">${base ? T('ver_unsaved_from', { name: esc(base.name) }) : T('ver_now_unsaved')}</div><div class="vb">${saveOver}${copy}</div></div>`;
+        ? row(active, true, saveOver + copy)
+        : `<div class="vrow cur on top"><div class="vh"><b>${vs.length ? T('ver_unsaved') : T('ver_now')}</b><span class="vbadge">${T('ver_active')}</span></div><div class="vm">${base ? (guess ? T('ver_unsaved_newest', { name: esc(base.name) }) : T('ver_unsaved_from', { name: esc(base.name) })) : T('ver_now_unsaved')}</div><div class="vb">${saveOver}${copy}</div></div>`;
       const rest = vs.slice().reverse().filter((v) => !active || v.id !== active.id);
       this._put(box, head + (rest.length ? rest.map((v) => row(v)).join('') : vs.length ? '' : `<div class="muted pad">${T('ver_none')}</div>`));
     }
