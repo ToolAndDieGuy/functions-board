@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+A notification builder. In a function, **Script → Notification…** writes an ordinary Home Assistant script that
+sends a notification. You pick:
+- who gets it: people's phones (only when they're away, if you like), phones themselves, and speakers through
+  text-to-speech when someone's home;
+- how urgent it is (normal, time-sensitive or critical, sent the way each phone's app understands it);
+- quiet hours, when phones get it silently and nothing is spoken;
+- a tag, so a new one replaces the last;
+- up to three buttons, each running a script, a scene or any actions, with what to do if nobody answers in time.
+
+Each run's buttons have ids of their own, so a button on an old notification doesn't answer a new one, and once
+answered the notification is cleared from every phone. **Edit** on the script's box opens it in the builder again
+while it's what the builder made; once it's edited by hand, it opens in Home Assistant's editor. **Try in sandbox**
+runs it there, saved or not, with its buttons to press; nothing is sent. Saving needs Full manager.
+
+In the sandbox, every run has a context, as in Home Assistant (templates can read `context.id`). An event trigger in
+`wait_for_trigger` has its templates rendered with the run's variables, and the buttons of a notification the
+sandbox sent are there to press, by the ids it was sent with.
+
 Versions are made active rather than restored. The version the function is now is pinned at the top of the Versions
 drawer, marked active. Change anything and the top row says **Unsaved changes**, with **Save** (over the version the
 changes came from, after asking) and **Save as copy** (a new version). A saved version now changes only when you save

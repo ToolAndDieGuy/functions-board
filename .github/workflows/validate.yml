@@ -48,7 +48,7 @@ jobs:
       - name: Syntax
         run: node --check custom_components/functions_board/frontend/functions-board.js
       - name: Self-test, rules, library
-        run: sh tests/run.sh --only 'selftest|static|wiring|import|problems|sandbox|clock|link|store'
+        run: sh tests/run.sh --only 'selftest|static|wiring|import|problems|sandbox|builder|clock|link|store'
       - name: Test reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -198,7 +198,7 @@ jobs:
       - name: Start Home Assistant
         run: sh tests/start-ha.sh
       - name: Its half of the suites (the other half runs beside it)
-        run: sh tests/run.sh --ha --keep --only 'selftest|e2e-(tools|sandbox|versions|privacy)$'
+        run: sh tests/run.sh --ha --keep --only 'selftest|e2e-(tools|sandbox|versions|builder|privacy)$'
       - name: Home Assistant's errors
         if: failure()
         run: |

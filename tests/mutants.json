@@ -368,8 +368,8 @@
  {
   "name": "rules: a quick node suite left out of CI",
   "file": ".github/workflows/validate.yml",
-  "find": "--only 'selftest|static|wiring|import|problems|sandbox|clock|link|store'",
-  "replace": "--only 'selftest|static|wiring|problems|sandbox|clock|link|store'",
+  "find": "--only 'selftest|static|wiring|import|problems|sandbox|builder|clock|link|store'",
+  "replace": "--only 'selftest|static|wiring|problems|sandbox|builder|clock|link|store'",
   "suite": "static",
   "expect": "every quick node suite runs in CI"
  },
@@ -1890,8 +1890,8 @@
  {
   "name": "board: a replay starts now, not at the period's start",
   "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "      await this._sbxNew(g.label, { at: from, start: h.start, answers: [], items: g.opts.items.map((x) => x.id) });",
-  "replace": "      await this._sbxNew(g.label, { at: Date.now(), start: h.start, answers: [], items: g.opts.items.map((x) => x.id) });",
+  "find": "      await this._sbxNew(g.label, { at: from, start: h.start, answers: [], items: g.opts.items.map((x) => x.id) }, g.extra);",
+  "replace": "      await this._sbxNew(g.label, { at: Date.now(), start: h.start, answers: [], items: g.opts.items.map((x) => x.id) }, g.extra);",
   "suite": "board-regress",
   "expect": "starts from the home six hours ago",
   "only": "0.11.2 the sandbox: replay a period from history"
@@ -2096,5 +2096,129 @@
   "suite": "board-regress",
   "only": "0.11.3 versions",
   "expect": "pinned at the top as the active one"
+ },
+ {
+  "name": "builder: every run's buttons have the same ids",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "const seq = asks ? [{ variables: { fb_id: \"{{ 'fb_' ~ context.id }}\" } }] : [];",
+  "replace": "const seq = asks ? [{ variables: { fb_id: 'fb' } }] : [];",
+  "suite": "builder",
+  "expect": "button ids of its own"
+ },
+ {
+  "name": "builder: only when away sends anyway",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "phones.filter((x) => !x.who || !x.who.away).forEach",
+  "replace": "phones.forEach",
+  "suite": "builder",
+  "expect": "only when away"
+ },
+ {
+  "name": "builder: critical held back in quiet hours",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "const quietly = !!s.quiet && !crit,",
+  "replace": "const quietly = !!s.quiet,",
+  "suite": "builder",
+  "expect": "critical on iOS"
+ },
+ {
+  "name": "builder: no clearing after an answer",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "if (s.clear) phones.forEach((x) => seq.push({ action: 'notify.' + x.p.svc, data: { message: 'clear_notification', data: { tag } } }));",
+  "replace": "",
+  "suite": "builder",
+  "expect": "clears it on every phone"
+ },
+ {
+  "name": "builder: a hand edit taken for the builder's",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "return !!cfg && canonJSON(strip(cfg)) === canonJSON(strip(notifyScript(spec, {})));",
+  "replace": "return !!cfg;",
+  "suite": "builder",
+  "expect": "edited by hand"
+ },
+ {
+  "name": "builder: a kept spec not cleaned",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "out.builders[k] = { kind: 'notify', spec: cleanNotify(b.spec) };",
+  "replace": "out.builders[k] = { kind: 'notify', spec: b.spec };",
+  "suite": "builder",
+  "expect": "a layout keeps a script"
+ },
+ {
+  "name": "sandbox: a wait's event data not rendered",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "ts.push(this._plat(t) === 'event' && /\\{[{%]/.test(",
+  "replace": "ts.push(false && /\\{[{%]/.test(",
+  "suite": "builder",
+  "expect": "pressing Close it"
+ },
+ {
+  "name": "sandbox: runs have no context",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "          if (cfg.variables) Object.assign(run.vars, await this._render(cfg.variables, run));\n          run.vars.context = this._ctx();\n",
+  "replace": "          if (cfg.variables) Object.assign(run.vars, await this._render(cfg.variables, run));\n",
+  "suite": "builder",
+  "expect": "the run's own ids, rendered"
+ },
+ {
+  "name": "builder: Edit on its box opens Home Assistant's editor",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "if (!ha && n.domain === 'script' && this._bldHas(n.key)) { this._bldEdit(n); return; }",
+  "replace": "",
+  "suite": "board-regress",
+  "only": "notification builder",
+  "expect": "Edit on its box opens the builder"
+ },
+ {
+  "name": "builder: Save in Organise only mode",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "${full ? '' : ` disabled title=\"${esc(T('full_manager_only_switch_it'))}\"`}>${T('save')}</button></div></div>`;",
+  "replace": ">${T('save')}</button></div></div>`;",
+  "suite": "board-regress",
+  "only": "notification builder",
+  "expect": "can't save"
+ },
+ {
+  "name": "builder: a new script not put in the function",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      if (!b.oid) labelled = await this._bldLabel(key, label);\n",
+  "replace": "",
+  "suite": "board-regress",
+  "only": "notification builder",
+  "expect": "in the function"
+ },
+ {
+  "name": "builder: Undo doesn't put the script back",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "        undo: () => (before ? put(before, had) : gone()),",
+  "replace": "        undo: () => null,",
+  "suite": "board-regress",
+  "only": "notification builder",
+  "expect": "Undo puts the script back"
+ },
+ {
+  "name": "diagnostics: a phone's action in the builder's spec not anonymised",
+  "file": "custom_components/functions_board/diagnostics.py",
+  "find": "\"tab\", \"tabLabel\", \"svc\"})",
+  "replace": "\"tab\", \"tabLabel\"})",
+  "suite": "backend",
+  "expect": "test_anonymised_diagnostics_keep_shape_not_names"
+ },
+ {
+  "name": "diagnostics: what the builder says aloud not anonymised",
+  "file": "custom_components/functions_board/diagnostics.py",
+  "find": "\"payload\", \"say\", \"tag\"})",
+  "replace": "\"payload\", \"tag\"})",
+  "suite": "backend",
+  "expect": "test_anonymised_diagnostics_keep_shape_not_names"
+ },
+ {
+  "name": "sandbox: a script's own variables see the run's context",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "        } else {\n          if (cfg.variables) Object.assign(run.vars, await this._render(cfg.variables, run));\n          run.vars.context",
+  "replace": "        } else {\n          run.vars.context = this._ctx();\n          if (cfg.variables) Object.assign(run.vars, await this._render(cfg.variables, run));\n          run.vars.context",
+  "suite": "builder",
+  "expect": "own variables don't see"
  }
 ]

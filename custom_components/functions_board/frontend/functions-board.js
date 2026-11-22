@@ -190,7 +190,155 @@
         out.tools.push(o);
       });
     }
+    // builders (0.11.3): the spec each script made by a builder was made from, by its entity id
+    if (src.builders != null) {
+      out.builders = {};
+      Object.entries(src.builders && typeof src.builders === 'object' && !Array.isArray(src.builders) ? src.builders : {}).slice(0, 200).forEach(([k, b]) => {
+        if (k.startsWith('script.') && EXACT_RE.test(k) && b && b.kind === 'notify') out.builders[k] = { kind: 'notify', spec: cleanNotify(b.spec) };
+      });
+    }
     return out;
+  }
+
+  /* ---------- builders (0.11.3): a builder writes an ordinary Home Assistant script ----------
+     What the person chose (the spec) is kept in the function's layout (layout.builders, by the script's entity id)
+     and the script is made from it here, the same every time. The script opens in its builder again only while it
+     is still what the builder makes of its spec, its name, icon and description aside (nbSame); edited by hand past
+     that, it opens in Home Assistant's editor. Its description says how it was made. Nothing of the board runs it:
+     it's Home Assistant's own script, run like any other. The first builder sends a notification (notifyScript). */
+  const NB_LEVELS = ['normal', 'time', 'critical'];
+  const HHMM_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+  const NB_SVC_RE = /^mobile_app_[a-z0-9_]{1,200}$/;
+  // Home Assistant's slugify, near enough for a phone's name: how the mobile app names its notify action
+  const slugify = (s) => String(s == null ? '' : s).normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  // a spec as it may be kept: only what it can be (a layout is shared JSON)
+  function cleanNotify(s) {
+    const src = s && typeof s === 'object' && !Array.isArray(s) ? s : {};
+    const str = (v, n) => String(v == null ? '' : v).slice(0, n);
+    const ent = (v, d) => (typeof v === 'string' && v.startsWith(d + '.') && EXACT_RE.test(v) ? v : null);
+    const list = (v) => (Array.isArray(v) ? v : []);
+    const phone = (p) => (p && NB_SVC_RE.test(String(p.svc)) ? { svc: String(p.svc), os: p.os === 'ios' ? 'ios' : 'android', name: str(p.name, 200) } : null);
+    const acts = (a) => list(a).filter((x) => x && typeof x === 'object' && !Array.isArray(x)).slice(0, 100);
+    const q = src.quiet;
+    return {
+      kind: 'notify',
+      title: str(src.title, 200), message: str(src.message, 4000),
+      phones: list(src.phones).map(phone).filter(Boolean).slice(0, 20),
+      people: list(src.people).map((p) => (p && ent(p.id, 'person') ? { id: p.id, away: !!p.away, phones: list(p.phones).map(phone).filter(Boolean).slice(0, 10) } : null)).filter(Boolean).slice(0, 20),
+      speakers: [...new Set(list(src.speakers).map((x) => ent(x, 'media_player')).filter(Boolean))].slice(0, 20),
+      tts: ent(src.tts, 'tts'), say: str(src.say, 4000), speakAlways: !!src.speakAlways,
+      level: NB_LEVELS.includes(src.level) ? src.level : 'normal',
+      tag: str(src.tag, 64).replace(/[^A-Za-z0-9_-]/g, ''),
+      buttons: list(src.buttons).filter((b) => b && str(b.title, 64).trim()).slice(0, 3).map((b) => ({ title: str(b.title, 64).trim(), then: acts(b.then) })),
+      wait: Math.min(1440, Math.max(1, Math.round(+src.wait) || 30)),
+      timeout: acts(src.timeout), clear: src.clear !== false,
+      quiet: q && HHMM_RE.test(q.from) && HHMM_RE.test(q.to) && q.from !== q.to ? { from: q.from, to: q.to } : null,
+    };
+  }
+  // every phone the spec sends to, once: the ones picked themselves first, then each person's
+  function notifyPhones(spec) {
+    const seen = new Set(), out = [];
+    spec.phones.forEach((p) => { if (!seen.has(p.svc)) { seen.add(p.svc); out.push({ p, who: null }); } });
+    spec.people.forEach((x) => x.phones.forEach((p) => { if (!seen.has(p.svc)) { seen.add(p.svc); out.push({ p, who: x }); } }));
+    return out;
+  }
+  // the script a notification spec makes (meta: its alias, icon and description). The phones' differences are the
+  // companion apps': iOS takes an interruption level (passive in quiet hours, critical with a critical sound),
+  // Android a priority and a channel (alarm_stream for critical; quiet hours on a channel of low importance).
+  // Buttons: each run gets action ids of its own (from its context), waits for one to be pressed, clears the
+  // notification and does what that button does, or what's done when nobody answers.
+  function notifyScript(spec, meta) {
+    const s = cleanNotify(spec), M = meta || {}, B = s.buttons.length > 0, crit = s.level === 'critical';
+    const quietly = !!s.quiet && !crit, phones = notifyPhones(s), asks = B && phones.length > 0;
+    const tag = s.tag || (asks && s.clear ? '{{ fb_id }}' : '');
+    // the button ids come from the run's context, which Home Assistant gives its actions (not the script's own
+    // variables, rendered before it): so they're set by the first step
+    const vars = {};
+    if (quietly) {
+      const { from, to } = s.quiet;
+      vars.fb_quiet = from > to ? `{{ now() >= today_at('${from}') or now() < today_at('${to}') }}` : `{{ today_at('${from}') <= now() < today_at('${to}') }}`;
+    }
+    const pdata = (os) => {
+      const d = {};
+      if (tag) d.tag = tag;
+      if (asks) d.actions = s.buttons.map((b, i) => ({ action: `{{ fb_id }}_${i + 1}`, title: b.title }));
+      if (os === 'ios') {
+        const lvl = crit ? 'critical' : s.level === 'time' ? 'time-sensitive' : 'active';
+        if (lvl !== 'active' || quietly) d.push = { 'interruption-level': quietly ? `{{ 'passive' if fb_quiet else '${lvl}' }}` : lvl };
+        if (crit) d.push.sound = { name: 'default', critical: 1, volume: 1 };
+      } else {
+        if (s.level !== 'normal') { d.priority = 'high'; d.ttl = 0; }
+        if (crit) d.channel = 'alarm_stream';
+        if (quietly) { d.channel = "{{ 'Quiet' if fb_quiet else 'General' }}"; d.importance = "{{ 'low' if fb_quiet else 'default' }}"; }
+      }
+      return d;
+    };
+    const send = (p) => {
+      const d = pdata(p.os);
+      return { action: 'notify.' + p.svc, data: Object.assign(s.title ? { title: s.title } : {}, { message: s.message }, Object.keys(d).length ? { data: d } : {}) };
+    };
+    const seq = asks ? [{ variables: { fb_id: "{{ 'fb_' ~ context.id }}" } }] : [];
+    phones.filter((x) => !x.who || !x.who.away).forEach((x) => seq.push(send(x.p)));
+    s.people.filter((x) => x.away).forEach((x) => {
+      const mine = phones.filter((y) => y.who === x).map((y) => send(y.p));
+      if (mine.length) seq.push({ if: [{ condition: 'not', conditions: [{ condition: 'state', entity_id: x.id, state: 'home' }] }], then: mine });
+    });
+    if (s.tts && s.speakers.length) {
+      const say = { action: 'tts.speak', target: { entity_id: s.tts }, data: { media_player_entity_id: s.speakers.length === 1 ? s.speakers[0] : s.speakers, message: s.say || s.message } };
+      const conds = [];
+      if (!s.speakAlways) conds.push({ condition: 'numeric_state', entity_id: 'zone.home', above: 0 });
+      if (quietly) conds.push({ condition: 'template', value_template: '{{ not fb_quiet }}' });
+      seq.push(conds.length ? { if: conds, then: [say] } : say);
+    }
+    if (asks) {
+      seq.push({
+        wait_for_trigger: s.buttons.map((b, i) => ({ trigger: 'event', event_type: 'mobile_app_notification_action', event_data: { action: `{{ fb_id }}_${i + 1}` }, id: 'b' + (i + 1) })),
+        timeout: { minutes: s.wait }, continue_on_timeout: true,
+      });
+      if (s.clear) phones.forEach((x) => seq.push({ action: 'notify.' + x.p.svc, data: { message: 'clear_notification', data: { tag } } }));
+      const ch = { choose: s.buttons.map((b, i) => ({ conditions: [{ condition: 'template', value_template: `{{ wait.trigger is not none and wait.trigger.id == 'b${i + 1}' }}` }], sequence: b.then })) };
+      if (s.timeout.length) ch.default = s.timeout;
+      seq.push(ch);
+    }
+    const desc = String(M.description || '').trim();
+    return Object.assign({ alias: String(M.alias || ''), description: desc ? desc + '\n\n' + T('nb_mark') : T('nb_mark'), icon: M.icon || 'mdi:bell-ring-outline', mode: 'parallel', max: 10 },
+      Object.keys(vars).length ? { variables: vars } : {}, { sequence: seq });
+  }
+  // a config the same as another, the script's own name, icon and description aside (Home Assistant keeps what it's
+  // given, but not always in the same order)
+  const canonJSON = (v) => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().filter((y) => x[y] !== undefined && x[y] !== null).map((y) => [y, x[y]])) : x));
+  function nbSame(cfg, spec) {
+    const strip = (c) => Object.fromEntries(Object.entries(c || {}).filter(([k]) => !['alias', 'icon', 'description', 'id'].includes(k)));
+    return !!cfg && canonJSON(strip(cfg)) === canonJSON(strip(notifyScript(spec, {})));
+  }
+  // the description the person wrote, without the line saying how it was made
+  const nbDesc = (d) => String(d || '').replace(T('nb_mark'), '').trim();
+  // who and what a notification can go to (info: the states, the entity and device registries, the notify actions):
+  // the mobile app's phones (iOS when Apple made it), people with the phones they carry, speakers and the TTS engines
+  function notifyTargets(info) {
+    const st = info.states || {}, svcs = new Set(Object.keys(info.services || {}).filter((k) => NB_SVC_RE.test(k)));
+    const ents = info.entities || [], devs = info.devices || [];
+    const phones = [], bySvc = new Map(), byDev = new Map();
+    devs.forEach((d) => {
+      if (!(d.identifiers || []).some((i) => i && i[0] === 'mobile_app')) return;
+      const svc = 'mobile_app_' + slugify(d.name);
+      if (svcs.size && !svcs.has(svc)) return;
+      const p = { svc, os: /apple/i.test(d.manufacturer || '') ? 'ios' : 'android', name: d.name_by_user || d.name || svc };
+      phones.push(p); bySvc.set(svc, p); byDev.set(d.id, p);
+    });
+    // a notify action of the mobile app without a device of its own (renamed in the app): still a phone
+    svcs.forEach((svc) => { if (!bySvc.has(svc)) { const p = { svc, os: 'android', name: svc.slice(11).replace(/_/g, ' ') }; phones.push(p); bySvc.set(svc, p); } });
+    const devOf = new Map(ents.map((e) => [e.entity_id, e.device_id]));
+    const named = (id) => ((st[id] && st[id].attributes && st[id].attributes.friendly_name) || id);
+    const people = Object.keys(st).filter((k) => k.startsWith('person.')).map((id) => ({
+      id, name: named(id), phones: toList(st[id].attributes && st[id].attributes.device_trackers).map((t) => byDev.get(devOf.get(t))).filter(Boolean),
+    }));
+    const byName = (a, b) => String(a.name).localeCompare(String(b.name));
+    return {
+      phones: phones.sort(byName), people: people.sort(byName),
+      speakers: Object.keys(st).filter((k) => k.startsWith('media_player.')).map((id) => ({ id, name: named(id) })).sort(byName),
+      tts: Object.keys(st).filter((k) => k.startsWith('tts.')).map((id) => ({ id, name: named(id) })).sort(byName),
+    };
   }
 
   function ago(iso) {
@@ -2221,6 +2369,21 @@ button{font:inherit;color:inherit}
 .modal{position:absolute;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:30}
 .dlg{width:min(460px,92%);max-height:88%;display:flex;flex-direction:column;gap:12px;background:var(--card-background-color);border-radius:16px;padding:20px;box-shadow:0 10px 40px rgba(0,0,0,.4)}
 .dlg.wide{width:min(640px,94%)}
+.dlg.nbdlg{width:min(640px,94%)}
+.nbdlg .nbbody{display:flex;flex-direction:column;gap:12px;overflow:auto;min-height:0;padding-right:4px}
+.nbdlg fieldset{border:1px solid var(--divider-color);border-radius:10px;margin:0;padding:8px 12px 12px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.nbdlg legend{font-size:13px;font-weight:500;padding:0 4px;color:var(--primary-text-color)}
+.nbdlg .nbrow{display:flex;flex-wrap:wrap;align-items:center;gap:6px 16px}
+.nbdlg .nbrow[hidden],.nbdlg .nbans[hidden]{display:none}
+.nbdlg .nbgrow{flex:1;min-width:160px}
+.nbdlg .nbsub{font-size:12px;color:var(--secondary-text-color)}
+.nbdlg .nblist{max-height:150px;overflow:auto;display:flex;flex-direction:column;gap:2px}
+.nbdlg label.chk{min-height:28px}
+.nbdlg .nbbtn{display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--divider-color);padding-top:8px}
+.nbdlg .nbans{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--divider-color);padding-top:8px}
+.nbdlg textarea{padding:8px 10px;border-radius:8px;border:1px solid var(--divider-color);background:var(--primary-background-color);color:var(--primary-text-color);font:inherit;font-size:14px;resize:vertical}
+.nbdlg .aval:empty{display:none}
+.nbdlg .aval{color:var(--fb-red-ink)}
 .dlg h3{margin:0;font-size:18px;font-weight:500}
 .dlg label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--secondary-text-color)}
 .dlg input:not([type=checkbox]),.dlg select{padding:8px 10px;border-radius:8px;border:1px solid var(--divider-color);background:var(--primary-background-color);color:var(--primary-text-color);font:inherit;font-size:14px}
@@ -3447,6 +3610,75 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       ver_saved: 'Saved "{name}"',
       ver_title: 'Versions · {fnName}',
       ver_try: 'Try in sandbox',
+      nb_mark: 'Made with the Functions Board notification builder.',
+      nb_blank: 'Blank script (Home Assistant\'s editor)',
+      nb_new: 'Notification…',
+      nb_new_t: 'A script that sends a notification: to people, phones or speakers, with buttons, quiet hours and how urgent it is. Written as an ordinary Home Assistant script.',
+      nb_h: 'New notification',
+      nb_h_edit: 'Notification: {name}',
+      nb_lead: 'This writes an ordinary Home Assistant script. Run it from any automation or script. It opens here again while it\'s what the builder made; edited by hand, it opens in Home Assistant\'s editor.',
+      nb_default_name: 'Notification',
+      nb_name_ph: 'e.g. Garage left open',
+      nb_what: 'What it says',
+      nb_title: 'Title',
+      nb_message: 'Message',
+      nb_tpl_hint: 'Templates work here, like {{ states(\'sensor.outside_temperature\') }}.',
+      nb_to: 'Who gets it',
+      nb_people: 'People: their phones',
+      nb_phones: 'Phones',
+      nb_no_phone: 'no phone with the app',
+      nb_no_phones: 'No phones with the Home Assistant app are set up.',
+      nb_only_away: 'only when away',
+      nb_speak: 'Spoken on speakers',
+      nb_tts: 'Text-to-speech',
+      nb_no_speaking: 'Don\'t speak it',
+      nb_speakers: 'Speakers',
+      nb_no_speakers: 'No media players',
+      nb_say: 'What\'s said',
+      nb_say_ph: 'The message',
+      nb_always: 'Speak it even when nobody\'s home',
+      nb_no_tts: 'No text-to-speech engine is set up.',
+      nb_how: 'How',
+      nb_level: 'How urgent',
+      nb_l_normal: 'Normal',
+      nb_l_time: 'Time-sensitive: shows through Focus and Do Not Disturb settings that allow it',
+      nb_l_critical: 'Critical: sounds even on silent (iOS critical alert, Android alarm stream)',
+      nb_tag: 'Replaces the one before with the same tag',
+      nb_tag_ph: 'e.g. garage',
+      nb_quiet: 'Quiet hours',
+      nb_from: 'From',
+      nb_until: 'Until',
+      nb_quiet_hint: 'In quiet hours phones get it without a sound and nothing is spoken. A critical one isn\'t held back.',
+      nb_buttons: 'Buttons',
+      nb_buttons_hint: 'Up to three, on the phones. Each run has buttons of its own, so an old notification\'s button doesn\'t answer a new one.',
+      nb_button_n: 'Button {n}',
+      nb_button_ph: 'e.g. Close it',
+      nb_del_btn_t: 'Remove this button',
+      nb_add_btn: 'Add a button',
+      nb_then: 'What it does',
+      nb_wait: 'Wait for an answer (minutes)',
+      nb_timeout: 'If nobody answers',
+      nb_clear: 'Clear the notification from every phone once answered or timed out',
+      nb_nothing: 'Nothing',
+      nb_as_set_up: { one: 'As set up (1 action)', other: 'As set up ({n} actions)' },
+      nb_run_x: 'Run {name}',
+      nb_scene_x: 'Turn on scene {name}',
+      nb_ha: 'Open in Home Assistant\'s editor',
+      nb_try_t: 'Run it once in the sandbox, saved or not: nothing is sent, and its buttons can be pressed there',
+      nb_need_name: 'Give it a name.',
+      nb_need_message: 'Write the message.',
+      nb_need_to: 'Pick who gets it: a person, a phone, or speakers with text-to-speech.',
+      nb_need_phone: 'Buttons need a phone to be on.',
+      nb_not_saved: 'Not saved: {e}',
+      nb_step_new: 'make the notification "{name}"',
+      nb_step_edit: 'change the notification "{name}"',
+      nb_made: 'Made "{name}" in {fnName}',
+      nb_made_unlabelled: 'Made "{name}", but it couldn\'t be added to the function: add it with Existing',
+      nb_saved: 'Saved "{name}"',
+      nb_tried: '"{name}" runs in the sandbox: press its buttons in the Notification row',
+      nb_back: 'Back to the builder',
+      nb_by_hand: 'Edited by hand since the builder made it: opening Home Assistant\'s editor',
+      nb_promise: 'The notification builder (Full manager) writes the script it makes when you save it, and adds it to the function.',
       sbx_cond_mark: 'In the sandbox: {text} was {res}',
       sbx_f_calls: '{a}: {svc}{to}',
       sbx_f_checks: '{a} checks {c}',
@@ -4660,7 +4892,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     //      entityOf(registry id) → entity id, scene(id) → its config ({ entities }) or null }
     constructor(o) {
       this.o = o; this.real = o.states || {}; this.tz = o.tz; this.now = o.now == null ? Date.now() : o.now;
-      this.changed = new Map(); this.items = new Map(); this.log = []; this.timers = []; this.runs = new Map();
+      this.changed = new Map(); this.items = new Map(); this.log = []; this.timers = []; this.runs = new Map(); this.ctxN = 0;
       this.pend = new Map(); this.waiters = new Set(); this.tplLast = new Map(); this.queue = new Map();
       this.busy = 0; this.seq = 0; this.steps = 0; this.halted = false; this.n = 0; this.devT = new WeakMap();
       // 0.11.2: step-through (paused runs, breakpoints), how devices answer, and what was reached (coverage)
@@ -4697,9 +4929,12 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     }
     // a run's variables as they are now, for the timeline (trigger, repeat, wait, response variables …): a copy, long
     // strings cut, the whole kept under 20,000 characters
+    // a run's context (0.11.3): Home Assistant gives every run one, and its actions' templates read its id (a
+    // notification's own button ids, for one); here each run gets the next of the sandbox's own
+    _ctx() { this.ctxN = (this.ctxN || 0) + 1; return { id: 'SBX' + String(this.ctxN).padStart(23, '0'), parent_id: null, user_id: null }; }
     _snap(vars) {
       try {
-        const str = JSON.stringify(vars, (k, v) => (k === 'this' ? undefined : typeof v === 'string' && v.length > 300 ? v.slice(0, 300) + '…' : v));
+        const str = JSON.stringify(vars, (k, v) => (k === 'this' || k === 'context' ? undefined : typeof v === 'string' && v.length > 300 ? v.slice(0, 300) + '…' : v));
         if (!str) return null;
         return str.length <= 20000 ? JSON.parse(str) : { '…': T('sbx_vars_big') };
       } catch (e) { return null; }
@@ -5649,11 +5884,15 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const it = run.item, cfg = it.cfg;
       let outcome = 'finished', why = '';
       try {
+        // the run's context (0.11.3) is there for its actions, as in Home Assistant: not yet for an automation's
+        // variables and conditions, nor a script's own variables (Home Assistant renders those first)
         if (it.kind === 'automation') {
           // its variables and conditions were looked at when it was triggered (_triggered)
+          run.vars.context = this._ctx();
           await this._seq(toList(cfg.actions != null ? cfg.actions : cfg.action), run);
         } else {
           if (cfg.variables) Object.assign(run.vars, await this._render(cfg.variables, run));
+          run.vars.context = this._ctx();
           await this._seq(toList(cfg.sequence), run);
         }
       } catch (e) {
@@ -6026,7 +6265,13 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (!done && a.continue_on_timeout === false) throw Object.assign({}, SBX_STOP, { text: T('sbx_timed_out') });
     }
     async _waitTrig(a, run) {
-      const ts = this._asTrigs(a.wait_for_trigger).filter((t) => t.enabled !== false), ms = a.timeout != null ? durMs(await this._render(a.timeout, run)) : null;
+      const ms = a.timeout != null ? durMs(await this._render(a.timeout, run)) : null;
+      // an event trigger's type and data may be templates, rendered with the run's variables when the wait starts
+      // (0.11.3: a notification's buttons, each run's own ids)
+      const ts = [];
+      for (const t of this._asTrigs(a.wait_for_trigger).filter((x) => x.enabled !== false)) {
+        ts.push(this._plat(t) === 'event' && /\{[{%]/.test(JSON.stringify([t.event_type, t.event_data || null])) ? Object.assign({}, t, { event_type: await this._render(t.event_type, run), event_data: await this._render(t.event_data || {}, run) }) : t);
+      }
       this._log({ kind: 'wait', key: run.item.id, cause: run.cause, text: T('sbx_wait_trig', { d: ms == null ? '' : ' ' + T('sbx_up_to', { d: fmtDur(ms) }) }) });
       const tid = (t, i) => (t.id != null ? String(t.id) : String(i));
       // template triggers fire on becoming true: what they are when the wait starts
@@ -6898,6 +7143,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     debug: { owns: ['_dbg', '_dbgSel', '_dbgFlt', '_dbgScrolled', '_dbgSeq'], table: 'debug' },
     arrows: { owns: ['_arw', '_tt'], table: 'arrows' },
     sandbox: { owns: [], table: 'sandbox' },
+    builders: { owns: ['_bld'], table: 'builders' },
     versions: { owns: ['_verPending', '_verUrlDone'], table: 'versions' },
     nodered: { owns: ['_nrCache', '_nrWait'] },
     diagnostics: { owns: [] },
@@ -6965,7 +7211,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       // developer tools (Phase 9): simulated states, trigger watches, check results, monitors, the debugger
       this._sim = new Map(); this._simAt = new Map(); this._tw = new Map(); this._cond = new Map(); this._liveE = new Map();
       this._monSubs = new Map(); this._monData = new Map(); this._monCount = new Map();
-      this._testLog = []; this._testOk = false; this._dbg = null; this._dbgSeq = 0; this._lit = null;
+      this._testLog = []; this._testOk = false; this._bld = null; this._dbg = null; this._dbgSeq = 0; this._lit = null;
     }
     // the user picked another language (4.9): stop what runs, save what is pending, and build the page again
     // as on a fresh visit. What Home Assistant set and Undo's steps stay; everything else starts over.
@@ -8966,12 +9212,22 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         // making new things for the open function
         create: {
           'new-automation': (el, { need }) => { if (need()) this._create('automation'); },
-          'new-script': (el, { need }) => { if (need()) this._create('script'); },
+          'new-script': (el, { need }) => { if (need()) { if (this._menuEl && this._menuAnchor === el) this._closeMenu(); else this._scriptMenu(el); } },
+          'mk-script': (el, { need }) => { if (need()) this._create('script'); },
           'new-helper': (el, { need }) => { if (need()) { if (this._menuEl && this._menuAnchor === el) this._closeMenu(); else this._helperMenu(el); } },
           'mk-helper': (el, { need }) => { if (need()) this._create('helper', el.dataset.domain, el.dataset.name); },
           'mk-scene': (el, { need }) => { if (need()) this._create('scene'); },
           'mk-more': () => { this._helperMoreMenu(); },
           'mk-back': () => { this._helperMenu(this._menuAnchor); },
+        },
+        // the builders (0.11.3)
+        builders: {
+          'nb-new': (el, { need }) => { if (need() && !this._ver) this._bldNew(); },
+          'nb-add-btn': () => { this._bldButton(true); },
+          'nb-del-btn': (el) => { this._bldButton(false, +el.dataset.i); },
+          'nb-save': () => { this._bldSave(); },
+          'nb-try': () => { this._bldTry(); },
+          'nb-ha': () => { this._bldHA(); },
         },
         // the import manager
         manager: {
@@ -9230,7 +9486,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     // a field changed: each part looks at it in turn, and the first that knows it handles it
     _onChange(e) {
       const t = e.target;
-      if (this._diagChange(t) || this._sbxChange(t) || this._nrChange(t) || this._testChange(t) || this._arwChange(t) || this._togChange(t) || this._fnChange(t) || this._mgrChange(t)) return;
+      if (this._diagChange(t) || this._bldChange(t) || this._sbxChange(t) || this._nrChange(t) || this._testChange(t) || this._arwChange(t) || this._togChange(t) || this._fnChange(t) || this._mgrChange(t)) return;
     }
     // typed into: the same, for what each part reads as it's typed
     _onInput(e) {
@@ -9344,8 +9600,10 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (r && r.unique_id) return r.unique_id;
       return n.domain === 'script' ? n.key.slice(7) : null;
     }
-    _openItem(n) {
+    // ha: Home Assistant's own editor, also for a script a builder made (which otherwise opens in its builder)
+    _openItem(n, ha) {
       if (n.kind === 'nodered') { this._openNodeRed(n.nr.sub, T('node_red_2', { tabLabel: n.nr.tabLabel })); return; }
+      if (!ha && n.domain === 'script' && this._bldHas(n.key)) { this._bldEdit(n); return; }
       if (n.domain === 'automation' || n.domain === 'script') {
         const id = this._itemId(n);
         if (id) { this._openDrawer(`/config/${n.domain}/edit/${encodeURIComponent(id)}`, n.name); return; }
@@ -9974,6 +10232,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         li.push(T('full_manager_is_on_the'));
         li.push(T('ver_promise_full'));
         li.push(T('tests_full_manager_a_helper'));
+        li.push(T('nb_promise'));
       } else {
         li.push(T('this_install_is_set_to'));
       }
@@ -10699,6 +10958,14 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         helper: domain ? [`/config/helpers/add?domain=${encodeURIComponent(domain)}`, T('new', { name: (name || domain).toLowerCase() })] : ['/config/helpers', T('helpers')],
       };
       this._openDrawer(map[kind][0], map[kind][1], { capture: true });
+    }
+    // Script: Home Assistant's script editor, or a builder (0.11.3) that writes the script from what's picked
+    _scriptMenu(btn) {
+      const full = this._full();
+      this._menu(btn, [
+        { act: 'mk-script', icon: 'mdi:script-text-outline', text: T('nb_blank') },
+        { act: 'nb-new', icon: 'mdi:bell-plus-outline', text: T('nb_new'), title: full ? T('nb_new_t') : T('nb_new_t') + ' ' + T('full_manager_only_switch_it') },
+      ], T('create_in_this_function'));
     }
     _helperMenu(btn) {
       const items = HELPER_TYPES.map(([d, t, i]) => ({ act: 'mk-helper', data: { domain: d, name: t }, icon: i, text: t }));
@@ -13111,7 +13378,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._$.board.classList.add('sbx');
       this._$.sbxpill.hidden = false;
       this._fitLitbar();
-      await this._sbxNew(label, opt.check);
+      await this._sbxNew(label, opt.check, opt.extra);
       if (!this._sbxOn()) return;
       this._renderSbxCtl();
       this._renderChecks();
@@ -13120,19 +13387,22 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._renderNodebar();
       this._renderLegend();
     }
-    async _sbxNew(label, check) {
+    // extra (0.11.3): a script not saved yet (a builder's, tried), or one in place of its saved config
+    async _sbxNew(label, check, extra) {
       const m = this._model;
       const ids = [...m.nodes.keys()].filter((k) => /^(automation|script)\./.test(k));
       const cfgs = await Promise.all(ids.map((k) => this._fetchConfig(k)));
+      if (extra) { const i = ids.indexOf(extra.id); if (i < 0) { ids.push(extra.id); cfgs.push(extra.cfg); } else cfgs[i] = extra.cfg; }
       // whole home: the automations outside the function that its changes reach run too (a check that had some
       // replays them as well)
       const outside = new Set(check ? (check.items || []).filter((k) => k.startsWith('automation.') && !ids.includes(k)) : []);
       if (this._data.ui.sbxWhole && !check) (await this._sbxReach(ids, cfgs)).forEach((k) => outside.add(k));
       const more = [...outside], moreCfgs = await Promise.all(more.map((k) => this._fetchConfig(k)));
       more.forEach((k, i) => { if (moreCfgs[i]) { ids.push(k); cfgs.push(moreCfgs[i]); } });
-      const g = { label, asks: [], tplN: 0, pre: check ? check.answers.slice() : [], outside };
+      const g = { label, asks: [], tplN: 0, pre: check ? check.answers.slice() : [], outside, extra: extra || null };
       // what you do from here, so the run can be kept as a check: the states it starts from, the clock, the steps
       const now = check ? check.at : Date.now(), states = Object.assign({}, this._hass.states);
+      if (extra && !states[extra.id]) states[extra.id] = { entity_id: extra.id, state: 'off', attributes: { friendly_name: extra.cfg.alias || extra.id, mode: extra.cfg.mode || 'single' }, last_changed: new Date(now).toISOString(), last_updated: new Date(now).toISOString(), context: {} };
       if (check) Object.entries(check.start).forEach(([k, v]) => { states[k] = Object.assign({}, states[k] || {}, { state: v.state, attributes: Object.keys(v.attributes || {}).length ? v.attributes : (states[k] || {}).attributes || {} }); });
       g.rec = { at: now, start: this._checkStart(states), items: ids.slice(), steps: [], answers: [] };
       this._sbx = g;
@@ -13231,9 +13501,14 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       return out;
     }
     // a notification's buttons (0.11.2): every button the function's automations and scripts would put on one (not
-    // one whose id is a template), by its title; pressed in the sandbox, the phone's answer is fired
+    // one whose id is a template), by its title; pressed in the sandbox, the phone's answer is fired. First (0.11.3)
+    // the buttons of the notifications sent in this sandbox, newest first, ids rendered (each run's own)
     _sbxButtons() {
       const g = this._sbx, out = new Map(), known = (x) => this._known(x);
+      g.eng.log.slice().reverse().forEach((e) => {
+        const acts = e.kind === 'call' && /^notify\./.test(e.svc || '') && e.data && e.data.data && Array.isArray(e.data.data.actions) ? e.data.data.actions : [];
+        acts.forEach((x) => { if (x && typeof x.action === 'string' && x.action && x.action !== 'URI' && !out.has(x.action)) out.set(x.action, String(x.title || x.action)); });
+      });
       g.opts.items.forEach((it) => {
         if (!it.cfg) return;
         analyze(it.cfg, it.id.startsWith('script.'), known).refs.forEach((r) => { if (r.role === 'action' && r.ref.startsWith('nact:') && !out.has(r.ref.slice(5))) out.set(r.ref.slice(5), r.title || r.ref.slice(5)); });
@@ -13289,7 +13564,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (this._sbx !== g) return;
       const h = sbxHistory(hist, { inputs, outputs, autos, from, to });
       // from the home as it was then, the same automations (and outside ones, whole home), the real changes in order
-      await this._sbxNew(g.label, { at: from, start: h.start, answers: [], items: g.opts.items.map((x) => x.id) });
+      await this._sbxNew(g.label, { at: from, start: h.start, answers: [], items: g.opts.items.map((x) => x.id) }, g.extra);
       const g2 = this._sbx;
       if (!g2) return;
       this._renderSbxCtl();
@@ -13324,7 +13599,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._sbx.speed = 0; this._sbx.exStop = true;
       this._clock.cancel('sbxplay');
       this._clearLit(true);
-      await this._sbxNew(label);
+      await this._sbxNew(label, null, this._sbx.extra);
       this._renderSbxCtl();
       this._renderChecks();
       this._renderSbx();
@@ -13367,7 +13642,12 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       });
     }
     _sbxLogged() {
-      this._clock.once('sbx', 120, () => { this._renderSbx(); this._refreshStates(); });
+      this._clock.once('sbx', 120, () => {
+        this._renderSbx(); this._refreshStates();
+        // a notification sent with buttons of its own (0.11.3): they're there to press
+        const g = this._sbx;
+        if (g && g.btnSig !== undefined && this._sbxOn() && this._sbxButtons().map((x) => x.action).join('|') !== g.btnSig) this._renderSbxCtl();
+      });
     }
     // the drawer's controls (0.11.1: everything a dropdown, with Other… to type anything else). Set: every entity or
     // attribute the automations read (triggers, waits, conditions), with the values that matter to them, then the
@@ -13397,6 +13677,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (ins.presses.length) rows.push(row(T('sbx_press'), sel('sbpress', T('sbx_press_what'), ins.presses.map((x) => o2(x.key, x.label)).join('')) + `<button class="chip" data-act="sbx-press">${T('sbx_press_b')}</button>`));
       rows.push(row(T('sbx_event'), this._sbxField('sbev', evs.map((x) => ({ v: x, l: x })), T('sbx_event_type')) + this._sbxField('sbevd', [], T('sbx_event_data_ph')) + `<button class="chip" data-act="sbx-fire">${T('sbx_fire')}</button>`));
       const btns = this._sbxButtons();
+      g.btnSig = btns.map((x) => x.action).join('|');
       if (btns.length) rows.push(row(T('sbx_nact'), sel('sbnact', T('sbx_nact_what'), btns.map((x) => o2(x.action, x.title === x.action ? x.title : T('sbx_nact_opt', { t: x.title, id: x.action }))).join('')) + `<button class="chip" data-act="sbx-nact" title="${esc(T('sbx_nact_t'))}">${T('sbx_nact_b')}</button>`));
       if (topics.size) rows.push(row('MQTT', this._sbxField('sbtop', [...topics].map((x) => ({ v: x, l: x })), T('sbx_topic')) + this._sbxField('sbpay', [], T('sbx_payload')) + `<button class="chip" data-act="sbx-mqtt">${T('sbx_send')}</button>`));
       if (ins.hooks.length) rows.push(row(T('sbx_webhook'), sel('sbhook', T('sbx_webhook'), ins.hooks.map((x) => o2(x.id, x.id)).join('')) + sel('sbhookm', T('sbx_method'), '') + this._sbxField('sbhookd', [{ v: '{}', l: T('sbx_body_empty') }], T('sbx_body_ph')) + `<button class="chip" data-act="sbx-hook">${T('sbx_call')}</button>`));
@@ -14467,6 +14748,236 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._renderSbx();
       this._refreshStates();
       this._toast(steps.length ? P('sbx_rewound', steps.length) : T('sbx_rewound_0'));
+    }
+
+    /* ======================================================================================================
+       part: builders: the builders (0.11.3): a script made from what the person picks (the notification builder),
+       opened in it again while it's still what the builder made Owns _bld (PARTS): only its own methods use it; the
+       other parts ask its methods.
+       ====================================================================================================== */
+    // the spec a script of the open function was made from, if a builder made it
+    _bldSpec(key) {
+      const label = this._data && this._data.ui.current, L = label && this._data.layouts[label];
+      const b = L && L.builders && L.builders[key];
+      return b && b.kind === 'notify' ? b.spec : null;
+    }
+    _bldHas(key) { return !this._ver && !!this._bldSpec(key); }
+    // Edit on a script a builder made: the builder, while the script is still what it made; edited by hand past
+    // that, Home Assistant's editor (and it says so)
+    async _bldEdit(n) {
+      const spec = this._bldSpec(n.key), cfg = spec ? await this._fetchConfig(n.key) : null;
+      if (!spec || !nbSame(cfg, spec)) { if (spec) this._toast(T('nb_by_hand')); this._openItem(n, true); return; }
+      this._bldOpen({ key: n.key, oid: this._itemId(n), spec: JSON.parse(JSON.stringify(spec)), name: cfg.alias || n.name, icon: cfg.icon || null, desc: nbDesc(cfg.description) });
+    }
+    // a new notification for the open function
+    _bldNew() {
+      const tg = this._bldTargets();
+      this._bldOpen({ key: null, oid: null, name: '', icon: null, desc: '',
+        spec: { title: '', message: '', phones: [], people: [], speakers: [], tts: tg.tts.length ? tg.tts[0].id : null, say: '', speakAlways: false, level: 'normal', tag: '', buttons: [], wait: 30, timeout: [], clear: true, quiet: null } });
+    }
+    _bldOpen(b) {
+      this._closeMenu();
+      this._bld = Object.assign({ label: this._data.ui.current, sel: {}, kept: {}, qf: '22:00', qt: '07:00' }, b);
+      this._bldShow();
+    }
+    _bldTargets() {
+      return notifyTargets({ states: this._hass.states, entities: this._ents, devices: this._devs, services: (this._hass.services || {}).notify });
+    }
+    // the dialog, from what's picked so far (_bldRead keeps the form in _bld before it's drawn again)
+    _bldShow() {
+      const b = this._bld;
+      if (!b || !this._data || this._data.ui.current !== b.label) return;
+      const s = b.spec, tg = this._bldTargets(), m = this._$.modal, full = this._full();
+      b.targets = tg; b.sel = {}; b.kept = {};
+      const ck = (name, value, on, text, more) => `<label class="chk"><input type="checkbox" name="${name}" value="${esc(value)}"${on ? ' checked' : ''}${more || ''}>${text}</label>`;
+      const os = (p) => (p.os === 'ios' ? 'iOS' : 'Android');
+      const ppl = new Map(s.people.map((p) => [p.id, p])), ph = new Set(s.phones.map((p) => p.svc)), sp = new Set(s.speakers);
+      const people = tg.people.map((p) => {
+        const on = ppl.get(p.id), has = p.phones.length > 0;
+        return `<div class="nbrow">${ck('nbp', p.id, !!on && has, `${esc(p.name)} <span class="muted">${has ? esc(p.phones.map((x) => `${x.name} (${os(x)})`).join(', ')) : T('nb_no_phone')}</span>`, has ? '' : ' disabled')}${has ? ck('nbaway', p.id, !!(on && on.away), T('nb_only_away')) : ''}</div>`;
+      }).join('');
+      const phones = tg.phones.map((p) => ck('nbph', p.svc, ph.has(p.svc), `${esc(p.name)} <span class="muted">${os(p)}</span>`)).join('');
+      const opt = (v, l, on) => `<option value="${esc(v)}"${on ? ' selected' : ''}>${esc(l)}</option>`;
+      const speak = tg.tts.length ? `<label>${T('nb_tts')}<select name="nbtts">${opt('', T('nb_no_speaking'), !s.tts)}${tg.tts.map((x) => opt(x.id, x.name, s.tts === x.id)).join('')}</select></label>`
+        + `<div class="nblist" role="group" aria-label="${esc(T('nb_speakers'))}">${tg.speakers.map((x) => ck('nbsp', x.id, sp.has(x.id), esc(x.name))).join('') || `<span class="muted">${T('nb_no_speakers')}</span>`}</div>`
+        + `<label>${T('nb_say')}<input name="nbsay" value="${esc(s.say)}" placeholder="${esc(T('nb_say_ph'))}"></label>${ck('nbalways', '1', s.speakAlways, T('nb_always'))}`
+        : `<span class="muted">${T('nb_no_tts')}</span>`;
+      const lv = [['normal', T('nb_l_normal')], ['time', T('nb_l_time')], ['critical', T('nb_l_critical')]];
+      const btns = s.buttons.map((x, i) => `<div class="nbbtn"><div class="nbrow"><label class="nbgrow">${T('nb_button_n', { n: i + 1 })}<input name="nbbt" value="${esc(x.title)}" maxlength="64" placeholder="${esc(T('nb_button_ph'))}"></label><button class="chip" data-act="nb-del-btn" data-i="${i}" title="${esc(T('nb_del_btn_t'))}">${T('remove')}</button></div><div class="selbox" data-nbsel="b${i}">${this._bldActSel('b' + i, x.then, T('nb_then'))}</div></div>`).join('');
+      m.hidden = false;
+      m.innerHTML = `<div class="dlg nbdlg"><h3>${b.oid ? T('nb_h_edit', { name: esc(b.name) }) : T('nb_h')}</h3><div class="nbbody">
+        <div class="hint">${T('nb_lead')}</div>
+        <label>${T('name')}<input name="nbname" value="${esc(b.name)}" placeholder="${esc(T('nb_name_ph'))}"></label>
+        <label>${T('description')}<input name="nbdesc" value="${esc(b.desc)}"></label>
+        <fieldset><legend>${T('nb_what')}</legend><label>${T('nb_title')}<input name="nbtitle" value="${esc(s.title)}" maxlength="200"></label><label>${T('nb_message')}<textarea name="nbmsg" rows="3" maxlength="4000">${esc(s.message)}</textarea></label><div class="hint">${T('nb_tpl_hint')}</div></fieldset>
+        <fieldset><legend>${T('nb_to')}</legend>${people ? `<div class="nbsub">${T('nb_people')}</div>${people}` : ''}${phones ? `<div class="nbsub">${T('nb_phones')}</div><div class="nbrow">${phones}</div>` : ''}${people || phones ? '' : `<span class="muted">${T('nb_no_phones')}</span>`}</fieldset>
+        <fieldset><legend>${T('nb_speak')}</legend>${speak}</fieldset>
+        <fieldset><legend>${T('nb_how')}</legend><label>${T('nb_level')}<select name="nblevel">${lv.map(([v, l]) => opt(v, l, s.level === v)).join('')}</select></label>
+          <label>${T('nb_tag')}<input name="nbtag" value="${esc(s.tag)}" maxlength="64" placeholder="${esc(T('nb_tag_ph'))}"></label>
+          ${ck('nbq', '1', !!s.quiet, T('nb_quiet'))}<div class="nbrow nbqh"${s.quiet ? '' : ' hidden'}><label>${T('nb_from')}<input type="time" name="nbqf" value="${esc(s.quiet ? s.quiet.from : b.qf)}"></label><label>${T('nb_until')}<input type="time" name="nbqt" value="${esc(s.quiet ? s.quiet.to : b.qt)}"></label></div><div class="hint">${T('nb_quiet_hint')}</div></fieldset>
+        <fieldset><legend>${T('nb_buttons')}</legend><div class="hint">${T('nb_buttons_hint')}</div>${btns}${s.buttons.length < 3 ? `<div><button class="chip" data-act="nb-add-btn"><ha-icon icon="mdi:plus"></ha-icon>${T('nb_add_btn')}</button></div>` : ''}
+          <div class="nbans"${s.buttons.length ? '' : ' hidden'}><label>${T('nb_wait')}<input type="number" name="nbwait" min="1" max="1440" value="${esc(s.wait)}"></label><div class="selbox" data-nbsel="timeout">${this._bldActSel('timeout', s.timeout, T('nb_timeout'))}</div>${ck('nbclear', '1', s.clear, T('nb_clear'))}</div></fieldset>
+        <div class="aval" role="alert"></div></div>
+        <div class="btns">${b.oid ? `<button data-act="nb-ha">${T('nb_ha')}</button>` : ''}<button data-act="nb-try" title="${esc(T('nb_try_t'))}">${T('ver_try')}</button><button data-act="modal-cancel">${T('cancel')}</button><button class="primary" data-act="nb-save"${full ? '' : ` disabled title="${esc(T('full_manager_only_switch_it'))}"`}>${T('save')}</button></div></div>`;
+      this._bldMount();
+      this._clock.after('focus', 50, () => { const i = m.querySelector('input[name="nbname"]'); if (i) i.focus(); });
+    }
+    // what a button does (or what's done when nobody answers): Home Assistant's own action editor once it's loaded;
+    // until then a script or scene to run, or what was set up there before
+    _bldActSel(k, acts, text) {
+      const b = this._bld, cur = this._bldActKey(acts), opts = [['', T('nb_nothing')]].concat(this._bldRunnable());
+      if (cur === 'keep') { b.kept[k] = acts; opts.push(['keep', P('nb_as_set_up', acts.length)]); }
+      return `<label>${text}<select data-nbact="${k}">${opts.map(([v, l]) => `<option value="${esc(v)}"${v === cur ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></label>`;
+    }
+    _bldActKey(acts) {
+      const a = toList(acts);
+      if (!a.length) return '';
+      if (a.length === 1 && Object.keys(a[0]).length === 1 && /^script\.[a-z0-9_]+$/.test(a[0].action || '')) return 'run:' + a[0].action;
+      if (a.length === 1 && a[0].action === 'scene.turn_on' && a[0].target && typeof a[0].target.entity_id === 'string' && Object.keys(a[0]).length === 2) return 'scene:' + a[0].target.entity_id;
+      return 'keep';
+    }
+    // the scripts and scenes a button can run: the function's first
+    _bldRunnable() {
+      const b = this._bld, mine = new Set(this._model ? this._model.nodes.keys() : []), self = b.oid ? 'script.' + b.oid : null;
+      const ids = Object.keys(this._hass.states).filter((k) => /^(script|scene)\./.test(k) && k !== self);
+      ids.sort((x, y) => (mine.has(y) - mine.has(x)) || this._boxName(x).localeCompare(this._boxName(y)));
+      return ids.map((k) => [(k.startsWith('scene.') ? 'scene:' : 'run:') + k, (k.startsWith('scene.') ? T('nb_scene_x', { name: this._boxName(k) }) : T('nb_run_x', { name: this._boxName(k) }))]);
+    }
+    _bldMount() {
+      const b = this._bld, m = this._$.modal;
+      this._ensureSelector().then((ok) => {
+        if (!ok || this._bld !== b || !m.querySelector('.nbdlg')) return;
+        m.querySelectorAll('.selbox[data-nbsel]').forEach((box) => {
+          const k = box.dataset.nbsel, i = k === 'timeout' ? -1 : +k.slice(1), acts = i < 0 ? b.spec.timeout : (b.spec.buttons[i] || {}).then;
+          const el = document.createElement('ha-selector');
+          el.hass = this._hass; el.selector = { action: {} }; el.label = i < 0 ? T('nb_timeout') : T('nb_then'); el.value = toList(acts);
+          b.sel[k] = toList(acts);
+          el.addEventListener('value-changed', (e) => { e.stopPropagation(); b.sel[k] = toList(e.detail.value); el.value = e.detail.value; });
+          box.innerHTML = ''; box.appendChild(el);
+        });
+      });
+    }
+    _bldActs(k) {
+      const b = this._bld;
+      if (b.sel[k] !== undefined) return b.sel[k];
+      const e = this._$.modal.querySelector(`select[data-nbact="${k}"]`), v = e ? e.value : '';
+      if (v === 'keep') return b.kept[k] || [];
+      if (v.startsWith('run:')) return [{ action: v.slice(4) }];
+      if (v.startsWith('scene:')) return [{ action: 'scene.turn_on', target: { entity_id: v.slice(6) } }];
+      return [];
+    }
+    // the form into _bld (as typed: cleanNotify keeps only what can be kept when it's saved)
+    _bldRead() {
+      const b = this._bld, s = b.spec, tg = b.targets, m = this._$.modal, q = (x) => m.querySelector(x);
+      if (!q('.nbdlg')) return;
+      const val = (n) => { const e = q(`[name="${n}"]`); return e ? e.value : ''; };
+      const on = (n, v) => !!q(`input[name="${n}"][value="${CSS.escape(v)}"]:checked`);
+      b.name = val('nbname').trim(); b.desc = val('nbdesc').trim();
+      s.title = val('nbtitle'); s.message = val('nbmsg');
+      s.people = tg.people.filter((p) => on('nbp', p.id)).map((p) => ({ id: p.id, away: on('nbaway', p.id), phones: p.phones }));
+      s.phones = tg.phones.filter((p) => on('nbph', p.svc));
+      if (q('[name="nbtts"]')) { s.tts = val('nbtts') || null; s.speakers = tg.speakers.filter((x) => on('nbsp', x.id)).map((x) => x.id); s.say = val('nbsay'); s.speakAlways = on('nbalways', '1'); }
+      s.level = val('nblevel') || 'normal'; s.tag = val('nbtag').trim();
+      b.qf = val('nbqf') || b.qf; b.qt = val('nbqt') || b.qt;
+      s.quiet = on('nbq', '1') ? { from: b.qf, to: b.qt } : null;
+      s.buttons = [...m.querySelectorAll('input[name="nbbt"]')].map((e, i) => ({ title: e.value, then: this._bldActs('b' + i) }));
+      if (q('[name="nbwait"]')) s.wait = +val('nbwait') || 30;
+      s.timeout = this._bldActs('timeout'); s.clear = on('nbclear', '1');
+    }
+    // the form's own switches: quiet hours' times and what happens on an answer show only when they matter
+    _bldChange(t) {
+      if (!this._bld || !t.closest || !t.closest('.nbdlg')) return false;
+      const m = this._$.modal;
+      if (t.name === 'nbq') { const r = m.querySelector('.nbqh'); if (r) r.hidden = !t.checked; }
+      if (t.name === 'nbaway' && t.checked) { const p = m.querySelector(`input[name="nbp"][value="${CSS.escape(t.value)}"]`); if (p && !p.disabled) p.checked = true; }
+      return true;
+    }
+    _bldButton(add, i) {
+      this._bldRead();
+      const s = this._bld.spec;
+      if (add && s.buttons.length < 3) s.buttons.push({ title: '', then: [] });
+      if (!add) s.buttons.splice(i, 1);
+      this._bldShow();
+      const ins = this._$.modal.querySelectorAll('input[name="nbbt"]');
+      if (add && ins.length) ins[ins.length - 1].focus();
+    }
+    // what's wrong with it as picked, in words (null: it can be saved)
+    _bldWhy(spec, name) {
+      if (!name) return T('nb_need_name');
+      if (!spec.message.trim()) return T('nb_need_message');
+      if (!notifyPhones(spec).length && !(spec.tts && spec.speakers.length)) return T('nb_need_to');
+      if (spec.buttons.length && !notifyPhones(spec).length) return T('nb_need_phone');
+      return null;
+    }
+    // a new script's id: its name, as Home Assistant's script editor makes one, not taken
+    _bldNewId(name) {
+      const base = slugify(name) || 'notification';
+      let id = base, n = 2;
+      while (this._hass.states['script.' + id]) id = base + '_' + n++;
+      return id;
+    }
+    // Save: the script is written (Full manager only), its spec kept in the function's layout, and a new one put in
+    // the function; one undo step
+    async _bldSave() {
+      if (!this._full()) return;
+      this._bldRead();
+      const b = this._bld, m = this._$.modal, val = m.querySelector('.aval'), btn = m.querySelector('[data-act="nb-save"]');
+      const spec = cleanNotify(b.spec), why = this._bldWhy(spec, b.name);
+      if (why) { val.textContent = why; return; }
+      const label = b.label, oid = b.oid || this._bldNewId(b.name), key = 'script.' + oid;
+      const cfg = notifyScript(spec, { alias: b.name, icon: b.icon, description: b.desc });
+      const before = b.oid ? await this._fetchConfig(key) : null, L = this._layout(label), had = L.builders && L.builders[key] ? L.builders[key].spec : null;
+      btn.disabled = true;
+      const put = async (c, sp) => {
+        await this._saveCfg('script', oid, c);
+        const LL = this._layout(label);
+        LL.builders = Object.assign({}, LL.builders || {});
+        if (sp) LL.builders[key] = { kind: 'notify', spec: sp }; else delete LL.builders[key];
+        this._save();
+      };
+      try { await put(cfg, spec); } catch (e) { val.textContent = T('nb_not_saved', { e: (e && (e.message || e.code)) || e }); btn.disabled = false; return; }
+      let labelled = null;
+      if (!b.oid) labelled = await this._bldLabel(key, label);
+      this._closeModal();
+      this._bld = null;
+      const gone = async () => {
+        await this._api('DELETE', `config/script/config/${encodeURIComponent(oid)}`);
+        this._store.changed('cfg:');
+        const LL = this._layout(label); LL.builders = Object.assign({}, LL.builders || {}); delete LL.builders[key]; this._save();
+      };
+      this._history({
+        label, text: b.oid ? T('nb_step_edit', { name: b.name }) : T('nb_step_new', { name: b.name }),
+        undo: () => (before ? put(before, had) : gone()),
+        redo: async () => { await put(cfg, spec); if (!before) await this._bldLabel(key, label); },
+      });
+      this._toast(b.oid ? T('nb_saved', { name: b.name }) : labelled === false ? T('nb_made_unlabelled', { name: b.name }) : T('nb_made', { name: b.name, fnName: this._fnName(label) }), [{ text: T('undo'), fn: () => this._undo() }]);
+    }
+    // a script just made joins the function, once Home Assistant has it (it loads it after the save)
+    async _bldLabel(key, label) {
+      for (let i = 0; i < 50 && !this._hass.states[key]; i++) await this._clock.pause(200);
+      for (let i = 0; i < 10; i++) {
+        try { await this._label(key, label, true, true); return true; } catch (e) { await this._clock.pause(300); }
+      }
+      return false;
+    }
+    // Try in sandbox: the script as picked, saved or not, run once in the sandbox; its buttons can be pressed there
+    async _bldTry() {
+      this._bldRead();
+      const b = this._bld, spec = cleanNotify(b.spec), why = this._bldWhy(spec, b.name || T('nb_default_name'));
+      if (why) { this._$.modal.querySelector('.aval').textContent = why; return; }
+      const key = 'script.' + (b.oid || this._bldNewId(b.name || T('nb_default_name')));
+      const cfg = notifyScript(spec, { alias: b.name || T('nb_default_name'), icon: b.icon, description: b.desc });
+      this._closeModal();
+      await this._openSandbox({ extra: { id: key, cfg } });
+      if (!this._sbxOn()) return;
+      this._toast(T('nb_tried', { name: b.name || T('nb_default_name') }), [{ text: T('nb_back'), fn: () => this._bldShow() }]);
+      await this._sbxStep({ op: 'run', id: key, conds: true });
+    }
+    // Home Assistant's editor, for what the builder doesn't do (and then it's the script as edited there)
+    _bldHA() {
+      const b = this._bld, n = this._model && this._model.nodes.get('script.' + b.oid);
+      this._closeModal(); this._bld = null;
+      if (n) this._openItem(n, true);
     }
 
     /* ======================================================================================================

@@ -41,7 +41,7 @@ run() {
 nodetest() { run "$1" node --test --test-reporter=junit --test-reporter-destination="$R/$1.xml" --test-reporter=spec --test-reporter-destination=stdout "tests/$1.test.js"; }
 
 want selftest && run selftest node tests/selftest/run.js "$R"
-for s in static wiring import problems sandbox clock link store; do want "$s" && nodetest "$s"; done
+for s in static wiring import problems sandbox builder clock link store; do want "$s" && nodetest "$s"; done
 if want backend; then
   if [ -x venvtest/bin/python ]; then run backend venvtest/bin/python -m pytest tests/backend -q -p no:cacheprovider --junitxml="$R/backend.xml"
   else WANT="$WANT backend"; echo "venvtest is missing: sh tests/setup.sh backend" > "$R/backend.log"; fi
@@ -79,7 +79,7 @@ if [ -n "$HA" ]; then
   # onboarding, the test users and their logins: setup, not a test (it used to be inside apitest.py)
   if ! node tests/e2e/hasetup.js > "$R/hasetup.log" 2>&1; then cat "$R/hasetup.log"; echo "Home Assistant isn't ready (tests/.results/hasetup.log)"; exit 1; fi
   want apitest && run apitest venv314/bin/python tests/e2e/apitest.py
-  SUITES="isolation contract ui regress tools sync sandbox versions privacy"
+  SUITES="isolation contract ui regress tools sync sandbox versions builder privacy"
   [ -n "$SIZE" ] && SUITES="$SUITES size"
   for s in $SUITES; do
     want "e2e-$s" || continue

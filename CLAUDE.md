@@ -20,7 +20,7 @@ function out in a sandbox. Published through HACS. Read this before changing any
     `SBX_PRELUDE`, `SBX_ETRIG`), the English text table (`T()`, `P()` for plurals);
   - then `class FunctionsBoard extends HTMLElement`, in parts (`PARTS`): core (start and stop, data and sync, the
     store's maps, drawing the board, the drawer, the actions in `_actionTables()`, undo), then list, functions,
-    manager, problems, tools, debug, arrows, sandbox, versions, nodered and diagnostics, each a block under a
+    manager, problems, tools, debug, arrows, sandbox, builders, versions, nodered and diagnostics, each a block under a
     `part:` heading.
 - `tests/home/`: what the test Home Assistant talks to (its README): an MQTT broker with discovered and YAML MQTT
   entities, Z-Wave JS on a five-node mock controller, Node-RED with the Home Assistant nodes, a phone in the mobile
@@ -83,6 +83,7 @@ returns everything the library section defines.
 | `tests/import.test.js` | `findFunctions()` on small invented homes: helpers and hubs, name and category fences, an automation switching others, Node-RED flows, devices, actuators and buttons, names, checks; the ties it offers; `nrGroups` and disabled tabs and nodes |
 | `tests/problems.test.js` | `findProblems()`: missing, not-loaded, disabled and unavailable entities, devices, areas, actions that don't exist, the function's own pieces |
 | `tests/sandbox.test.js` | the sandbox engine with a stand-in template renderer: triggers, conditions, actions, modes, waits, MQTT, per-entity triggers, `sbxRewrite` |
+| `tests/builder.test.js` | the notification builder's script from a spec (`notifyScript`, `cleanNotify`, `nbSame`, `notifyTargets`), and run in the sandbox engine: buttons, timeouts, away, quiet hours |
 | `tests/clock.test.js` | `class Clock` on a pretend clock: `after` (the last call wins), `once` (the first wins), `every`, `frame`, `deadline`, `sleep`, `pause`, and `stop()` leaving nothing set |
 | `tests/link.test.js` | `class Link` against a pretend Home Assistant: the newest answer wins, time limits, failures reported unless optional, lists in a fixed order, what the Diagnostics file carries |
 | `tests/store.test.js` | `class Store` on a pretend clock: an older answer never replaces a newer one, questions in flight shared, a change makes a fact stale, as of now, how old a fact may be, the rule for deleting |
@@ -104,6 +105,7 @@ returns everything the library section defines.
 | `tests/e2e/sync.test.js` | two boards editing at once |
 | `tests/e2e/sandbox.test.js` | the sandbox on the garage function, templates rendered by the real Home Assistant, an MQTT entity on the test home's broker, nothing sent that changes anything (nor published) |
 | `tests/e2e/versions.test.js` | versions on the garage: save, compare in a tab, sandbox a version, restore (off/delete what was added since), replaced devices |
+| `tests/e2e/builder.test.js` | the notification builder: Home Assistant takes its script as made, run for real to the test phone (its push channel), a button pressed answers that run only, tried in the sandbox with nothing sent, edited by hand opens Home Assistant's editor |
 | `tests/e2e/privacy.test.js` | a tour of everything: every request the board starts goes to this Home Assistant; no connection from the integration (`ha/netguard.log`); its data only in its own `.storage` files; nothing without an admin login; the Diagnostics dialog's forced choice and its files |
 | `tests/e2e/size.test.js` | 1,000 automations: import and open times (slow; `--size`) |
 
@@ -220,6 +222,17 @@ returns everything the library section defines.
   makes the rows from the parts and the person's `_mgr.joins` (an offer taken, or Merge into…), keeping ticks
   (`_mgr.drop`), names and selection with their rows. Node-RED groups are read only while the board's switch is on.
   Its tests use small invented homes: nothing from a real home goes in the repo.
+- **Builders** (0.11.3, the `builders` part): a builder writes an ordinary Home Assistant script; no runtime or format
+  of the board's own. What the person picked (the spec) is kept in the function's layout (`layout.builders`, by the
+  script's entity id, `cleanNotify` in `cleanLayout`) and the script is made from it in the library section, the same
+  every time (`notifyScript`). Edit on its box (`_openItem` → `_bldEdit`) opens the builder only while the script is
+  what it makes of the spec (`nbSame`, its alias, icon and description aside); edited by hand, Home Assistant's
+  editor. Its description ends with `T('nb_mark')`. The notification builder: phones from the mobile app's devices
+  and notify actions (`notifyTargets`, iOS when Apple made it), people with the phones they carry, speakers through
+  `tts.speak`; buttons with ids from the run's `context.id` (each run its own), `wait_for_trigger` on
+  `mobile_app_notification_action`, clearing by tag, then a `choose` on `wait.trigger.id`. Try in sandbox passes the
+  unsaved script as `extra` to `_openSandbox`. The test phone's pushes arrive on `mobile_app/push_notification_channel`
+  (`tests/e2e/builder.test.js`). Other builders wait.
 - **Problems** (`findProblems()` in the library section, 0.9.0): from `analyze()`'s refs and the registries;
   `_buildModel` marks boxes (`n.prob`) and arrows (`e.prob`) and keeps `model.problems`; `_scanProblems()` counts
   every function for the list in the background (configs come from the cache), the open one from its model.

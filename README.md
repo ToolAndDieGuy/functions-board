@@ -40,6 +40,7 @@ The two get along. If you use Node-RED as well, the board can show your flows ne
 - **Live:** states on every box, runs pulse as they happen, last-run failures and unavailable entities are flagged, and **Runs** lists every run in the function; picking one lights the arrows it actually used.
 - **Import** finds the functions already in your setup. It traces every automation and script (and your Node-RED flows, while the board reads them) and groups the ones that trigger, change or call each other, start from the same device, or are named as one system, with the categories you already use, and shows what is left over. Where two groups may be one system it offers to merge them and says why; a merged group shows what it's made from and can be separated again, so you decide where one system ends. Import them all or one at a time, start from labels you already have, or pick items by hand.
 - **Build from the board:** new automations, scripts and helpers open in Home Assistant's editors and land in the function by themselves.
+- **Notification builder:** pick who gets a notification (people, only when they're away, phones, speakers), how urgent it is, quiet hours, and up to three buttons with what each does. It writes an ordinary Home Assistant script, and opens it in the builder again until you edit it by hand (see [Notifications](#notifications)).
 - **Frames and notes** to annotate a system, **Pause** to turn a function's automations off while you work on it, **Undo** for everything the board changes, and **Find** for anything in any function.
 - **Developer tools:**
   - The **debugger** shows what happened in the function in the last 15 minutes and from then on, with what caused each step; picking a step lights the chain that led to it. Selecting an automation says why it did or didn't run, down to the condition that failed.
@@ -148,6 +149,19 @@ The **Auto-arrange** button's menu sets which way a function flows: **left to ri
 - **Try in sandbox** runs the saved version in the sandbox, without making it active.
 - **Make active** (Full manager) makes the function what that version is; the version itself, and every other, stays as it was saved. A dialog lists every change first. If what's there now is already a saved version, it says so and nothing needs saving; if it isn't (unsaved changes), saving it first as a new version is ticked, so nothing is lost unless you untick it; you choose whether automations added since are turned off or deleted (one that's also in another function, or used outside this one, only leaves the function); and if a device its steps used has been replaced, you pick the new one with Home Assistant's device picker.
 
+### Notifications
+
+**Script → Notification…** (in the function's toolbar) opens the notification builder. It writes an ordinary Home Assistant script that you run from any automation or script; nothing of the board runs it. Its description says the builder made it, and **Edit** on its box opens it in the builder again while it's what the builder made. Once it's edited by hand in Home Assistant's editor, it opens there instead.
+
+- **Who gets it:** people (their phones with the Home Assistant app, optionally only when they're away), phones themselves, and speakers through text-to-speech (only when someone's home, unless you say otherwise).
+- **How urgent:** normal, time-sensitive (high priority on Android, the time-sensitive level on iOS) or critical (Android's alarm stream, an iOS critical alert). The builder sends each phone what its app understands.
+- **Quiet hours:** phones get it without a sound and nothing is spoken; a critical one isn't held back.
+- **Buttons:** up to three, each running a script or scene, or any actions in Home Assistant's own action editor. Every run gets button ids of its own, so a button on an old notification doesn't answer a new one. It waits for an answer as long as you say, does what's chosen if nobody answers, and clears the notification from every phone.
+- **A tag** replaces the last notification with the same tag.
+- **Try in sandbox** runs it in the sandbox before or after saving, where its buttons can be pressed. Nothing is sent.
+
+Saving needs Full manager.
+
 ### Import, and on a phone
 
 <table>
@@ -171,6 +185,7 @@ Read this before installing. The integration starts in **Organise only** mode:
 - **Delete** a function (its label and layout), a function together with its automations, scripts and helpers, or a single item, after a second step that lists what goes and what still uses it. Devices are never deleted. Deleting a function with its items never deletes what's shared: a piece also in another function, used by something outside this one (an automation, script, group, helper or Node-RED flow), or set up together with something outside it stays where it is and only leaves the function.
 - **Edit the wiring:** adding or removing an arrow rewrites that automation's or script's config the way Home Assistant's own editor does, so `automations.yaml` and `scripts.yaml` are rewritten and YAML comments in them are lost.
 - **Run tests,** which change your home for real: whatever reacts to the change runs. The first test of a session asks first, and every test is written to the logbook.
+- **Save a notification** from the notification builder: the script it makes is written through Home Assistant's own config API (so `scripts.yaml` is rewritten) and added to the function. Saving it again writes over the same script; Undo puts it back as it was, or deletes it if it was new.
 - **Make a saved version active**: its automations' and scripts' configs and its UI helpers' settings are written back through Home Assistant's own config APIs (so `automations.yaml` and `scripts.yaml` are rewritten), items it had get the function's label again, and automations added since are turned off or deleted, as you choose (scripts and helpers added since are deleted only if you choose deleting; other items added since just lose the label). What was added since and is shared (also in another function, or used by something outside this one) is never turned off or deleted: it only loses the label. When what's written back is shared, the dialog warns that it changes there too. A dialog lists every change first, and saves what's there as a new version before anything is written when it isn't saved anywhere (unless you untick that). A device its steps used that's been replaced can be swapped for the new one in the same dialog. Items defined in YAML can't be written this way and are listed as such.
 
 Every change is shown before it happens, and **Undo** takes it back, except tests and deleting a helper that an integration set up.

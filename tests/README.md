@@ -18,7 +18,7 @@ The tests are layers. Each one tests what the layer below can't, and is as fast 
 | Layer | Where | Runs on | What it is for |
 |---|---|---|---|
 | 1. Rules | `static.test.js` | the source | things that must never be true of the code (missing words, outside requests, ingress cookies), and the board's structure (below) |
-| 2. Units | `wiring`, `import`, `problems`, `sandbox`, `clock`, `link`, `store` `.test.js`; `backend/`; `diff/` | Node; pytest | the board's library (pure functions) and the Python side, case by case; the sandbox against Home Assistant's own core |
+| 2. Units | `wiring`, `import`, `problems`, `sandbox`, `builder`, `clock`, `link`, `store` `.test.js`; `backend/`; `diff/` | Node; pytest | the board's library (pure functions) and the Python side, case by case; the sandbox against Home Assistant's own core |
 | 3. The board | `board/` | Chromium, a fake Home Assistant | everything the board draws and does, in parallel, in seconds per test |
 | 4. Home Assistant | `e2e/` | Chromium, a real Home Assistant | what only the real thing can show: its API, its frontend, templates, isolation, privacy |
 | 5. Weekly | `.github/workflows/weekly.yml` | a real Home Assistant (pinned, and the newest beta) | Home Assistant changing under us; checks that went blind (mutants); flaky tests; the size budget; README pictures out of date |
@@ -167,11 +167,11 @@ them all to pass:
 
 | Job | What | Time |
 |---|---|---|
-| Board script | self-test, rules, library units (`selftest\|static\|wiring\|import\|problems\|sandbox\|clock\|link\|store`) | about 1 min |
+| Board script | self-test, rules, library units (`selftest\|static\|wiring\|import\|problems\|sandbox\|builder\|clock\|link\|store`) | about 1 min |
 | Backend unit tests | the Python side and the sandbox against Home Assistant's core (`selftest\|backend\|diff`), in `venvtest` | about 2 min |
 | The board on a fake Home Assistant | `selftest\|board-`, every core | about 3 min |
 | Browser suites on a real Home Assistant | apitest, isolation, contract, ui, regress, sync, one at a time | about 7 min |
-| Browser suites on a real Home Assistant, part 2 | tools, sandbox, versions, privacy, on a Home Assistant of its own | about 7 min |
+| Browser suites on a real Home Assistant, part 2 | tools, sandbox, versions, builder, privacy, on a Home Assistant of its own | about 7 min |
 | Marketplace (HACS) checks, hassfest | Home Assistant's and HACS's own checks | about 1 min |
 
 The two real-HA jobs split the suites between them (a rule in `static.test.js` checks each suite is in exactly
