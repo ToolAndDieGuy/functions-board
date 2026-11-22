@@ -21,10 +21,12 @@ In the sandbox, every run has a context, as in Home Assistant (templates can rea
 sandbox sent are there to press, by the ids it was sent with.
 
 Versions are made active rather than restored. The version the function is now is pinned at the top of the Versions
-drawer, marked active, with **Save** (what's there now over it, its layout too) and **Save as copy**. Moving boxes
-leaves it the active version. Change an automation, script or helper (or what's in the function) and the top row says
-**Unsaved changes**, with **Save** (over the version the changes came from, after asking) and **Save as copy** (a new
-version). A saved version now changes only when you save
+drawer, marked active, with **Save** and **Save as copy**: active means its automations, scripts, helpers and layout
+are all the same as what's there now. Change anything, boxes moved included, and the top row says **Unsaved changes**,
+with **Save** (over the version the changes came from, after asking; the newest when none is known) and **Save as
+copy** (a new version). The open drawer follows changes made elsewhere. Deleting a version lists what only it has (an
+automation, script or helper still in Home Assistant but in no function, no other version, and used by nothing else),
+each unticked; a ticked one is deleted from Home Assistant too (Full manager). A saved version now changes only when you save
 over it on purpose. **Make active** (Full manager, where Restore was) makes the function what a version is; every
 version stays as it was. If what's there now isn't saved anywhere, saving it first as a new version is ticked, so
 nothing is lost unless you untick it. Before, going back to a good version from a throwaway could leave the good one

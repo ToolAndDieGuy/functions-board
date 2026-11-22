@@ -2242,8 +2242,8 @@
  {
   "name": "versions: no Save when no version is noted as made",
   "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "base: active || from || vs[vs.length - 1] || null,",
-  "replace": "base: active || from || null,",
+  "find": "const base = active || from || cands[0] || vs[vs.length - 1] || null;",
+  "replace": "const base = active || from || cands[0] || null;",
   "suite": "board-regress",
   "only": "0.11.3 versions",
   "expect": "Save is there, over the newest"
@@ -2256,5 +2256,41 @@
   "suite": "board-regress",
   "only": "0.11.3 versions",
   "expect": "follows a change saved in Home Assistant"
+ },
+ {
+  "name": "versions: the layout isn't compared",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "if (verLayoutKey((await this._verSnapOf(label, v)).layout, keys) === mine) { active = v; break; }",
+  "replace": "active = v; break;",
+  "suite": "board-regress",
+  "only": "0.11.3 versions",
+  "expect": "only the layout changed"
+ },
+ {
+  "name": "versions: a position left over from a box that's gone counts",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "c.nodes = Object.fromEntries(Object.entries(c.nodes || {}).filter(([k]) => keys.has(k) || k.startsWith('tool:')));",
+  "replace": "",
+  "suite": "board-regress",
+  "only": "0.11.3 versions",
+  "expect": "a box that's gone"
+ },
+ {
+  "name": "versions: deleting one offers to delete what a function still has",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "&& (this._hass.states[k] || this._entMap.has(k)) && !inFn(k));",
+  "replace": "&& (this._hass.states[k] || this._entMap.has(k)));",
+  "suite": "board-regress",
+  "only": "0.11.3 versions",
+  "expect": "not what a function still has"
+ },
+ {
+  "name": "versions: what only a version has is deleted without a tick",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "also = (this._verDelPlan || []).filter((p, i) => picks.has(i));",
+  "replace": "also = (this._verDelPlan || []);",
+  "suite": "board-regress",
+  "only": "0.11.3 versions",
+  "expect": "unticked, nothing more is deleted"
  }
 ]
