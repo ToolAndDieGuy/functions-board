@@ -189,6 +189,15 @@ returns everything the library section defines.
   trigger. Only the waits listening when a change happened hear it (`_listening`), and a wait it satisfies goes on
   after the handing out. `tests/diff` holds all of this to Home Assistant's core: when it finds a difference, put
   the smallest scenario that shows it in `tests/diff/corpus.js` with the fix.
+  Helpers that follow what they read (0.11.2): `functions_board/sources` gives a template, min/max, threshold or
+  group helper's `rule` (read from the live entity, like the template listeners); the board passes them as
+  `derived` (`_followRules`, which asks for any it's missing) and the engine applies Home Assistant's rules
+  (`sbxFollow`, `pyRound`) in `_onState` before the automations hear the change. Whole home (`_data.ui.sbxWhole`,
+  `_sbxReach`) adds the automations outside the function that start from what it reads or changes, marked
+  `outside` in the items (left out of coverage). A replay from history (`_sbxHistory`) starts a sandbox from the
+  states at a period's start (`sbxHistory`, from `history/history_during_period`), replays the inputs' real
+  changes as steps and compares outputs and runs (`last_triggered` against each run's `started`) with
+  `sbxCompare`.
 - **Import** (0.11.0): `findFunctions(roles, info)` in the library section makes **parts** (what belongs together on
   any reading: helpers, scripts and scenes that link pieces, with category and name fences; an automation that only
   switches others; Node-RED groups, a tab's and tabs named alike; pieces starting from one device, actuator or
