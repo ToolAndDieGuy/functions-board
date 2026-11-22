@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+In the sandbox, the sun moves at sunrise and sunset only when something in the function reads it (an automation, a
+script or a helper). Before, it moved every day whatever the function was, so a run of a few days filled the timeline
+with sun changes nothing heard. The explorer also ran each of its tries on until nothing was due, and the sun is always
+due, so each try ran a month ahead and **Show** replayed that month. Each try now stops a day after it starts, as the
+explorer says.
+
 Scenes and groups no longer draw arrows to the lights and devices they set or hold. Before, they drew arrows only
 to the ones that happened to be on the board for other reasons, so a scene that sets a dozen lights looked as if it
 set two. A scene's box now says how many it sets and a group's how many members it has; click one to see them. Their

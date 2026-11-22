@@ -650,7 +650,6 @@ Related, not in this function. Select it to add it."
           div.sbdue
             span.muted | Coming up:
             button.sbd data-act="sbx-to" data-at="<ms>" data-key="<ms>|Garage open timer finishes" title="Run the clock to <time>" | Garage open timer finishes · <time>
-            button.sbd data-act="sbx-to" data-at="<ms>" data-key="<ms>|<day>" title="Run the clock to <day>, <date>, <time>" | <day> · <time>
           div.sbtabs aria-label="Sandbox views" role="tablist"
             button aria-selected="true" data-act="sbx-tab" data-tab="tl" role="tab" tabindex="0" | Timeline
             button aria-selected="false" data-act="sbx-tab" data-tab="st" role="tab" tabindex="-1" | States

@@ -568,7 +568,7 @@ Related, not in this function. Select it to add it."
                   option value="other" | Other…
                 input.sbadv aria-label="Advance the clock by" hidden placeholder="+<dur>, +<dur>, +<dur>" ·value=""
               button.chip data-act="sbx-advby" | Advance
-              button.chip.sbnext data-act="sbx-next" | Next: <day> in <time>
+              button.chip.sbnext data-act="sbx-next" disabled | Nothing due
               select.sbspeed aria-label="Run the clock" ·value="0"
                 option value="0" | Clock stopped
                 option value="1" | 1×
@@ -594,8 +594,6 @@ Related, not in this function. Select it to add it."
               button.ib data-act="chk-import" title="Import a check someone shared (pasted as text)"
                 ha-icon icon="mdi:import"
           div.sbdue
-            span.muted | Coming up:
-            button.sbd data-act="sbx-to" data-at="<ms>" data-key="<ms>|<day>" title="Run the clock to <day>, <date>, <time>" | <day> · <time>
           div.sbtabs aria-label="Sandbox views" role="tablist"
             button aria-selected="true" data-act="sbx-tab" data-tab="tl" role="tab" tabindex="0" | Timeline
             button aria-selected="false" data-act="sbx-tab" data-tab="st" role="tab" tabindex="-1" | States

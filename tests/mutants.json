@@ -1526,6 +1526,30 @@
   "expect": "a day passing is tried"
  },
  {
+  "name": "sun: moved when nothing reads it",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      if (!this.get('sun.sun') || !this._readsSun()) return;",
+  "replace": "      if (!this.get('sun.sun')) return;",
+  "suite": "sandbox",
+  "expect": "nothing reads sun.sun"
+ },
+ {
+  "name": "sun: a template reading it not seen",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      return [...this.items.values()].some((it) => has(it.cfg)) ||",
+  "replace": "      return false &&",
+  "suite": "sandbox",
+  "expect": "a template that reads sun.sun"
+ },
+ {
+  "name": "explorer: a day past what's due next",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "&& e.nextAt() <= end; k++) await e.toNext();",
+  "replace": "&& e.nextAt() - e.now <= 864e5; k++) await e.toNext();",
+  "suite": "sandbox",
+  "expect": "though the sun is always due"
+ },
+ {
   "name": "sandbox: no sentence of what came of it",
   "file": "custom_components/functions_board/frontend/functions-board.js",
   "find": "      if (g.rec.steps.length === step0 && step0 > 0 && g.lastAdv === g.rec.steps[step0 - 1]) act.step0 = step0 - 1;\n      act.sum = this._sbxSum(act);",

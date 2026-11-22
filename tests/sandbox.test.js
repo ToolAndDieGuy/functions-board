@@ -671,6 +671,27 @@ const st = (sb, id) => (sb.get(id) || {}).state;
     check('0.11.2 ... nothing claims "never started" for one that a value starts', !fl('never').some((x) => x.id === 'automation.never'), fl('never'));
   }
 
+  // ---- 0.11.3 the sun moves only when something reads it, and the explorer stops a day from its start
+  {
+    const sun = S('below_horizon', { next_setting: new Date(at('16:50')).toISOString(), next_rising: new Date(at('07:00') + 86400000).toISOString() });
+    const items = { 'automation.co2': { triggers: [{ trigger: 'numeric_state', entity_id: 'sensor.co2', above: 1100 }], actions: [{ action: 'light.turn_on', target: { entity_id: 'light.l' } }] } };
+    const states = { 'sun.sun': sun, 'sensor.co2': S('590'), 'light.l': S('off') };
+    let sb = make(states, items, { now: at('21:00') });
+    await sb.start();
+    await sb.advance(2 * 86400000);
+    check('0.11.3 nothing reads sun.sun: it isn\'t moved, logged or due', st(sb, 'sun.sun') === 'below_horizon' && !sb.log.some((x) => x.key === 'sun.sun') && !sb.pending().some((x) => x.key === 'sun.sun'), sb.pending());
+    let ex = await lib.sbxExplore(() => make(states, items, { now: at('21:00') }), {});
+    check('0.11.3 the explorer\'s tries have no sun changes when nothing reads it', ex.runs.every((r) => !r.changes.some((c) => c.id === 'sun.sun')), ex.runs.map((r) => r.changes));
+    // something reads it (a template): it follows the clock again, and the explorer still stops a day from the start
+    const reads = Object.assign({ 'automation.dark': { triggers: [{ trigger: 'template', value_template: "{{ is_state('sun.sun', 'above_horizon') }}" }], actions: [] } }, items);
+    ex = await lib.sbxExplore(() => make(states, reads, { now: at('21:00') }), {});
+    check('0.11.3 the explorer\'s tries each stop within a day of the start, though the sun is always due', ex.engs.every((e) => e.now <= at('21:00') + 86400000), ex.engs.map((e) => new Date(e.now).toISOString()));
+    sb = make(states, reads, { now: at('21:00') });
+    await sb.start();
+    await sb.advance(12 * 3600000);
+    check('0.11.3 ... a template that reads sun.sun makes it follow sunrise', st(sb, 'sun.sun') === 'above_horizon');
+  }
+
   // ---- 0.11.2 Home Assistant's order and what it refuses (each found by the differential test, tests/diff)
   {
     const sw = (id, to) => ({ trigger: 'state', entity_id: id, to });

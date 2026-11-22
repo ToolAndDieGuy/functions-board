@@ -5074,8 +5074,14 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         this._armSun(it, t, i);
       }, null, T('sbx_sun_label', { name: this._name(it.id), ev: (ev === 'sunset' ? T('sbx_sunset') : T('sbx_sunrise')) }), it.id).slot = key;
     }
+    // sun.sun is moved at sunrise and sunset only when something here reads it (an automation, a script or a helper
+    // that follows it): otherwise every day would add two changes nothing hears (0.11.3)
+    _readsSun() {
+      const has = (x) => { try { return JSON.stringify(x).includes('sun.sun'); } catch (e) { return false; } };
+      return [...this.items.values()].some((it) => has(it.cfg)) || [...this.follow.values()].some((f) => toList(f.reads).includes('sun.sun') || has(f.rule));
+    }
     _armSunState() {
-      if (!this.get('sun.sun')) return;
+      if (!this.get('sun.sun') || !this._readsSun()) return;
       this.timers.filter((x) => x.slot === 'sun:state').forEach((x) => this._drop(x));
       const r = this._sunAt('sunrise', this.now), st = this._sunAt('sunset', this.now);
       if (r == null || st == null) return;
@@ -6263,8 +6269,10 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       await e.start();
       const from = e.seq;
       const step = tr.step.press ? { op: 'set', id: tr.step.id, state: e.iso(), attrs: tr.step.attrs } : tr.step;
+      // up to a day from the start, not a day past whatever is due next (something always is: a time trigger, the sun)
+      const end = e.now + 864e5;
       await sbxDoStep(e, step);
-      for (let k = 0; k < 60 && !e.halted && isFinite(e.nextAt()) && e.nextAt() - e.now <= 864e5; k++) await e.toNext();
+      for (let k = 0; k < 60 && !e.halted && isFinite(e.nextAt()) && e.nextAt() <= end; k++) await e.toNext();
       await e.settle();
       runs.push(sbxExploreRun(e, tr, step, from));
       engs.push(e);
