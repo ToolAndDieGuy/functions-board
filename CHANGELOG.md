@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+In the sandbox, the **Press** row lists every trigger of the function's devices, as Home Assistant lists them for its
+automation editor, not only those the function's automations use: a remote's other buttons, a keypad's other scenes.
+Where Home Assistant offers a choice for a trigger (a scene button pressed, held, released, pressed twice), a dropdown
+beside it picks one, and a press starts every trigger it satisfies, so one set to held doesn't start on a press, and
+one with no choice set starts on any. Triggers the automations use are listed first, with their choice in the name.
+
+An MQTT device trigger is now what Home Assistant makes of it: an MQTT trigger on its topic and payload. Pressing one
+sends that message in the sandbox, so everything on the topic hears it (the remote's event entity, an MQTT trigger on
+the topic), and a message sent on the MQTT row with its payload starts it. Where its value template reads the payload
+from JSON (`{{ value_json.action }}`), the message is that JSON. Nothing is published.
+
 ## 0.12.0 (2026-11-22)
 
 A notification builder. In a function, **Recipes → Notification** (in the toolbar) writes an ordinary Home Assistant

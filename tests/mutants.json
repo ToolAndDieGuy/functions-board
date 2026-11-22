@@ -1301,8 +1301,8 @@
  {
   "name": "sandbox: device triggers not translated",
   "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "        if (!this.devT.has(t)) this.devT.set(t, sbxDevTrig(t, this.o.entityOf) || t);",
-  "replace": "        if (!this.devT.has(t)) this.devT.set(t, t);",
+  "find": "        if (!this.devT.has(t)) this.devT.set(t, sbxDevTrig(t, this.o.entityOf) || sbxDevMqtt(t, this.o.devMqtt) || t);",
+  "replace": "        if (!this.devT.has(t)) this.devT.set(t, sbxDevMqtt(t, this.o.devMqtt) || t);",
   "suite": "sandbox",
   "expect": "registry id"
  },
@@ -1357,8 +1357,8 @@
  {
   "name": "sandbox: a press fires every button",
   "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "        (t) => this._plat(t) !== 'state' && sbxPressKey(t) === key,",
-  "replace": "        (t) => this._plat(t) !== 'state',",
+  "find": "        (t) => this._plat(t) !== 'state' && !t._mq && sbxPressHits(t, pick),",
+  "replace": "        (t) => this._plat(t) !== 'state' && !t._mq,",
   "suite": "sandbox",
   "expect": "not the other"
  },
@@ -2292,5 +2292,89 @@
   "suite": "board-regress",
   "only": "0.11.3 versions",
   "expect": "unticked, nothing more is deleted"
+ },
+ {
+  "name": "sandbox: an MQTT device trigger isn't the MQTT trigger it stands for",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "        if (!this.devT.has(t)) this.devT.set(t, sbxDevTrig(t, this.o.entityOf) || sbxDevMqtt(t, this.o.devMqtt) || t);",
+  "replace": "        if (!this.devT.has(t)) this.devT.set(t, sbxDevTrig(t, this.o.entityOf) || t);",
+  "suite": "sandbox",
+  "expect": "a message with its payload on its topic starts it"
+ },
+ {
+  "name": "sandbox: a device trigger's choice is ignored when pressed",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "    return Object.keys(t).filter((k) => !SBX_DEV_SKIP.has(k)).every((k) => k in pick && same(t[k], pick[k]));",
+  "replace": "    return Object.keys(t).filter((k) => !SBX_DEV_SKIP.has(k) && k !== 'value').every((k) => k in pick && same(t[k], pick[k]));",
+  "suite": "sandbox",
+  "expect": "the button held"
+ },
+ {
+  "name": "sandbox: an MQTT press sends its payload bare whatever the template reads",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "    const out = keys.reduceRight((v, k) => ({ [k]: v }), p);\n    return { payload: JSON.stringify(out), exact: true };",
+  "replace": "    return { payload: p, exact: true };",
+  "suite": "sandbox",
+  "expect": "value_json\\.action"
+ },
+ {
+  "name": "sandbox: an MQTT press found by device, type and subtype only, never by discovery id",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "    return (t.discovery_id != null && list.find((x) => x.discovery_id === t.discovery_id)) || list.find(",
+  "replace": "    return (t.discovery_id != null && list.find((x) => x.discovery_id === t.discovery_id + 'x')) || list.find(",
+  "suite": "sandbox",
+  "expect": "found by its discovery id"
+ },
+ {
+  "name": "sandbox: a press doesn't name the choice it was set to",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "        const what = [t.type, t.subtype].filter((x) => x != null && x !== '').map((x, i) => (i === 0 ? String(x).split('.').pop() : String(x)).replace(/_/g, ' ')).concat(more ? [more] : []).join(' · ');",
+  "replace": "        const what = [t.type, t.subtype].filter((x) => x != null && x !== '').map((x, i) => (i === 0 ? String(x).split('.').pop() : String(x)).replace(/_/g, ' ')).join(' · ');",
+  "suite": "sandbox",
+  "expect": "named by its device, its kind, the button and the choice"
+ },
+ {
+  "name": "board: the Press row offers only the triggers the automations use",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      g.devPress = dt.press;",
+  "replace": "      g.devPress = [];",
+  "suite": "e2e-sandbox",
+  "only": "0.13.0",
+  "expect": "the devices' other triggers"
+ },
+ {
+  "name": "board: the choice picked on the Press row isn't pressed",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "          if (fs.length) { const o = JSON.parse(key); fs.forEach((f) => { o[f.dataset.f] = sbxNum(f.value); }); key = sbxPressKey(o); }",
+  "replace": "          if (fs.length) { const o = JSON.parse(key); key = sbxPressKey(o); }",
+  "suite": "e2e-sandbox",
+  "only": "0.13.0",
+  "expect": "button 2 held"
+ },
+ {
+  "name": "board: an MQTT device's triggers' topics aren't read",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      if (own.some((t) => t.domain === 'mqtt')) {",
+  "replace": "      if (own.some((t) => t.domain === 'mqtt-x')) {",
+  "suite": "e2e-sandbox",
+  "only": "0.13.0",
+  "expect": "its message on its topic"
+ },
+ {
+  "name": "fake: device trigger capabilities not answered",
+  "file": "tests/board/fake-ha.js",
+  "find": "return clone((d && d.caps && d.caps[trigKey(m.trigger)]) || {}); }",
+  "replace": "return {}; }",
+  "suite": "e2e-contract",
+  "expect": "with the same choices"
+ },
+ {
+  "name": "board: the Press row offers only the triggers the automations use (on the fake)",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      g.devPress = dt.press;",
+  "replace": "      g.devPress = [];",
+  "suite": "board-regress",
+  "only": "0.13.0",
+  "expect": "the devices' other triggers"
  }
 ]

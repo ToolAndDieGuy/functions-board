@@ -82,6 +82,25 @@ test('the fake answers like the real Home Assistant', async () => {
     check(`contract: ${msg.type} answers in the same shape`, !d.length, d.slice(0, 6));
   }
 
+  // a device's own triggers (0.13.0): the same ones, with the same choices, and an MQTT device's discovery configs.
+  // Devices by name (their IDs are new on every install), the IDs left out of what's compared
+  const realDevs = await ha.ws({ type: 'config/device_registry/list' });
+  const devId = (list, name) => (list.find((d) => d.name === name) || {}).id;
+  const norm = (list) => list.map((t) => JSON.stringify(Object.fromEntries(Object.keys(t).filter((k) => !['device_id', 'entity_id'].includes(k)).sort().map((k) => [k, t[k]])))).sort();
+  for (const name of ['Hall remote', 'Scene keypad']) {
+    const fid = devId(fake.devices, name), rid = devId(realDevs, name);
+    const fl = await fake.ws({ type: 'device_automation/trigger/list', device_id: fid }), rl = await ha.ws({ type: 'device_automation/trigger/list', device_id: rid });
+    check(`contract: ${name}: the same device triggers`, !!fid && !!rid && rl.length > 0 && JSON.stringify(norm(fl)) === JSON.stringify(norm(rl)), { fake: norm(fl), real: norm(rl) });
+    const own = (l) => l.filter((t) => t.entity_id == null).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+    const fc = [], rc = [];
+    for (const t of own(fl)) fc.push(await fake.ws({ type: 'device_automation/trigger/capabilities', trigger: t }));
+    for (const t of own(rl)) rc.push(await ha.ws({ type: 'device_automation/trigger/capabilities', trigger: t }));
+    check(`contract: ${name}: ... with the same choices`, JSON.stringify(fc) === JSON.stringify(rc), { fake: fc, real: rc });
+  }
+  const [mf, mr] = [await fake.ws({ type: 'mqtt/device/debug_info', device_id: devId(fake.devices, 'Hall remote') }), await ha.ws({ type: 'mqtt/device/debug_info', device_id: devId(realDevs, 'Hall remote') })];
+  const trigs = (x) => x.triggers.map((t) => JSON.stringify(t.discovery_data)).sort();
+  check('contract: the Hall remote\'s MQTT debug info: the same shape and its triggers\' discovery configs', !fits(shape(mf), shape(mr)).length && JSON.stringify(trigs(mf)) === JSON.stringify(trigs(mr)), { shape: fits(shape(mf), shape(mr)), fake: trigs(mf), real: trigs(mr) });
+
   // changes: the same results
   const [l1f, l1r] = await both({ type: 'config/label_registry/create', name: 'Contract label' });
   check('contract: creating a label answers in the same shape, with the same ID', !fits(shape(l1f), shape(l1r)).length && l1f.label_id === l1r.label_id, [l1f, l1r]);

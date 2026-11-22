@@ -290,4 +290,74 @@ test('0.11.3 the sandbox: an MQTT entity on the real broker follows its topic, a
   check('0.11.3 the MQTT sandbox: no errors', page.logs.length === 0, page.logs);
   await ctx.close();
 });
+test('0.13.0 the sandbox: a device\'s own triggers on the Press row, an MQTT one sent as its message', async ({ browser }) => {
+  const home = require('../home/home');
+  const TOPIC = 'fbtest/hall_remote/action', EVENT = 'event.hall_hall_remote_action', BED = 'light.bed_light', PORCH = 'light.porch_light', AWAY = 'input_boolean.vacation_mode';
+  const { ctx, page } = await session(browser, 'owner', { viewport: { width: 1500, height: 900 } });
+  await page.goto(BASE + '/');
+  await ready(page);
+  await reset(page);
+  await importAll(page);
+  await page.goto(BASE + '/functions');
+  await fbq(page, '.nodes .node').first().waitFor({ timeout: 20000 });
+  const garage = await openFn(page, /garage/i);
+  const devs = await ws(page, { type: 'config/device_registry/list' });
+  const remote = devs.find((d) => d.name === 'Hall remote').id, keypad = devs.find((d) => d.name === 'Scene keypad').id;
+  const api = (m, p, b) => page.evaluate(([m, p, b]) => document.querySelector('home-assistant').hass.callApi(m, p, b), [m, p, b]);
+  const scene2 = { trigger: 'device', device_id: keypad, domain: 'zwave_js', type: 'event.value_notification.central_scene', property: 'scene', property_key: '002', endpoint: 0, command_class: 91, subtype: 'Endpoint 0 Scene 002' };
+  // as the automation editor makes them
+  await api('POST', 'config/automation/config/fbdt_remote', { alias: 'Garage: hall remote on', triggers: [{ trigger: 'device', domain: 'mqtt', device_id: remote, type: 'button_short_press', subtype: 'on' }], actions: [{ action: 'light.turn_on', target: { entity_id: BED } }] });
+  await api('POST', 'config/automation/config/fbdt_event', { alias: 'Garage: hall remote said so', triggers: [{ trigger: 'state', entity_id: EVENT }], actions: [{ action: 'light.turn_on', target: { entity_id: PORCH } }] });
+  await api('POST', 'config/automation/config/fbdt_held', { alias: 'Garage: keypad 2 held', triggers: [Object.assign({ value: 2 }, scene2)], actions: [{ action: 'input_boolean.toggle', target: { entity_id: AWAY } }] });
+  const ents = ['automation.garage_hall_remote_on', 'automation.garage_hall_remote_said_so', 'automation.garage_keypad_2_held'];
+  await until(() => page.evaluate((ids) => ids.every((k) => !!document.querySelector('home-assistant').hass.states[k]), ents), 10000);
+  for (const id of ents) await ws(page, { type: 'config/entity_registry/update', entity_id: id, labels: [garage] });
+  const real0 = await page.evaluate((ids) => ids.map((i) => document.querySelector('home-assistant').hass.states[i].state), [BED, PORCH, AWAY, EVENT]);
+  await until(() => el(page, (b, a) => { if (b._model && a.every((k) => b._model.nodes.has(k)) && b._src.get('event.hall_hall_remote_action')) return true; b._store.changed('reg'); b._open(b._data.ui.current, true); return null; }, ents.concat([EVENT])), 20000, 1500);
+  // from here on: nothing published to the broker, nothing sent to Home Assistant that changes anything
+  const since = home.mqtt.mark();
+  const changes = [];
+  page.on('request', (r) => { if (r.method() === 'POST' && /\/api\/(states|services|events)\//.test(r.url())) changes.push(r.url()); });
+  page.sent.length = 0;
+  await fbq(page, '.tools [data-act="sandbox"]').click();
+  await fbq(page, '.modal [data-act="sbx-start"]').click({ timeout: 3000 }).catch(() => {});
+  await fbq(page, '.drawer .sbctl .sbpress').waitFor({ timeout: 10000 });
+  const settle = () => until(() => el(page, (b) => (b._sbx && !b._sbx.busy) || null), 10000);
+  const opts = await fbq(page, '.drawer .sbpress').evaluate((s) => [...s.querySelectorAll('optgroup')].map((g) => [g.label, [...g.querySelectorAll('option')].map((o) => o.textContent)]));
+  const used = (opts.find((g) => /Used/.test(g[0])) || [, []])[1], more = (opts.find((g) => /other triggers/.test(g[0])) || [, []])[1];
+  check('0.13.0 the Press row: the buttons the automations use (the keypad\'s with the key it waits for, named)', used.includes('Hall remote: button short press · on') && used.includes('Scene keypad: central scene · Endpoint 0 Scene 002 · KeyHeldDown'), opts);
+  check('0.13.0 ... then the devices\' other triggers, from Home Assistant\'s list (not the value-updated one, nor its entities\')', ['Hall remote: button long press · on', 'Hall remote: button short press · off', 'Scene keypad: central scene · Endpoint 0 Scene 001', 'Scene keypad: central scene · Endpoint 0 Scene 002'].every((x) => more.includes(x))
+    && !more.some((x) => /value updated|battery|node status|pressed/.test(x)), more);
+  // the keypad's button 2 from the devices' list, with a key chosen: KeyPressed doesn't start the automation, held does
+  const press = async (label, key) => {
+    await fbq(page, '.drawer .sbpress').selectOption({ label }, { timeout: 5000 });
+    if (key) await fbq(page, '.drawer .sbpressx select').selectOption({ label: key }, { timeout: 5000 });
+    await fbq(page, '.drawer [data-act="sbx-press"]').click();
+    await settle();
+  };
+  const ran = (id) => el(page, (b, k) => b._sbx.eng.log.filter((e) => e.kind === 'trigger' && e.key === k).length, id);
+  await fbq(page, '.drawer .sbpress').selectOption({ label: 'Scene keypad: central scene · Endpoint 0 Scene 002' }, { timeout: 5000 });
+  const keys = await fbq(page, '.drawer .sbpressx select').evaluate((s) => [s.getAttribute('aria-label'), [...s.options].map((o) => o.textContent)]);
+  check('0.13.0 a trigger with choices: one dropdown of them, as Home Assistant offers them', /value/.test(keys[0]) && ['KeyPressed', 'KeyReleased', 'KeyHeldDown', 'KeyPressed2x', 'KeyPressed3x'].every((k) => keys[1].includes(k)), keys);
+  await press('Scene keypad: central scene · Endpoint 0 Scene 002', 'KeyPressed');
+  check('0.13.0 button 2 pressed: the automation waiting for it held doesn\'t start', (await ran('automation.garage_keypad_2_held')) === 0);
+  await press('Scene keypad: central scene · Endpoint 0 Scene 002', 'KeyHeldDown');
+  check('0.13.0 button 2 held: it starts', (await ran('automation.garage_keypad_2_held')) === 1 && (await el(page, (b, k) => b._sbx.eng.get(k).state, AWAY)) === 'on');
+  // the remote's button: sent as its message, which the remote's event entity on the same topic hears too
+  await press('Hall remote: button short press · on');
+  const msg = await el(page, (b) => b._sbx.eng.log.filter((e) => e.kind === 'mqtt').map((e) => [e.text, e.payload]));
+  check('0.13.0 the MQTT button pressed: its message on its topic, as discovered', JSON.stringify(msg) === JSON.stringify([[TOPIC, 'on_single']]), msg);
+  const after = await el(page, (b, a) => ({ bed: b._sbx.eng.get(a.BED).state, ev: b._sbx.eng.get(a.EVENT).attributes.event_type, porch: b._sbx.eng.get(a.PORCH).state }), { BED, EVENT, PORCH });
+  check('0.13.0 ... the automation on the button starts, and the remote\'s event entity follows the message, which starts the other', after.bed === 'on' && after.ev === 'on_single' && after.porch === 'on', after);
+  // a message you send on the topic starts the button's automation as well
+  await el(page, async (b, a) => { await b._sbx.eng.userSet(a.BED, 'off'); await b._sbx.eng.userMqtt(a.TOPIC, 'on_single'); }, { BED, TOPIC }); await settle();
+  check('0.13.0 a message sent on the MQTT row with the button\'s payload starts it too', (await ran('automation.garage_hall_remote_on')) === 2 && (await el(page, (b, k) => b._sbx.eng.get(k).state, BED)) === 'on');
+  await page.waitForTimeout(1500);
+  check('0.13.0 nothing was published to the real broker', home.mqtt.sent(null, since).length === 0, home.mqtt.sent(null, since));
+  check('0.13.0 nothing was sent to Home Assistant that changes anything', page.sent.filter((m) => /^(call_service|fire_event|execute_script)$/.test(m.type)).concat(changes).length === 0, page.sent.map((m) => m.type));
+  const real1 = await page.evaluate((ids) => ids.map((i) => document.querySelector('home-assistant').hass.states[i].state), [BED, PORCH, AWAY, EVENT]);
+  check('0.13.0 the real lights, boolean and event entity are as they were', JSON.stringify(real0) === JSON.stringify(real1), [real0, real1]);
+  check('0.13.0 device triggers: no errors', page.logs.length === 0, page.logs);
+  await ctx.close();
+});
 test.afterAll(() => done());

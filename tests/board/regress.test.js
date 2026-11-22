@@ -1977,3 +1977,42 @@ test('0.11.3 versions: deleting one offers to delete what only it has from Home 
   check('0.11.3 a version whose pieces are all in a function: nothing offered', (await fbq(page, '.modal [data-vdel]').count()) === 0, txt);
   await fbq(page, '.modal [data-act="modal-cancel"]').click();
 });
+
+test('0.13.0 the sandbox\'s Press row: every trigger of the function\'s devices, with its choices; an MQTT one sent as its message', async ({ browser, fake }) => {
+  const { page } = await imported(browser);
+  const garage = await openFn(page, /garage/i);
+  // the test home's Hall remote (MQTT) and scene keypad (Z-Wave), as recorded (tests/board/capture.js: devTrig)
+  const remote = fake.devices.find((d) => d.name === 'Hall remote').id, keypad = fake.devices.find((d) => d.name === 'Scene keypad').id;
+  const scene2 = { trigger: 'device', device_id: keypad, domain: 'zwave_js', type: 'event.value_notification.central_scene', property: 'scene', property_key: '002', endpoint: 0, command_class: 91, subtype: 'Endpoint 0 Scene 002' };
+  await addPiece(page, fake, 'automation.fb_remote_on', { alias: 'Garage: remote on', mode: 'single', triggers: [{ trigger: 'device', domain: 'mqtt', device_id: remote, type: 'button_short_press', subtype: 'on' }], conditions: [], actions: [{ action: 'light.turn_on', target: { entity_id: 'light.bed_light' } }] });
+  await addPiece(page, fake, 'automation.fb_keypad_held', { alias: 'Garage: keypad 2 held', mode: 'single', triggers: [Object.assign({ value: 2 }, scene2)], conditions: [], actions: [{ action: 'input_boolean.toggle', target: { entity_id: 'input_boolean.vacation_mode' } }] });
+  for (const id of ['automation.fb_remote_on', 'automation.fb_keypad_held']) await ws(page, { type: 'config/entity_registry/update', entity_id: id, labels: [garage] });
+  await fake.idle(400);
+  await until(() => el(page, (b) => (b._model && b._model.nodes.has('automation.fb_remote_on') && b._model.nodes.has('automation.fb_keypad_held')) || null), 10000);
+  fake.calls.length = 0;
+  await fbq(page, '.tools [data-act="sandbox"]').click();
+  await fbq(page, '.modal [data-act="sbx-start"]').click({ timeout: 3000 }).catch(() => {});
+  await fbq(page, '.drawer .sbctl .sbpress').waitFor({ timeout: 10000 });
+  const asked = fake.calls.filter((c) => /^(device_automation|mqtt\/device)/.test(c.type)).map((c) => c.type + ':' + (c.msg.device_id || (c.msg.trigger || {}).device_id));
+  check('0.13.0 the board asks for the devices\' triggers, their choices, and the MQTT one\'s discovery configs', asked.includes('device_automation/trigger/list:' + remote) && asked.includes('device_automation/trigger/list:' + keypad)
+    && asked.some((x) => x === 'device_automation/trigger/capabilities:' + keypad) && asked.includes('mqtt/device/debug_info:' + remote) && !asked.includes('mqtt/device/debug_info:' + keypad), asked);
+  const groups = await fbq(page, '.drawer .sbpress').evaluate((s) => [...s.querySelectorAll('optgroup')].map((g) => [g.label, [...g.querySelectorAll('option')].map((o) => o.textContent)]));
+  check('0.13.0 the Press row: what the automations use, then the devices\' other triggers', groups.length === 2 && groups[0][1].includes('Hall remote: button short press · on') && groups[0][1].includes('Scene keypad: central scene · Endpoint 0 Scene 002 · KeyHeldDown')
+    && groups[1][1].includes('Scene keypad: central scene · Endpoint 0 Scene 003') && groups[1][1].includes('Hall remote: button long press · off'), groups);
+  check('0.13.0 a trigger the automations use has no choices left to pick', await fbq(page, '.drawer .sbpressx').evaluate((x) => x.hidden));
+  await fbq(page, '.drawer .sbpress').selectOption({ label: 'Scene keypad: central scene · Endpoint 0 Scene 002' }, { timeout: 5000 });
+  check('0.13.0 one of the device\'s own: its choices beside it', (await fbq(page, '.drawer .sbpressx select option').allTextContents()).join() === 'KeyPressed,KeyReleased,KeyHeldDown,KeyPressed2x,KeyPressed3x');
+  const settle = () => until(() => el(page, (b) => (b._sbx && !b._sbx.busy) || null), 10000);
+  const ran = (id) => el(page, (b, k) => b._sbx.eng.log.filter((e) => e.kind === 'trigger' && e.key === k).length, id);
+  await fbq(page, '.drawer .sbpressx select').selectOption({ label: 'KeyReleased' }, { timeout: 5000 });
+  await fbq(page, '.drawer [data-act="sbx-press"]').click(); await settle();
+  check('0.13.0 released: the automation waiting for held doesn\'t start', (await ran('automation.fb_keypad_held')) === 0);
+  await fbq(page, '.drawer .sbpressx select').selectOption({ label: 'KeyHeldDown' }, { timeout: 5000 });
+  await fbq(page, '.drawer [data-act="sbx-press"]').click(); await settle();
+  check('0.13.0 held: it starts, and the step is kept with the choice for a check', (await ran('automation.fb_keypad_held')) === 1 && await el(page, (b) => JSON.parse(b._sbx.rec.steps[b._sbx.rec.steps.length - 1].key).value === 2));
+  await fbq(page, '.drawer .sbpress').selectOption({ label: 'Hall remote: button short press · on' }, { timeout: 5000 });
+  await fbq(page, '.drawer [data-act="sbx-press"]').click(); await settle();
+  const m = await el(page, (b) => b._sbx.eng.log.filter((e) => e.kind === 'mqtt').map((e) => e.text + ' ' + e.payload));
+  check('0.13.0 the remote\'s button: sent as its discovered message, which starts the automation on it', JSON.stringify(m) === '["fbtest/hall_remote/action on_single"]' && (await ran('automation.fb_remote_on')) === 1, m);
+  check('0.13.0 the Press row: no errors, and nothing sent that changes anything', page.logs.length === 0 && !fake.calls.some((c) => c.kind === 'svc' || /^(call_service|fire_event|execute_script)$/.test(c.type)), page.logs);
+});

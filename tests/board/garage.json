@@ -36476,6 +36476,2623 @@
   "counter": [],
   "schedule": []
  },
+ "devTrig": {
+  "08a8a96f4697ca97347cf0430122d249": {
+   "list": [
+    {
+     "type": "moist",
+     "platform": "device",
+     "device_id": "08a8a96f4697ca97347cf0430122d249",
+     "entity_id": "cbcf4edec3f7695ed9411c393bb22732",
+     "domain": "binary_sensor",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "type": "not_moist",
+     "platform": "device",
+     "device_id": "08a8a96f4697ca97347cf0430122d249",
+     "entity_id": "cbcf4edec3f7695ed9411c393bb22732",
+     "domain": "binary_sensor",
+     "metadata": {
+      "secondary": false
+     }
+    }
+   ],
+   "caps": {}
+  },
+  "663f9af05046612e3d5e8719011a0b6f": {
+   "list": [
+    {
+     "type": "motion",
+     "platform": "device",
+     "device_id": "663f9af05046612e3d5e8719011a0b6f",
+     "entity_id": "9311d80cf306ccf54d2691a4de6b1644",
+     "domain": "binary_sensor",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "type": "no_motion",
+     "platform": "device",
+     "device_id": "663f9af05046612e3d5e8719011a0b6f",
+     "entity_id": "9311d80cf306ccf54d2691a4de6b1644",
+     "domain": "binary_sensor",
+     "metadata": {
+      "secondary": false
+     }
+    }
+   ],
+   "caps": {}
+  },
+  "a9b9c5b4c3d6c088d60b0c85006ca94c": {
+   "list": [
+    {
+     "type": "temperature",
+     "platform": "device",
+     "device_id": "a9b9c5b4c3d6c088d60b0c85006ca94c",
+     "entity_id": "f81cd164e44820b3d6795e3df1ecba45",
+     "domain": "sensor",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "type": "battery_level",
+     "platform": "device",
+     "device_id": "a9b9c5b4c3d6c088d60b0c85006ca94c",
+     "entity_id": "9ea2a3f29a0dd3cd9a1872b2e2cc1d16",
+     "domain": "sensor",
+     "metadata": {
+      "secondary": true
+     }
+    },
+    {
+     "type": "charging",
+     "platform": "device",
+     "device_id": "a9b9c5b4c3d6c088d60b0c85006ca94c",
+     "entity_id": "95d281d74c60240043a7e597b62243d8",
+     "domain": "binary_sensor",
+     "metadata": {
+      "secondary": true
+     }
+    },
+    {
+     "type": "not_charging",
+     "platform": "device",
+     "device_id": "a9b9c5b4c3d6c088d60b0c85006ca94c",
+     "entity_id": "95d281d74c60240043a7e597b62243d8",
+     "domain": "binary_sensor",
+     "metadata": {
+      "secondary": true
+     }
+    }
+   ],
+   "caps": {}
+  },
+  "3941280884cc710d8888b6911bd23322": {
+   "list": [
+    {
+     "platform": "device",
+     "device_id": "3941280884cc710d8888b6911bd23322",
+     "domain": "button",
+     "entity_id": "d4a9d54fe3673e9f38f6b8d2eb90a3a2",
+     "type": "pressed",
+     "metadata": {
+      "secondary": false
+     }
+    }
+   ],
+   "caps": {}
+  },
+  "007bc30b758872469f109988a2c5cb1f": {
+   "list": [
+    {
+     "platform": "device",
+     "device_id": "007bc30b758872469f109988a2c5cb1f",
+     "domain": "climate",
+     "entity_id": "33f64f9539818d7e466f1bec8a342b7c",
+     "type": "hvac_mode_changed",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "device_id": "007bc30b758872469f109988a2c5cb1f",
+     "domain": "climate",
+     "entity_id": "33f64f9539818d7e466f1bec8a342b7c",
+     "type": "current_temperature_changed",
+     "metadata": {
+      "secondary": false
+     }
+    }
+   ],
+   "caps": {}
+  },
+  "86daadb22ba6809607c8bf3976cfd22b": {
+   "list": [
+    {
+     "platform": "device",
+     "device_id": "86daadb22ba6809607c8bf3976cfd22b",
+     "domain": "climate",
+     "entity_id": "a0431d1f32a823ce605f668014dbb2b2",
+     "type": "hvac_mode_changed",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "device_id": "86daadb22ba6809607c8bf3976cfd22b",
+     "domain": "climate",
+     "entity_id": "a0431d1f32a823ce605f668014dbb2b2",
+     "type": "current_temperature_changed",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "device_id": "86daadb22ba6809607c8bf3976cfd22b",
+     "domain": "climate",
+     "entity_id": "a0431d1f32a823ce605f668014dbb2b2",
+     "type": "current_humidity_changed",
+     "metadata": {
+      "secondary": false
+     }
+    }
+   ],
+   "caps": {}
+  },
+  "f9d6558fde18e992af4fc2dbaf17e154": {
+   "list": [
+    {
+     "platform": "device",
+     "device_id": "f9d6558fde18e992af4fc2dbaf17e154",
+     "domain": "climate",
+     "entity_id": "d2e80f6b6b6f15b3ab9a025d3786d689",
+     "type": "hvac_mode_changed",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "device_id": "f9d6558fde18e992af4fc2dbaf17e154",
+     "domain": "climate",
+     "entity_id": "d2e80f6b6b6f15b3ab9a025d3786d689",
+     "type": "current_temperature_changed",
+     "metadata": {
+      "secondary": false
+     }
+    }
+   ],
+   "caps": {}
+  },
+  "c798f6fbd36bb7f597f742c72b8fce02": {
+   "list": [
+    {
+     "platform": "device",
+     "device_id": "c798f6fbd36bb7f597f742c72b8fce02",
+     "domain": "cover",
+     "entity_id": "8ac7bf8ee28821c27bcf451ebc699101",
+     "type": "closing",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "device_id": "c798f6fbd36bb7f597f742c72b8fce02",
+     "domain": "cover",
+     "entity_id": "8ac7bf8ee28821c27bcf451ebc699101",
+     "type": "closed",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "device_id": "c798f6fbd36bb7f597f742c72b8fce02",
+     "domain": "cover",
+     "entity_id": "8ac7bf8ee28821c27bcf451ebc699101",
+     "type": "opened",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "device_id": "c798f6fbd36bb7f597f742c72b8fce02",
+     "domain": "cover",
+     "entity_id": "8ac7bf8ee28821c27bcf451ebc699101",
+     "type": "opening",
+     "metadata": {
+      "secondary": false
+     }
+    }
+   ],
+   "caps": {}
+  },
+  "a69cbe06c6f348de7a6af4f055505f01": {
+   "list": [
+    {
+     "platform": "device",
+     "device_id": "a69cbe06c6f348de7a6af4f055505f01",
+     "domain": "cover",
+     "entity_id": "306d2dfeaff8eafc768fef50d23757e5",
+     "type": "closing",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "device_id": "a69cbe06c6f348de7a6af4f055505f01",
+     "domain": "cover",
+     "entity_id": "306d2dfeaff8eafc768fef50d23757e5",
+     "type": "closed",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "device_id": "a69cbe06c6f348de7a6af4f055505f01",
+     "domain": "cover",
+     "entity_id": "306d2dfeaff8eafc768fef50d23757e5",
+     "type": "opened",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "device_id": "a69cbe06c6f348de7a6af4f055505f01",
+     "domain": "cover",
+     "entity_id": "306d2dfeaff8eafc768fef50d23757e5",
+     "type": "opening",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "device_id": "a69cbe06c6f348de7a6af4f055505f01",
+     "domain": "cover",
+     "entity_id": "306d2dfeaff8eafc768fef50d23757e5",
+     "type": "position",
+     "metadata": {
+      "secondary": false
+     }
+    }
+   ],
+   "caps": {}
+  },
+  "4b485a2f251b73efd74f6eb7a1302c18": {
+   "list": [
+    {
+     "platform": "device",
+     "device_id": "4b485a2f251b73efd74f6eb7a1302c18",
+     "domain": "cover",
+     "entity_id": "3c854afdac4c66eb48b9ef3077c933e9",
+     "type": "closing",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "device_id": "4b485a2f251b73efd74f6eb7a1302c18",
+     "domain": "cover",
+     "entity_id": "3c854afdac4c66eb48b9ef3077c933e9",
+     "type": "closed",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "device_id": "4b485a2f251b73efd74f6eb7a1302c18",
+     "domain": "cover",
+     "entity_id": "3c854afdac4c66eb48b9ef3077c933e9",
+     "type": "opened",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "device_id": "4b485a2f251b73efd74f6eb7a1302c18",
+     "domain": "cover",
+     "entity_id": "3c854afdac4c66eb48b9ef3077c933e9",
+     "type": "opening",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "device_id": "4b485a2f251b73efd74f6eb7a1302c18",
+     "domain": "cover",
+     "entity_id": "3c854afdac4c66eb48b9ef3077c933e9",
+     "type": "position",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "device_id": "4b485a2f251b73efd74f6eb7a1302c18",
+     "domain": "cover",
+     "entity_id": "3c854afdac4c66eb48b9ef3077c933e9",
+     "type": "tilt_position",
+     "metadata": {
+      "secondary": false
+     }
+    }
+   ],
+   "caps": {}
+  },
+  "6ae756a21313caa5538287a4d964a18f": {
+   "list": [
+    {
+     "platform": "device",
+     "device_id": "6ae756a21313caa5538287a4d964a18f",
+     "domain": "cover",
+     "entity_id": "b71bf6dae260742d7409c1deb763fc3a",
+     "type": "closing",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "device_id": "6ae756a21313caa5538287a4d964a18f",
+     "domain": "cover",
+     "entity_id": "b71bf6dae260742d7409c1deb763fc3a",
+     "type": "closed",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "device_id": "6ae756a21313caa5538287a4d964a18f",
+     "domain": "cover",
+     "entity_id": "b71bf6dae260742d7409c1deb763fc3a",
+     "type": "opened",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "device_id": "6ae756a21313caa5538287a4d964a18f",
+     "domain": "cover",
+     "entity_id": "b71bf6dae260742d7409c1deb763fc3a",
+     "type": "opening",
+     "metadata": {
+      "secondary": false
+     }
+    }
+   ],
+   "caps": {}
+  },
+  "d39c2e16f3dae295499631a991c44773": {
+   "list": [
+    {
+     "platform": "device",
+     "device_id": "d39c2e16f3dae295499631a991c44773",
+     "domain": "cover",
+     "entity_id": "db9f69b758df6427b8031bf033c554a6",
+     "type": "tilt_position",
+     "metadata": {
+      "secondary": false
+     }
+    }
+   ],
+   "caps": {}
+  },
+  "5fed2bd810a9a56027dd4d4777a6d998": {
+   "list": [
+    {
+     "platform": "device",
+     "type": "changed_states",
+     "device_id": "5fed2bd810a9a56027dd4d4777a6d998",
+     "entity_id": "b2eae3320d072e3666c695da7c7b411e",
+     "domain": "light",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "type": "turned_off",
+     "device_id": "5fed2bd810a9a56027dd4d4777a6d998",
+     "entity_id": "b2eae3320d072e3666c695da7c7b411e",
+     "domain": "light",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "type": "turned_on",
+     "device_id": "5fed2bd810a9a56027dd4d4777a6d998",
+     "entity_id": "b2eae3320d072e3666c695da7c7b411e",
+     "domain": "light",
+     "metadata": {
+      "secondary": false
+     }
+    }
+   ],
+   "caps": {}
+  },
+  "e21319221c0467e9c95927eed3852d6d": {
+   "list": [
+    {
+     "platform": "device",
+     "type": "changed_states",
+     "device_id": "e21319221c0467e9c95927eed3852d6d",
+     "entity_id": "469f7a33204c6b1604502b2ac9b9bf33",
+     "domain": "light",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "type": "turned_off",
+     "device_id": "e21319221c0467e9c95927eed3852d6d",
+     "entity_id": "469f7a33204c6b1604502b2ac9b9bf33",
+     "domain": "light",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "type": "turned_on",
+     "device_id": "e21319221c0467e9c95927eed3852d6d",
+     "entity_id": "469f7a33204c6b1604502b2ac9b9bf33",
+     "domain": "light",
+     "metadata": {
+      "secondary": false
+     }
+    }
+   ],
+   "caps": {}
+  },
+  "d8a2b99355af56f9197d7ad3571de234": {
+   "list": [
+    {
+     "platform": "device",
+     "type": "changed_states",
+     "device_id": "d8a2b99355af56f9197d7ad3571de234",
+     "entity_id": "4db443f0aec00292206e150d1e9808f4",
+     "domain": "light",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "type": "turned_off",
+     "device_id": "d8a2b99355af56f9197d7ad3571de234",
+     "entity_id": "4db443f0aec00292206e150d1e9808f4",
+     "domain": "light",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "type": "turned_on",
+     "device_id": "d8a2b99355af56f9197d7ad3571de234",
+     "entity_id": "4db443f0aec00292206e150d1e9808f4",
+     "domain": "light",
+     "metadata": {
+      "secondary": false
+     }
+    }
+   ],
+   "caps": {}
+  },
+  "7b05fd8a6bb60b2161666cb7df7e1ec0": {
+   "list": [
+    {
+     "platform": "device",
+     "type": "changed_states",
+     "device_id": "7b05fd8a6bb60b2161666cb7df7e1ec0",
+     "entity_id": "6e950a61654d5bf9a48e74c174da657b",
+     "domain": "light",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "type": "turned_off",
+     "device_id": "7b05fd8a6bb60b2161666cb7df7e1ec0",
+     "entity_id": "6e950a61654d5bf9a48e74c174da657b",
+     "domain": "light",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "type": "turned_on",
+     "device_id": "7b05fd8a6bb60b2161666cb7df7e1ec0",
+     "entity_id": "6e950a61654d5bf9a48e74c174da657b",
+     "domain": "light",
+     "metadata": {
+      "secondary": false
+     }
+    }
+   ],
+   "caps": {}
+  },
+  "0ff15ed071e3024945f2debe12b7dbd2": {
+   "list": [
+    {
+     "platform": "device",
+     "type": "changed_states",
+     "device_id": "0ff15ed071e3024945f2debe12b7dbd2",
+     "entity_id": "eb583f447cb400a4042279e40bc2ad79",
+     "domain": "light",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "type": "turned_off",
+     "device_id": "0ff15ed071e3024945f2debe12b7dbd2",
+     "entity_id": "eb583f447cb400a4042279e40bc2ad79",
+     "domain": "light",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "type": "turned_on",
+     "device_id": "0ff15ed071e3024945f2debe12b7dbd2",
+     "entity_id": "eb583f447cb400a4042279e40bc2ad79",
+     "domain": "light",
+     "metadata": {
+      "secondary": false
+     }
+    }
+   ],
+   "caps": {}
+  },
+  "8dcf1d9a4ebce167ffb104d73a4cf921": {
+   "list": [
+    {
+     "platform": "device",
+     "type": "changed_states",
+     "device_id": "8dcf1d9a4ebce167ffb104d73a4cf921",
+     "entity_id": "733888948e3e7505dc826a8e4519ebd4",
+     "domain": "light",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "type": "turned_off",
+     "device_id": "8dcf1d9a4ebce167ffb104d73a4cf921",
+     "entity_id": "733888948e3e7505dc826a8e4519ebd4",
+     "domain": "light",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "type": "turned_on",
+     "device_id": "8dcf1d9a4ebce167ffb104d73a4cf921",
+     "entity_id": "733888948e3e7505dc826a8e4519ebd4",
+     "domain": "light",
+     "metadata": {
+      "secondary": false
+     }
+    }
+   ],
+   "caps": {}
+  },
+  "df956149cdbcb9c3cf68c6b8e81cafc9": {
+   "list": [
+    {
+     "platform": "device",
+     "device_id": "df956149cdbcb9c3cf68c6b8e81cafc9",
+     "domain": "select",
+     "entity_id": "0445a68df98a095dd16435cac0e3215f",
+     "type": "current_option_changed",
+     "metadata": {
+      "secondary": false
+     }
+    }
+   ],
+   "caps": {}
+  },
+  "82ecd30c2988565b4922e96713377b96": {
+   "list": [
+    {
+     "type": "humidity",
+     "platform": "device",
+     "device_id": "82ecd30c2988565b4922e96713377b96",
+     "entity_id": "2ecdc1a066bdbd1e6a6137249d41e90b",
+     "domain": "sensor",
+     "metadata": {
+      "secondary": false
+     }
+    }
+   ],
+   "caps": {}
+  },
+  "eeda82392a9a8b2fe36f8eab3a2b8cbf": {
+   "list": [
+    {
+     "type": "carbon_monoxide",
+     "platform": "device",
+     "device_id": "eeda82392a9a8b2fe36f8eab3a2b8cbf",
+     "entity_id": "1ca3ae1a1241d2eb016aaec85d0f1fef",
+     "domain": "sensor",
+     "metadata": {
+      "secondary": false
+     }
+    }
+   ],
+   "caps": {}
+  },
+  "e3dbf205e7492a3c05a67ba701ea7fab": {
+   "list": [
+    {
+     "type": "carbon_dioxide",
+     "platform": "device",
+     "device_id": "e3dbf205e7492a3c05a67ba701ea7fab",
+     "entity_id": "34b2636f9defd68e755e3bc72fd157ae",
+     "domain": "sensor",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "type": "battery_level",
+     "platform": "device",
+     "device_id": "e3dbf205e7492a3c05a67ba701ea7fab",
+     "entity_id": "217b1d198573a9b316c932446fc8caf2",
+     "domain": "sensor",
+     "metadata": {
+      "secondary": true
+     }
+    }
+   ],
+   "caps": {}
+  },
+  "ab0584c45cf4eb1c760c3186a6400088": {
+   "list": [
+    {
+     "type": "power",
+     "platform": "device",
+     "device_id": "ab0584c45cf4eb1c760c3186a6400088",
+     "entity_id": "e85e70d2a7148c74413b3aa0c6e22044",
+     "domain": "sensor",
+     "metadata": {
+      "secondary": false
+     }
+    }
+   ],
+   "caps": {}
+  },
+  "7d8ae9e92c38b9a69ac123527018da98": {
+   "list": [
+    {
+     "type": "energy",
+     "platform": "device",
+     "device_id": "7d8ae9e92c38b9a69ac123527018da98",
+     "entity_id": "da5d22af154061e787fa87b258986ecf",
+     "domain": "sensor",
+     "metadata": {
+      "secondary": false
+     }
+    }
+   ],
+   "caps": {}
+  },
+  "f546883c081e6f125a815e41183b2498": {
+   "list": [
+    {
+     "type": "energy",
+     "platform": "device",
+     "device_id": "f546883c081e6f125a815e41183b2498",
+     "entity_id": "0c5e117abe98f1578fd92a37f28ea18b",
+     "domain": "sensor",
+     "metadata": {
+      "secondary": false
+     }
+    }
+   ],
+   "caps": {}
+  },
+  "520176a60c6651077d9a1edd204f500a": {
+   "list": [
+    {
+     "type": "gas",
+     "platform": "device",
+     "device_id": "520176a60c6651077d9a1edd204f500a",
+     "entity_id": "91e2c0b9d49ae3b5f9e8c972a8410181",
+     "domain": "sensor",
+     "metadata": {
+      "secondary": false
+     }
+    }
+   ],
+   "caps": {}
+  },
+  "209925e1a79f153cb71ce6f77413f3d6": {
+   "list": [
+    {
+     "type": "gas",
+     "platform": "device",
+     "device_id": "209925e1a79f153cb71ce6f77413f3d6",
+     "entity_id": "2917f49abc2c1a7ba311c781a9f94b78",
+     "domain": "sensor",
+     "metadata": {
+      "secondary": false
+     }
+    }
+   ],
+   "caps": {}
+  },
+  "23cb14d4045f99a01d6e9212a76490d1": {
+   "list": [
+    {
+     "platform": "device",
+     "type": "changed_states",
+     "device_id": "23cb14d4045f99a01d6e9212a76490d1",
+     "entity_id": "ff7489dbabe84f86cbc5c54f41a58766",
+     "domain": "switch",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "type": "turned_off",
+     "device_id": "23cb14d4045f99a01d6e9212a76490d1",
+     "entity_id": "ff7489dbabe84f86cbc5c54f41a58766",
+     "domain": "switch",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "type": "turned_on",
+     "device_id": "23cb14d4045f99a01d6e9212a76490d1",
+     "entity_id": "ff7489dbabe84f86cbc5c54f41a58766",
+     "domain": "switch",
+     "metadata": {
+      "secondary": false
+     }
+    }
+   ],
+   "caps": {}
+  },
+  "3cf9eb2b73540ffad8605700314e044b": {
+   "list": [
+    {
+     "platform": "device",
+     "type": "changed_states",
+     "device_id": "3cf9eb2b73540ffad8605700314e044b",
+     "entity_id": "933f88419dbe93200b229b33f4c55727",
+     "domain": "switch",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "type": "turned_off",
+     "device_id": "3cf9eb2b73540ffad8605700314e044b",
+     "entity_id": "933f88419dbe93200b229b33f4c55727",
+     "domain": "switch",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "type": "turned_on",
+     "device_id": "3cf9eb2b73540ffad8605700314e044b",
+     "entity_id": "933f88419dbe93200b229b33f4c55727",
+     "domain": "switch",
+     "metadata": {
+      "secondary": false
+     }
+    }
+   ],
+   "caps": {}
+  },
+  "4167453f3f3babdd7e6050c6a69de652": {
+   "list": [
+    {
+     "platform": "device",
+     "type": "changed_states",
+     "device_id": "4167453f3f3babdd7e6050c6a69de652",
+     "entity_id": "8697366a3b6b4cc69166913493f0a081",
+     "domain": "update",
+     "metadata": {
+      "secondary": true
+     }
+    },
+    {
+     "platform": "device",
+     "type": "turned_off",
+     "device_id": "4167453f3f3babdd7e6050c6a69de652",
+     "entity_id": "8697366a3b6b4cc69166913493f0a081",
+     "domain": "update",
+     "metadata": {
+      "secondary": true
+     }
+    },
+    {
+     "platform": "device",
+     "type": "turned_on",
+     "device_id": "4167453f3f3babdd7e6050c6a69de652",
+     "entity_id": "8697366a3b6b4cc69166913493f0a081",
+     "domain": "update",
+     "metadata": {
+      "secondary": true
+     }
+    }
+   ],
+   "caps": {}
+  },
+  "403901fd45d1705ae8f5d7a086b5c0a5": {
+   "list": [
+    {
+     "platform": "device",
+     "type": "changed_states",
+     "device_id": "403901fd45d1705ae8f5d7a086b5c0a5",
+     "entity_id": "91a7a14f401a1ee1d1a647152cfd566c",
+     "domain": "update",
+     "metadata": {
+      "secondary": true
+     }
+    },
+    {
+     "platform": "device",
+     "type": "turned_off",
+     "device_id": "403901fd45d1705ae8f5d7a086b5c0a5",
+     "entity_id": "91a7a14f401a1ee1d1a647152cfd566c",
+     "domain": "update",
+     "metadata": {
+      "secondary": true
+     }
+    },
+    {
+     "platform": "device",
+     "type": "turned_on",
+     "device_id": "403901fd45d1705ae8f5d7a086b5c0a5",
+     "entity_id": "91a7a14f401a1ee1d1a647152cfd566c",
+     "domain": "update",
+     "metadata": {
+      "secondary": true
+     }
+    }
+   ],
+   "caps": {}
+  },
+  "3bf0a1d35f81f452ae04e2a388d36392": {
+   "list": [
+    {
+     "platform": "device",
+     "type": "changed_states",
+     "device_id": "3bf0a1d35f81f452ae04e2a388d36392",
+     "entity_id": "ded66abcc4cd9a85659b6684903ac470",
+     "domain": "update",
+     "metadata": {
+      "secondary": true
+     }
+    },
+    {
+     "platform": "device",
+     "type": "turned_off",
+     "device_id": "3bf0a1d35f81f452ae04e2a388d36392",
+     "entity_id": "ded66abcc4cd9a85659b6684903ac470",
+     "domain": "update",
+     "metadata": {
+      "secondary": true
+     }
+    },
+    {
+     "platform": "device",
+     "type": "turned_on",
+     "device_id": "3bf0a1d35f81f452ae04e2a388d36392",
+     "entity_id": "ded66abcc4cd9a85659b6684903ac470",
+     "domain": "update",
+     "metadata": {
+      "secondary": true
+     }
+    }
+   ],
+   "caps": {}
+  },
+  "57dd4c1e0aae99dd9ef1611e8cd2adaa": {
+   "list": [
+    {
+     "platform": "device",
+     "type": "changed_states",
+     "device_id": "57dd4c1e0aae99dd9ef1611e8cd2adaa",
+     "entity_id": "1cbe024962172bfa642067dcabb01512",
+     "domain": "update",
+     "metadata": {
+      "secondary": true
+     }
+    },
+    {
+     "platform": "device",
+     "type": "turned_off",
+     "device_id": "57dd4c1e0aae99dd9ef1611e8cd2adaa",
+     "entity_id": "1cbe024962172bfa642067dcabb01512",
+     "domain": "update",
+     "metadata": {
+      "secondary": true
+     }
+    },
+    {
+     "platform": "device",
+     "type": "turned_on",
+     "device_id": "57dd4c1e0aae99dd9ef1611e8cd2adaa",
+     "entity_id": "1cbe024962172bfa642067dcabb01512",
+     "domain": "update",
+     "metadata": {
+      "secondary": true
+     }
+    }
+   ],
+   "caps": {}
+  },
+  "427f345c02997970da54df5f68fea07f": {
+   "list": [
+    {
+     "platform": "device",
+     "type": "changed_states",
+     "device_id": "427f345c02997970da54df5f68fea07f",
+     "entity_id": "49e3d3829b439772a33ddfe2d14caca4",
+     "domain": "update",
+     "metadata": {
+      "secondary": true
+     }
+    },
+    {
+     "platform": "device",
+     "type": "turned_off",
+     "device_id": "427f345c02997970da54df5f68fea07f",
+     "entity_id": "49e3d3829b439772a33ddfe2d14caca4",
+     "domain": "update",
+     "metadata": {
+      "secondary": true
+     }
+    },
+    {
+     "platform": "device",
+     "type": "turned_on",
+     "device_id": "427f345c02997970da54df5f68fea07f",
+     "entity_id": "49e3d3829b439772a33ddfe2d14caca4",
+     "domain": "update",
+     "metadata": {
+      "secondary": true
+     }
+    }
+   ],
+   "caps": {}
+  },
+  "ba10a77d12ea9814acc745239d09b8ac": {
+   "list": [
+    {
+     "platform": "device",
+     "type": "changed_states",
+     "device_id": "ba10a77d12ea9814acc745239d09b8ac",
+     "entity_id": "4d8db412b560ecae5f769c28808c9b55",
+     "domain": "update",
+     "metadata": {
+      "secondary": true
+     }
+    },
+    {
+     "platform": "device",
+     "type": "turned_off",
+     "device_id": "ba10a77d12ea9814acc745239d09b8ac",
+     "entity_id": "4d8db412b560ecae5f769c28808c9b55",
+     "domain": "update",
+     "metadata": {
+      "secondary": true
+     }
+    },
+    {
+     "platform": "device",
+     "type": "turned_on",
+     "device_id": "ba10a77d12ea9814acc745239d09b8ac",
+     "entity_id": "4d8db412b560ecae5f769c28808c9b55",
+     "domain": "update",
+     "metadata": {
+      "secondary": true
+     }
+    }
+   ],
+   "caps": {}
+  },
+  "f039f122718ac10f87c7f73a7a375a27": {
+   "list": [
+    {
+     "platform": "device",
+     "device_id": "f039f122718ac10f87c7f73a7a375a27",
+     "domain": "vacuum",
+     "entity_id": "11a33e59f8d23f5815bcc6bc3ef11f6b",
+     "type": "docked",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "device_id": "f039f122718ac10f87c7f73a7a375a27",
+     "domain": "vacuum",
+     "entity_id": "11a33e59f8d23f5815bcc6bc3ef11f6b",
+     "type": "cleaning",
+     "metadata": {
+      "secondary": false
+     }
+    }
+   ],
+   "caps": {}
+  },
+  "e05fa1dc35452435a961b7339392d761": {
+   "list": [
+    {
+     "platform": "device",
+     "device_id": "e05fa1dc35452435a961b7339392d761",
+     "domain": "vacuum",
+     "entity_id": "03a78a6370144f6db47ad06a58ce8bd3",
+     "type": "docked",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "device_id": "e05fa1dc35452435a961b7339392d761",
+     "domain": "vacuum",
+     "entity_id": "03a78a6370144f6db47ad06a58ce8bd3",
+     "type": "cleaning",
+     "metadata": {
+      "secondary": false
+     }
+    }
+   ],
+   "caps": {}
+  },
+  "71af1f14dd0b95757ef54ce0f5404d21": {
+   "list": [
+    {
+     "platform": "device",
+     "device_id": "71af1f14dd0b95757ef54ce0f5404d21",
+     "domain": "vacuum",
+     "entity_id": "80459e100fdbf608f5343b8518bd3e9a",
+     "type": "docked",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "device_id": "71af1f14dd0b95757ef54ce0f5404d21",
+     "domain": "vacuum",
+     "entity_id": "80459e100fdbf608f5343b8518bd3e9a",
+     "type": "cleaning",
+     "metadata": {
+      "secondary": false
+     }
+    }
+   ],
+   "caps": {}
+  },
+  "a4819854339a78a57a9f9e4c36bf5250": {
+   "list": [
+    {
+     "platform": "device",
+     "device_id": "a4819854339a78a57a9f9e4c36bf5250",
+     "domain": "vacuum",
+     "entity_id": "39f686985a4062f562bb4897aeac2d90",
+     "type": "docked",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "device_id": "a4819854339a78a57a9f9e4c36bf5250",
+     "domain": "vacuum",
+     "entity_id": "39f686985a4062f562bb4897aeac2d90",
+     "type": "cleaning",
+     "metadata": {
+      "secondary": false
+     }
+    }
+   ],
+   "caps": {}
+  },
+  "e710481ff4955146d9b8e90fb769d13c": {
+   "list": [
+    {
+     "platform": "device",
+     "device_id": "e710481ff4955146d9b8e90fb769d13c",
+     "domain": "vacuum",
+     "entity_id": "a19035cc9d3faa387f394ef3a5765a61",
+     "type": "docked",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "device_id": "e710481ff4955146d9b8e90fb769d13c",
+     "domain": "vacuum",
+     "entity_id": "a19035cc9d3faa387f394ef3a5765a61",
+     "type": "cleaning",
+     "metadata": {
+      "secondary": false
+     }
+    }
+   ],
+   "caps": {}
+  },
+  "2d1c0396091131c3218f7fb1d6f5b31a": {
+   "list": [
+    {
+     "type": "data_size",
+     "platform": "device",
+     "device_id": "2d1c0396091131c3218f7fb1d6f5b31a",
+     "entity_id": "7602eac153c21ab66b50e21fd6dbadb2",
+     "domain": "sensor",
+     "metadata": {
+      "secondary": false
+     }
+    }
+   ],
+   "caps": {}
+  },
+  "89fac255d2e8fa20ac723d3dd955a5a1": {
+   "list": [
+    {
+     "platform": "device",
+     "type": "changed_states",
+     "device_id": "89fac255d2e8fa20ac723d3dd955a5a1",
+     "entity_id": "61026056ede92a34c3e9a4efc2a7df2d",
+     "domain": "update",
+     "metadata": {
+      "secondary": true
+     }
+    },
+    {
+     "platform": "device",
+     "type": "turned_off",
+     "device_id": "89fac255d2e8fa20ac723d3dd955a5a1",
+     "entity_id": "61026056ede92a34c3e9a4efc2a7df2d",
+     "domain": "update",
+     "metadata": {
+      "secondary": true
+     }
+    },
+    {
+     "platform": "device",
+     "type": "turned_on",
+     "device_id": "89fac255d2e8fa20ac723d3dd955a5a1",
+     "entity_id": "61026056ede92a34c3e9a4efc2a7df2d",
+     "domain": "update",
+     "metadata": {
+      "secondary": true
+     }
+    }
+   ],
+   "caps": {}
+  },
+  "6e0457ba71d9762b9e3a004a3189cc02": {
+   "list": [
+    {
+     "platform": "device",
+     "device_id": "6e0457ba71d9762b9e3a004a3189cc02",
+     "domain": "zwave_js",
+     "type": "state.node_status",
+     "entity_id": "9d5942cc4faae0c42e26cc1ac1a1b3be",
+     "metadata": {
+      "secondary": true
+     }
+    },
+    {
+     "platform": "device",
+     "device_id": "6e0457ba71d9762b9e3a004a3189cc02",
+     "domain": "zwave_js",
+     "type": "event.notification.notification",
+     "command_class": 113,
+     "metadata": {}
+    },
+    {
+     "platform": "device",
+     "device_id": "6e0457ba71d9762b9e3a004a3189cc02",
+     "domain": "zwave_js",
+     "type": "zwave_js.value_updated.value",
+     "metadata": {}
+    },
+    {
+     "platform": "device",
+     "device_id": "6e0457ba71d9762b9e3a004a3189cc02",
+     "domain": "select",
+     "entity_id": "90d2a07502db1b0055f06ceb9b95b9ac",
+     "type": "current_option_changed",
+     "metadata": {
+      "secondary": true
+     }
+    },
+    {
+     "platform": "device",
+     "device_id": "6e0457ba71d9762b9e3a004a3189cc02",
+     "domain": "lock",
+     "entity_id": "c221e1209bb0e1832d0260dba6f129bc",
+     "type": "jammed",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "device_id": "6e0457ba71d9762b9e3a004a3189cc02",
+     "domain": "lock",
+     "entity_id": "c221e1209bb0e1832d0260dba6f129bc",
+     "type": "unlocking",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "device_id": "6e0457ba71d9762b9e3a004a3189cc02",
+     "domain": "lock",
+     "entity_id": "c221e1209bb0e1832d0260dba6f129bc",
+     "type": "opening",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "device_id": "6e0457ba71d9762b9e3a004a3189cc02",
+     "domain": "lock",
+     "entity_id": "c221e1209bb0e1832d0260dba6f129bc",
+     "type": "open",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "device_id": "6e0457ba71d9762b9e3a004a3189cc02",
+     "domain": "lock",
+     "entity_id": "c221e1209bb0e1832d0260dba6f129bc",
+     "type": "unlocked",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "device_id": "6e0457ba71d9762b9e3a004a3189cc02",
+     "domain": "lock",
+     "entity_id": "c221e1209bb0e1832d0260dba6f129bc",
+     "type": "locking",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "device_id": "6e0457ba71d9762b9e3a004a3189cc02",
+     "domain": "lock",
+     "entity_id": "c221e1209bb0e1832d0260dba6f129bc",
+     "type": "locked",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "type": "opened",
+     "platform": "device",
+     "device_id": "6e0457ba71d9762b9e3a004a3189cc02",
+     "entity_id": "a0c032468b2fa085f1e6708755612bc1",
+     "domain": "binary_sensor",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "type": "not_opened",
+     "platform": "device",
+     "device_id": "6e0457ba71d9762b9e3a004a3189cc02",
+     "entity_id": "a0c032468b2fa085f1e6708755612bc1",
+     "domain": "binary_sensor",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "type": "problem",
+     "platform": "device",
+     "device_id": "6e0457ba71d9762b9e3a004a3189cc02",
+     "entity_id": "3c96b5bfaca4a7ea2c49733a89a7aff5",
+     "domain": "binary_sensor",
+     "metadata": {
+      "secondary": true
+     }
+    },
+    {
+     "type": "no_problem",
+     "platform": "device",
+     "device_id": "6e0457ba71d9762b9e3a004a3189cc02",
+     "entity_id": "3c96b5bfaca4a7ea2c49733a89a7aff5",
+     "domain": "binary_sensor",
+     "metadata": {
+      "secondary": true
+     }
+    },
+    {
+     "type": "opened",
+     "platform": "device",
+     "device_id": "6e0457ba71d9762b9e3a004a3189cc02",
+     "entity_id": "932002ac2284082f8745fadeb85c7311",
+     "domain": "binary_sensor",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "type": "not_opened",
+     "platform": "device",
+     "device_id": "6e0457ba71d9762b9e3a004a3189cc02",
+     "entity_id": "932002ac2284082f8745fadeb85c7311",
+     "domain": "binary_sensor",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "type": "battery_level",
+     "platform": "device",
+     "device_id": "6e0457ba71d9762b9e3a004a3189cc02",
+     "entity_id": "33ad550163a45ded67aeffa1c36079c7",
+     "domain": "sensor",
+     "metadata": {
+      "secondary": true
+     }
+    },
+    {
+     "platform": "device",
+     "device_id": "6e0457ba71d9762b9e3a004a3189cc02",
+     "domain": "button",
+     "entity_id": "7f97662c16edd631442500e9775deda7",
+     "type": "pressed",
+     "metadata": {
+      "secondary": true
+     }
+    }
+   ],
+   "caps": {
+    "{\"command_class\":113,\"device_id\":\"6e0457ba71d9762b9e3a004a3189cc02\",\"domain\":\"zwave_js\",\"metadata\":{},\"platform\":\"device\",\"type\":\"event.notification.notification\"}": {
+     "extra_fields": [
+      {
+       "type": "string",
+       "name": "type.",
+       "required": false,
+       "optional": true
+      },
+      {
+       "type": "string",
+       "name": "label",
+       "required": false,
+       "optional": true
+      },
+      {
+       "type": "string",
+       "name": "event",
+       "required": false,
+       "optional": true
+      },
+      {
+       "type": "string",
+       "name": "event_label",
+       "required": false,
+       "optional": true
+      }
+     ]
+    },
+    "{\"device_id\":\"6e0457ba71d9762b9e3a004a3189cc02\",\"domain\":\"zwave_js\",\"metadata\":{},\"platform\":\"device\",\"type\":\"zwave_js.value_updated.value\"}": {
+     "extra_fields": [
+      {
+       "type": "select",
+       "options": [
+        [
+         "128",
+         "Battery"
+        ],
+        [
+         "98",
+         "Door Lock"
+        ],
+        [
+         "114",
+         "Manufacturer Specific"
+        ],
+        [
+         "119",
+         "Node Naming and Location"
+        ],
+        [
+         "113",
+         "Notification"
+        ],
+        [
+         "134",
+         "Version"
+        ]
+       ],
+       "name": "command_class",
+       "required": true
+      },
+      {
+       "type": "string",
+       "name": "property",
+       "required": true
+      },
+      {
+       "type": "string",
+       "name": "property_key",
+       "required": false,
+       "optional": true
+      },
+      {
+       "type": "string",
+       "name": "endpoint",
+       "required": false,
+       "optional": true
+      },
+      {
+       "type": "string",
+       "name": "from",
+       "required": false,
+       "optional": true
+      },
+      {
+       "type": "string",
+       "name": "to",
+       "required": false,
+       "optional": true
+      }
+     ]
+    }
+   }
+  },
+  "ea0ff46bd9b457400fd7a879ccf1708c": {
+   "list": [
+    {
+     "platform": "device",
+     "device_id": "ea0ff46bd9b457400fd7a879ccf1708c",
+     "domain": "zwave_js",
+     "type": "state.node_status",
+     "entity_id": "048d67b45d865b8aa2672a65db252ec2",
+     "metadata": {
+      "secondary": true
+     }
+    },
+    {
+     "platform": "device",
+     "device_id": "ea0ff46bd9b457400fd7a879ccf1708c",
+     "domain": "zwave_js",
+     "type": "event.value_notification.central_scene",
+     "property": "scene",
+     "property_key": "001",
+     "endpoint": 0,
+     "command_class": 91,
+     "subtype": "Endpoint 0 Scene 001",
+     "metadata": {}
+    },
+    {
+     "platform": "device",
+     "device_id": "ea0ff46bd9b457400fd7a879ccf1708c",
+     "domain": "zwave_js",
+     "type": "event.value_notification.central_scene",
+     "property": "scene",
+     "property_key": "002",
+     "endpoint": 0,
+     "command_class": 91,
+     "subtype": "Endpoint 0 Scene 002",
+     "metadata": {}
+    },
+    {
+     "platform": "device",
+     "device_id": "ea0ff46bd9b457400fd7a879ccf1708c",
+     "domain": "zwave_js",
+     "type": "event.value_notification.central_scene",
+     "property": "scene",
+     "property_key": "003",
+     "endpoint": 0,
+     "command_class": 91,
+     "subtype": "Endpoint 0 Scene 003",
+     "metadata": {}
+    },
+    {
+     "platform": "device",
+     "device_id": "ea0ff46bd9b457400fd7a879ccf1708c",
+     "domain": "zwave_js",
+     "type": "zwave_js.value_updated.value",
+     "metadata": {}
+    },
+    {
+     "platform": "device",
+     "device_id": "ea0ff46bd9b457400fd7a879ccf1708c",
+     "domain": "button",
+     "entity_id": "75418edca0a85cd417a858952a9bea83",
+     "type": "pressed",
+     "metadata": {
+      "secondary": true
+     }
+    },
+    {
+     "type": "battery_level",
+     "platform": "device",
+     "device_id": "ea0ff46bd9b457400fd7a879ccf1708c",
+     "entity_id": "58b1149a8fd6d26338800a714a8a365f",
+     "domain": "sensor",
+     "metadata": {
+      "secondary": true
+     }
+    }
+   ],
+   "caps": {
+    "{\"command_class\":91,\"device_id\":\"ea0ff46bd9b457400fd7a879ccf1708c\",\"domain\":\"zwave_js\",\"endpoint\":0,\"metadata\":{},\"platform\":\"device\",\"property\":\"scene\",\"property_key\":\"001\",\"subtype\":\"Endpoint 0 Scene 001\",\"type\":\"event.value_notification.central_scene\"}": {
+     "extra_fields": [
+      {
+       "type": "select",
+       "options": [
+        [
+         "0",
+         "KeyPressed"
+        ],
+        [
+         "1",
+         "KeyReleased"
+        ],
+        [
+         "2",
+         "KeyHeldDown"
+        ],
+        [
+         "3",
+         "KeyPressed2x"
+        ],
+        [
+         "4",
+         "KeyPressed3x"
+        ]
+       ],
+       "name": "value",
+       "required": false,
+       "optional": true
+      }
+     ]
+    },
+    "{\"command_class\":91,\"device_id\":\"ea0ff46bd9b457400fd7a879ccf1708c\",\"domain\":\"zwave_js\",\"endpoint\":0,\"metadata\":{},\"platform\":\"device\",\"property\":\"scene\",\"property_key\":\"002\",\"subtype\":\"Endpoint 0 Scene 002\",\"type\":\"event.value_notification.central_scene\"}": {
+     "extra_fields": [
+      {
+       "type": "select",
+       "options": [
+        [
+         "0",
+         "KeyPressed"
+        ],
+        [
+         "1",
+         "KeyReleased"
+        ],
+        [
+         "2",
+         "KeyHeldDown"
+        ],
+        [
+         "3",
+         "KeyPressed2x"
+        ],
+        [
+         "4",
+         "KeyPressed3x"
+        ]
+       ],
+       "name": "value",
+       "required": false,
+       "optional": true
+      }
+     ]
+    },
+    "{\"command_class\":91,\"device_id\":\"ea0ff46bd9b457400fd7a879ccf1708c\",\"domain\":\"zwave_js\",\"endpoint\":0,\"metadata\":{},\"platform\":\"device\",\"property\":\"scene\",\"property_key\":\"003\",\"subtype\":\"Endpoint 0 Scene 003\",\"type\":\"event.value_notification.central_scene\"}": {
+     "extra_fields": [
+      {
+       "type": "select",
+       "options": [
+        [
+         "0",
+         "KeyPressed"
+        ],
+        [
+         "1",
+         "KeyReleased"
+        ],
+        [
+         "2",
+         "KeyHeldDown"
+        ],
+        [
+         "3",
+         "KeyPressed2x"
+        ],
+        [
+         "4",
+         "KeyPressed3x"
+        ]
+       ],
+       "name": "value",
+       "required": false,
+       "optional": true
+      }
+     ]
+    },
+    "{\"device_id\":\"ea0ff46bd9b457400fd7a879ccf1708c\",\"domain\":\"zwave_js\",\"metadata\":{},\"platform\":\"device\",\"type\":\"zwave_js.value_updated.value\"}": {
+     "extra_fields": [
+      {
+       "type": "select",
+       "options": [
+        [
+         "128",
+         "Battery"
+        ],
+        [
+         "91",
+         "Central Scene"
+        ],
+        [
+         "114",
+         "Manufacturer Specific"
+        ],
+        [
+         "119",
+         "Node Naming and Location"
+        ],
+        [
+         "134",
+         "Version"
+        ]
+       ],
+       "name": "command_class",
+       "required": true
+      },
+      {
+       "type": "string",
+       "name": "property",
+       "required": true
+      },
+      {
+       "type": "string",
+       "name": "property_key",
+       "required": false,
+       "optional": true
+      },
+      {
+       "type": "string",
+       "name": "endpoint",
+       "required": false,
+       "optional": true
+      },
+      {
+       "type": "string",
+       "name": "from",
+       "required": false,
+       "optional": true
+      },
+      {
+       "type": "string",
+       "name": "to",
+       "required": false,
+       "optional": true
+      }
+     ]
+    }
+   }
+  },
+  "4e74a140e50e9e3d90c189635beb2d98": {
+   "list": [
+    {
+     "platform": "device",
+     "device_id": "4e74a140e50e9e3d90c189635beb2d98",
+     "domain": "zwave_js",
+     "type": "state.node_status",
+     "entity_id": "e7147e25c16e1f8b07477b40b2f25256",
+     "metadata": {
+      "secondary": true
+     }
+    },
+    {
+     "platform": "device",
+     "device_id": "4e74a140e50e9e3d90c189635beb2d98",
+     "domain": "zwave_js",
+     "type": "zwave_js.value_updated.value",
+     "metadata": {}
+    },
+    {
+     "platform": "device",
+     "device_id": "4e74a140e50e9e3d90c189635beb2d98",
+     "domain": "button",
+     "entity_id": "650509b4937bc1f34b7336fd9c41cd1f",
+     "type": "pressed",
+     "metadata": {
+      "secondary": true
+     }
+    },
+    {
+     "platform": "device",
+     "device_id": "4e74a140e50e9e3d90c189635beb2d98",
+     "domain": "button",
+     "entity_id": "5b4bd73b22ade99a3feb4abb35ad62a2",
+     "type": "pressed",
+     "metadata": {
+      "secondary": true
+     }
+    },
+    {
+     "platform": "device",
+     "type": "changed_states",
+     "device_id": "4e74a140e50e9e3d90c189635beb2d98",
+     "entity_id": "d212a466448e59ee1b46e329263a27e0",
+     "domain": "switch",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "type": "turned_off",
+     "device_id": "4e74a140e50e9e3d90c189635beb2d98",
+     "entity_id": "d212a466448e59ee1b46e329263a27e0",
+     "domain": "switch",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "type": "turned_on",
+     "device_id": "4e74a140e50e9e3d90c189635beb2d98",
+     "entity_id": "d212a466448e59ee1b46e329263a27e0",
+     "domain": "switch",
+     "metadata": {
+      "secondary": false
+     }
+    }
+   ],
+   "caps": {
+    "{\"device_id\":\"4e74a140e50e9e3d90c189635beb2d98\",\"domain\":\"zwave_js\",\"metadata\":{},\"platform\":\"device\",\"type\":\"zwave_js.value_updated.value\"}": {
+     "extra_fields": [
+      {
+       "type": "select",
+       "options": [
+        [
+         "37",
+         "Binary Switch"
+        ],
+        [
+         "114",
+         "Manufacturer Specific"
+        ],
+        [
+         "50",
+         "Meter"
+        ],
+        [
+         "119",
+         "Node Naming and Location"
+        ],
+        [
+         "134",
+         "Version"
+        ]
+       ],
+       "name": "command_class",
+       "required": true
+      },
+      {
+       "type": "string",
+       "name": "property",
+       "required": true
+      },
+      {
+       "type": "string",
+       "name": "property_key",
+       "required": false,
+       "optional": true
+      },
+      {
+       "type": "string",
+       "name": "endpoint",
+       "required": false,
+       "optional": true
+      },
+      {
+       "type": "string",
+       "name": "from",
+       "required": false,
+       "optional": true
+      },
+      {
+       "type": "string",
+       "name": "to",
+       "required": false,
+       "optional": true
+      }
+     ]
+    }
+   }
+  },
+  "6b0c6fdecfd32ed52894b1383d22de22": {
+   "list": [
+    {
+     "platform": "device",
+     "device_id": "6b0c6fdecfd32ed52894b1383d22de22",
+     "domain": "zwave_js",
+     "type": "state.node_status",
+     "entity_id": "08b5cdfdee7c8581eca233ca31b3592f",
+     "metadata": {
+      "secondary": true
+     }
+    },
+    {
+     "platform": "device",
+     "device_id": "6b0c6fdecfd32ed52894b1383d22de22",
+     "domain": "zwave_js",
+     "type": "event.notification.notification",
+     "command_class": 113,
+     "metadata": {}
+    },
+    {
+     "platform": "device",
+     "device_id": "6b0c6fdecfd32ed52894b1383d22de22",
+     "domain": "zwave_js",
+     "type": "zwave_js.value_updated.value",
+     "metadata": {}
+    },
+    {
+     "platform": "device",
+     "device_id": "6b0c6fdecfd32ed52894b1383d22de22",
+     "domain": "zwave_js",
+     "type": "zwave_js.value_updated.config_parameter",
+     "property": 1,
+     "property_key": null,
+     "endpoint": 0,
+     "command_class": 112,
+     "subtype": "1 (Motion sensitivity) on endpoint 0",
+     "metadata": {}
+    },
+    {
+     "platform": "device",
+     "device_id": "6b0c6fdecfd32ed52894b1383d22de22",
+     "domain": "zwave_js",
+     "type": "zwave_js.value_updated.config_parameter",
+     "property": 2,
+     "property_key": null,
+     "endpoint": 0,
+     "command_class": 112,
+     "subtype": "2 (Motion clear delay (s)) on endpoint 0",
+     "metadata": {}
+    },
+    {
+     "platform": "device",
+     "device_id": "6b0c6fdecfd32ed52894b1383d22de22",
+     "domain": "button",
+     "entity_id": "e9296a81a1f97b9264fb1b97f3f102fb",
+     "type": "pressed",
+     "metadata": {
+      "secondary": true
+     }
+    },
+    {
+     "type": "temperature",
+     "platform": "device",
+     "device_id": "6b0c6fdecfd32ed52894b1383d22de22",
+     "entity_id": "ca3e3e92624921b33f2d59c4d79c63ba",
+     "domain": "sensor",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "type": "value",
+     "platform": "device",
+     "device_id": "6b0c6fdecfd32ed52894b1383d22de22",
+     "entity_id": "3ae4f82a7d6ab5db9d4d3c5961c3d3eb",
+     "domain": "sensor",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "type": "humidity",
+     "platform": "device",
+     "device_id": "6b0c6fdecfd32ed52894b1383d22de22",
+     "entity_id": "b83048b394ee2b053078b87b4b7e6d37",
+     "domain": "sensor",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "type": "battery_level",
+     "platform": "device",
+     "device_id": "6b0c6fdecfd32ed52894b1383d22de22",
+     "entity_id": "3a34553cf5d4bec8259e13f7c578be84",
+     "domain": "sensor",
+     "metadata": {
+      "secondary": true
+     }
+    },
+    {
+     "type": "tampered",
+     "platform": "device",
+     "device_id": "6b0c6fdecfd32ed52894b1383d22de22",
+     "entity_id": "a1540717dca9bf176e673458343a12ee",
+     "domain": "binary_sensor",
+     "metadata": {
+      "secondary": true
+     }
+    },
+    {
+     "type": "not_tampered",
+     "platform": "device",
+     "device_id": "6b0c6fdecfd32ed52894b1383d22de22",
+     "entity_id": "a1540717dca9bf176e673458343a12ee",
+     "domain": "binary_sensor",
+     "metadata": {
+      "secondary": true
+     }
+    },
+    {
+     "type": "motion",
+     "platform": "device",
+     "device_id": "6b0c6fdecfd32ed52894b1383d22de22",
+     "entity_id": "58493b73b3672ba54a03cac2bace7bcb",
+     "domain": "binary_sensor",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "type": "no_motion",
+     "platform": "device",
+     "device_id": "6b0c6fdecfd32ed52894b1383d22de22",
+     "entity_id": "58493b73b3672ba54a03cac2bace7bcb",
+     "domain": "binary_sensor",
+     "metadata": {
+      "secondary": false
+     }
+    }
+   ],
+   "caps": {
+    "{\"command_class\":113,\"device_id\":\"6b0c6fdecfd32ed52894b1383d22de22\",\"domain\":\"zwave_js\",\"metadata\":{},\"platform\":\"device\",\"type\":\"event.notification.notification\"}": {
+     "extra_fields": [
+      {
+       "type": "string",
+       "name": "type.",
+       "required": false,
+       "optional": true
+      },
+      {
+       "type": "string",
+       "name": "label",
+       "required": false,
+       "optional": true
+      },
+      {
+       "type": "string",
+       "name": "event",
+       "required": false,
+       "optional": true
+      },
+      {
+       "type": "string",
+       "name": "event_label",
+       "required": false,
+       "optional": true
+      }
+     ]
+    },
+    "{\"device_id\":\"6b0c6fdecfd32ed52894b1383d22de22\",\"domain\":\"zwave_js\",\"metadata\":{},\"platform\":\"device\",\"type\":\"zwave_js.value_updated.value\"}": {
+     "extra_fields": [
+      {
+       "type": "select",
+       "options": [
+        [
+         "128",
+         "Battery"
+        ],
+        [
+         "114",
+         "Manufacturer Specific"
+        ],
+        [
+         "49",
+         "Multilevel Sensor"
+        ],
+        [
+         "119",
+         "Node Naming and Location"
+        ],
+        [
+         "113",
+         "Notification"
+        ],
+        [
+         "134",
+         "Version"
+        ]
+       ],
+       "name": "command_class",
+       "required": true
+      },
+      {
+       "type": "string",
+       "name": "property",
+       "required": true
+      },
+      {
+       "type": "string",
+       "name": "property_key",
+       "required": false,
+       "optional": true
+      },
+      {
+       "type": "string",
+       "name": "endpoint",
+       "required": false,
+       "optional": true
+      },
+      {
+       "type": "string",
+       "name": "from",
+       "required": false,
+       "optional": true
+      },
+      {
+       "type": "string",
+       "name": "to",
+       "required": false,
+       "optional": true
+      }
+     ]
+    },
+    "{\"command_class\":112,\"device_id\":\"6b0c6fdecfd32ed52894b1383d22de22\",\"domain\":\"zwave_js\",\"endpoint\":0,\"metadata\":{},\"platform\":\"device\",\"property\":1,\"property_key\":null,\"subtype\":\"1 (Motion sensitivity) on endpoint 0\",\"type\":\"zwave_js.value_updated.config_parameter\"}": {
+     "extra_fields": [
+      {
+       "type": "integer",
+       "valueMin": 0,
+       "valueMax": 3,
+       "name": "from",
+       "required": false,
+       "optional": true
+      },
+      {
+       "type": "integer",
+       "valueMin": 0,
+       "valueMax": 3,
+       "name": "to",
+       "required": false,
+       "optional": true
+      }
+     ]
+    },
+    "{\"command_class\":112,\"device_id\":\"6b0c6fdecfd32ed52894b1383d22de22\",\"domain\":\"zwave_js\",\"endpoint\":0,\"metadata\":{},\"platform\":\"device\",\"property\":2,\"property_key\":null,\"subtype\":\"2 (Motion clear delay (s)) on endpoint 0\",\"type\":\"zwave_js.value_updated.config_parameter\"}": {
+     "extra_fields": [
+      {
+       "type": "integer",
+       "valueMin": 5,
+       "valueMax": 3600,
+       "name": "from",
+       "required": false,
+       "optional": true
+      },
+      {
+       "type": "integer",
+       "valueMin": 5,
+       "valueMax": 3600,
+       "name": "to",
+       "required": false,
+       "optional": true
+      }
+     ]
+    }
+   }
+  },
+  "43fa4918399245059ff2a623cab86c11": {
+   "list": [
+    {
+     "platform": "device",
+     "device_id": "43fa4918399245059ff2a623cab86c11",
+     "domain": "zwave_js",
+     "type": "state.node_status",
+     "entity_id": "b5d49e573edd6345ac55f97803f4b9a6",
+     "metadata": {
+      "secondary": true
+     }
+    },
+    {
+     "platform": "device",
+     "device_id": "43fa4918399245059ff2a623cab86c11",
+     "domain": "zwave_js",
+     "type": "zwave_js.value_updated.value",
+     "metadata": {}
+    },
+    {
+     "platform": "device",
+     "device_id": "43fa4918399245059ff2a623cab86c11",
+     "domain": "button",
+     "entity_id": "22989587876fb3123460859516118063",
+     "type": "pressed",
+     "metadata": {
+      "secondary": true
+     }
+    },
+    {
+     "platform": "device",
+     "type": "changed_states",
+     "device_id": "43fa4918399245059ff2a623cab86c11",
+     "entity_id": "91da6cd3cb1dd31ac07d65922c076d77",
+     "domain": "light",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "type": "turned_off",
+     "device_id": "43fa4918399245059ff2a623cab86c11",
+     "entity_id": "91da6cd3cb1dd31ac07d65922c076d77",
+     "domain": "light",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "type": "turned_on",
+     "device_id": "43fa4918399245059ff2a623cab86c11",
+     "entity_id": "91da6cd3cb1dd31ac07d65922c076d77",
+     "domain": "light",
+     "metadata": {
+      "secondary": false
+     }
+    }
+   ],
+   "caps": {
+    "{\"device_id\":\"43fa4918399245059ff2a623cab86c11\",\"domain\":\"zwave_js\",\"metadata\":{},\"platform\":\"device\",\"type\":\"zwave_js.value_updated.value\"}": {
+     "extra_fields": [
+      {
+       "type": "select",
+       "options": [
+        [
+         "114",
+         "Manufacturer Specific"
+        ],
+        [
+         "38",
+         "Multilevel Switch"
+        ],
+        [
+         "119",
+         "Node Naming and Location"
+        ],
+        [
+         "134",
+         "Version"
+        ]
+       ],
+       "name": "command_class",
+       "required": true
+      },
+      {
+       "type": "string",
+       "name": "property",
+       "required": true
+      },
+      {
+       "type": "string",
+       "name": "property_key",
+       "required": false,
+       "optional": true
+      },
+      {
+       "type": "string",
+       "name": "endpoint",
+       "required": false,
+       "optional": true
+      },
+      {
+       "type": "string",
+       "name": "from",
+       "required": false,
+       "optional": true
+      },
+      {
+       "type": "string",
+       "name": "to",
+       "required": false,
+       "optional": true
+      }
+     ]
+    }
+   }
+  },
+  "2d3d84a8d802b19398fedd6fe6e9becc": {
+   "list": [
+    {
+     "platform": "device",
+     "device_id": "2d3d84a8d802b19398fedd6fe6e9becc",
+     "domain": "device_tracker",
+     "entity_id": "b7a102b02bf53a2c192b736380bf49a2",
+     "type": "enters",
+     "metadata": {
+      "secondary": true
+     }
+    },
+    {
+     "platform": "device",
+     "device_id": "2d3d84a8d802b19398fedd6fe6e9becc",
+     "domain": "device_tracker",
+     "entity_id": "b7a102b02bf53a2c192b736380bf49a2",
+     "type": "leaves",
+     "metadata": {
+      "secondary": true
+     }
+    }
+   ],
+   "caps": {}
+  },
+  "f70367e22db18c66f2767335074493f1": {
+   "list": [
+    {
+     "type": "temperature",
+     "platform": "device",
+     "device_id": "f70367e22db18c66f2767335074493f1",
+     "entity_id": "1804f2968a53c2b8cb171798a73ff627",
+     "domain": "sensor",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "type": "humidity",
+     "platform": "device",
+     "device_id": "f70367e22db18c66f2767335074493f1",
+     "entity_id": "c339b0ea21f57eea3f074f5ecf2df593",
+     "domain": "sensor",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "type": "occupied",
+     "platform": "device",
+     "device_id": "f70367e22db18c66f2767335074493f1",
+     "entity_id": "c6934984316e2d3f3cedff5c84eaa365",
+     "domain": "binary_sensor",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "type": "not_occupied",
+     "platform": "device",
+     "device_id": "f70367e22db18c66f2767335074493f1",
+     "entity_id": "c6934984316e2d3f3cedff5c84eaa365",
+     "domain": "binary_sensor",
+     "metadata": {
+      "secondary": false
+     }
+    }
+   ],
+   "caps": {}
+  },
+  "7effefca3110e15c4d99f7fee2fdaac9": {
+   "list": [
+    {
+     "platform": "device",
+     "domain": "mqtt",
+     "device_id": "7effefca3110e15c4d99f7fee2fdaac9",
+     "type": "button_short_press",
+     "subtype": "on",
+     "metadata": {}
+    },
+    {
+     "platform": "device",
+     "domain": "mqtt",
+     "device_id": "7effefca3110e15c4d99f7fee2fdaac9",
+     "type": "button_long_press",
+     "subtype": "on",
+     "metadata": {}
+    },
+    {
+     "platform": "device",
+     "domain": "mqtt",
+     "device_id": "7effefca3110e15c4d99f7fee2fdaac9",
+     "type": "button_short_press",
+     "subtype": "off",
+     "metadata": {}
+    },
+    {
+     "platform": "device",
+     "domain": "mqtt",
+     "device_id": "7effefca3110e15c4d99f7fee2fdaac9",
+     "type": "button_long_press",
+     "subtype": "off",
+     "metadata": {}
+    },
+    {
+     "type": "battery_level",
+     "platform": "device",
+     "device_id": "7effefca3110e15c4d99f7fee2fdaac9",
+     "entity_id": "2078c5efadf191039416e5824ba105f9",
+     "domain": "sensor",
+     "metadata": {
+      "secondary": true
+     }
+    }
+   ],
+   "caps": {
+    "{\"device_id\":\"7effefca3110e15c4d99f7fee2fdaac9\",\"domain\":\"mqtt\",\"metadata\":{},\"platform\":\"device\",\"subtype\":\"on\",\"type\":\"button_short_press\"}": {},
+    "{\"device_id\":\"7effefca3110e15c4d99f7fee2fdaac9\",\"domain\":\"mqtt\",\"metadata\":{},\"platform\":\"device\",\"subtype\":\"on\",\"type\":\"button_long_press\"}": {},
+    "{\"device_id\":\"7effefca3110e15c4d99f7fee2fdaac9\",\"domain\":\"mqtt\",\"metadata\":{},\"platform\":\"device\",\"subtype\":\"off\",\"type\":\"button_short_press\"}": {},
+    "{\"device_id\":\"7effefca3110e15c4d99f7fee2fdaac9\",\"domain\":\"mqtt\",\"metadata\":{},\"platform\":\"device\",\"subtype\":\"off\",\"type\":\"button_long_press\"}": {}
+   },
+   "mqtt": {
+    "entities": [
+     {
+      "entity_id": "event.hall_hall_remote_action",
+      "subscriptions": [
+       {
+        "topic": "fbtest/hall_remote/action",
+        "messages": []
+       }
+      ],
+      "discovery_data": {
+       "topic": "homeassistant/event/fbtest_hall_remote/action/config",
+       "payload": {
+        "unique_id": "fbtest_hall_remote_action",
+        "state_topic": "fbtest/hall_remote/action",
+        "value_template": "{\"event_type\": \"{{ value }}\"}",
+        "event_types": [
+         "on_single",
+         "on_hold",
+         "off_single",
+         "off_hold"
+        ],
+        "device": {
+         "identifiers": [
+          "fbtest_hall_remote"
+         ],
+         "manufacturer": "Test Home",
+         "model": "FB-R4",
+         "suggested_area": "Hall",
+         "name": "Hall remote"
+        },
+        "name": "Action"
+       }
+      },
+      "transmitted": []
+     },
+     {
+      "entity_id": "sensor.hall_hall_remote_battery",
+      "subscriptions": [
+       {
+        "topic": "fbtest/hall_remote/state",
+        "messages": []
+       }
+      ],
+      "discovery_data": {
+       "topic": "homeassistant/sensor/fbtest_hall_remote/battery/config",
+       "payload": {
+        "unique_id": "fbtest_hall_remote_battery",
+        "state_topic": "fbtest/hall_remote/state",
+        "value_template": "{{ value_json.battery }}",
+        "unit_of_measurement": "%",
+        "device_class": "battery",
+        "entity_category": "diagnostic",
+        "device": {
+         "identifiers": [
+          "fbtest_hall_remote"
+         ],
+         "manufacturer": "Test Home",
+         "model": "FB-R4",
+         "suggested_area": "Hall",
+         "name": "Hall remote"
+        },
+        "name": "Battery"
+       }
+      },
+      "transmitted": []
+     }
+    ],
+    "triggers": [
+     {
+      "discovery_data": {
+       "topic": "homeassistant/device_automation/fbtest_hall_remote/action_on_single/config",
+       "payload": {
+        "automation_type": "trigger",
+        "type": "button_short_press",
+        "subtype": "on",
+        "topic": "fbtest/hall_remote/action",
+        "payload": "on_single",
+        "device": {
+         "identifiers": [
+          "fbtest_hall_remote"
+         ],
+         "manufacturer": "Test Home",
+         "model": "FB-R4",
+         "suggested_area": "Hall",
+         "name": "Hall remote"
+        }
+       }
+      },
+      "trigger_key": [
+       "device_automation",
+       "fbtest_hall_remote action_on_single"
+      ]
+     },
+     {
+      "discovery_data": {
+       "topic": "homeassistant/device_automation/fbtest_hall_remote/action_on_hold/config",
+       "payload": {
+        "automation_type": "trigger",
+        "type": "button_long_press",
+        "subtype": "on",
+        "topic": "fbtest/hall_remote/action",
+        "payload": "on_hold",
+        "device": {
+         "identifiers": [
+          "fbtest_hall_remote"
+         ],
+         "manufacturer": "Test Home",
+         "model": "FB-R4",
+         "suggested_area": "Hall",
+         "name": "Hall remote"
+        }
+       }
+      },
+      "trigger_key": [
+       "device_automation",
+       "fbtest_hall_remote action_on_hold"
+      ]
+     },
+     {
+      "discovery_data": {
+       "topic": "homeassistant/device_automation/fbtest_hall_remote/action_off_single/config",
+       "payload": {
+        "automation_type": "trigger",
+        "type": "button_short_press",
+        "subtype": "off",
+        "topic": "fbtest/hall_remote/action",
+        "payload": "off_single",
+        "device": {
+         "identifiers": [
+          "fbtest_hall_remote"
+         ],
+         "manufacturer": "Test Home",
+         "model": "FB-R4",
+         "suggested_area": "Hall",
+         "name": "Hall remote"
+        }
+       }
+      },
+      "trigger_key": [
+       "device_automation",
+       "fbtest_hall_remote action_off_single"
+      ]
+     },
+     {
+      "discovery_data": {
+       "topic": "homeassistant/device_automation/fbtest_hall_remote/action_off_hold/config",
+       "payload": {
+        "automation_type": "trigger",
+        "type": "button_long_press",
+        "subtype": "off",
+        "topic": "fbtest/hall_remote/action",
+        "payload": "off_hold",
+        "device": {
+         "identifiers": [
+          "fbtest_hall_remote"
+         ],
+         "manufacturer": "Test Home",
+         "model": "FB-R4",
+         "suggested_area": "Hall",
+         "name": "Hall remote"
+        }
+       }
+      },
+      "trigger_key": [
+       "device_automation",
+       "fbtest_hall_remote action_off_hold"
+      ]
+     }
+    ]
+   }
+  },
+  "074c900ee7c8b28881037324c44066d1": {
+   "list": [
+    {
+     "platform": "device",
+     "type": "changed_states",
+     "device_id": "074c900ee7c8b28881037324c44066d1",
+     "entity_id": "500c0a6c246a50a1bb7a2906a049058f",
+     "domain": "switch",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "type": "turned_off",
+     "device_id": "074c900ee7c8b28881037324c44066d1",
+     "entity_id": "500c0a6c246a50a1bb7a2906a049058f",
+     "domain": "switch",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "platform": "device",
+     "type": "turned_on",
+     "device_id": "074c900ee7c8b28881037324c44066d1",
+     "entity_id": "500c0a6c246a50a1bb7a2906a049058f",
+     "domain": "switch",
+     "metadata": {
+      "secondary": false
+     }
+    },
+    {
+     "type": "power",
+     "platform": "device",
+     "device_id": "074c900ee7c8b28881037324c44066d1",
+     "entity_id": "db3ac007c30c172be6047415ab775653",
+     "domain": "sensor",
+     "metadata": {
+      "secondary": false
+     }
+    }
+   ],
+   "caps": {}
+  }
+ },
  "theme": {
   "dark": {
    "--secondary-text-color": "#9b9b9b",

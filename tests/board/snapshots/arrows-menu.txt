@@ -1,4 +1,4 @@
-style {64988 chars, #93bbbd21}
+style {65074 chars, #5a77e9d7}
 div.board.m-panel.pc
   aside.list
     div.lhead

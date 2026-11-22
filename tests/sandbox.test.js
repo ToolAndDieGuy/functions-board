@@ -466,6 +466,86 @@ const st = (sb, id) => (sb.get(id) || {}).state;
     check('0.11.1 pressing one fires the automation on it, not the other', st(sb, 'light.desk') === 'on' && st(sb, 'light.lamp') === 'off');
   }
 
+  // ---- 0.13.0 a device's own trigger pressed with a choice (a scene button's key): every trigger it satisfies starts,
+  // one set to another choice doesn't; one no automation uses can be pressed too
+  {
+    const scene = (key, value) => Object.assign({ trigger: 'device', device_id: 'kp', domain: 'zwave_js', type: 'event.value_notification.central_scene', property: 'scene', property_key: key, endpoint: 0, command_class: 91, subtype: 'Endpoint 0 Scene ' + key }, value === undefined ? {} : { value });
+    const on = (id) => [{ action: 'light.turn_on', target: { entity_id: id } }];
+    const fields = [{ name: 'value', required: false, options: [['0', 'KeyPressed'], ['1', 'KeyReleased'], ['2', 'KeyHeldDown']] }];
+    const listed = scene('001'); delete listed.trigger; listed.platform = 'device'; listed.metadata = {};
+    const sb = make({ 'light.a': S('off'), 'light.b': S('off'), 'light.c': S('off') }, {
+      'automation.pressed': { triggers: [scene('001', 0)], actions: on('light.a') },
+      'automation.any': { triggers: [scene('001')], actions: on('light.b') },
+      'automation.two': { triggers: [scene('002')], actions: on('light.c') },
+    }, { o: { pressMore: (t) => { const o = fields[0].options.find((x) => t.value != null && x[0] === String(t.value)); return o ? o[1] : ''; } } });
+    await sb.start();
+    const ins = sb.inputs();
+    check('0.13.0 a Z-Wave scene button is named by its device, its kind, the button and the choice set', ins.presses.some((x) => /^device:kp: central scene · Endpoint 0 Scene 001 · KeyPressed$/.test(x.label)), ins.presses);
+    await sb.userPress(lib.sbxPressKey(Object.assign({}, listed, { value: 2 })));
+    check('0.13.0 the button held: the trigger with no key set starts, the one set to pressed and the other button\'s don\'t', st(sb, 'light.b') === 'on' && st(sb, 'light.a') === 'off' && st(sb, 'light.c') === 'off');
+    await sb.userSet('light.b', 'off');
+    await sb.userPress(lib.sbxPressKey(Object.assign({}, listed, { value: 0 })));
+    check('0.13.0 the button pressed: both its triggers start (the value 0 in the config matches the choice "0")', st(sb, 'light.a') === 'on' && st(sb, 'light.b') === 'on' && st(sb, 'light.c') === 'off');
+    const tv = kinds(sb, 'trigger').filter((e) => e.key === 'automation.any').pop();
+    check('0.13.0 ... its trigger variables carry the choice pressed', !!tv && tv.vars && tv.vars.trigger && tv.vars.trigger.value === 0 && tv.vars.trigger.property_key === '001', tv);
+    check('0.13.0 the press is said with the device trigger it was, the choice named', sb.log.some((e) => e.kind === 'did' && e.key === 'device:kp' && /central scene · Endpoint 0 Scene 001 · KeyPressed/.test(e.text)), sb.log.filter((e) => e.kind === 'did'));
+    check('0.13.0 which of a device\'s triggers the Press row offers: one with no entity, and choices only from a list',
+      lib.sbxDevPressable(listed, { extra_fields: [{ type: 'select', name: 'value', options: [['0', 'KeyPressed']], optional: true }] })
+      && !lib.sbxDevPressable({ platform: 'device', device_id: 'kp', domain: 'zwave_js', type: 'zwave_js.value_updated.value' }, { extra_fields: [{ type: 'select', name: 'command_class', options: [['91', 'Central Scene']], required: true }, { type: 'string', name: 'property', required: true }] })
+      && !lib.sbxDevPressable({ platform: 'device', device_id: 'kp', domain: 'sensor', type: 'battery_level', entity_id: 'abc' }, {})
+      && lib.sbxDevFields({ extra_fields: [{ type: 'select', name: 'value', options: [['0', 'KeyPressed']] }, { type: 'positive_time_period_dict', name: 'for' }] }).map((f) => f.name).join() === 'value');
+  }
+
+  // ---- 0.13.0 an MQTT device trigger is the MQTT trigger it stands for: a message on its topic starts it, and pressing
+  // it sends that message, which everything else on the topic hears too
+  {
+    const defs = [
+      { device_id: 'rm', type: 'button_short_press', subtype: 'on', discovery_id: 'rm on', topic: 'fb/remote/action', payload: 'on_single', value_template: null },
+      { device_id: 'rm', type: 'button_short_press', subtype: 'off', discovery_id: 'rm off', topic: 'fb/remote/action', payload: 'off_single', value_template: null },
+      { device_id: 'z2', type: 'action', subtype: 'single', discovery_id: 'z2 single', topic: 'z2m/knob', payload: 'single', value_template: '{{ value_json.action }}' },
+      { device_id: 'odd', type: 'action', subtype: 'x', discovery_id: 'odd x', topic: 'odd/t', payload: 'X', value_template: '{{ value | upper }}' },
+    ];
+    const dev = (device_id, type, subtype) => ({ trigger: 'device', domain: 'mqtt', device_id, type, subtype });
+    const on = (id) => [{ action: 'light.turn_on', target: { entity_id: id } }];
+    let sb;
+    const tpl = async (t, v) => {
+      if (/value_json\.action/.test(t)) return { ok: true, value: v && v.value_json ? v.value_json.action : undefined };
+      if (/value \| upper/.test(t)) return { ok: true, value: String((v && v.value) || '').toUpperCase() };
+      return stubTpl(sb)(t, v);
+    };
+    sb = make({ 'light.on': S('off'), 'light.off': S('off'), 'light.any': S('off'), 'light.knob': S('off'), 'light.odd': S('off') }, {
+      'automation.on': { triggers: [dev('rm', 'button_short_press', 'on')], actions: on('light.on') },
+      // named by the discovery id Home Assistant looks it up by first (its subtype since renamed)
+      'automation.off': { triggers: [Object.assign(dev('rm', 'button_short_press', 'off_was'), { discovery_id: 'rm off' })], actions: on('light.off') },
+      'automation.topic': { triggers: [{ trigger: 'mqtt', topic: 'fb/remote/#' }], actions: on('light.any') },
+      'automation.knob': { triggers: [dev('z2', 'action', 'single')], actions: on('light.knob') },
+      'automation.odd': { triggers: [dev('odd', 'action', 'x')], actions: on('light.odd') },
+    }, { o: { devMqtt: defs, tpl } });
+    await sb.start();
+    const ins = sb.inputs();
+    check('0.13.0 the MQTT device triggers are on the Press row by their device, type and subtype', ['device:rm: button short press · on', 'device:rm: button short press · off was', 'device:z2: action · single'].every((l) => ins.presses.some((x) => x.label === l)), ins.presses);
+    await sb.userMqtt('fb/remote/action', 'on_single');
+    check('0.13.0 a message with its payload on its topic starts it (and the trigger on the whole topic), not the other button', st(sb, 'light.on') === 'on' && st(sb, 'light.off') === 'off' && st(sb, 'light.any') === 'on');
+    await sb.userSet('light.any', 'off');
+    await sb.userPress(ins.presses.find((x) => x.label === 'device:rm: button short press · off was').key);
+    const sent = kinds(sb, 'mqtt').pop();
+    check('0.13.0 pressing one (found by its discovery id) sends its payload on its topic', !!sent && sent.text === 'fb/remote/action' && sent.payload === 'off_single' && sent.by == null, sent);
+    check('0.13.0 ... which starts it and everything else on the topic', st(sb, 'light.off') === 'on' && st(sb, 'light.any') === 'on');
+    check('0.13.0 ... its start said as the device\'s button', kinds(sb, 'trigger').some((e) => e.key === 'automation.off' && e.text === 'Pressed: device:rm: button short press · off was'), kinds(sb, 'trigger').map((e) => e.text));
+    check('0.13.0 ... said as a press of the device, the message caused by it', sb.log.some((e) => e.kind === 'did' && e.key === 'device:rm' && e.id === sent.cause), { sent, did: kinds(sb, 'did') });
+    await sb.userPress(ins.presses.find((x) => x.label === 'device:z2: action · single').key);
+    check('0.13.0 a value template reading value_json.action: the payload goes as JSON, and the trigger starts', kinds(sb, 'mqtt').pop().payload === '{"action":"single"}' && st(sb, 'light.knob') === 'on', kinds(sb, 'mqtt'));
+    await sb.userPress(lib.sbxPressKey(dev('odd', 'action', 'x')));
+    check('0.13.0 a template that does more than read a value: the payload as it is, the trigger started anyway, and said', st(sb, 'light.odd') === 'on' && sb.log.some((e) => e.kind === 'note' && /couldn't be worked out/.test(e.text)));
+    check('0.13.0 the message an MQTT press sends, by value template', lib.sbxMqttSend('on', null).payload === 'on' && lib.sbxMqttSend('on', '{{ value }}').exact
+      && lib.sbxMqttSend('SINGLE', "{{ value_json['Button1'].Action }}").payload === '{"Button1":{"Action":"SINGLE"}}' && lib.sbxMqttSend('1', '{{ value_json.a.b }}').payload === '{"a":{"b":"1"}}'
+      && lib.sbxMqttSend('x', '{{ value_json.a | lower }}').exact === false && lib.sbxMqttSend(null, null).payload === '');
+    // a check made with the press replays it as the message, from the topics it's given
+    const c = lib.cleanCheck({ id: 'c1', at: at('20:00'), steps: [{ op: 'press', key: lib.sbxPressKey(dev('rm', 'button_short_press', 'on')) }], expect: [{ k: 'state', id: 'light.on', state: 'on' }, { k: 'state', id: 'light.any', state: 'on' }] });
+    const r = await runCheck(c, { states: { 'light.on': S('off'), 'light.any': S('off') }, items: [{ id: 'automation.on', cfg: { triggers: [dev('rm', 'button_short_press', 'on')], actions: on('light.on') } }, { id: 'automation.topic', cfg: { triggers: [{ trigger: 'mqtt', topic: 'fb/remote/#' }], actions: on('light.any') } }], devMqtt: defs, tz: TZ, tpl: async () => ({ ok: false, err: 'none' }), name: (x) => x, condText: () => '' });
+    check('0.13.0 a saved check\'s press of an MQTT button replays as its message', r.ok, r.res);
+  }
+
   // ---- 0.11.1 any trigger the sandbox can't see coming (Z-Wave value updated, geo location): fired from the Press row
   {
     const zw = { trigger: 'zwave_js.value_updated', entity_id: 'lock.front', command_class: 98, property: 'latchStatus', to: 'open' };
