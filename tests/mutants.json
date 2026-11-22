@@ -1970,5 +1970,37 @@
   "replace": "if (false) {",
   "suite": "sandbox",
   "expect": "restart: two triggers of one event"
+ },
+ {
+  "name": "backend: an MQTT entity's availability mode is always latest",
+  "file": "custom_components/functions_board/sources.py",
+  "find": "rule[\"avail\"] = {\"mode\": str(config.get(\"availability_mode\", \"latest\")), \"list\": avail}",
+  "replace": "rule[\"avail\"] = {\"mode\": \"latest\", \"list\": avail}",
+  "suite": "backend",
+  "expect": "discovery"
+ },
+ {
+  "name": "backend: an MQTT sensor's converted unit is followed anyway",
+  "file": "custom_components/functions_board/sources.py",
+  "find": "if getattr(entity, \"native_unit_of_measurement\", None) != getattr(entity, \"unit_of_measurement\", None):",
+  "replace": "if False:",
+  "suite": "backend",
+  "expect": "unit_is_converted"
+ },
+ {
+  "name": "backend: an MQTT entity's state topic is left out when it isn't followed",
+  "file": "custom_components/functions_board/sources.py",
+  "find": "topics: list[str] = [str(config[\"state_topic\"])] if config.get(\"state_topic\") else []",
+  "replace": "topics: list[str] = [str(config[\"state_topic\"])] if config.get(\"state_topic\") and how else []",
+  "suite": "backend",
+  "expect": "from_yaml|unit_is_converted"
+ },
+ {
+  "name": "backend: a binary sensor's off_delay is dropped",
+  "file": "custom_components/functions_board/sources.py",
+  "find": "rule[\"off_delay\"] = float(config[\"off_delay\"])",
+  "replace": "pass",
+  "suite": "backend",
+  "expect": "from_yaml"
  }
 ]
