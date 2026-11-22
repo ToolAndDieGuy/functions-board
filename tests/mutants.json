@@ -2036,5 +2036,13 @@
   "replace": "if (svc === 'mqtt.publish' && typeof data.topic === 'string' && data.topic && !TPL_RE.test(data.topic) && 'mqtt.publish') {",
   "suite": "static",
   "expect": "A4 MQTT"
+ },
+ {
+  "name": "sandbox: an MQTT entity on the board isn't given its topics",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "if (d && d.rule && d.rule.kind === 'mqtt') { this.mq.set(id, { rule: d.rule, mem: null }); return; }",
+  "replace": "if (d && d.rule && d.rule.kind === 'mqtt') { return; }",
+  "suite": "e2e-sandbox",
+  "expect": "the sandbox follows the lock's topic|published message unlocks the lock"
  }
 ]

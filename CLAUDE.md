@@ -87,7 +87,7 @@ returns everything the library section defines.
 | `tests/link.test.js` | `class Link` against a pretend Home Assistant: the newest answer wins, time limits, failures reported unless optional, lists in a fixed order, what the Diagnostics file carries |
 | `tests/store.test.js` | `class Store` on a pretend clock: an older answer never replaces a newer one, questions in flight shared, a change makes a fact stale, as of now, how old a fact may be, the rule for deleting |
 | `tests/diff/` (pytest) | the sandbox against Home Assistant's own core: every scenario in `corpus.js` run in both, step by step, the calls and states compared (weekly: 1,000 random homes from `random.js`, `FB_DIFF_RANDOM`, `FB_DIFF_SEED`) |
-| `tests/backend/` (pytest) | the Python side: setup, store, websocket commands, diagnostics; `test_privacy.py`: canary data through the anonymiser and the log, no network modules, the manifest (sockets are blocked in all of it) |
+| `tests/backend/` (pytest) | the Python side: setup, store, websocket commands, diagnostics; `test_mqtt_sources.py`: MQTT entities' topics and rules on the mocked broker; `test_privacy.py`: canary data through the anonymiser and the log, no network modules, the manifest (sockets are blocked in all of it) |
 | `tests/board/smoke.test.js` | the board starts, imports and draws the garage, on the fake |
 | `tests/board/a11y.test.js` | axe-core (WCAG 2.2 AA) on every view in dark and light mode, with a problem on the board; the keyboard (roving box focus, arrows, Space, Enter, Escape, dialog and drawer focus in and back); spoken names; less motion |
 | `tests/board/layout.test.js` | large synthetic functions in both directions: no overlap, arrows 16 px apart, none through a box, every crossing hops, rows wrap |
@@ -102,7 +102,7 @@ returns everything the library section defines.
 | `tests/e2e/regress.test.js [FB_ONLY]` | the regress cases that need the real Home Assistant, named by version (`0.7.0 …`) |
 | `tests/e2e/tools.test.js` | debugger, live checks, tests, arrow editor, Node-RED |
 | `tests/e2e/sync.test.js` | two boards editing at once |
-| `tests/e2e/sandbox.test.js` | the sandbox on the garage function, templates rendered by the real Home Assistant, nothing sent that changes anything |
+| `tests/e2e/sandbox.test.js` | the sandbox on the garage function, templates rendered by the real Home Assistant, an MQTT entity on the test home's broker, nothing sent that changes anything (nor published) |
 | `tests/e2e/versions.test.js` | versions on the garage: save, compare in a tab, sandbox a version, restore (off/delete what was added since), replaced devices |
 | `tests/e2e/privacy.test.js` | a tour of everything: every request the board starts goes to this Home Assistant; no connection from the integration (`ha/netguard.log`); its data only in its own `.storage` files; nothing without an admin login; the Diagnostics dialog's forced choice and its files |
 | `tests/e2e/size.test.js` | 1,000 automations: import and open times (slow; `--size`) |
@@ -191,10 +191,13 @@ returns everything the library section defines.
   The order things happen in (0.11.2) is Home Assistant's: `_dispatch()` is its event bus, so a state change or
   event made while another is being handed out waits in a queue until that one is done. Handing one out fires its
   triggers in order; for each, the automation's variables and conditions are looked at first (`_triggered`), then
-  its mode, then its run goes as far as it goes at once (to its first wait or its end, `_parked`) before the next
-  trigger. Only the waits listening when a change happened hear it (`_listening`), and a wait it satisfies goes on
-  after the handing out. `tests/diff` holds all of this to Home Assistant's core: when it finds a difference, put
-  the smallest scenario that shows it in `tests/diff/corpus.js` with the fix.
+  its mode, then its run goes as far as it goes at once (to its first wait, an MQTT publish or its end, `_parked`)
+  before the next trigger. Only the waits listening when a change happened hear it (`_listening`), and a wait it
+  satisfies goes on after the handing out. In general (0.11.3) a run that awaits (woken from a delay or a wait,
+  after `mqtt.publish`, restarted while the old run stops) goes on only after the work in hand: the handing out,
+  or every timer due at that moment, which `advance` runs as one round (`_later`). `tests/diff` holds all of this
+  to Home Assistant's core: when it finds a difference, put the smallest scenario that shows it in
+  `tests/diff/corpus.js` with the fix, and a check in `tests/sandbox.test.js`.
   Helpers that follow what they read (0.11.2): `functions_board/sources` gives a template, min/max, threshold or
   group helper's `rule` (read from the live entity, like the template listeners); the board passes them as
   `derived` (`_followRules`, which asks for any it's missing) and the engine applies Home Assistant's rules
@@ -204,6 +207,10 @@ returns everything the library section defines.
   states at a period's start (`sbxHistory`, from `history/history_during_period`), replays the inputs' real
   changes as steps and compares outputs and runs (`last_triggered` against each run's `started`) with
   `sbxCompare`.
+  MQTT entities (0.11.3) follow their topics: `functions_board/sources` gives each its topics and a rule (`sources.py`
+  `_mqtt`, read from the entity as Home Assistant's MQTT platforms use it) and the engine applies a message to them
+  after the MQTT triggers (`_mqttEnts`). The board asks for every MQTT entity on it, member or not, draws an arrow
+  from each of its exact topics' boxes into it, and a publish to a literal topic is an arrow to that topic's box.
 - **Import** (0.11.0): `findFunctions(roles, info)` in the library section makes **parts** (what belongs together on
   any reading: helpers, scripts and scenes that link pieces, with category and name fences; an automation that only
   switches others; Node-RED groups, a tab's and tabs named alike; pieces starting from one device, actuator or
