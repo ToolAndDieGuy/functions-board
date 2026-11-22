@@ -212,6 +212,13 @@ returns everything the library section defines.
   states at a period's start (`sbxHistory`, from `history/history_during_period`), replays the inputs' real
   changes as steps and compares outputs and runs (`last_triggered` against each run's `started`) with
   `sbxCompare`.
+  A device's own triggers (0.13.0): the Press row offers every one of the function's devices has (the device boxes,
+  its entities' devices, those its device triggers name), from `device_automation/trigger/list` and `/capabilities`,
+  kept in the store as `'dtrig:<device>'` (`_readDevTrig`); those with an entity are left to the Set row, and one asking
+  for a setting with no list of choices (Z-Wave value updated) is left out (`sbxDevPressable`). A press with a choice
+  starts every trigger whose settings it has (`sbxPressHits`). An MQTT device trigger is rewritten into the MQTT trigger
+  Home Assistant attaches for it (`sbxDevMqtt`, from the device's `mqtt/device/debug_info`), and its press is sent as the
+  message (`sbxMqttSend`). The fake answers these from `devTrig` in `garage.json`.
   MQTT entities (0.11.3) follow their topics: `functions_board/sources` gives each its topics and a rule (`sources.py`
   `_mqtt`, read from the entity as Home Assistant's MQTT platforms use it) and the engine applies a message to them
   after the MQTT triggers (`_mqttEnts`). The board asks for every MQTT entity on it, member or not, draws an arrow

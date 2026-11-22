@@ -9,6 +9,8 @@ const path = require('path');
 const ha = require('../e2e/ha-api');
 
 const OUT = path.join(__dirname, 'garage.json');
+// a device trigger as a key: its settings, keys sorted (the fake answers capabilities by it)
+const trigKey = (t) => JSON.stringify(t, (k, v) => (v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.keys(v).sort().map((x) => [x, v[x]])) : v));
 
 async function theme() {
   const { chromium } = require('playwright');
@@ -58,6 +60,23 @@ async function theme() {
   // what each purpose-specific trigger and condition can target (the board reads these once)
   const triggerPlatforms = await ha.first({ type: 'trigger_platforms/subscribe' }), conditionPlatforms = await ha.first({ type: 'condition_platforms/subscribe' });
   const board = await ha.ws({ type: 'functions_board/get' });
+  // each device's own triggers (0.13.0), as the sandbox's Press row asks for them: the list, the capabilities of those
+  // with no entity (by the trigger, keys sorted), and an MQTT device's debug info (its triggers' discovery configs;
+  // the messages it last had left out)
+  const devTrig = {};
+  for (const d of devices) {
+    const list = await ha.ws({ type: 'device_automation/trigger/list', device_id: d.id }).catch(() => []);
+    if (!list.length) continue;
+    const caps = {};
+    for (const t of list.filter((x) => x.entity_id == null)) caps[trigKey(t)] = await ha.ws({ type: 'device_automation/trigger/capabilities', trigger: t });
+    const rec = { list, caps };
+    if (list.some((t) => t.domain === 'mqtt')) {
+      const info = await ha.ws({ type: 'mqtt/device/debug_info', device_id: d.id });
+      info.entities.forEach((e) => { e.subscriptions.forEach((x) => { x.messages = []; }); e.transmitted = []; });
+      rec.mqtt = info;
+    }
+    devTrig[d.id] = rec;
+  }
   // times in states are from the moment of capture; the fake moves them to its own clock
   const snap = {
     captured: new Date().toISOString().slice(0, 10), ha: config.version,
@@ -65,6 +84,7 @@ async function theme() {
     panel: panels.functions, manifests: manifests.map((m) => ({ domain: m.domain, name: m.name, integration_type: m.integration_type })),
     users: users.map((u) => ({ id: u.id, name: u.name, is_owner: u.is_owner, is_active: u.is_active, system_generated: u.system_generated, group_ids: u.group_ids })),
     autos, scripts, autoByEntity, entries, mode: board.mode, triggerPlatforms, conditionPlatforms, helperLists,
+    devTrig,
   };
   // Home Assistant's theme as the board sees it, dark and light: the CSS variables it reads (its colours, so the
   // accessibility audit on the fake judges the same contrast)

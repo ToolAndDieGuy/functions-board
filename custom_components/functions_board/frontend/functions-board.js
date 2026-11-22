@@ -2713,7 +2713,7 @@ i.fsn{font-style:normal;display:inline-block;min-width:16px;height:16px;padding:
 .sbrow{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .sbl{width:64px;font-size:12px;color:var(--secondary-text-color)}
 .sbrow select,.sbrow input:not([type=checkbox]){font:inherit;font-size:12.5px;padding:4px 8px;border-radius:8px;border:1px solid var(--divider-color);background:var(--card-background-color);color:var(--primary-text-color);min-width:0}
-.sbrow .sbent,.sbrow .sbrun,.sbrow .sbpress{flex:1 1 170px}.sbrow .sbattr{flex:0 1 120px}.sbrow .sbhook,.sbrow .sbcal{flex:1 1 140px}.sbrow .sbsay,.sbrow .sbjump{flex:2 1 200px}.sbrow .sbtrig{flex:1 1 150px}.sbrow .sbtop{flex:1 1 160px}.sbrow .sbpay{flex:1 1 140px}.sbrow .sbval{flex:0 1 130px}.sbrow .sbev{flex:1 1 140px}.sbrow .sbevd{flex:2 1 170px}
+.sbrow .sbent,.sbrow .sbrun,.sbrow .sbpress{flex:1 1 170px}.sbpressx{display:contents}.sbpressx[hidden]{display:none}.sbrow .sbpf{flex:0 1 130px}.sbrow .sbattr{flex:0 1 120px}.sbrow .sbhook,.sbrow .sbcal{flex:1 1 140px}.sbrow .sbsay,.sbrow .sbjump{flex:2 1 200px}.sbrow .sbtrig{flex:1 1 150px}.sbrow .sbtop{flex:1 1 160px}.sbrow .sbpay{flex:1 1 140px}.sbrow .sbval{flex:0 1 130px}.sbrow .sbev{flex:1 1 140px}.sbrow .sbevd{flex:2 1 170px}
 .sbrow .chip:disabled{opacity:.5;cursor:default}
 .sbcb{display:inline-flex;gap:4px;align-items:center;font-size:12px;color:var(--secondary-text-color)}
 .sbdue{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;padding:6px 10px;font-size:11.5px;border-bottom:1px solid var(--divider-color)}.sbdue:empty{display:none}
@@ -3246,6 +3246,10 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       sbx_press: 'Press',
       sbx_press_what: 'A device\'s button, or another trigger to fire',
       sbx_press_b: 'Press',
+      sbx_g_used: 'Used by the automations',
+      sbx_g_devtrig: 'The devices\' other triggers',
+      sbx_press_field: '{name} of the trigger pressed',
+      sbx_mqtt_press_as_is: 'Its value template does more than read a value, so the message to send couldn\'t be worked out: sent {payload} to {topic} as it is, and started the triggers on it anyway. To check how the template reads a real message, send that on the MQTT row.',
       sbx_webhook: 'Webhook',
       sbx_method: 'Method',
       sbx_body_empty: 'No body ({})',
@@ -3455,7 +3459,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       sbxi_l_board: '<b>Only the automations and scripts on this board run</b>, unless you tick Whole home below: then automations elsewhere that start from what this function reads or changes run too. Node-RED flows, alerts and an integration\'s own logic never run here, so a chain through them stops at the edge.',
       sbxi_l_devices: '<b>Devices answer at once.</b> A light turned on is simply on, unless the Device row makes it slow, fail or go unavailable. Values don\'t change by themselves: a temperature stays where it is until you set it. Template, min/max, threshold and group helpers follow what they read, as in Home Assistant; other helpers worked out from something (a derivative, a utility meter) stay as they are.',
       sbxi_l_calls: '<b>Some calls change nothing here.</b> Notifications, TTS and log messages are listed as messages. Scenes, device actions and services the sandbox doesn\'t know are listed as calls it would make, without their effect.',
-      sbxi_l_triggers: '<b>Some triggers are yours to fire.</b> A device\'s own buttons (ZHA, Z-Wave, Hue), webhooks, tags, calendars, Assist and Home Assistant starting have their own rows; one the sandbox can\'t see coming (Z-Wave value updated, geo location) is fired from the Press row. Zones and the sun follow the states and the clock. Calendar offsets and the sun\'s exact times are approximate.',
+      sbxi_l_triggers: '<b>Some triggers are yours to fire.</b> A device\'s own buttons (ZHA, Z-Wave, Hue, MQTT), webhooks, tags, calendars, Assist and Home Assistant starting have their own rows. The Press row lists every trigger the function\'s devices have, not only those its automations use, with the choices Home Assistant offers for each (a scene button pressed, held or released); an MQTT device\'s is sent as the message it stands for, which everything on that topic hears. One the sandbox can\'t see coming (Z-Wave value updated, geo location) is fired from the Press row too. Zones and the sun follow the states and the clock. Calendar offsets and the sun\'s exact times are approximate.',
       sbxi_l_ask: '<b>Some answers come from you.</b> An integration\'s own conditions, and templates Home Assistant can\'t render, are asked in the drawer. The result is only as good as your answer.',
       sbxi_l_tpl: '<b>Templates are rendered by Home Assistant</b> from the sandbox\'s states and clock. Ones that read locations (closest, distance) read your real home, and are marked partly real.',
       sbxi_l_nodered: '<b>Node-RED flows don\'t run.</b> Their boxes show what they use, but what a flow would do isn\'t simulated.',
@@ -4803,6 +4807,64 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     Object.keys(t).filter((k) => !SBX_DEV_SKIP.has(k)).sort().forEach((k) => { o[k] = t[k]; });
     return JSON.stringify(o);
   }
+  // ---- a device's own triggers (0.13.0) ----------------------------------------------------------------------------
+  // what's pressed (pick: a press key read back) starts a device trigger when every setting the trigger has is the
+  // pressed one's, as in Home Assistant: one set to a scene button's KeyPressed starts on that only, one with no value
+  // set on any. Any other trigger fired from the Press row is the one pressed, setting for setting
+  function sbxPressHits(t, pick) {
+    if (!t || !pick) return false;
+    if ((t.trigger || t.platform) !== 'device') return sbxPressKey(t) === sbxPressKey(pick);
+    const same = (a, b) => ((a !== null && typeof a === 'object') || (b !== null && typeof b === 'object') ? canonJSON(a) === canonJSON(b) : String(a) === String(b));
+    return Object.keys(t).filter((k) => !SBX_DEV_SKIP.has(k)).every((k) => k in pick && same(t[k], pick[k]));
+  }
+  // an MQTT device trigger, as Home Assistant listens for it: an MQTT trigger on the topic and payload of its discovery
+  // config (defs: [{ device_id, type, subtype, discovery_id, topic, payload, value_template }], from the device's
+  // MQTT debug info). So a message on the topic starts it, and pressing it sends the message, which everything else on
+  // the topic hears too. Found as Home Assistant finds it: by its discovery id when the trigger names one, else by
+  // device, type and subtype
+  const sbxMqKey = (d) => `${d.device_id}|${d.type}|${d.subtype}`;
+  function sbxMqDef(t, defs) {
+    const list = (defs || []).filter((x) => x && x.topic);
+    return (t.discovery_id != null && list.find((x) => x.discovery_id === t.discovery_id)) || list.find((x) => x.device_id === t.device_id && x.type === t.type && x.subtype === t.subtype) || null;
+  }
+  function sbxDevMqtt(t, defs) {
+    if (!t || typeof t !== 'object' || (t.trigger || t.platform) !== 'device' || t.domain !== 'mqtt') return null;
+    const d = sbxMqDef(t, defs);
+    if (!d) return null;
+    const out = { trigger: 'mqtt', topic: d.topic, _dev: t, _mq: sbxMqKey(d) };
+    if (d.payload) out.payload = d.payload;
+    if (d.value_template) out.value_template = d.value_template;
+    ['id', 'enabled', 'variables'].forEach((k) => { if (t[k] !== undefined) out[k] = t[k]; });
+    return out;
+  }
+  // the message an MQTT device trigger's press sends: its payload, where its value template reads it ({{ value }},
+  // {{ value_json.action }}, {{ value_json['Button1'].Action }}). exact: false when the template does more than read
+  // a value: the payload goes as it is, and the trigger is started anyway
+  function sbxMqttSend(payload, tpl) {
+    const p = payload == null ? '' : String(payload);
+    if (!tpl || /^\s*\{\{\s*value\s*\}\}\s*$/.test(String(tpl))) return { payload: p, exact: true };
+    const m = /^\s*\{\{\s*value_json((?:\s*\.\s*[A-Za-z_]\w*|\s*\[\s*(?:'[^']*'|"[^"]*")\s*\])+)\s*\}\}\s*$/.exec(String(tpl));
+    if (!m) return { payload: p, exact: false };
+    const keys = [...m[1].matchAll(/\.\s*([A-Za-z_]\w*)|\[\s*(?:'([^']*)'|"([^"]*)")\s*\]/g)].map((x) => (x[1] != null ? x[1] : x[2] != null ? x[2] : x[3]));
+    const out = keys.reduceRight((v, k) => ({ [k]: v }), p);
+    return { payload: JSON.stringify(out), exact: true };
+  }
+  // a device trigger's settings chosen from its capabilities (Home Assistant's extra_fields): the select ones, each
+  // with its options as [value, label]
+  function sbxDevFields(caps) {
+    return toList(caps && caps.extra_fields).filter((f) => f && f.type === 'select' && Array.isArray(f.options) && f.options.length && typeof f.name === 'string' && !SBX_DEV_SKIP.has(f.name))
+      .map((f) => ({ name: f.name, required: !!f.required, options: f.options.map((o) => (Array.isArray(o) ? [o[0], String(o[1] != null ? o[1] : o[0])] : [o, String(o)])) }));
+  }
+  // what the Press row offers of a device's own triggers: those with no entity (the others are its entities' states,
+  // set on the Set row), and not those that ask for a setting it can't offer a choice for (a Z-Wave value's command
+  // class and property)
+  function sbxDevPressable(t, caps) {
+    if (!t || typeof t !== 'object' || t.entity_id != null || !t.device_id) return false;
+    const sel = new Set(sbxDevFields(caps).map((f) => f.name));
+    return !toList(caps && caps.extra_fields).some((f) => f && f.required && !sel.has(f.name));
+  }
+  // a choice picked on the Press row: a number-like value as a number, as the automation editor stores it
+  const sbxNum = (v) => (typeof v === 'string' && /^-?\d+$/.test(v) ? +v : v);
   // an Assist sentence template as a pattern: [optional words], (one|or|another), {slot}; slots come back by name
   function sbxSentence(tpl) {
     const names = [];
@@ -5094,11 +5156,12 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       }
     }
     _trigs(it) { return this._asTrigs(it.cfg.triggers != null ? it.cfg.triggers : it.cfg.trigger); }
-    // a list of triggers, a device one on an entity as the trigger it stands for (the same object each time)
+    // a list of triggers, a device one on an entity as the trigger it stands for, an MQTT device one as the MQTT
+    // trigger it is (0.13.0); the same object each time
     _asTrigs(list) {
       return toList(list).filter((t) => t && typeof t === 'object').map((t) => {
         if ((t.trigger || t.platform) !== 'device') return t;
-        if (!this.devT.has(t)) this.devT.set(t, sbxDevTrig(t, this.o.entityOf) || t);
+        if (!this.devT.has(t)) this.devT.set(t, sbxDevTrig(t, this.o.entityOf) || sbxDevMqtt(t, this.o.devMqtt) || t);
         return this.devT.get(t);
       });
     }
@@ -5210,17 +5273,40 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     // an integration's own device trigger (a ZHA or Z-Wave button, a Hue remote), or any trigger the sandbox has no
     // way to see coming (Z-Wave value updated, a KNX telegram, geo location): fired by you, every trigger that is it,
     // as it's configured
+    // A device's own trigger (0.13.0) need not be one an automation here uses: any the device has, with the settings
+    // you chose (a scene button's key held), starts every trigger it satisfies. An MQTT device's is the message it
+    // stands for, sent on its topic (sbxMqttSend)
     userPress(key) {
+      let pick = null;
+      try { pick = JSON.parse(key); } catch (e) { pick = null; }
+      if (!pick || typeof pick !== 'object') pick = {};
+      const dev = typeof pick.device_id === 'string' ? pick.device_id : null;
+      const def = dev && pick.domain === 'mqtt' ? sbxMqDef(pick, this.o.devMqtt) : null;
+      if (def) return this._pressMqtt(pick, def);
       let label = '';
       this.items.forEach((it) => { if (it.kind === 'automation') this._trigs(it).forEach((t) => { if (sbxPressKey(t) === key) label = label || this._pressText(t); }); });
-      let dev = null;
-      try { dev = (JSON.parse(key) || {}).device_id; } catch (e) { dev = null; }
-      return this._userTrig({ kind: 'did', key: typeof dev === 'string' ? 'device:' + dev : 'press:', text: T('sbx_pressed', { what: label }) },
-        (t) => this._plat(t) !== 'state' && sbxPressKey(t) === key, (t) => Object.fromEntries(Object.entries(t).filter(([k]) => !SBX_DEV_SKIP.has(k))));
+      if (!label && dev) label = this._pressText(Object.assign({ trigger: 'device' }, pick));
+      const own = (x) => Object.fromEntries(Object.entries(x).filter(([k]) => !SBX_DEV_SKIP.has(k)));
+      return this._userTrig({ kind: 'did', key: dev ? 'device:' + dev : 'press:', text: T('sbx_pressed', { what: label || key }) },
+        (t) => this._plat(t) !== 'state' && !t._mq && sbxPressHits(t, pick), (t) => Object.assign(own(t), (this._plat(t) === 'device' ? own(pick) : {})));
+    }
+    async _pressMqtt(pick, def) {
+      const send = sbxMqttSend(def.payload, def.value_template);
+      this._fresh();
+      await new Promise((r) => {
+        this._task(async () => {
+          const lid = this._log({ kind: 'did', by: 'you', key: 'device:' + def.device_id, text: T('sbx_pressed', { what: this._pressText(Object.assign({ trigger: 'device' }, pick)) }) });
+          if (!send.exact) this._log({ kind: 'note', key: 'mqtt:' + def.topic, text: T('sbx_mqtt_press_as_is', { topic: def.topic, payload: send.payload }) });
+          await this.mqtt(def.topic, send.payload, lid, false, send.exact ? null : sbxMqKey(def));
+          r();
+        });
+      });
+      await this.settle();
     }
     _pressText(t) {
       if (this._plat(t) === 'device') {
-        const what = [t.type, t.subtype].filter((x) => x != null && x !== '').map((x) => String(x).replace(/_/g, ' ')).join(' · ');
+        const more = this.o.pressMore ? this.o.pressMore(t) : '';
+        const what = [t.type, t.subtype].filter((x) => x != null && x !== '').map((x, i) => (i === 0 ? String(x).split('.').pop() : String(x)).replace(/_/g, ' ')).concat(more ? [more] : []).join(' · ');
         return `${t.device_id ? this._name('device:' + t.device_id) : t.domain}: ${what || t.domain}`;
       }
       const rest = Object.entries(t).filter(([k, v]) => !SBX_DEV_SKIP.has(k) && v != null && typeof v !== 'object').map(([k, v]) => `${k} ${v}`).join(', ');
@@ -5275,16 +5361,18 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     // an MQTT message: the triggers on its topic (+ and # wildcards), and a publish in a script reaches them too
     async _mqttMatch(t, msg) {
       if (!t.topic || !sbxTopic(t.topic, msg.topic)) return false;
-      if (t.payload == null) return true;
+      if (t.payload == null || (msg.forced && t._mq === msg.forced)) return true;
       let v = msg.payload;
       if (t.value_template) { const r = await this.o.tpl(String(t.value_template), { value: msg.payload, value_json: msg.payload_json }, this); v = r.ok ? r.value : undefined; }
       return String(v) === String(t.payload);
     }
-    async mqtt(topic, payload, cause, byYou) {
+    // forced (0.13.0): an MQTT device trigger pressed whose value template couldn't be read backwards starts anyway
+    async mqtt(topic, payload, cause, byYou, forced) {
       const text = typeof payload === 'string' ? payload : payload == null ? '' : JSON.stringify(payload);
       let pj = null;
       try { pj = JSON.parse(text); } catch (e) { /* not JSON */ }
       const msg = { topic: String(topic), payload: text, payload_json: pj, qos: 0 };
+      if (forced) Object.defineProperty(msg, 'forced', { value: forced });
       const lid = this._log({ kind: 'mqtt', key: 'mqtt:' + msg.topic, text: msg.topic, payload: text, cause, by: byYou ? 'you' : null });
       await this._dispatch(async () => {
         const ws = this._listening();
@@ -5810,6 +5898,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (p === 'calendar') { const name = this._name(String(t.entity_id)), summary = (tv.calendar_event || {}).summary || ''; return tv.event === 'end' ? T('sbx_cal_ends', { name, summary }) : T('sbx_cal_starts', { name, summary }); }
       if (p === 'conversation') return T('sbx_said', { s: tv.sentence });
       if (p === 'device' || !SBX_PLATS.has(p)) return T('sbx_pressed', { what: this._pressText(t) });
+      // an MQTT device trigger (0.13.0): the device's button, whichever way its message came
+      if (p === 'mqtt' && t._mq) return T('sbx_pressed', { what: this._pressText(t._dev) });
       return String(p || '');
     }
     _start(it, vars, cause, opt) {
@@ -6405,6 +6495,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           else if (p === 'zone') toList(t.entity_id).forEach((id) => zones(id, t.zone, name));
           else if (p === 'template') reads(t.value_template);
           else if (p === 'time') toList(t.at).forEach((a) => { if (EXACT_RE.test(String(a))) slot(String(a), null); });
+          else if (p === 'mqtt' && t._mq) presses.set(sbxPressKey(t._dev), this._pressText(t._dev));
           else if ((p === 'device' && !t._dev) || (!SBX_PLATS.has(p) && !spec && p)) presses.set(sbxPressKey(t), this._pressText(t));
           else if (p === 'webhook' && t.webhook_id != null) hooks.set(String(t.webhook_id), toList(t.allowed_methods || ['POST', 'PUT']).map(String));
           else if (p === 'tag') toList(t.tag_id).forEach((x) => tags.add(String(x)));
@@ -7224,7 +7315,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._watch = new Map(); this._toastActs = [];
       // what the board knows of Home Assistant, each fact with the time it was asked (0.10.0): the registries ('reg'),
       // configs ('cfg:<entity id>'), and the time of the shared board data ('data')
-      this._store = new Store((key) => (key === 'reg' ? this._fetchRegistries() : key.startsWith('cfg:') ? this._readConfig(key.slice(4)) : Promise.reject(new Error('the store has no way to read ' + key))));
+      this._store = new Store((key) => (key === 'reg' ? this._fetchRegistries() : key.startsWith('cfg:') ? this._readConfig(key.slice(4)) : key.startsWith('dtrig:') ? this._readDevTrig(key.slice(6)) : Promise.reject(new Error('the store has no way to read ' + key))));
       this._undoStack = []; this._redoStack = [];
       this._tgt = new Map(); this._src = new Map();
       // developer tools (Phase 9): simulated states, trigger watches, check results, monitors, the debugger
@@ -7700,7 +7791,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     _subscribe() {
       if (this._unsubs.length || !this._hass) return;
       const c = this._haConn;
-      const reload = () => { this._store.changed('reg'); this._clock.after('reg', 1200, () => this._reload()); };
+      const reload = () => { this._store.changed('reg'); this._store.changed('dtrig:'); this._clock.after('reg', 1200, () => this._reload()); };
       this._unsubs = [
         c.subscribeEvents((ev) => this._onRegistry(ev), 'entity_registry_updated'),
         // devices: only creation, removal, and labels, names or areas changing matter to the board (5.5)
@@ -11946,7 +12037,11 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         entityOf: (x) => this._entOfReg(x), scene: (id) => this._sceneCfg(id), derived: await this._followRules(own, this._hass.states) };
       const rec = have && have.gen === gen ? have : { gen, res: new Map() };
       for (const c of list) {
-        try { const r = await runCheck(c, Object.assign({ items: await itemsFor(c) }, o)); rec.res.set(c.id, { ok: r.ok, unsure: r.unsure, res: r.res }); }
+        try {
+          const items = await itemsFor(c);
+          const r = await runCheck(c, Object.assign({ items, devMqtt: (await this._devTrigs(this._devIdsIn(items.map((x) => x.cfg), true), true)).mqtt }, o));
+          rec.res.set(c.id, { ok: r.ok, unsure: r.unsure, res: r.res });
+        }
         catch (e) { rec.res.set(c.id, { ok: false, unsure: (e && e.message) || String(e), res: [] }); }
       }
       rec.at = Date.now();
@@ -13427,6 +13522,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       // the engine's settings, kept: rewinding makes a new one from the same start, and so does the explorer (0.11.2)
       // the helpers that follow what they read: their rules, asked now if the board let go of them (a config changed)
       const derived = this._model ? await this._followRules(this._model.nodes, states) : {};
+      // the triggers of the function's devices (0.13.0): every one the Press row can offer, and MQTT ones' topics
+      const dt = await this._devTrigs(this._sbxDevIds(cfgs));
+      g.devPress = dt.press;
       const wholeNote = outside.size ? [P('sbx_whole_n', outside.size, { list: [...outside].map((k) => this._boxName(k)).join(', ') })] : [];
       g.opts = {
         states, items: ids.map((id, i) => ({ id, cfg: cfgs[i], outside: outside.has(id) })), now, tz: this._hass.config && this._hass.config.time_zone, notes: wholeNote,
@@ -13434,7 +13532,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         name: (id) => this._boxName(id), condText: (c) => condText(c, (x) => this._boxName(x)), onLog: () => this._sbxLogged(),
         entityOf: (x) => this._entOfReg(x), scene: (id) => this._sceneCfg(id), actText: (a) => this._actText(a),
         onPause: () => this._renderSbx(),
-        derived,
+        derived, devMqtt: dt.mqtt, pressMore: (t) => this._pressMore(t),
       };
       g.eng = new Sandbox(g.opts);
       g.tab = 'tl';
@@ -13527,6 +13625,77 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         analyze(it.cfg, it.id.startsWith('script.'), known).refs.forEach((r) => { if (r.role === 'action' && r.ref.startsWith('nact:') && !out.has(r.ref.slice(5))) out.set(r.ref.slice(5), r.title || r.ref.slice(5)); });
       });
       return [...out].map(([action, title]) => ({ action, title }));
+    }
+    // ---- a device's own triggers (0.13.0) ----
+    // the devices whose triggers the Press row offers: the device boxes on the board, the devices of its entities, and
+    // those the automations' device triggers name (at most 60)
+    _sbxDevIds(cfgs) {
+      const out = new Set();
+      [...this._model.nodes.keys()].forEach((k) => {
+        if (k.startsWith('device:')) out.add(k.slice(7));
+        else if (!k.includes(':')) { const e = this._entMap.get(k); if (e && e.device_id) out.add(e.device_id); }
+      });
+      this._devIdsIn(cfgs).forEach((d) => out.add(d));
+      return [...out].filter((d) => this._devMap.has(d)).slice(0, 60);
+    }
+    // the devices named by the device triggers in these configs (mqtt: only MQTT ones)
+    _devIdsIn(cfgs, mqtt) {
+      const out = new Set();
+      const walk = (x) => {
+        if (Array.isArray(x)) { x.forEach(walk); return; }
+        if (!x || typeof x !== 'object') return;
+        if ((x.trigger || x.platform) === 'device' && typeof x.device_id === 'string' && (!mqtt || x.domain === 'mqtt')) out.add(x.device_id);
+        Object.values(x).forEach(walk);
+      };
+      walk(cfgs);
+      return [...out];
+    }
+    // what these devices' triggers offer: press, [{ key, t, fields, dev }] (with no entity, as sbxDevPressable),
+    // and mqtt, the MQTT ones' topics and payloads. onlyMqtt: just those, asked only of devices with MQTT triggers
+    async _devTrigs(ids, onlyMqtt) {
+      const press = [], mqtt = [];
+      const held = await Promise.all(ids.map((id) => this._ha.quiet(this._store.asOfNow('dtrig:' + id, 3e5), 'each call it makes reports its own failure', null)));
+      held.forEach((h, i) => {
+        if (!h) return;
+        mqtt.push(...h.mqtt);
+        if (onlyMqtt) return;
+        h.trigs.forEach((x) => press.push({ key: sbxPressKey(x.t), t: x.t, fields: x.fields, dev: ids[i] }));
+      });
+      return { press, mqtt };
+    }
+    // one device's triggers, as Home Assistant lists them for its automation editor, with the choices each offers
+    // (its capabilities) and, for an MQTT device, each trigger's topic and payload (its discovery config, from the
+    // device's MQTT debug info). Kept in the store as 'dtrig:<device>' (five minutes; a device registry change makes
+    // it stale)
+    async _readDevTrig(id) {
+      const list = await this._ws({ type: 'device_automation/trigger/list', device_id: id }, { optional: 'a device whose integration lists no triggers, or one just removed', fallback: [] });
+      const own = toList(list).filter((t) => t && typeof t === 'object' && t.entity_id == null && t.device_id === id);
+      const caps = await Promise.all(own.map((t) => this._ws({ type: 'device_automation/trigger/capabilities', trigger: t }, { optional: 'an integration that has no settings to offer for its trigger', fallback: {} })));
+      const trigs = own.map((t, i) => ({ t, caps: caps[i] })).filter((x) => sbxDevPressable(x.t, x.caps)).map((x) => ({ t: x.t, fields: sbxDevFields(x.caps) }));
+      let mqtt = [];
+      if (own.some((t) => t.domain === 'mqtt')) {
+        const info = await this._ws({ type: 'mqtt/device/debug_info', device_id: id }, { optional: 'MQTT not loaded, or the device just removed', fallback: null });
+        mqtt = toList(info && info.triggers).map((x) => {
+          const p = (x && x.discovery_data && x.discovery_data.payload) || {};
+          return { device_id: id, type: p.type, subtype: p.subtype, discovery_id: Array.isArray(x.trigger_key) ? x.trigger_key[1] : null, topic: typeof p.topic === 'string' ? p.topic : null, payload: p.payload != null ? String(p.payload) : null, value_template: typeof p.value_template === 'string' ? p.value_template : null };
+        }).filter((d) => d.topic && d.type != null && d.subtype != null);
+      }
+      return { trigs, mqtt };
+    }
+    // a device trigger's choices, as the device's list names them (a scene button's KeyHeldDown), for its name
+    _pressMore(t) {
+      if (!t || typeof t.device_id !== 'string') return '';
+      const h = this._store.get('dtrig:' + t.device_id), x = h && h.trigs.find((y) => sbxPressHits(Object.assign({ trigger: 'device' }, y.t), t));
+      if (!x) return '';
+      return x.fields.filter((f) => t[f.name] != null).map((f) => { const o = f.options.find((y) => String(y[0]) === String(t[f.name])); return o ? o[1] : String(t[f.name]); }).join(' · ');
+    }
+    // the choices of the trigger picked on the Press row, one dropdown each
+    _sbxPressFields() {
+      const d = this._$.drawer, sel = d.querySelector('.sbpress'), box = d.querySelector('.sbpressx'), g = this._sbx;
+      if (!sel || !box || !g) return;
+      const x = (g.devPress || []).find((y) => y.key === sel.value), fields = x ? x.fields : [];
+      box.innerHTML = fields.map((f) => `<select class="sbpf" data-f="${esc(f.name)}" aria-label="${esc(T('sbx_press_field', { name: f.name }))}">${f.options.map(([v, l]) => `<option value="${esc(String(v))}">${esc(l)}</option>`).join('')}</select>`).join('');
+      box.hidden = !fields.length;
     }
     // the event a phone fires for a button: the companion apps' mobile_app_notification_action, or the old iOS one if
     // that's what the function listens to
@@ -13687,7 +13856,10 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const rows = [
         row(T('sbx_set'), sel('sbent', T('sbx_entity'), entOpts) + sel('sbattr', T('sbx_attr'), '') + this._sbxField('sbval', [], T('sbx_state')) + `<button class="chip" data-act="sbx-set">${T('sbx_set_b')}</button>`),
       ];
-      if (ins.presses.length) rows.push(row(T('sbx_press'), sel('sbpress', T('sbx_press_what'), ins.presses.map((x) => o2(x.key, x.label)).join('')) + `<button class="chip" data-act="sbx-press">${T('sbx_press_b')}</button>`));
+      // what the automations' triggers press, then (0.13.0) the devices' other triggers, each with its choices
+      const used = ins.presses, more = (g.devPress || []).filter((x) => !used.some((u) => u.key === x.key)).map((x) => ({ key: x.key, label: g.eng._pressText(Object.assign({ trigger: 'device' }, x.t)) })).sort((a, b) => a.label.localeCompare(b.label));
+      const pOpts = (l) => l.map((x) => o2(x.key, x.label)).join('');
+      if (used.length || more.length) rows.push(row(T('sbx_press'), sel('sbpress', T('sbx_press_what'), used.length && more.length ? `<optgroup label="${esc(T('sbx_g_used'))}">${pOpts(used)}</optgroup><optgroup label="${esc(T('sbx_g_devtrig'))}">${pOpts(more)}</optgroup>` : pOpts(used.concat(more))) + '<span class="sbpressx" hidden></span>' + `<button class="chip" data-act="sbx-press">${T('sbx_press_b')}</button>`));
       rows.push(row(T('sbx_event'), this._sbxField('sbev', evs.map((x) => ({ v: x, l: x })), T('sbx_event_type')) + this._sbxField('sbevd', [], T('sbx_event_data_ph')) + `<button class="chip" data-act="sbx-fire">${T('sbx_fire')}</button>`));
       const btns = this._sbxButtons();
       g.btnSig = btns.map((x) => x.action).join('|');
@@ -13718,6 +13890,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const pick = this._sel && ents.includes(this._sel) ? this._sel : ents[0];
       if (pick) this._sbxPick(pick);
       this._sbxTrigs();
+      this._sbxPressFields();
       this._sbxEvData();
       this._sbxPayloads();
       this._sbxHookM();
@@ -13952,6 +14125,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (t.classList.contains('sbattr')) { this._sbxVals(); return true; }
       if (t.classList.contains('sbrun')) { this._sbxTrigs(); return true; }
       if (t.classList.contains('sbhook')) { this._sbxHookM(); return true; }
+      if (t.classList.contains('sbpress')) { this._sbxPressFields(); return true; }
       if (t.classList.contains('sbwhole')) { if (t.checked) this._data.ui.sbxWhole = true; else delete this._data.ui.sbxWhole; this._save(); this._ha.soft(this._sbxReset(), 'starting the sandbox again (whole home)', null); return true; }
       if (t.classList.contains('sbstep')) { this._sbx.eng.stepping = t.checked; if (!t.checked) { this._sbx.eng.resumeAll(); this._sbxAfterResume(); } return true; }
       if (t.classList.contains('sbspeed')) { this._sbxSpeed(+t.value); return true; }
@@ -14047,7 +14221,15 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           this._sbxDo((e) => { this._sbxRec(step); return sbxDoStep(e, step); }).then(() => this._sbxPick(id, true));
           break;
         }
-        case 'sbx-press': { const key = q('.sbpress').value; if (key) this._sbxStep({ op: 'press', key }); break; }
+        case 'sbx-press': {
+          let key = q('.sbpress').value;
+          if (!key) break;
+          // with the choices picked (0.13.0): the press is the trigger with them set
+          const fs = [...d.querySelectorAll('.sbpressx:not([hidden]) .sbpf')];
+          if (fs.length) { const o = JSON.parse(key); fs.forEach((f) => { o[f.dataset.f] = sbxNum(f.value); }); key = sbxPressKey(o); }
+          this._sbxStep({ op: 'press', key });
+          break;
+        }
         case 'sbx-ha': this._sbxStep({ op: 'ha', event: q('.sbha').value }); break;
         case 'sbx-hook': {
           const raw = this._sbxVal('sbhookd');

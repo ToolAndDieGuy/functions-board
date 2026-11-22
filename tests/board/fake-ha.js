@@ -13,6 +13,8 @@ const SNAP = path.join(__dirname, 'garage.json');
 const clone = (x) => (x === undefined ? x : JSON.parse(JSON.stringify(x)));
 const slug = (s) => String(s || '').toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'unnamed';
 class HAError extends Error { constructor(code, message) { super(message); this.code = code; } }
+// a device trigger as a key: its settings, keys sorted (as tests/board/capture.js records capabilities)
+const trigKey = (t) => JSON.stringify(t, (k, v) => (v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.keys(v).sort().map((x) => [x, v[x]])) : v));
 
 let SNAPSHOT = null;
 const snapshot = () => (SNAPSHOT || (SNAPSHOT = JSON.parse(fs.readFileSync(SNAP, 'utf8'))));
@@ -42,6 +44,7 @@ class FakeHA {
     this.versions = {};
     this.nodered = null;
     this.sources = {};  // what a derived helper reads (functions_board/sources), as a test sets it: id → { entities }
+    this.devTrig = clone(s.devTrig || {});  // each device's own triggers (0.13.0): { list, caps, mqtt }, as recorded or a test sets them
     // the recorder's history (history/history_during_period), as a test sets it: id → compressed rows, or a function
     // (from ms, to ms, ids) → that; an entity without any is its state now, at the start (nothing changed)
     this.history = {};
@@ -273,6 +276,9 @@ class FakeHA {
         if (this.scripts[oid]) return { config: clone(this.scripts[oid]) };
         throw new HAError('not_found', 'Entity not found');
       }
+      case 'device_automation/trigger/list': return clone((this.devTrig[m.device_id] || {}).list || []);
+      case 'device_automation/trigger/capabilities': { const d = this.devTrig[m.trigger && m.trigger.device_id]; return clone((d && d.caps && d.caps[trigKey(m.trigger)]) || {}); }
+      case 'mqtt/device/debug_info': { const d = this.devTrig[m.device_id]; return clone((d && d.mqtt) || { entities: [], triggers: [] }); }
       case 'trace/list': return [];
       case 'trace/get': throw new HAError('not_found', 'The trace could not be found');
       case 'logbook/get_action_calls': return [];
