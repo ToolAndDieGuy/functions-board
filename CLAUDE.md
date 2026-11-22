@@ -126,7 +126,10 @@ returns everything the library section defines.
 
 - **Words.** All UI text is in the `T()` table, in plain English. Keys are written out literally in calls (the
   static test checks). Plurals go through `P(key, n)` with `{ one, other }`.
-- **Nothing personal in the repo**: no real names, entity names, addresses, IPs or screenshots of a real home.
+- **Nothing personal in the repo**, and that includes pull request titles and descriptions, commit messages,
+  comments on GitHub and release notes: no real names (the maintainer's included: write "a real home", not who),
+  no entity, version or function names from a real home, addresses, IPs or screenshots of one. Before opening or
+  editing a PR, read its text for that; `git log` and the diff too before pushing.
   Fixtures, screenshots and the demo use the test and demo configs only (`tests/e2e/config`, `tests/e2e/demo`).
 - **What the board may do to Home Assistant** is listed in the README ("What it changes") and in the About
   dialog. Writes happen only in Full manager mode, through Home Assistant's own APIs, after the person confirms.
