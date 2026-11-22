@@ -1718,3 +1718,25 @@ test('0.11.2 the sandbox: a notification\'s buttons to press, and the messages Z
   const fr = await pays('frigate/events');
   check('0.11.2 Frigate\'s events are suggested: a person, a car, gone', fr.filter(([, l]) => /What it sends/.test(l)).length === 3 && fr.some(([v]) => /"label":"person"/.test(v)), fr);
 });
+
+test('0.11.3 an MQTT entity on the board follows its topic: an arrow from the topic\'s box, which a publish points to', async ({ browser, fake }) => {
+  const { page } = await imported(browser);
+  const garage = await openFn(page, /garage/i);
+  const LOCK = 'lock.shed_lock', TOPIC = 'fbtest/shed/lock';
+  // what functions_board/sources says for the test home's MQTT lock (its state topic, as configuration.yaml has it)
+  fake.sources[LOCK] = { entities: [], domains: [], all: false, how: 'mqtt', topics: [TOPIC], rule: { kind: 'mqtt', domain: 'lock', state: { topic: TOPIC, how: 'map', map: { LOCKED: 'locked', UNLOCKED: 'unlocked', None: 'unknown' }, blank: 'skip' } } };
+  await addPiece(page, fake, 'automation.fb_shed_says', { alias: 'Shed: say it is locked', mode: 'single', triggers: [{ trigger: 'time', at: '22:00:00' }], conditions: [], actions: [{ action: 'mqtt.publish', data: { topic: TOPIC, payload: 'LOCKED' } }] });
+  await addPiece(page, fake, 'automation.fb_shed_locked', { alias: 'Shed: when it locks', mode: 'single', triggers: [{ trigger: 'state', entity_id: LOCK, to: 'locked' }], conditions: [], actions: [{ action: 'light.turn_off', target: { entity_id: 'light.bed_light' } }] });
+  for (const id of ['automation.fb_shed_says', 'automation.fb_shed_locked']) await ws(page, { type: 'config/entity_registry/update', entity_id: id, labels: [garage] });
+  await fake.idle(400);
+  await until(() => el(page, (b, a) => (b._model && b._model.nodes.has(a.LOCK) && b._model.edges.some((e) => e.from === 'mqtt:' + a.TOPIC && e.to === a.LOCK)) || null, { LOCK, TOPIC }), 10000);
+  const m = await el(page, (b, a) => ({
+    member: b._model.nodes.get(a.LOCK).kind, asked: b._src.has(a.LOCK), light: b._src.has('light.bed_light'),
+    pub: b._model.edges.filter((e) => e.from === 'automation.fb_shed_says').map((e) => e.role + ':' + e.to),
+    into: b._model.edges.filter((e) => e.to === a.LOCK).map((e) => e.role + ':' + e.from).sort(),
+  }), { LOCK, TOPIC });
+  check('0.11.3 the MQTT lock isn\'t a member, and the board asked what it follows (and not for a plain light)', m.member !== 'member' && m.asked && !m.light, m);
+  check('0.11.3 the publish is an arrow to the topic\'s box, not to an mqtt.publish action box', m.pub.length === 1 && m.pub[0] === 'action:mqtt:' + TOPIC, m.pub);
+  check('0.11.3 the topic\'s box has an arrow into the lock that follows it', m.into.includes('source:mqtt:' + TOPIC), m.into);
+  check('0.11.3 the MQTT chain: no errors', page.logs.length === 0, page.logs);
+});

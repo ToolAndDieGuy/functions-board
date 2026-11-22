@@ -2002,5 +2002,39 @@
   "replace": "pass",
   "suite": "backend",
   "expect": "from_yaml"
+ },
+ {
+  "name": "wiring: a publish goes to an mqtt.publish action box, not its topic's",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "if (svc === 'mqtt.publish' && typeof data.topic === 'string' && data.topic && !TPL_RE.test(data.topic)) {",
+  "replace": "if (false) {",
+  "suite": "wiring",
+  "expect": "published to a topic is an arrow to the topic"
+ },
+ {
+  "name": "board: the board doesn't ask what an MQTT entity follows unless it's a member",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "['template', 'mqtt'].includes((this._entMap.get(k) || {}).platform)",
+  "replace": "['template'].includes((this._entMap.get(k) || {}).platform)",
+  "suite": "board-regress",
+  "only": "0.11.3 an MQTT entity",
+  "expect": "asked what it follows|arrow into the lock"
+ },
+ {
+  "name": "board: no arrow from a topic's box into the MQTT entity that follows it",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "toList(s.topics).forEach((tp) => { if (nodes.has('mqtt:' + tp)) this._link(",
+  "replace": "toList(s.topics).forEach((tp) => { if (false) this._link(",
+  "suite": "board-regress",
+  "only": "0.11.3 an MQTT entity",
+  "expect": "arrow into the lock"
+ },
+ {
+  "name": "static: a fourth mention of mqtt.publish in the board goes unreviewed",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "if (svc === 'mqtt.publish' && typeof data.topic === 'string' && data.topic && !TPL_RE.test(data.topic)) {",
+  "replace": "if (svc === 'mqtt.publish' && typeof data.topic === 'string' && data.topic && !TPL_RE.test(data.topic) && 'mqtt.publish') {",
+  "suite": "static",
+  "expect": "A4 MQTT"
  }
 ]

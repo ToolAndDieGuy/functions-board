@@ -9,6 +9,11 @@ availability topics, JSON attributes, `off_delay` and `expire_after`. Home Assis
 triggers hear a message before the entities on that topic change), and so are its quirks: a sensor that expects a
 number and gets text keeps its state until a number comes.
 
+On the board, an MQTT entity follows its topic there too. An automation that publishes to a topic now points to
+that topic's box (it pointed to a box for the `mqtt.publish` action), and the topic's box points to each MQTT entity
+on the board that follows it. The board asks Home Assistant which topics an MQTT entity follows whether or not the
+entity is in the function, so the sandbox moves it when a message comes, wherever it sits on the board.
+
 In the sandbox, an automation in single mode is no longer started twice where Home Assistant starts it once. A run
 that waits for something goes on only after what's in hand is done, as in Home Assistant. There are three such
 waits: the end of a delay, an `mqtt.publish` waiting for the broker's answer, and a restart waiting for the old run

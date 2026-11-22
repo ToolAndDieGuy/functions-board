@@ -906,6 +906,8 @@
           }));
           [t, node, data].forEach((o) => { const n0 = refs.length; targets(o, role, s); if (refs.length > n0) hit = true; });
           if (d === 'script' && !['turn_on', 'turn_off', 'toggle', 'reload'].includes(s)) { add('script.' + s, 'call', 'run'); hit = true; }
+          // a message published to a topic goes to that topic's box, as a fired event goes to the event's (0.11.3)
+          if (svc === 'mqtt.publish' && typeof data.topic === 'string' && data.topic && !TPL_RE.test(data.topic)) { add('mqtt:' + data.topic, 'action', s); hit = true; }
           if (!hit) add('svc:' + svc, 'action', s);
           // a notification with buttons: each button is an output of the notification (9.5)
           const acts = d === 'notify' && data.data && Array.isArray(data.data.actions) ? data.data.actions : [];
@@ -1565,6 +1567,7 @@
       toList(t.device_id).concat(toList(sd.device_id)).forEach((x) => { if (link(key, 'device:' + x)) hit = true; });
       Object.entries(TARGET_KEYS).forEach(([f, pre]) => toList(t[f]).concat(toList(sd[f])).forEach((x) => { if (link(key, pre + ':' + x)) hit = true; }));
       if (p.domain === 'script' && link(key, 'script.' + p.service)) hit = true;
+      if (p.domain === 'mqtt' && p.service === 'publish' && typeof sd.topic === 'string' && link(key, 'mqtt:' + sd.topic)) hit = true;
       if (!hit) link(key, 'svc:' + p.domain + '.' + p.service);
       // a notification's buttons hang off it
       const acts = p.domain === 'notify' && sd.data && Array.isArray(sd.data.actions) ? sd.data.actions : [];
@@ -7855,7 +7858,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     // nodes: the model's, or [entity id, { kind: 'member' }] pairs
     async _askSources(nodes) {
       if (this._storeMode !== 'shared') return;
-      const ask = [...nodes].filter(([k, n]) => !k.includes(':') && !/^(automation|script|scene|group)\./.test(k) && (n.kind === 'member' || this._scopeOf(k) === 'helpers' || (this._entMap.get(k) || {}).platform === 'template'))
+      // members, helpers, template entities, and MQTT entities (what topics they follow, 0.11.3), wherever they are
+      const ask = [...nodes].filter(([k, n]) => !k.includes(':') && !/^(automation|script|scene|group)\./.test(k) && (n.kind === 'member' || this._scopeOf(k) === 'helpers' || ['template', 'mqtt'].includes((this._entMap.get(k) || {}).platform)))
         .map(([k]) => k).filter((k) => !this._src.has(k)).slice(0, 500);
       if (!ask.length) return;
       try {
@@ -7883,6 +7887,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           }
           this._link(edges, k, src, { role: 'source', svc: '' });
         });
+        // an MQTT entity follows its topics: an arrow from each topic's box on the board (one a message is published
+        // to, or a trigger listens on: the same topic, not a wildcard that also matches it)
+        toList(s.topics).forEach((tp) => { if (nodes.has('mqtt:' + tp)) this._link(edges, k, 'mqtt:' + tp, { role: 'source', svc: '' }); });
       });
     }
 
