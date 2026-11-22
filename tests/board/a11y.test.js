@@ -95,6 +95,11 @@ test('a11y', async ({ browser }) => {
     await fbq(page, '.drawer [data-act="chk-save"]').click(); await fbq(page, '.modal .ckdlg').waitFor();
     await audit(page, 'save a check', found);
     await fbq(page, '.modal [data-act="modal-cancel"]').click(); await el(page, (b) => b._closeDrawer());
+    // 0.11.3: the notification builder, with a button
+    await el(page, (b) => b._bldNew()); await fbq(page, '.modal .nbdlg').waitFor();
+    await fbq(page, '.modal [data-act="nb-add-btn"]').click(); await fbq(page, '.modal input[name="nbq"]').check(); await page.waitForTimeout(300);
+    await audit(page, 'notification builder', found);
+    await fbq(page, '.modal [data-act="modal-cancel"]').click();
     await fbq(page, '[data-act="about"]').first().click(); await page.waitForTimeout(500);
     await audit(page, 'about', found);
     await fbq(page, '.modal [data-act="diag"]').click(); await page.waitForTimeout(800);

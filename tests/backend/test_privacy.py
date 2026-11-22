@@ -104,6 +104,14 @@ async def _fill(hass: HomeAssistant, ws, home: dict[str, str]) -> str:
         "dismissed": [{"k": f"e_unavail|{home['door']}", "at": 1}, {"k": "s_missing|notify.mobile_app_bramblewood_phone", "at": 2},
                       {"k": "t_missing|area:bramblewood_shed", "at": 3, "gone": 4}],
         "dir": "right",
+        # the notification builder's spec (0.11.3): what it says, who gets it, a phone by its mobile app action, a tag
+        "builders": {"script.bramblewood_notify": {"kind": "notify", "spec": {
+            "title": "Bramblewood", "message": NOTE, "say": "Sam, the bramblewood door is open", "tag": "bramblewood",
+            "phones": [{"svc": "mobile_app_bramblewood_phone", "os": "ios", "name": "Bramblewood phone"}],
+            "people": [{"id": "person.bramblewood_sam", "away": True, "phones": [{"svc": "mobile_app_bramblewood_pixel", "os": "android", "name": "Bramblewood pixel"}]}],
+            "speakers": ["media_player.bramblewood_kitchen"], "tts": "tts.bramblewood_voice",
+            "buttons": [{"title": "Close the bramblewood door", "then": [{"action": "script.bramblewood_close"}]}], "timeout": [], "wait": 30, "clear": True,
+            "level": "time", "quiet": {"from": "22:00", "to": "07:00"}, "speakAlways": False}}},
     }
     for msg in (
         {"type": "functions_board/set_layout", "label": home["label"], "layout": layout},

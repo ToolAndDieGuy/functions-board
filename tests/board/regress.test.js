@@ -1807,3 +1807,80 @@ test('0.11.3 an MQTT entity on the board follows its topic: an arrow from the to
   check('0.11.3 the topic\'s box has an arrow into the lock that follows it', m.into.includes('source:mqtt:' + TOPIC), m.into);
   check('0.11.3 the MQTT chain: no errors', page.logs.length === 0, page.logs);
 });
+
+test('0.11.3 the notification builder: a script made from what\'s picked, opened in it again, tried in the sandbox, undone; edited by hand it opens in Home Assistant\'s editor', async ({ browser, fake }) => {
+  fake.store.mode = 'full';
+  const { page } = await imported(browser);
+  const garage = await openFn(page, /garage/i);
+  const KEY = 'script.garage_left_open_2', OID = 'garage_left_open_2';
+  fake.states.delete(KEY);
+  await fbq(page, '.tools [data-act="new-script"]').click();
+  const menu = await fbq(page, '.menu').innerText();
+  check('0.11.3 Script offers Home Assistant\'s editor or the notification builder', /Blank script/.test(menu) && /Notification…/.test(menu), menu);
+  await fbq(page, '.menu [data-act="nb-new"]').click();
+  await fbq(page, '.modal .nbdlg').waitFor({ timeout: 5000 });
+  const dlg = await fbq(page, '.modal .nbdlg').innerText();
+  check('0.11.3 the builder lists the person with their phone, the phone (Android), speakers and text-to-speech', /Test Owner/.test(dlg) && /Test phone/i.test(dlg) && /Android/.test(dlg) && !!(await fbq(page, '.modal select[name="nbtts"] option[value="tts.google_translate_en_com"]').count()), dlg.slice(0, 600));
+  // nothing picked: it says what's missing
+  await fbq(page, '.modal [data-act="nb-save"]').click();
+  check('0.11.3 Save asks for a name first', /Give it a name/.test(await fbq(page, '.modal .aval').innerText()));
+  await fbq(page, '.modal input[name="nbname"]').fill('Garage left open 2');
+  await fbq(page, '.modal textarea[name="nbmsg"]').fill('The garage is still open');
+  await fbq(page, '.modal [data-act="nb-save"]').click();
+  check('0.11.3 ... and who gets it', /Pick who gets it/.test(await fbq(page, '.modal .aval').innerText()));
+  await fbq(page, '.modal input[name="nbp"][value="person.test_owner"]').check();
+  await fbq(page, '.modal select[name="nblevel"]').selectOption('time');
+  await fbq(page, '.modal [data-act="nb-add-btn"]').click();
+  await fbq(page, '.modal input[name="nbbt"]').fill('Close it');
+  await fbq(page, '.modal select[data-nbact="b0"]').selectOption('run:script.close_garage');
+  check('0.11.3 a button added keeps what was typed above it', (await fbq(page, '.modal textarea[name="nbmsg"]').inputValue()) === 'The garage is still open' && await fbq(page, '.modal input[name="nbp"][value="person.test_owner"]').isChecked());
+  await fbq(page, '.modal input[name="nbwait"]').fill('20');
+  await fbq(page, '.modal [data-act="nb-save"]').click();
+  await until(() => el(page, (b) => b._$.modal.hidden || null), 15000);
+  const cfg = fake.scripts[OID];
+  check('0.11.3 Save writes an ordinary script: to the phone, time-sensitive, a button of the run\'s own, waiting 20 minutes, then closing the garage',
+    !!cfg && cfg.alias === 'Garage left open 2' && cfg.mode === 'parallel' && cfg.sequence[1].action === 'notify.mobile_app_test_phone' && cfg.sequence[1].data.data.priority === 'high'
+    && cfg.sequence[1].data.data.actions[0].action === '{{ fb_id }}_1' && cfg.sequence[2].timeout.minutes === 20 && cfg.sequence[cfg.sequence.length - 1].choose[0].sequence[0].action === 'script.close_garage'
+    && /notification builder/.test(cfg.description), cfg);
+  await until(async () => (await hasLabel(page, KEY, garage)) || null, 10000);
+  check('0.11.3 ... in the function', await hasLabel(page, KEY, garage));
+  const L = await until(async () => { const x = (await store(page)).layouts[garage]; return x && x.builders ? x : null; }, 8000) || {};
+  check('0.11.3 ... and what was picked is kept in its layout', !!(L.builders && L.builders[KEY] && L.builders[KEY].spec.buttons[0].title === 'Close it' && L.builders[KEY].spec.people[0].id === 'person.test_owner'), L.builders);
+  await until(() => el(page, (b, k) => (b._model && b._model.nodes.has(k)) || null, KEY), 10000);
+  // Edit on its box: the builder again, with what was picked
+  await el(page, (b, k) => b._openItem(b._model.nodes.get(k)), KEY);
+  const reopened = await fbq(page, '.modal .nbdlg').waitFor({ timeout: 5000 }).then(() => true, () => false);
+  check('0.11.3 Edit on its box opens the builder with what was picked', reopened && (await fbq(page, '.modal input[name="nbname"]').inputValue()) === 'Garage left open 2' && (await fbq(page, '.modal input[name="nbbt"]').inputValue()) === 'Close it'
+    && (await fbq(page, '.modal select[data-nbact="b0"]').inputValue()) === 'run:script.close_garage' && (await fbq(page, '.modal select[name="nblevel"]').inputValue()) === 'time');
+  // tried in the sandbox, not saved: it runs there (its templates are the real Home Assistant's to render: the fake
+  // has none, so the sandbox asks; tests/e2e/builder.test.js presses its button)
+  await fbq(page, '.modal [data-act="nb-try"]').click();
+  const ran = await until(() => el(page, (b, k) => (b._sbxOn() && b._sbx.opts.items.some((x) => x.id === k) && b._sbx.eng.log.some((e) => e.kind === 'trigger' && e.key === k)) || null, KEY), 15000);
+  check('0.11.3 Try in sandbox runs it there, as it is in the builder', !!ran && await el(page, (b, k) => JSON.stringify(b._sbx.opts.items.find((x) => x.id === k).cfg.sequence[1].data.data.actions) === JSON.stringify([{ action: '{{ fb_id }}_1', title: 'Close it' }]), KEY));
+  const tst = await el(page, (b) => b._$.toast.textContent);
+  check('0.11.3 ... and says how to get back to the builder', /Back to the builder/.test(tst), tst);
+  check('0.11.3 ... and nothing was sent for real', !fake.calls.some((c) => (c.kind === 'svc' && c.domain === 'notify') || (c.kind === 'ws' && c.type === 'call_service' && c.msg.domain === 'notify')));
+  await el(page, (b) => b._closeDrawer());
+  // a change saved, then undone
+  await el(page, (b, k) => b._openItem(b._model.nodes.get(k)), KEY);
+  await fbq(page, '.modal .nbdlg').waitFor({ timeout: 5000 });
+  await fbq(page, '.modal textarea[name="nbmsg"]').fill('Changed message');
+  await fbq(page, '.modal [data-act="nb-save"]').click();
+  await until(() => (fake.scripts[OID].sequence[1].data.message === 'Changed message') || null, 10000);
+  check('0.11.3 a change saved writes over the same script', Object.keys(fake.scripts).filter((k) => k.startsWith('garage_left_open_2')).length === 1);
+  await fbq(page, '.toast:not([hidden]) [data-act="toast-act"]').click();
+  await until(() => (fake.scripts[OID].sequence[1].data.message === 'The garage is still open') || null, 10000);
+  check('0.11.3 ... and Undo puts the script back as it was', fake.scripts[OID].sequence[1].data.message === 'The garage is still open');
+  // edited by hand: Home Assistant's editor, with a word why
+  fake.scripts[OID] = Object.assign({}, fake.scripts[OID], { sequence: fake.scripts[OID].sequence.concat([{ delay: 5 }]) });
+  await el(page, (b) => b._store.changed('cfg:'));
+  await el(page, (b, k) => b._openItem(b._model.nodes.get(k)), KEY);
+  await until(() => el(page, (b) => (b._drawer && b._drawer.mode === 'frame' && b._drawer.url) || null), 8000);
+  check('0.11.3 edited by hand, it opens in Home Assistant\'s editor and says why', await el(page, (b) => b._$.modal.hidden && /\/config\/script\/edit\//.test(b._drawer.url)) && /Edited by hand/.test(await fbq(page, '.toast').innerText()));
+  // Organise only: the builder opens, Save doesn't
+  fake.store.mode = 'organise';
+  await fake.notifyStore({ what: 'mode', mode: 'organise', client: '' });
+  await until(() => el(page, (b) => !b._full() || null), 5000);
+  await el(page, (b) => b._bldNew());
+  check('0.11.3 in Organise only mode the builder can\'t save', await fbq(page, '.modal [data-act="nb-save"]').isDisabled());
+});
