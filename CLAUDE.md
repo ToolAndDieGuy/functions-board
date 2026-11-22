@@ -8,8 +8,8 @@ function out in a sandbox. Published through HACS. Read this before changing any
 
 - `custom_components/functions_board/`: the integration. Python is small: `__init__.py` (panel, static path,
   optional dashboard card), `websocket.py` (admin-only commands; the board's shared store), `store.py`,
-  `nodered.py` (the Node-RED flow summary kept for every board), `versions.py` (saved versions of functions: kept
-  only; the board makes and restores them), `sources.py`, `diagnostics.py` (the diagnostics file and its
+  `nodered.py` (the Node-RED flow summary kept for every board), `versions.py` (saved versions of functions, and which one each function was last made from: kept
+  only; the board makes them and makes one active; a version changes only by `version_overwrite`, Save), `sources.py`, `diagnostics.py` (the diagnostics file and its
   anonymiser; also the `functions_board/diagnostics` command's), `config_flow.py`.
 - `custom_components/functions_board/frontend/functions-board.js`: the whole board, one plain-JS web component
   (~10,000 lines, no build step, no dependencies). Top to bottom:

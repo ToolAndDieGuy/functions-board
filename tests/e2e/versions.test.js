@@ -65,7 +65,7 @@ test('versions', async ({ browser }) => {
   await page.waitForTimeout(1500);
   await el(page, (b) => b._renderVersions());
   await until(async () => (await vlist(page)).every((x) => !x.on) || null, 10000);
-  check('once things change, no version is marked active; what\'s there now is', /not saved as a version/.test(await fbq(page, '.drawer .vlist .vrow.cur').textContent()));
+  check('once things change, no version is marked active; "Unsaved changes" is, from Original', /Unsaved changes[\s\S]*Original/.test(await fbq(page, '.drawer .vlist .vrow.cur').textContent()));
 
   // a version's tab
   await fbq(page, `.drawer [data-act="ver-open"][data-id="${vid}"]`).click();
@@ -112,7 +112,7 @@ test('versions', async ({ browser }) => {
   check('Restore lists what changes: configs and settings back, YAML ones that can\'t, what was added since', /get their saved configs or settings back/.test(dlg) && /defined in YAML/.test(dlg) && /Garage: added later/.test(dlg), dlg.slice(0, 400));
   check('... and offers turning off or deleting what was added since', (await fbq(page, '.modal input[name="vextra"]').count()) === 2);
   const bk = await el(page, (b) => { const c = b._$.modal.querySelector('input[name="vbackup"]'); return { there: !!c, ticked: !!c && c.checked, label: c ? c.parentNode.textContent : '', hint: c ? c.parentNode.nextElementSibling.textContent : '' }; });
-  check('0.8.1 saving what\'s there now first is a choice, not ticked unless you tick it', bk.there && !bk.ticked && /Before restoring/.test(bk.label), bk);
+  check('0.11.3 saving what\'s there now first is ticked when it isn\'t saved anywhere (it can be unticked)', bk.there && bk.ticked && /Before making … active/.test(bk.label), bk);
   check('0.8.1 ... and the dialog says what\'s there now isn\'t saved anywhere (it was edited since)', /isn.t saved as a version/.test(bk.hint), bk.hint);
   await fbq(page, '.modal input[name="vbackup"]').check();
   await fbq(page, '.modal [data-act="ver-restore-go"]').click();
@@ -125,8 +125,8 @@ test('versions', async ({ browser }) => {
   check('... what was added since is turned off, not deleted', !!off);
   await until(async () => (await vlist(page)).length === 2 || null, 10000);
   L = await vlist(page);
-  check('... with the box ticked, what was there before is saved first', L.some((x) => /Before restoring "Original"/.test(x.name)), L);
-  check('... and with the added automation still in it (turned off), the function isn\'t marked as exactly that version', !L.find((x) => x.id === vid).on, L);
+  check('... with the box ticked, what was there before is saved first', L.some((x) => /Before making "Original" active/.test(x.name)), L);
+  check('0.11.3 ... and Original is the active one, though what was added since is only turned off', L.find((x) => x.id === vid).on, L);
 
   // again, deleting what was added since; and a version whose steps use a device that's gone
   await api(page, 'POST', `config/automation/config/${LEFT_ID}`, Object.assign({}, original, { alias: 'Garage: left open (edited again)' }));
@@ -144,12 +144,14 @@ test('versions', async ({ browser }) => {
   const realDev = (await ws(page, { type: 'config/device_registry/list' })).find((d) => d.name);
   await el(page, (b, [o, n]) => { b._verPending.devmap[o] = n; }, [ghostDev, realDev.id]);
   await fbq(page, '.modal input[name="vextra"][value="delete"]').check();
+  // what's there now (edited again) isn't saved anywhere, so saving it first is ticked; unticked, nothing is saved
+  await fbq(page, '.modal input[name="vbackup"]').uncheck();
   const n0 = (await vlist(page)).length;
   await fbq(page, '.modal [data-act="ver-restore-go"]').click();
   await until(() => el(page, (b) => b._$.modal.hidden || null), 30000);
   await el(page, (b) => b._renderVersions());
   await page.waitForTimeout(1500);
-  check('0.8.1 with the box left as it is, restoring saves no extra copy', (await vlist(page)).length === n0, await vlist(page));
+  check('0.8.1 with the box unticked, making a version active saves no extra copy', (await vlist(page)).length === n0, await vlist(page));
   const after2 = await api(page, 'GET', `config/automation/config/${LEFT_ID}`);
   check('the replaced device\'s step now names the device picked', JSON.stringify(after2.actions).includes(realDev.id) && !JSON.stringify(after2.actions).includes(ghostDev), after2.actions);
   const gone = await api(page, 'GET', 'config/automation/config/fbver1').then(() => false, () => true);
@@ -167,10 +169,10 @@ test('versions', async ({ browser }) => {
   check('switching back to a version: once the function is exactly it again, it\'s the active one', !!back, await vlist(page));
   check('0.8.1 ... and switching back and forth piles up no copies', (await vlist(page)).length === n0, await vlist(page));
   // what's there now is a saved version: the dialog says so (no backup needed)
-  const bef = (await vlist(page)).find((x) => /Before restoring/.test(x.name));
+  const bef = (await vlist(page)).find((x) => /Before making/.test(x.name));
   await fbq(page, `.drawer [data-act="ver-restore"][data-id="${bef.id}"]`).click();
   await fbq(page, '.modal .vrdlg').waitFor({ timeout: 15000 });
-  const hint2 = await el(page, (b) => b._$.modal.querySelector('input[name="vbackup"]').parentNode.nextElementSibling.textContent);
+  const hint2 = await fbq(page, '.modal .vrdlg').textContent();
   check('0.8.1 when what\'s there now is already a saved version, the dialog names it', /already saved as "Original"/.test(hint2), hint2);
   await fbq(page, '.modal [data-act="modal-cancel"]').click();
 
@@ -202,6 +204,58 @@ test('versions', async ({ browser }) => {
   await api(page, 'POST', `config/automation/config/${LEFT_ID}`, original);
   await ws(page, { type: 'input_boolean/delete', input_boolean_id: helper.id }).catch(() => {});
   await api(page, 'DELETE', 'config/automation/config/fbver1').catch(() => {});
+  await ws(page, { type: 'functions_board/version_delete', label });
+  await setMode(page, 'organise');
+  check('no errors', page.logs.length === 0, page.logs);
+  await ctx.close();
+});
+// 0.11.3 (found on a real home): save a good version, break the function and save that as a throwaway, then go back
+// to the good one. The good one becomes active, and the throwaway is still there as it was saved.
+test('0.11.3 going back to a good version', async ({ browser }) => {
+  const { ctx, page } = await session(browser, 'owner', { viewport: { width: 1500, height: 900 } });
+  page.allowFail = [/^(automation|script)\/config$/];
+  await page.goto(BASE + '/');
+  await ready(page);
+  await reset(page);
+  await importAll(page);
+  await page.goto(BASE + '/functions');
+  await fbq(page, '.nodes .node').first().waitFor({ timeout: 20000 });
+  await openFn(page, /garage/i);
+  await setMode(page, 'full');
+  const label = await el(page, (b) => b._data.ui.current);
+  const original = await api(page, 'GET', `config/automation/config/${LEFT_ID}`);
+  await fbq(page, '.tools [data-act="versions"]').click();
+  await fbq(page, '.drawer .vlist .vrow.cur').waitFor({ timeout: 10000 });
+  const saveAs = async (name) => {
+    const n = (await vlist(page)).length;
+    await fbq(page, '.drawer [data-act="ver-new"]').click();
+    await fbq(page, '.modal input[name="vname"]').fill(name);
+    await fbq(page, '.modal [data-act="ver-save"]').click();
+    await until(async () => (await vlist(page)).length === n + 1 || null, 10000);
+  };
+  await saveAs('Good');
+  // break it: the automation's actions gone, as a person might while trying something
+  await api(page, 'POST', `config/automation/config/${LEFT_ID}`, Object.assign({}, original, { alias: 'Garage: left open (broken)', actions: [] }));
+  await page.waitForTimeout(1500);
+  await el(page, (b) => b._renderVersions());
+  await saveAs('Throwaway');
+  let L = await vlist(page);
+  const good = L.find((x) => x.name === 'Good'), bad = L.find((x) => x.name === 'Throwaway');
+  check('0.11.3 the throwaway is saved and active, the good one isn\'t', bad.on && !good.on, L);
+  // back to the good one
+  await fbq(page, `.drawer [data-act="ver-restore"][data-id="${good.id}"]`).click();
+  await fbq(page, '.modal [data-act="ver-restore-go"]').waitFor({ timeout: 15000 });
+  await fbq(page, '.modal [data-act="ver-restore-go"]').click();
+  await until(() => el(page, (b) => b._$.modal.hidden || null), 30000);
+  const after = await api(page, 'GET', `config/automation/config/${LEFT_ID}`);
+  check('0.11.3 the function is the good version again', after.alias === original.alias && (after.actions || []).length === (original.actions || []).length, after);
+  await page.waitForTimeout(1500);
+  await el(page, (b) => b._renderVersions());
+  L = await until(async () => { const l = await vlist(page); return l.find((x) => x.name === 'Good' && x.on) ? l : null; }, 10000) || await vlist(page);
+  check('0.11.3 ... and it\'s the active one', L.find((x) => x.name === 'Good').on && !L.find((x) => x.name === 'Throwaway').on, L);
+  const kept = (await ws(page, { type: 'functions_board/version_get', label, version_id: bad.id })).snapshot.items[LEFT].cfg;
+  check('0.11.3 ... and the throwaway is still there as it was saved', L.some((x) => x.id === bad.id) && kept.alias === 'Garage: left open (broken)' && (kept.actions || []).length === 0, kept);
+  await api(page, 'POST', `config/automation/config/${LEFT_ID}`, original);
   await ws(page, { type: 'functions_board/version_delete', label });
   await setMode(page, 'organise');
   check('no errors', page.logs.length === 0, page.logs);

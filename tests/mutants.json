@@ -2044,5 +2044,57 @@
   "replace": "if (d && d.rule && d.rule.kind === 'mqtt') { return; }",
   "suite": "e2e-sandbox",
   "expect": "the sandbox follows the lock's topic|published message unlocks the lock"
+ },
+ {
+  "name": "versions: active only by an exact match",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "(from.print === print || made.print === print)",
+  "replace": "from.print === print",
+  "suite": "board-regress",
+  "only": "0.11.3 versions",
+  "expect": "Good is active, pinned at the top"
+ },
+ {
+  "name": "versions: making one active isn't noted",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "try { await this._ws({ type: 'functions_board/version_active', label, version_id: v.id,",
+  "replace": "try { if (0) await this._ws({ type: 'functions_board/version_active', label, version_id: v.id,",
+  "suite": "board-regress",
+  "only": "0.11.3 versions",
+  "expect": "Good is active, pinned at the top"
+ },
+ {
+  "name": "versions: unsaved changes not saved first by default",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "<input type=\"checkbox\" name=\"vbackup\" checked>",
+  "replace": "<input type=\"checkbox\" name=\"vbackup\">",
+  "suite": "board-regress",
+  "only": "0.11.3 versions",
+  "expect": "saving them first is ticked"
+ },
+ {
+  "name": "versions: Save over doesn't make it active",
+  "file": "custom_components/functions_board/websocket.py",
+  "find": "    vs.set_active(msg[\"label\"], msg[\"version_id\"], msg[\"print\"])\n    _board(hass).notify",
+  "replace": "    _board(hass).notify",
+  "suite": "backend",
+  "expect": "test_versions_save_over_and_the_active_one"
+ },
+ {
+  "name": "versions: a backup on the way becomes the active one",
+  "file": "custom_components/functions_board/websocket.py",
+  "find": "    if not msg[\"auto\"]:\n        vs.set_active(",
+  "replace": "    if True:\n        vs.set_active(",
+  "suite": "backend",
+  "expect": "test_versions_save_over_and_the_active_one"
+ },
+ {
+  "name": "versions: the active one not pinned at the top",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "        ? `<div class=\"vact\">${copy}</div>${row(active, true)}`",
+  "replace": "        ? `<div class=\"vact\">${copy}</div>`",
+  "suite": "board-regress",
+  "only": "0.11.3 versions",
+  "expect": "pinned at the top as the active one"
  }
 ]

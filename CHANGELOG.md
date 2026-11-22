@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+Versions are made active rather than restored. The version the function is now is pinned at the top of the Versions
+drawer, marked active. Change anything and the top row says **Unsaved changes**, with **Save** (over the version the
+changes came from, after asking) and **Save as copy** (a new version). A saved version now changes only when you save
+over it on purpose. **Make active** (Full manager, where Restore was) makes the function what a version is; every
+version stays as it was. If what's there now isn't saved anywhere, saving it first as a new version is ticked, so
+nothing is lost unless you untick it. Before, going back to a good version from a throwaway could leave the good one
+not marked active: Home Assistant writes a config back a little differently from how it was saved, so the two didn't
+match exactly. The board now notes which version it made the function from, and that one is active.
+
 In the sandbox, MQTT entities follow their topics. A message on a sensor's state topic (sent by you, or by an
 automation's `mqtt.publish`) changes the sensor through its own value template, as Home Assistant would: binary
 sensors, switches, locks, covers, selects, numbers, texts, device trackers, event entities and lights, with

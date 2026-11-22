@@ -52,6 +52,8 @@ def async_register(hass: HomeAssistant) -> None:
         ws_version_get,
         ws_version_save,
         ws_version_edit,
+        ws_version_overwrite,
+        ws_version_active,
         ws_version_delete,
         ws_diagnostics,
     ):
@@ -319,10 +321,10 @@ def _user_name(connection: websocket_api.ActiveConnection) -> str:
 @websocket_api.require_admin
 @callback
 def ws_versions(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
-    """A function's saved versions, oldest first, without their snapshots."""
+    """A function's saved versions, oldest first, without their snapshots, and the one it was last made from."""
     if (vs := _versions_or_error(hass, connection, msg["id"])) is None:
         return
-    connection.send_result(msg["id"], {"versions": vs.list(msg["label"])})
+    connection.send_result(msg["id"], {"versions": vs.list(msg["label"]), "active": vs.active.get(msg["label"])})
 
 
 @websocket_api.websocket_command({vol.Required("type"): "functions_board/version_get", vol.Required("label"): LABEL, vol.Required("version_id"): VID})
@@ -361,6 +363,9 @@ def ws_version_save(hass: HomeAssistant, connection: websocket_api.ActiveConnect
         text = {"too_large": "A snapshot can be at most 1 MB", "too_many": "A function can keep at most 50 versions", "full": "Versions can take at most 20 MB in all"}
         connection.send_error(msg["id"], problem or "failed", text.get(problem or "", "Not saved"))
         return
+    # a version saved from what's there now is what the function is made from now (not a backup taken on the way)
+    if not msg["auto"]:
+        vs.set_active(msg["label"], version["id"], msg["print"])
     _board(hass).notify(hass, {"what": "versions", "label": msg["label"], "client": msg.get("client", "")})
     connection.send_result(msg["id"], version_meta(version))
 
@@ -386,6 +391,57 @@ def ws_version_edit(hass: HomeAssistant, connection: websocket_api.ActiveConnect
         return
     _board(hass).notify(hass, {"what": "versions", "label": msg["label"], "client": msg.get("client", "")})
     connection.send_result(msg["id"], version_meta(v))
+
+
+PRINT = vol.All(str, vol.Length(max=64))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "functions_board/version_overwrite",
+        vol.Required("label"): LABEL,
+        vol.Required("version_id"): VID,
+        vol.Required("snapshot"): dict,
+        vol.Required("print"): PRINT,
+        vol.Optional("client"): CLIENT,
+    }
+)
+@websocket_api.require_admin
+@callback
+def ws_version_overwrite(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Save over a version on purpose (Save, 0.11.3): its snapshot replaced, its name kept; it's then the active one."""
+    if (vs := _versions_or_error(hass, connection, msg["id"])) is None:
+        return
+    v, problem = vs.overwrite(msg["label"], msg["version_id"], _user_name(connection), msg["snapshot"], msg["print"])
+    if problem or v is None:
+        text = {"not_found": "No such version", "too_large": "A snapshot can be at most 1 MB", "full": "Versions can take at most 20 MB in all"}
+        connection.send_error(msg["id"], problem or "failed", text.get(problem or "", "Not saved"))
+        return
+    vs.set_active(msg["label"], msg["version_id"], msg["print"])
+    _board(hass).notify(hass, {"what": "versions", "label": msg["label"], "client": msg.get("client", "")})
+    connection.send_result(msg["id"], version_meta(v))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "functions_board/version_active",
+        vol.Required("label"): LABEL,
+        vol.Required("version_id"): vol.Any(None, VID),
+        vol.Optional("print", default=""): PRINT,
+        vol.Optional("client"): CLIENT,
+    }
+)
+@websocket_api.require_admin
+@callback
+def ws_version_active(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Note which version the function was just made from, with its fingerprint then (0.11.3)."""
+    if (vs := _versions_or_error(hass, connection, msg["id"])) is None:
+        return
+    if not vs.set_active(msg["label"], msg["version_id"], msg["print"]):
+        connection.send_error(msg["id"], "not_found", "No such version")
+        return
+    _board(hass).notify(hass, {"what": "versions", "label": msg["label"], "client": msg.get("client", "")})
+    connection.send_result(msg["id"])
 
 
 @websocket_api.websocket_command(
