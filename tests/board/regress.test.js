@@ -933,7 +933,23 @@ test('0.11.3 versions: a version is made active, never overwritten but by Save; 
   check('0.11.3 a change shows "Unsaved changes" at the top, with Save (over Good) and Save as copy', R[0].top && R[0].on && R[0].id === null && /Unsaved/.test(R[0].name) && R[0].save && !R.find((r) => r.name === 'Good').on, R);
   await newVersion('Throwaway');
   R = await rows();
-  check('0.11.3 Save as copy makes a new version, pinned at the top as the active one', R[0].name === 'Throwaway' && R[0].top && R[0].on && !R[0].save, R);
+  check('0.11.3 Save as copy makes a new version, pinned at the top as the active one, with Save and Save as copy on it', R[0].name === 'Throwaway' && R[0].top && R[0].on && R[0].save
+    && !(await fbq(page, '.drawer .vrow.top [data-act="ver-restore"]').count()) && (await fbq(page, '.drawer .vrow.top [data-act="ver-new"]').count()) === 1, R);
+  // only the layout changed (no wiring): that's a change too (0.11.3), Save over Throwaway keeps the layout in it
+  const thr = R[0].id;
+  await el(page, (b, l) => { b._data.layouts[l].dir = 'down'; b._save(); }, garage);
+  R = await rows();
+  check('0.11.3 only the layout changed: Unsaved changes, the same as Throwaway but for the layout, with Save', R[0].id === null && R[0].save && /Throwaway/.test(await fbq(page, '.drawer .vrow.top .vm').textContent()) && /layout/.test(await fbq(page, '.drawer .vrow.top .vm').textContent()) && !R.find((r) => r.id === thr).on, R);
+  await fbq(page, '.drawer .vrow.top [data-act="ver-over"]').click();
+  await fbq(page, '.modal [data-act="ver-over-go"]').click();
+  await until(() => el(page, (b) => b._$.modal.hidden || null), 8000);
+  const throwLayout = (await ws(page, { type: 'functions_board/version_get', label: garage, version_id: thr })).snapshot.layout;
+  R = await rows();
+  check('0.11.3 ... Save puts the layout in the version, and it\'s the active one again', !!throwLayout && throwLayout.dir === 'down' && R[0].id === thr && R[0].on, throwLayout && throwLayout.dir);
+  // a position left over from a box that's gone isn't a change
+  await el(page, (b, l) => { b._data.layouts[l].nodes['automation.gone_long_ago'] = { x: 5, y: 5 }; b._save(); }, garage);
+  R = await rows();
+  check('0.11.3 ... a position left over from a box that\'s gone isn\'t a change', R[0].id === thr && R[0].on, R);
   const good = R.find((r) => r.name === 'Good'), bad = R.find((r) => r.name === 'Throwaway');
   // back to Good, with Home Assistant writing the config back a little differently from how it was saved (as it
   // does: a field it adds), so what's there after isn't byte for byte the version
@@ -1814,9 +1830,13 @@ test('0.11.3 the notification builder: a script made from what\'s picked, opened
   const garage = await openFn(page, /garage/i);
   const KEY = 'script.garage_left_open_2', OID = 'garage_left_open_2';
   fake.states.delete(KEY);
-  await fbq(page, '.tools [data-act="new-script"]').click();
+  const rcp = fbq(page, '.tools [data-act="recipes"]');
+  const hasRcp = (await rcp.isVisible()) && /Recipes/.test(await rcp.innerText());
+  check('0.11.3 the toolbar has a Recipes menu', hasRcp);
+  if (!hasRcp) return;
+  await rcp.click();
   const menu = await fbq(page, '.menu').innerText();
-  check('0.11.3 Script offers Home Assistant\'s editor or the notification builder', /Blank script/.test(menu) && /Notification…/.test(menu), menu);
+  check('0.11.3 ... with Notification in it', /Notification/.test(menu), menu);
   await fbq(page, '.menu [data-act="nb-new"]').click();
   await fbq(page, '.modal .nbdlg').waitFor({ timeout: 5000 });
   const dlg = await fbq(page, '.modal .nbdlg').innerText();
@@ -1883,4 +1903,77 @@ test('0.11.3 the notification builder: a script made from what\'s picked, opened
   await until(() => el(page, (b) => !b._full() || null), 5000);
   await el(page, (b) => b._bldNew());
   check('0.11.3 in Organise only mode the builder can\'t save', await fbq(page, '.modal [data-act="nb-save"]').isDisabled());
+});
+
+test('0.11.3 versions: Save is there when no version is noted as the one made (saved before the board noted it), and the open drawer follows a change', async ({ browser, fake }) => {
+  fake.store.mode = 'full';
+  const { page } = await imported(browser);
+  const garage = await openFn(page, /garage/i);
+  const LEFT = 'automation.garage_left_open', aid = fake.states.get(LEFT).attributes.id;
+  const rows = () => el(page, (b) => [...b._$.drawer.querySelectorAll('.vlist .vrow')].map((r) => ({ id: r.dataset.id || null, name: r.querySelector('.vh b').textContent, on: r.classList.contains('on'), save: !!r.querySelector('[data-act="ver-over"]') })));
+  await fbq(page, '.tools [data-act="versions"]').click();
+  await fbq(page, '.drawer .vlist .vrow').first().waitFor({ timeout: 10000 });
+  await fbq(page, '.drawer [data-act="ver-new"]').first().click();
+  await fbq(page, '.modal input[name="vname"]').fill('Old');
+  await fbq(page, '.modal [data-act="ver-save"]').click();
+  await until(async () => (await rows()).some((r) => r.name === 'Old' && r.on) || null, 8000);
+  // as for versions saved before the board noted which one is active
+  delete fake.vactive[garage];
+  // a change saved in Home Assistant, the drawer open: it follows, without being opened again
+  await api(page, 'POST', `config/automation/config/${aid}`, Object.assign({}, fake.autos[aid], { alias: 'Garage: left open (rewired)' }));
+  const R = await until(async () => { const r = await rows(); return r[0] && r[0].id === null ? r : null; }, 10000) || await rows();
+  check('0.11.3 the open Versions drawer follows a change saved in Home Assistant: Unsaved changes', R[0] && R[0].id === null && /Unsaved/.test(R[0].name), R);
+  check('0.11.3 ... and Save is there, over the newest version (none was noted as the one made)', R[0] && R[0].save && /Old/.test(await fbq(page, '.drawer .vrow.top .vm').textContent()), R);
+});
+
+test('0.11.3 versions: deleting one offers to delete what only it has from Home Assistant, unticked', async ({ browser, fake }) => {
+  fake.store.mode = 'full';
+  const { page } = await imported(browser);
+  const garage = await openFn(page, /garage/i);
+  const OID = 'fb_only_in_a_version', KEY = 'script.' + OID;
+  const rows = () => el(page, async (b) => { await b._renderVersions(); return [...b._$.drawer.querySelectorAll('.vlist .vrow')].map((r) => ({ id: r.dataset.id || null, name: r.querySelector('.vh b').textContent })); });
+  const label = async (on) => {
+    await ws(page, { type: 'config/entity_registry/update', entity_id: KEY, labels: on ? [garage] : [] });
+    await until(() => el(page, (b, a) => (!!(b._model && b._model.nodes.has(a[0])) === a[1]) || null, [KEY, on]), 10000);
+  };
+  const saveAs = async (name) => {
+    await fbq(page, '.drawer [data-act="ver-new"]').first().click();
+    await fbq(page, '.modal input[name="vname"]').fill(name);
+    await fbq(page, '.modal [data-act="ver-save"]').click();
+    await until(async () => (await rows()).some((r) => r.name === name) || null, 8000);
+  };
+  const delDialog = async (name) => {
+    const v = (await rows()).find((r) => r.name === name);
+    await el(page, (b, id) => b._verDelDlg(id), v.id);
+    await fbq(page, '.modal [data-act="ver-del-go"]').waitFor({ timeout: 10000 });
+    return fbq(page, '.modal .dlg').innerText();
+  };
+  await api(page, 'POST', `config/script/config/${OID}`, { alias: 'Only in a version', sequence: [{ delay: 1 }] });
+  await until(() => el(page, (b, k) => !!b._entMap.get(k) || null, KEY), 10000);
+  await label(true);
+  await fbq(page, '.tools [data-act="versions"]').click();
+  await fbq(page, '.drawer .vlist .vrow').first().waitFor({ timeout: 10000 });
+  await saveAs('With it');
+  await label(false);
+  let txt = await delDialog('With it');
+  const n = await fbq(page, '.modal [data-vdel]').count();
+  check('0.11.3 deleting a version lists what only it has: the script taken out of the function, not what a function still has', n === 1 && /Only in a version/.test(txt) && !/Garage: left open/.test(txt), txt);
+  check('0.11.3 ... unticked', !(await fbq(page, '.modal [data-vdel]').isChecked()));
+  await fbq(page, '.modal [data-act="ver-del-go"]').click();
+  await until(async () => !(await rows()).some((r) => r.name === 'With it') || null, 8000);
+  check('0.11.3 ... unticked, nothing more is deleted: the script is still there', !!fake.scripts[OID]);
+  // again, ticked this time
+  await label(true);
+  await saveAs('With it again');
+  await label(false);
+  await delDialog('With it again');
+  await fbq(page, '.modal [data-vdel]').check();
+  await fbq(page, '.modal [data-act="ver-del-go"]').click();
+  await until(() => (!fake.scripts[OID]) || null, 10000);
+  check('0.11.3 ... ticked, it\'s deleted from Home Assistant with the version', !fake.scripts[OID] && !(await rows()).some((r) => r.name === 'With it again'));
+  // something a function has, or another version, isn't offered
+  await saveAs('Plain');
+  txt = await delDialog('Plain');
+  check('0.11.3 a version whose pieces are all in a function: nothing offered', (await fbq(page, '.modal [data-vdel]').count()) === 0, txt);
+  await fbq(page, '.modal [data-act="modal-cancel"]').click();
 });

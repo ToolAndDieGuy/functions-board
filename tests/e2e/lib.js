@@ -121,9 +121,15 @@ function suite(name) {
   return me;
 }
 
-// Remove everything the board and earlier runs created: labels, categories, board data, test dashboards.
+// Remove everything the board and earlier runs created: labels (and their versions), categories, board data, test
+// dashboards.
 async function reset(page) {
-  for (const l of await ws(page, { type: 'config/label_registry/list' })) await ws(page, { type: 'config/label_registry/delete', label_id: l.label_id });
+  for (const l of await ws(page, { type: 'config/label_registry/list' })) {
+    // its saved versions too: they're kept by the label's id, which an import makes again for the same name
+    const vs = await ws(page, { type: 'functions_board/versions', label: l.label_id }).catch(() => ({ versions: [] }));
+    for (const v of (vs && vs.versions) || []) await ws(page, { type: 'functions_board/version_delete', label: l.label_id, version_id: v.id });
+    await ws(page, { type: 'config/label_registry/delete', label_id: l.label_id });
+  }
   for (const scope of ['automation', 'script', 'helpers']) {
     for (const c of await ws(page, { type: 'config/category_registry/list', scope })) await ws(page, { type: 'config/category_registry/delete', scope, category_id: c.category_id });
   }

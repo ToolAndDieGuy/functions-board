@@ -222,7 +222,7 @@ returns everything the library section defines.
   makes the rows from the parts and the person's `_mgr.joins` (an offer taken, or Merge into…), keeping ticks
   (`_mgr.drop`), names and selection with their rows. Node-RED groups are read only while the board's switch is on.
   Its tests use small invented homes: nothing from a real home goes in the repo.
-- **Builders** (0.11.3, the `builders` part): a builder writes an ordinary Home Assistant script; no runtime or format
+- **Builders** (0.11.3, the `builders` part; the toolbar's **Recipes** menu, `_bldMenu`, a new builder goes there): a builder writes an ordinary Home Assistant script; no runtime or format
   of the board's own. What the person picked (the spec) is kept in the function's layout (`layout.builders`, by the
   script's entity id, `cleanNotify` in `cleanLayout`) and the script is made from it in the library section, the same
   every time (`notifyScript`). Edit on its box (`_openItem` → `_bldEdit`) opens the builder only while the script is

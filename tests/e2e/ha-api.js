@@ -137,9 +137,15 @@ async function restore(snap) {
   return done;
 }
 
-// The board's own data and what it creates in Home Assistant: labels, categories, store, user data, dashboards.
+// The board's own data and what it creates in Home Assistant: labels (and their versions), categories, store, user
+// data, dashboards.
 async function reset() {
-  for (const l of await ws({ type: 'config/label_registry/list' })) await ws({ type: 'config/label_registry/delete', label_id: l.label_id });
+  for (const l of await ws({ type: 'config/label_registry/list' })) {
+    // its saved versions too: they're kept by the label's id, which an import makes again for the same name
+    const vs = await ws({ type: 'functions_board/versions', label: l.label_id }).catch(() => ({ versions: [] }));
+    for (const v of (vs && vs.versions) || []) await ws({ type: 'functions_board/version_delete', label: l.label_id, version_id: v.id });
+    await ws({ type: 'config/label_registry/delete', label_id: l.label_id });
+  }
   for (const scope of ['automation', 'script', 'helpers']) {
     for (const c of await ws({ type: 'config/category_registry/list', scope })) await ws({ type: 'config/category_registry/delete', scope, category_id: c.category_id });
   }

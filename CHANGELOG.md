@@ -2,8 +2,8 @@
 
 ## Unreleased
 
-A notification builder. In a function, **Script → Notification…** writes an ordinary Home Assistant script that
-sends a notification. You pick:
+A notification builder. In a function, **Recipes → Notification** (in the toolbar) writes an ordinary Home Assistant
+script that sends a notification. Recipes is the home for purpose-built scripts like it. You pick:
 - who gets it: people's phones (only when they're away, if you like), phones themselves, and speakers through
   text-to-speech when someone's home;
 - how urgent it is (normal, time-sensitive or critical, sent the way each phone's app understands it);
@@ -21,8 +21,12 @@ In the sandbox, every run has a context, as in Home Assistant (templates can rea
 sandbox sent are there to press, by the ids it was sent with.
 
 Versions are made active rather than restored. The version the function is now is pinned at the top of the Versions
-drawer, marked active. Change anything and the top row says **Unsaved changes**, with **Save** (over the version the
-changes came from, after asking) and **Save as copy** (a new version). A saved version now changes only when you save
+drawer, marked active, with **Save** and **Save as copy**: active means its automations, scripts, helpers and layout
+are all the same as what's there now. Change anything, boxes moved included, and the top row says **Unsaved changes**,
+with **Save** (over the version the changes came from, after asking; the newest when none is known) and **Save as
+copy** (a new version). The open drawer follows changes made elsewhere. Deleting a version lists what only it has (an
+automation, script or helper still in Home Assistant but in no function, no other version, and used by nothing else),
+each unticked; a ticked one is deleted from Home Assistant too (Full manager). A saved version now changes only when you save
 over it on purpose. **Make active** (Full manager, where Restore was) makes the function what a version is; every
 version stays as it was. If what's there now isn't saved anywhere, saving it first as a new version is ticked, so
 nothing is lost unless you untick it. Before, going back to a good version from a throwaway could leave the good one
