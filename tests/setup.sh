@@ -11,7 +11,8 @@
 # FB_HA=beta installs Home Assistant's newest release, betas included, instead of the pinned one (the weekly
 # beta run in .github/workflows/weekly.yml); FB_HA=2026.12.0 installs that version.
 # Needs: uv (https://docs.astral.sh/uv/; installed with pip if missing), Node 22, and the system TurboJPEG library
-# (libturbojpeg on Debian and Ubuntu) for the demo integration's camera entities.
+# (libturbojpeg on Debian and Ubuntu) for the demo integration's camera entities. What the test Home Assistant talks
+# to (an MQTT broker, Z-Wave JS on a mock controller, Node-RED: tests/home) is installed from tests/home/package.json.
 set -e
 cd "$(dirname "$0")/.."
 
@@ -39,8 +40,9 @@ if [ ! -x venv314/bin/hass ]; then
 fi
 # The demo integration (the test garage door and the rest) sets up platforms whose requirements its manifest
 # doesn't list, and imports numpy unlisted. Installed while Home Assistant starts, they race it (CI lost the test
-# entities to numpy, then to turbojpeg). Install them all first, at the versions Home Assistant pins.
-if ! venv314/bin/python -c 'import numpy, turbojpeg' 2>/dev/null; then
+# entities to numpy, then to turbojpeg). Install them all first, at the versions Home Assistant pins, with those of
+# the integrations the test home adds (MQTT, Z-Wave JS, the mobile app).
+if ! venv314/bin/python -c 'import numpy, turbojpeg, paho.mqtt, zwave_js_server, nacl' 2>/dev/null; then
   venv314/bin/python scripts/demo_requirements.py > venv314/demo-requirements.txt
   uv pip install --python venv314/bin/python -r venv314/demo-requirements.txt -c "$(venv314/bin/python -c 'import homeassistant, os; print(os.path.join(os.path.dirname(homeassistant.__file__), "package_constraints.txt"))')"
 fi
@@ -51,7 +53,7 @@ config() {
   dir="$1"; demo="$2"
   if [ -d "$dir/.storage" ] && [ -z "$FB_FRESH" ]; then echo "== $dir is there (FB_FRESH=1 to rebuild)"; return; fi
   echo "== $dir"
-  rm -rf "$dir"
+  rm -rf "$dir" "$(dirname "$dir")/home"
   mkdir -p "$dir/custom_components" "$dir/packages" "$dir/blueprints/automation/homeassistant"
   # copied, not linked: the tests rewrite automations.yaml and scripts.yaml through the config API
   cp tests/e2e/config/*.yaml "$dir/"
@@ -66,6 +68,9 @@ config() {
 }
 config ha/config test
 want "$MODE" demo && config ha-demo/config demo
+
+# what the test Home Assistant talks to (tests/home): the MQTT broker, Z-Wave JS and its mock controller, Node-RED
+if [ ! -d tests/home/node_modules/aedes ] || [ ! -d tests/home/node_modules/node-red ]; then echo "== the test home (tests/home)"; npm ci --prefix tests/home --no-audit --no-fund; fi
 
 # Playwright for the browser tests (the version in package.json), and a Chromium for it unless one is there
 if [ ! -d node_modules/playwright ] || [ ! -d node_modules/axe-core ]; then echo "== Playwright"; npm install --no-audit --no-fund; fi

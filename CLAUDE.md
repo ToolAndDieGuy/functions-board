@@ -22,6 +22,12 @@ function out in a sandbox. Published through HACS. Read this before changing any
     store's maps, drawing the board, the drawer, the actions in `_actionTables()`, undo), then list, functions,
     manager, problems, tools, debug, arrows, sandbox, versions, nodered and diagnostics, each a block under a
     `part:` heading.
+- `tests/home/`: what the test Home Assistant talks to (its README): an MQTT broker with discovered and YAML MQTT
+  entities, Z-Wave JS on a five-node mock controller, Node-RED with the Home Assistant nodes, a phone in the mobile
+  app. `tests/start-ha.sh` starts it first (state and logs in `ha/home/`), `tests/e2e/hasetup.js` sets each up through
+  its config flow; `tests/home/home.js` has the helpers (Node-RED flows, Z-Wave reports, the MQTT message log). The
+  base config has no automations using them, so the garage and the import's groups are unchanged: a test adds what it
+  needs.
 - `tests/`: everything below. `scripts/`: `bump.js` (version), `gen_sandbox_triggers.py` (see Sandbox),
   `demo_requirements.py` (what `setup.sh` installs before Home Assistant first starts).
 - `docs/images/`: the README's screenshots, taken by `tests/e2e/screens.js` on a fresh test Home Assistant

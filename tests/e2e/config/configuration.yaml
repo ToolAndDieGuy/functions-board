@@ -19,6 +19,8 @@ recorder:
   purge_keep_days: 1
 logbook:
 history:
+# a phone (tests/e2e/hasetup.js registers it), for notifications and their buttons
+mobile_app:
 demo:
 automation: !include automations.yaml
 automation manual: !include automations_manual.yaml
@@ -55,3 +57,58 @@ template:
       - name: "Furnace filter status"
         unique_id: furnace_filter_status
         state: "{{ states('counter.filter_countdown') }} days{{ ' (due)' if is_state('input_boolean.filter_due', 'on') else '' }}"
+# MQTT entities set up in YAML (the broker and the MQTT devices it announces: tests/home); their first states are
+# retained on the broker (tests/home/mqtt-home.json)
+mqtt:
+  - sensor:
+      name: "Rain gauge"
+      unique_id: fbtest_rain_gauge
+      state_topic: fbtest/rain/total
+      value_template: "{{ (value | float(0)) | round(1) }}"
+      unit_of_measurement: mm
+  - binary_sensor:
+      name: "Mailbox"
+      unique_id: fbtest_mailbox
+      state_topic: fbtest/mailbox
+      payload_on: open
+      payload_off: closed
+      device_class: opening
+  - light:
+      name: "Porch light"
+      unique_id: fbtest_porch_light
+      schema: json
+      state_topic: fbtest/porch/state
+      command_topic: fbtest/porch/set
+      brightness: true
+      supported_color_modes: [brightness]
+  - lock:
+      name: "Shed lock"
+      unique_id: fbtest_shed_lock
+      state_topic: fbtest/shed/lock
+      command_topic: fbtest/shed/lock/set
+      payload_lock: LOCK
+      payload_unlock: UNLOCK
+      state_locked: LOCKED
+      state_unlocked: UNLOCKED
+  - select:
+      name: "Sprinkler program"
+      unique_id: fbtest_sprinkler_program
+      state_topic: fbtest/sprinkler/program
+      command_topic: fbtest/sprinkler/program/set
+      options: ["Off", "Lawn", "Garden"]
+  - cover:
+      name: "Coop door"
+      unique_id: fbtest_coop_door
+      state_topic: fbtest/coop/door
+      command_topic: fbtest/coop/door/set
+      state_open: open
+      state_closed: closed
+      device_class: door
+  - number:
+      name: "Feeder portion"
+      unique_id: fbtest_feeder_portion
+      state_topic: fbtest/feeder/portion
+      command_topic: fbtest/feeder/portion/set
+      min: 1
+      max: 5
+      step: 1

@@ -1,5 +1,7 @@
 // Gets the test Home Assistant ready for the browser suites, before any of them runs: onboards it if it's new (the
 // owner, an administrator), adds the non-admin user, logs both in and writes their tokens to tests/e2e/.state/.
+// Then the test home (tests/home): MQTT and Z-Wave JS set up on their companions, a phone in the mobile app, and
+// Node-RED given a token and its Home Assistant server node.
 // It used to be part of apitest.py, so every suite depended on a test; now it's setup, run by tests/run.sh.
 //   node tests/e2e/hasetup.js
 const fs = require('fs');
@@ -39,7 +41,52 @@ async function wsCall(token, msg) {
     return r.result;
   } finally { sock.close(); }
 }
+const home = require('../home/home');
 const save = (who, t) => fs.writeFileSync(path.join(STATE, who + '_token.json'), JSON.stringify({ access_token: t.access_token, refresh_token: t.refresh_token, expires_in: t.expires_in }));
+
+// the test home (tests/home): an integration set up through its own config flow, as a person adds it
+async function flow(token, handler, steps) {
+  const auth = { Authorization: 'Bearer ' + token };
+  const have = await fetch(BASE + '/api/config/config_entries/entry?domain=' + handler, { headers: auth }).then(json);
+  if (have.length) return false;
+  let f = await post('/api/config/config_entries/flow', { handler, show_advanced_options: false }, token);
+  for (const body of steps) {
+    if (f.type !== 'form') break;
+    f = await post('/api/config/config_entries/flow/' + f.flow_id, body, token);
+  }
+  if (f.type !== 'create_entry') throw new Error(`hasetup: setting up ${handler} stopped at ${f.step_id || f.type}: ${JSON.stringify(f.errors || f.reason || '')}`);
+  return true;
+}
+async function testHome(token) {
+  // MQTT on the test home's broker (3.1.1: the broker, aedes, doesn't speak MQTT 5)
+  if (await flow(token, 'mqtt', [{ broker: '127.0.0.1', port: home.PORTS.mqtt, protocol: '3.1.1', other_settings: { set_client_cert: false, set_ca_cert: 'off', transport: 'tcp' } }])) console.log('set up MQTT');
+  // Z-Wave JS on the server in front of the mock controller
+  if (await flow(token, 'zwave_js', [{ url: home.zwave.url }])) console.log('set up Z-Wave JS');
+  // a phone in the mobile app, which pushes only over its websocket (nothing goes to a push service)
+  const devs = await wsCall(token, { type: 'config/device_registry/list' });
+  if (!devs.some((d) => d.name === 'Test phone')) {
+    await post('/api/mobile_app/registrations', { device_id: 'fbtest-phone', app_id: 'io.fbtest.companion', app_name: 'Test companion', app_version: '1.0', device_name: 'Test phone', manufacturer: 'Test Home', model: 'FB-Phone', os_name: 'TestOS', os_version: '1.0', supports_encryption: false, app_data: { push_websocket_channel: true } }, token);
+    console.log('registered the test phone');
+  }
+  // Node-RED: a token of its own (kept in .state, made again if this Home Assistant doesn't know it) and the base
+  // flow: the Home Assistant server node every test flow uses (tests/home/home.js)
+  const NR = path.join(STATE, 'nodered.json');
+  let nr = fs.existsSync(NR) ? JSON.parse(fs.readFileSync(NR, 'utf8')) : {};
+  const ok = nr.token && (await fetch(BASE + '/api/', { headers: { Authorization: 'Bearer ' + nr.token } })).status === 200;
+  const flows = await home.nodered.flows().catch((e) => { throw new Error('hasetup: Node-RED is not answering (sh tests/start-ha.sh starts it): ' + e.message); });
+  const hasServer = (flows.flows || flows).some((n) => n.id === home.SERVER);
+  if (!ok || !hasServer) {
+    if (!ok) nr = { token: await wsCall(token, { type: 'auth/long_lived_access_token', client_name: 'Node-RED (test home)', lifespan: 3650 }) };
+    fs.writeFileSync(NR, JSON.stringify(nr));
+    const v = await home.nodered.versions();
+    await home.nodered.deploy([
+      { id: 'fb_tab_base', type: 'tab', label: 'Test home', disabled: false, info: 'The Home Assistant server node the test flows use (tests/e2e/hasetup.js).' },
+      { id: home.SERVER, type: 'server', name: 'Home Assistant', version: v.serverVersion || 0, addon: false, rejectUnauthorizedCerts: true, ha_boolean: ['y', 'yes', 'true', 'on', 'home', 'open'], connectionDelay: false, cacheJson: true, heartbeat: false, heartbeatInterval: 30, areaSelector: 'friendlyName', deviceSelector: 'friendlyName', entitySelector: 'friendlyName', statusSeparator: ': ', statusYear: 'hidden', statusMonth: 'short', statusDay: 'numeric', statusHourCycle: 'default', statusTimeFormat: 'h:m', enableGlobalContextStore: false,
+        credentials: { host: BASE, access_token: nr.token } },
+    ]);
+    console.log('gave Node-RED its token and server node');
+  }
+}
 
 (async () => {
   fs.mkdirSync(STATE, { recursive: true });
@@ -71,6 +118,7 @@ const save = (who, t) => fs.writeFileSync(path.join(STATE, who + '_token.json'),
     await post('/api/config/config_entries/flow/' + f.flow_id, {}, owner.access_token);
     console.log('added the Functions Board integration');
   }
+  await testHome(owner.access_token);
   // Home Assistant answers its API before every integration is set up; the frontend (and get_services) only
   // settle once it says it is running, so wait for that (a slow CI runner showed only the loading screen)
   let state = null, svc = null;

@@ -232,36 +232,36 @@ div.board.compact.m-panel.nolist.pc
               span.port.pr data-y="27" style="top:27px"
               span.pl.port data-y="45" style="top:45px"
               span.port.pr data-y="45" style="top:45px"
-            div.d-automation.member.node aria-label="Automation Garage: start open timer On · ran <dur>. Set off by Garage Door. Changes Garage open timer" aria-pressed="false" data-key="automation.garage_start_open_timer" role="button" style="left:304px;top:189px;width:240px;height:62px" tabindex="-1" title="Garage: start open timer — On · ran <dur>"
+            div.d-automation.member.node aria-label="Automation Garage: start open timer On · ran never. Set off by Garage Door. Changes Garage open timer" aria-pressed="false" data-key="automation.garage_start_open_timer" role="button" style="left:304px;top:189px;width:240px;height:62px" tabindex="-1" title="Garage: start open timer — On · ran never"
               span.tag | Automation
               ha-icon.ic icon="mdi:robot-outline"
               div.txt
                 div.name | Garage: start open timer
-                div.sub | On · ran <dur>
+                div.sub | On · ran never
               span.pl.port data-y="9" style="top:9px"
               span.port.pr data-y="9" style="top:9px"
               span.pl.port data-y="27" style="top:27px"
               span.port.pr data-y="27" style="top:27px"
               span.pl.port data-y="45" style="top:45px"
               span.port.pr data-y="45" style="top:45px"
-            div.d-automation.member.node aria-label="Automation Garage: left open On · ran <dur>. Set off by timer.finished, Garage open timer. Checks Garage Door, Garage auto-close. Changes persistent_notification.create. Runs Close garage" aria-pressed="false" data-key="automation.garage_left_open" role="button" style="left:1008px;top:77px;width:240px;height:62px" tabindex="-1" title="Garage: left open — On · ran <dur>"
+            div.d-automation.member.node aria-label="Automation Garage: left open On · ran never. Set off by timer.finished, Garage open timer. Checks Garage Door, Garage auto-close. Changes persistent_notification.create. Runs Close garage" aria-pressed="false" data-key="automation.garage_left_open" role="button" style="left:1008px;top:77px;width:240px;height:62px" tabindex="-1" title="Garage: left open — On · ran never"
               span.tag | Automation
               ha-icon.ic icon="mdi:robot-outline"
               div.txt
                 div.name | Garage: left open
-                div.sub | On · ran <dur>
+                div.sub | On · ran never
               span.pl.port data-y="9" style="top:9px"
               span.port.pr data-y="9" style="top:9px"
               span.pl.port data-y="27" style="top:27px"
               span.port.pr data-y="27" style="top:27px"
               span.pl.port data-y="45" style="top:45px"
               span.port.pr data-y="45" style="top:45px"
-            div.d-automation.member.node aria-label="Automation Garage: closed, stop timer On · ran <dur>. Set off by Garage Door. Changes Garage open timer" aria-pressed="false" data-key="automation.garage_closed_stop_timer" role="button" style="left:304px;top:103px;width:240px;height:62px" tabindex="-1" title="Garage: closed, stop timer — On · ran <dur>"
+            div.d-automation.member.node aria-label="Automation Garage: closed, stop timer On · ran never. Set off by Garage Door. Changes Garage open timer" aria-pressed="false" data-key="automation.garage_closed_stop_timer" role="button" style="left:304px;top:103px;width:240px;height:62px" tabindex="-1" title="Garage: closed, stop timer — On · ran never"
               span.tag | Automation
               ha-icon.ic icon="mdi:robot-outline"
               div.txt
                 div.name | Garage: closed, stop timer
-                div.sub | On · ran <dur>
+                div.sub | On · ran never
               span.pl.port data-y="9" style="top:9px"
               span.port.pr data-y="9" style="top:9px"
               span.pl.port data-y="27" style="top:27px"
@@ -306,13 +306,13 @@ Outside this function"
               span.port.pr data-y="16" style="top:16px"
               span.pl.port data-y="28" style="top:28px"
               span.port.pr data-y="28" style="top:28px"
-            div.d-automation.node.suggest aria-label="Automation Garage: restart timer when reopened Related · On · ran <dur>. Related, not in this function. Checks Garage open timer. Changes Garage open timer" aria-pressed="false" data-key="automation.garage_restart_timer_when_reopened" role="button" style="left:1008px;top:185px;width:240px;height:62px" tabindex="-1" title="Garage: restart timer when reopened — Related · On · ran <dur>
+            div.d-automation.node.suggest aria-label="Automation Garage: restart timer when reopened Related · On · ran never. Related, not in this function. Checks Garage open timer. Changes Garage open timer" aria-pressed="false" data-key="automation.garage_restart_timer_when_reopened" role="button" style="left:1008px;top:185px;width:240px;height:62px" tabindex="-1" title="Garage: restart timer when reopened — Related · On · ran never
 Related, not in this function. Select it to add it."
               span.tag | Automation
               ha-icon.ic icon="mdi:robot-outline"
               div.txt
                 div.name | Garage: restart timer when reopened
-                div.sub | Related · On · ran <dur>
+                div.sub | Related · On · ran never
               span.pl.port data-y="9" style="top:9px"
               span.port.pr data-y="9" style="top:9px"
               span.pl.port data-y="27" style="top:27px"

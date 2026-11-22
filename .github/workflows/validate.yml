@@ -120,6 +120,10 @@ jobs:
         with:
           node-version: 22
           cache: npm
+          # the test home (tests/home) has a lockfile of its own
+          cache-dependency-path: |
+            package-lock.json
+            tests/home/package-lock.json
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
@@ -154,6 +158,8 @@ jobs:
           name: e2e-failure
           path: |
             ha/hass.log
+            ha/home/*.log
+            ha/home/zwave/*.log
             tests/e2e/.state/shots/
             tests/.results/
 
@@ -167,6 +173,10 @@ jobs:
         with:
           node-version: 22
           cache: npm
+          # the test home (tests/home) has a lockfile of its own
+          cache-dependency-path: |
+            package-lock.json
+            tests/home/package-lock.json
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
@@ -201,5 +211,7 @@ jobs:
           name: e2e2-failure
           path: |
             ha/hass.log
+            ha/home/*.log
+            ha/home/zwave/*.log
             tests/e2e/.state/shots/
             tests/.results/

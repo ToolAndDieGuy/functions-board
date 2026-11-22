@@ -1,0 +1,13 @@
+{
+  "name": "functions-board-test-home",
+  "private": true,
+  "description": "What the test Home Assistant talks to (tests/home/README.md): an MQTT broker, a Z-Wave JS server on a mock controller, Node-RED with the Home Assistant nodes. Test-only; never ships.",
+  "license": "MIT",
+  "dependencies": {
+    "@zwave-js/server": "3.12.0",
+    "aedes": "1.2.0",
+    "node-red": "5.0.10",
+    "node-red-contrib-home-assistant-websocket": "0.83.0",
+    "zwave-js": "15.32.4"
+  }
+}
