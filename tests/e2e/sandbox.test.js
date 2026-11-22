@@ -360,4 +360,75 @@ test('0.13.0 the sandbox: a device\'s own triggers on the Press row, an MQTT one
   check('0.13.0 device triggers: no errors', page.logs.length === 0, page.logs);
   await ctx.close();
 });
+test('0.13.0 the sandbox\'s Z-Wave: what Home Assistant fires when a node really reports, the sandbox fires the same', async ({ browser }) => {
+  const home = require('../home/home');
+  const { ctx, page } = await session(browser, 'owner', { viewport: { width: 1500, height: 900 } });
+  await page.goto(BASE + '/');
+  await ready(page);
+  await reset(page);
+  await importAll(page);
+  await page.goto(BASE + '/functions');
+  await fbq(page, '.nodes .node').first().waitFor({ timeout: 20000 });
+  const garage = await openFn(page, /garage/i);
+  const devs = await ws(page, { type: 'config/device_registry/list' });
+  const outlet = devs.find((d) => d.name === 'Garden outlet').id, keypad = devs.find((d) => d.name === 'Scene keypad').id, lock = devs.find((d) => d.name === 'Front door lock').id;
+  const api = (m, p, b) => page.evaluate(([m, p, b]) => document.querySelector('home-assistant').hass.callApi(m, p, b), [m, p, b]);
+  // automations that only look (their actions change nothing): a value updated, a scene button's event, a Notification
+  await api('POST', 'config/automation/config/fbzw_outlet', { alias: 'Garage: outlet turned on', triggers: [{ trigger: 'zwave_js.value_updated', device_id: outlet, command_class: 37, property: 'currentValue', to: true }], actions: [{ variables: { seen: true } }] });
+  await api('POST', 'config/automation/config/fbzw_scene', { alias: 'Garage: keypad scene 1', triggers: [{ trigger: 'event', event_type: 'zwave_js_value_notification', event_data: { device_id: keypad, property_key: '001' } }], actions: [{ variables: { seen: true } }] });
+  await api('POST', 'config/automation/config/fbzw_door', { alias: 'Garage: door opened', triggers: [{ trigger: 'device', domain: 'zwave_js', device_id: lock, type: 'event.notification.notification', command_class: 113, 'type.': 6, event: 22 }], actions: [{ variables: { seen: true } }] });
+  const ents = ['automation.garage_outlet_turned_on', 'automation.garage_keypad_scene_1', 'automation.garage_door_opened'];
+  await until(() => page.evaluate((ids) => ids.every((k) => !!document.querySelector('home-assistant').hass.states[k]), ents), 10000);
+  for (const id of ents) await ws(page, { type: 'config/entity_registry/update', entity_id: id, labels: [garage] });
+  // the real thing: each node reports, and what Home Assistant gave each automation is in its trace
+  // (pick: which of its runs; a key held is followed by the key released, a run of its own)
+  const trig = async (id, pick) => {
+    const tid = (await page.evaluate((k) => document.querySelector('home-assistant').hass.states[k].attributes.id, id));
+    return until(async () => {
+      const list = await ws(page, { type: 'trace/list', domain: 'automation', item_id: tid });
+      for (const x of list.slice().reverse()) {
+        const t = await ws(page, { type: 'trace/get', domain: 'automation', item_id: tid, run_id: x.run_id });
+        const v = ((((t.trace || {})['trigger/0'] || [])[0] || {}).changed_variables || {}).trigger || null;
+        if (v && (!pick || pick(v))) return v;
+      }
+      return null;
+    }, 15000, 500);
+  };
+  await home.zwave.switch(4, true);
+  const realOutlet = await trig(ents[0]);
+  await home.zwave.scene(3, 1, 'KeyHeldDown');
+  const realScene = await trig(ents[1], (v) => v.event && v.event.data.value_raw === 2);
+  // the door opened: a state Notification. Z-Wave JS updates the value and fires no notification event, so the device
+  // trigger on it doesn't start (its last run, if any, is from before)
+  const before = await page.evaluate((k) => document.querySelector('home-assistant').hass.states[k].attributes.last_triggered, ents[2]);
+  await home.zwave.notify(2, 6, 22);
+  await page.waitForTimeout(2500);
+  const doorRan = (await page.evaluate((k) => document.querySelector('home-assistant').hass.states[k].attributes.last_triggered, ents[2])) !== before;
+  check('0.13.0 the real nodes reported: the value-updated and scene automations started, the one on a Notification event for the door state didn\'t', !!realOutlet && !!realScene && !doorRan, { realOutlet, realScene, doorRan });
+  await home.zwave.switch(4, false);
+  await until(() => page.evaluate(() => document.querySelector('home-assistant').hass.states['switch.garden_garden_outlet'].state === 'off' || null), 10000);
+  await until(() => el(page, (b, a) => { if (b._model && a.every((k) => b._model.nodes.has(k))) return true; b._store.changed('reg'); b._open(b._data.ui.current, true); return null; }, ents), 20000, 1500);
+  // the sandbox: the same reports, from the Z-Wave row's engine; nothing sent from here on
+  page.sent.length = 0;
+  await fbq(page, '.tools [data-act="sandbox"]').click();
+  await fbq(page, '.modal [data-act="sbx-start"]').click({ timeout: 3000 }).catch(() => {});
+  await fbq(page, '.drawer .sbctl .sbzw').waitFor({ timeout: 10000 });
+  const run = (dev, id, v) => el(page, async (b, a) => { await b._sbx.eng.userZwave(a.dev, a.id, a.v); }, { dev, id, v });
+  await run(outlet, '4-37-0-currentValue', true);
+  await run(keypad, '3-91-0-scene-001', 2);
+  await run(lock, '2-113-0-Access Control-Door state', 22);
+  const here = await el(page, (b, ids) => Object.fromEntries(ids.map((k) => { const e = b._sbx.eng.log.find((x) => x.kind === 'trigger' && x.key === k); return [k, e ? e.vars.trigger : null]; })), ents);
+  const strip = (t) => { if (!t) return t; const o = Object.assign({}, t); ['id', 'idx', 'alias'].forEach((k) => delete o[k]); if (o.event) o.event = { event_type: o.event.event_type, data: o.event.data }; return JSON.parse(JSON.stringify(o)); };
+  const same = (a, b) => JSON.stringify(Object.keys(a || {}).sort().map((k) => [k, a[k]])) === JSON.stringify(Object.keys(b || {}).sort().map((k) => [k, b[k]]));
+  const sameEv = (a, b) => a && b && a.event_type === b.event_type && same(a.data, b.data);
+  check('0.13.0 a value updated: the sandbox\'s trigger variables are Home Assistant\'s, field for field', same(strip(here[ents[0]]), strip(realOutlet)), { here: strip(here[ents[0]]), real: strip(realOutlet) });
+  const diffs = (a, b) => [...new Set(Object.keys(a || {}).concat(Object.keys(b || {})))].filter((k) => JSON.stringify((a || {})[k]) !== JSON.stringify((b || {})[k])).map((k) => [k, (a || {})[k], (b || {})[k]]);
+  check('0.13.0 a scene button held: the same zwave_js_value_notification event', sameEv(strip(here[ents[1]]).event, strip(realScene).event), { type: [strip(here[ents[1]]).event.event_type, strip(realScene).event.event_type], diff: diffs(strip(here[ents[1]]).event.data, strip(realScene).event.data) });
+  check('0.13.0 the door opened in the sandbox: as in Home Assistant, the automation on the Notification event doesn\'t start', here[ents[2]] === null, here[ents[2]]);
+  const ev = await el(page, (b) => b._sbx.eng.get('event.hall_scene_keypad_scene_001').attributes.event_type);
+  check('0.13.0 ... and the scene\'s event entity shows the key held', ev === 'KeyHeldDown', ev);
+  check('0.13.0 the sandbox\'s Z-Wave: nothing sent to Home Assistant that changes anything', page.sent.filter((m) => /^(call_service|fire_event|execute_script)$/.test(m.type)).length === 0, page.sent.map((m) => m.type));
+  check('0.13.0 Z-Wave: no errors', page.logs.length === 0, page.logs);
+  await ctx.close();
+});
 test.afterAll(() => done());

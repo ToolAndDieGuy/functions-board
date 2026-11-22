@@ -2713,7 +2713,7 @@ i.fsn{font-style:normal;display:inline-block;min-width:16px;height:16px;padding:
 .sbrow{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .sbl{width:64px;font-size:12px;color:var(--secondary-text-color)}
 .sbrow select,.sbrow input:not([type=checkbox]){font:inherit;font-size:12.5px;padding:4px 8px;border-radius:8px;border:1px solid var(--divider-color);background:var(--card-background-color);color:var(--primary-text-color);min-width:0}
-.sbrow .sbent,.sbrow .sbrun,.sbrow .sbpress{flex:1 1 170px}.sbpressx{display:contents}.sbpressx[hidden]{display:none}.sbrow .sbpf{flex:0 1 130px}.sbrow .sbattr{flex:0 1 120px}.sbrow .sbhook,.sbrow .sbcal{flex:1 1 140px}.sbrow .sbsay,.sbrow .sbjump{flex:2 1 200px}.sbrow .sbtrig{flex:1 1 150px}.sbrow .sbtop{flex:1 1 160px}.sbrow .sbpay{flex:1 1 140px}.sbrow .sbval{flex:0 1 130px}.sbrow .sbev{flex:1 1 140px}.sbrow .sbevd{flex:2 1 170px}
+.sbrow .sbent,.sbrow .sbrun,.sbrow .sbpress{flex:1 1 170px}.sbpressx{display:contents}.sbpressx[hidden]{display:none}.sbrow .sbpf{flex:0 1 130px}.sbrow .sbzw{flex:2 1 220px}.sbrow .sbattr{flex:0 1 120px}.sbrow .sbhook,.sbrow .sbcal{flex:1 1 140px}.sbrow .sbsay,.sbrow .sbjump{flex:2 1 200px}.sbrow .sbtrig{flex:1 1 150px}.sbrow .sbtop{flex:1 1 160px}.sbrow .sbpay{flex:1 1 140px}.sbrow .sbval{flex:0 1 130px}.sbrow .sbev{flex:1 1 140px}.sbrow .sbevd{flex:2 1 170px}
 .sbrow .chip:disabled{opacity:.5;cursor:default}
 .sbcb{display:inline-flex;gap:4px;align-items:center;font-size:12px;color:var(--secondary-text-color)}
 .sbdue{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;padding:6px 10px;font-size:11.5px;border-bottom:1px solid var(--divider-color)}.sbdue:empty{display:none}
@@ -3246,6 +3246,16 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       sbx_press: 'Press',
       sbx_press_what: 'A device\'s button, or another trigger to fire',
       sbx_press_b: 'Press',
+      sbx_zw: 'Z-Wave',
+      sbx_zw_what: 'A Z-Wave value',
+      sbx_zw_val: 'What the node reports',
+      sbx_zw_b: 'Report',
+      sbx_zw_ep: 'endpoint {n}',
+      sbx_g_zw_used: 'Listened for by the automations',
+      sbx_zw_did: 'Z-Wave: {what} reported {value}',
+      sbx_zw_sent: 'Z-Wave: {what} sent {value}',
+      sbx_zw_trig: 'Z-Wave value updated: {what} is {value}',
+      sbx_zw_left: '{name} shows this value, but the sandbox doesn\'t work out its state from it: set it on the Set row as well.',
       sbx_g_used: 'Used by the automations',
       sbx_g_devtrig: 'The devices\' other triggers',
       sbx_press_field: '{name} of the trigger pressed',
@@ -3459,7 +3469,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       sbxi_l_board: '<b>Only the automations and scripts on this board run</b>, unless you tick Whole home below: then automations elsewhere that start from what this function reads or changes run too. Node-RED flows, alerts and an integration\'s own logic never run here, so a chain through them stops at the edge.',
       sbxi_l_devices: '<b>Devices answer at once.</b> A light turned on is simply on, unless the Device row makes it slow, fail or go unavailable. Values don\'t change by themselves: a temperature stays where it is until you set it. Template, min/max, threshold and group helpers follow what they read, as in Home Assistant; other helpers worked out from something (a derivative, a utility meter) stay as they are.',
       sbxi_l_calls: '<b>Some calls change nothing here.</b> Notifications, TTS and log messages are listed as messages. Scenes, device actions and services the sandbox doesn\'t know are listed as calls it would make, without their effect.',
-      sbxi_l_triggers: '<b>Some triggers are yours to fire.</b> A device\'s own buttons (ZHA, Z-Wave, Hue, MQTT), webhooks, tags, calendars, Assist and Home Assistant starting have their own rows. The Press row lists every trigger the function\'s devices have, not only those its automations use, with the choices Home Assistant offers for each (a scene button pressed, held or released); an MQTT device\'s is sent as the message it stands for, which everything on that topic hears. One the sandbox can\'t see coming (Z-Wave value updated, geo location) is fired from the Press row too. Zones and the sun follow the states and the clock. Calendar offsets and the sun\'s exact times are approximate.',
+      sbxi_l_triggers: '<b>Some triggers are yours to fire.</b> A device\'s own buttons (ZHA, Z-Wave, Hue, MQTT), webhooks, tags, calendars, Assist and Home Assistant starting have their own rows. The Press row lists every trigger the function\'s devices have, not only those its automations use, with the choices Home Assistant offers for each (a scene button pressed, held or released); an MQTT device\'s is sent as the message it stands for, which everything on that topic hears. A Z-Wave device\'s values have a row of their own: a value reported with one of its states starts the value-updated triggers on it and moves the entities that show it, as in Home Assistant. One the sandbox can\'t see coming (geo location, a KNX telegram) is fired from the Press row too. Zones and the sun follow the states and the clock. Calendar offsets and the sun\'s exact times are approximate.',
       sbxi_l_ask: '<b>Some answers come from you.</b> An integration\'s own conditions, and templates Home Assistant can\'t render, are asked in the drawer. The result is only as good as your answer.',
       sbxi_l_tpl: '<b>Templates are rendered by Home Assistant</b> from the sandbox\'s states and clock. Ones that read locations (closest, distance) read your real home, and are marked partly real.',
       sbxi_l_nodered: '<b>Node-RED flows don\'t run.</b> Their boxes show what they use, but what a flow would do isn\'t simulated.',
@@ -4801,10 +4811,13 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
   }
   // an integration's own device trigger (no entity): what makes it one; two triggers with the same key are the same
   // button. The keys besides these name the press: type, subtype, and the integration's own (zha's, deCONZ's …)
+  // what names a device trigger, rather than what it's set to
+  const SBX_DEV_IDENT = new Set(['domain', 'device_id', 'type', 'subtype', 'entity_id', 'property', 'property_key', 'endpoint', 'command_class', 'discovery_id']);
   const SBX_DEV_SKIP = new Set(['trigger', 'platform', 'id', 'enabled', 'for', 'variables', 'metadata', 'alias']);
   function sbxPressKey(t) {
     const o = {};
-    Object.keys(t).filter((k) => !SBX_DEV_SKIP.has(k)).sort().forEach((k) => { o[k] = t[k]; });
+    // (keys with an underscore are the sandbox's own: a trigger it rewrote keeps the original under _dev)
+    Object.keys(t).filter((k) => !SBX_DEV_SKIP.has(k) && k[0] !== '_').sort().forEach((k) => { o[k] = t[k]; });
     return JSON.stringify(o);
   }
   // ---- a device's own triggers (0.13.0) ----------------------------------------------------------------------------
@@ -4860,8 +4873,83 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
   // class and property)
   function sbxDevPressable(t, caps) {
     if (!t || typeof t !== 'object' || t.entity_id != null || !t.device_id) return false;
+    // a Z-Wave value updated: the Z-Wave row's, from the node's values (0.13.0); a Notification event with no choice
+    // to offer (Home Assistant's are typed in): only those the automations use, as they're set
+    if (t.domain === 'zwave_js' && /^(zwave_js\.value_updated\.|event\.notification\.)/.test(String(t.type))) return false;
     const sel = new Set(sbxDevFields(caps).map((f) => f.name));
     return !toList(caps && caps.extra_fields).some((f) => f && f.required && !sel.has(f.name));
+  }
+  // ---- Z-Wave values (0.13.0) -----------------------------------------------------------------------------------------
+  // A Z-Wave device's values come from functions_board/zwave_values: { node_id, home_id, values: [{ id, cc, cc_name,
+  // endpoint, property, property_name, property_key, property_key_name, label, type, states: [[raw, label]], value,
+  // stateful, notification_type, entities: [[entity id, state key]] }] }. A value that holds (a lock's mode, a door's
+  // state) is updated: Home Assistant's zwave_js.value_updated triggers hear it, and the entities that show it follow.
+  // A stateless one (a scene button) is a value notification: the zwave_js_value_notification event, and its event
+  // entity. A Notification value is a state (door open), only updated: Z-Wave JS fires no notification event for it.
+  // An event-type Notification (a keypad unlock) has no value: it's the zwave_js_notification event, from the Press row.
+  // Home Assistant's value id: node, command class, endpoint, property and key
+  const sbxZwId = (node, cc, ep, prop, key) => `${node}-${cc}-${ep || 0}-${prop}` + (key != null && key !== '' ? `-${key}` : '');
+  // a trigger's setting as Home Assistant's schema reads it: Coerce(int), else the text ("001" is 1, as in Home
+  // Assistant: a trigger with property_key "001" never matches the value keyed "001")
+  const sbxZwInt = (v) => (typeof v === 'number' ? Math.trunc(v) : typeof v === 'string' && /^\s*[-+]?\d+\s*$/.test(v) ? parseInt(v, 10) : v);
+  // from and to of a value-updated trigger, as Home Assistant reads them (zwave_js VALUE_SCHEMA): a boolean word, an
+  // integer, a float, hex digits (a bitmask), else the text
+  function sbxZwCoerce(v) {
+    if (typeof v !== 'string') return v;
+    const w = v.toLowerCase().trim();
+    if (['true', 'yes', 'on', 'enable'].includes(w)) return true;
+    if (['false', 'no', 'off', 'disable'].includes(w)) return false;
+    if (/^[-+]?\d+$/.test(w)) return parseInt(w, 10);
+    if (/^[-+]?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?$/.test(w)) return parseFloat(w);
+    if (/^(0x)?[0-9a-f]+$/.test(w)) return parseInt(w.replace(/^0x/, ''), 16);
+    return v;
+  }
+  // Python's ==, for what a Z-Wave value can be: True is 1, 1 is 1.0, a number is never the same as text
+  const sbxPyEq = (a, b) => { const n = (x) => (typeof x === 'boolean' ? +x : x); const x = n(a), y = n(b); return typeof x === typeof y && x === y; };
+  function sbxZwMatch(m, label, raw) {
+    if (m === undefined || m === null || m === '*') return true;
+    if (Array.isArray(m)) return m.map(sbxZwCoerce).some((x) => sbxPyEq(x, label) || sbxPyEq(x, raw));
+    const x = sbxZwCoerce(m);
+    return x === '*' || sbxPyEq(x, label) || sbxPyEq(x, raw);
+  }
+  // a value's state label (its states map), else the raw value
+  const sbxZwLabel = (v, raw) => { const s = (v.states || []).find((x) => sbxPyEq(x[0], raw) || String(x[0]) === String(raw)); return s ? s[1] : raw; };
+  // the state of an entity that shows a value, as Home Assistant's Z-Wave platform works it out (binary sensor, sensor,
+  // select, switch, lock); null for one the sandbox leaves as it is
+  function sbxZwState(entityId, v, raw, stateKey) {
+    const dom = entityId.split('.')[0];
+    if (!['binary_sensor', 'sensor', 'switch', 'lock', 'select'].includes(dom)) return null;
+    if (raw == null) return 'unknown';
+    if (dom === 'binary_sensor') return (stateKey != null ? parseInt(raw, 10) === +stateKey : !!raw) ? 'on' : 'off';
+    if (dom === 'switch') return raw ? 'on' : 'off';
+    if (dom === 'lock') { if (v.cc === 98 && raw === 254) return 'unknown'; return sbxPyEq(raw, v.cc === 98 ? 255 : 1) ? 'locked' : 'unlocked'; }
+    const l = sbxZwLabel(v, raw);
+    return typeof l === 'boolean' ? (l ? 'True' : 'False') : String(l);
+  }
+  // a Z-Wave device trigger, as Home Assistant attaches it (its device_trigger.py): a scene button or a Notification as
+  // the event the integration fires, a value updated as the zwave_js.value_updated trigger
+  function sbxDevZwave(t) {
+    if (!t || typeof t !== 'object' || (t.trigger || t.platform) !== 'device' || t.domain !== 'zwave_js') return null;
+    const ty = String(t.type || ''), keep = { _dev: t, _zw: true }, put = (o, k, to, f) => { const v = t[k]; if (v !== undefined && v !== null && v !== '') o[to || k] = f ? f(v) : v; };
+    ['id', 'enabled', 'variables'].forEach((k) => { if (t[k] !== undefined) keep[k] = t[k]; });
+    if (/^event\.value_notification\./.test(ty)) {
+      const ed = { device_id: t.device_id };
+      put(ed, 'command_class', null, sbxZwInt); put(ed, 'property'); put(ed, 'property_key'); put(ed, 'endpoint', null, sbxZwInt); put(ed, 'value', 'value_raw', sbxZwInt);
+      return Object.assign({ trigger: 'event', event_type: 'zwave_js_value_notification', event_data: ed }, keep);
+    }
+    if (ty === 'event.notification.entry_control' || ty === 'event.notification.notification') {
+      const ed = { device_id: t.device_id };
+      put(ed, 'command_class', null, sbxZwInt);
+      if (ty === 'event.notification.entry_control') { put(ed, 'event_type', null, sbxZwInt); put(ed, 'data_type', null, sbxZwInt); }
+      else { put(ed, 'label'); put(ed, 'event_label'); put(ed, 'event', null, sbxZwInt); put(ed, 'type.', 'type', sbxZwInt); }
+      return Object.assign({ trigger: 'event', event_type: 'zwave_js_notification', event_data: ed }, keep);
+    }
+    if (/^zwave_js\.value_updated\./.test(ty)) {
+      const out = { trigger: 'zwave_js.value_updated', device_id: [t.device_id] };
+      ['command_class', 'property', 'property_key', 'endpoint', 'from', 'to'].forEach((k) => put(out, k));
+      return Object.assign(out, keep);
+    }
+    return null;
   }
   // a choice picked on the Press row: a number-like value as a number, as the automation editor stores it
   const sbxNum = (v) => (typeof v === 'string' && /^-?\d+$/.test(v) ? +v : v);
@@ -4992,6 +5080,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         this.follow.set(id, { rule: d.rule, reads: toList(d.reads), mem });
         sbxFeeds(d).forEach((src) => { if (!this.feeds.has(src)) this.feeds.set(src, []); this.feeds.get(src).push(id); });
       });
+      // Z-Wave devices' values (0.13.0): device → { node, home, byId }, and each value's raw value as it is here
+      this.zw = new Map(); this.zwv = new Map();
+      Object.entries(o.zwave || {}).forEach(([dev, z]) => { if (z && Array.isArray(z.values)) this.zw.set(dev, { node: z.node_id, home: z.home_id, byId: new Map(z.values.map((v) => [v.id, v])) }); });
       (o.items || []).forEach((x) => this.add(x.id, x.cfg));
     }
     add(id, cfg) { if (cfg) this.items.set(id, { id, cfg, kind: id.startsWith('script.') ? 'script' : 'automation' }); }
@@ -5161,7 +5252,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     _asTrigs(list) {
       return toList(list).filter((t) => t && typeof t === 'object').map((t) => {
         if ((t.trigger || t.platform) !== 'device') return t;
-        if (!this.devT.has(t)) this.devT.set(t, sbxDevTrig(t, this.o.entityOf) || sbxDevMqtt(t, this.o.devMqtt) || t);
+        if (!this.devT.has(t)) this.devT.set(t, sbxDevTrig(t, this.o.entityOf) || sbxDevMqtt(t, this.o.devMqtt) || sbxDevZwave(t) || t);
         return this.devT.get(t);
       });
     }
@@ -5283,12 +5374,103 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const dev = typeof pick.device_id === 'string' ? pick.device_id : null;
       const def = dev && pick.domain === 'mqtt' ? sbxMqDef(pick, this.o.devMqtt) : null;
       if (def) return this._pressMqtt(pick, def);
+      // a Z-Wave scene button or Notification: the event the integration fires for it
+      if (dev && pick.domain === 'zwave_js' && /^event\./.test(String(pick.type))) return this._pressZwave(pick);
       let label = '';
       this.items.forEach((it) => { if (it.kind === 'automation') this._trigs(it).forEach((t) => { if (sbxPressKey(t) === key) label = label || this._pressText(t); }); });
       if (!label && dev) label = this._pressText(Object.assign({ trigger: 'device' }, pick));
       const own = (x) => Object.fromEntries(Object.entries(x).filter(([k]) => !SBX_DEV_SKIP.has(k)));
       return this._userTrig({ kind: 'did', key: dev ? 'device:' + dev : 'press:', text: T('sbx_pressed', { what: label || key }) },
         (t) => this._plat(t) !== 'state' && !t._mq && sbxPressHits(t, pick), (t) => Object.assign(own(t), (this._plat(t) === 'device' ? own(pick) : {})));
+    }
+    async _pressZwave(pick) {
+      const t = sbxDevZwave(Object.assign({ trigger: 'device' }, pick)), ed = Object.assign({}, t.event_data), z = this.zw.get(pick.device_id);
+      const what = this._pressText(Object.assign({ trigger: 'device' }, pick));
+      // a scene button of a node whose values are known: as that value's notification, the event entity with it
+      const v = z && t.event_type === 'zwave_js_value_notification' && [...z.byId.values()].find((x) => x.cc === ed.command_class && (x.endpoint || 0) === (ed.endpoint || 0) && String(x.property) === String(ed.property) && String(x.property_key) === String(ed.property_key));
+      this._fresh();
+      await new Promise((r) => {
+        this._task(async () => {
+          const lid = this._log({ kind: 'did', by: 'you', key: 'device:' + pick.device_id, text: T('sbx_pressed', { what }) });
+          if (v) await this._zwNotify(pick.device_id, v, ed.value_raw, lid);
+          else {
+            if (ed.value_raw !== undefined) ed.value = ed.value_raw;
+            // the node's own fields when they're known (its labels aren't: they come with the report)
+            const node = z ? { node_id: z.node, home_id: z.home, endpoint: 0 } : {};
+            if (t.event_type === 'zwave_js_notification' && ed.command_class === 113) node.command_class_name = 'Notification';
+            await this.fireEvent(t.event_type, Object.assign({ domain: 'zwave_js' }, node, ed), lid);
+          }
+          r();
+        });
+      });
+      await this.settle();
+    }
+    // ---- Z-Wave values (0.13.0): a value reported by a node, as Home Assistant hears it
+    userZwave(dev, id, raw) {
+      this._fresh();
+      return new Promise((r) => { this._task(async () => { try { await this._zwave(dev, id, raw, null, true); } finally { r(); } }); }).then(() => this.settle());
+    }
+    _zwName(dev, v) { return `${this._name('device:' + dev)}: ${v.label || v.property_key_name || v.property_name || v.property}${v.endpoint ? ' (' + T('sbx_zw_ep', { n: v.endpoint }) + ')' : ''}`; }
+    _zwBase(dev, v) {
+      const z = this.zw.get(dev);
+      return { domain: 'zwave_js', node_id: z.node, home_id: z.home, home_id_hex: typeof z.home === 'number' ? '0x' + z.home.toString(16).padStart(8, '0') : null, endpoint: v.endpoint || 0, device_id: dev, command_class: v.cc, command_class_name: v.cc_name };
+    }
+    async _zwave(dev, id, raw, cause, byYou) {
+      const z = this.zw.get(dev), v = z && z.byId.get(id);
+      if (!v) return null;
+      // a stateless value (a scene button) is a notification, not a new value
+      if (v.stateful === false || v.cc === 91 || v.cc === 43) {
+        const lid = this._log({ kind: 'did', by: byYou ? 'you' : null, cause, key: 'device:' + dev, text: T('sbx_zw_sent', { what: this._zwName(dev, v), value: String(sbxZwLabel(v, raw)) }) });
+        await this._zwNotify(dev, v, raw, lid);
+        return lid;
+      }
+      const k = dev + '|' + id, prev = this.zwv.has(k) ? this.zwv.get(k) : v.value;
+      const lid = this._log({ kind: 'did', by: byYou ? 'you' : null, cause, key: 'device:' + dev, text: T('sbx_zw_did', { what: this._zwName(dev, v), value: String(sbxZwLabel(v, raw)) }) });
+      // (a Notification value is a state, door open or closed: Z-Wave JS updates the value and fires no notification
+      // event for it, so neither does the sandbox. An event-type Notification, a keypad unlock, has no value: it's
+      // pressed on the Press row, as the trigger that waits for it)
+      this.zwv.set(k, raw);
+      // the entities that show it follow, as Home Assistant's Z-Wave platforms work them out
+      for (const [eid, sk] of v.entities || []) {
+        if (!this.get(eid)) continue;
+        const st = sbxZwState(eid, v, raw, sk);
+        if (st == null) this._log({ kind: 'note', key: eid, text: T('sbx_zw_left', { name: this._name(eid) }) });
+        else await this.setState(eid, st, null, lid);
+      }
+      const label = sbxZwLabel(v, raw), plabel = sbxZwLabel(v, prev);
+      const hit = (t) => {
+        if (this._plat(t) !== 'zwave_js.value_updated') return null;
+        const devs = toList(t.device_id).map(String), ents = toList(t.entity_id).map(String);
+        if (!devs.includes(dev) && !ents.some((e) => this.o.devOf && this.o.devOf(e) === dev)) return null;
+        if (sbxZwId(z.node, sbxZwInt(t.command_class), sbxZwInt(t.endpoint), sbxZwInt(t.property), sbxZwInt(t.property_key)) !== v.id) return null;
+        if (!sbxZwMatch(t.from, plabel, prev) || !sbxZwMatch(t.to, label, raw)) return null;
+        return Object.assign({ platform: 'zwave_js.value_updated', device_id: dev, node_id: z.node, command_class: v.cc, command_class_name: v.cc_name, property: v.property, property_name: v.property_name,
+          endpoint: t.endpoint == null ? null : sbxZwInt(t.endpoint), property_key: v.property_key, property_key_name: v.property_key_name,
+          previous_value: plabel, previous_value_raw: prev, current_value: label, current_value_raw: raw, description: `Z-Wave value ${v.id} updated on ${this._name('device:' + dev)}` });
+      };
+      await this._dispatch(async () => {
+        const ws = this._listening();
+        for (const it of this.items.values()) {
+          if (it.kind !== 'automation' || !this._on(it)) continue;
+          const ts = this._trigs(it);
+          for (let i = 0; i < ts.length; i++) {
+            if (ts[i].enabled === false) continue;
+            const tv = hit(ts[i]);
+            if (tv) await this._fire(it, i, tv, lid);
+          }
+        }
+        ws().forEach((w) => w.onOther && w.onOther(hit, null, lid));
+      });
+      return lid;
+    }
+    // a value notification: the zwave_js_value_notification event, then the event entity that shows the value
+    async _zwNotify(dev, v, raw, cause) {
+      const label = sbxZwLabel(v, raw);
+      await this.fireEvent('zwave_js_value_notification', Object.assign(this._zwBase(dev, v), { label: v.label, property: v.property, property_name: v.property_name, property_key: v.property_key, property_key_name: v.property_key_name, value: label, value_raw: raw }), cause);
+      for (const [eid] of v.entities || []) {
+        const cur = this.get(eid);
+        if (eid.startsWith('event.') && cur && raw != null) await this.setState(eid, this.iso(), Object.assign({}, cur.attributes || {}, { event_type: String(label), value: raw }), cause);
+      }
     }
     async _pressMqtt(pick, def) {
       const send = sbxMqttSend(def.payload, def.value_template);
@@ -5305,7 +5487,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     }
     _pressText(t) {
       if (this._plat(t) === 'device') {
-        const more = this.o.pressMore ? this.o.pressMore(t) : '';
+        // the choices it's set to: named by the device's list when the board has it, else as they're set (a Z-Wave
+        // Notification's type and event)
+        const more = (this.o.pressMore ? this.o.pressMore(t) : '') || Object.entries(t).filter(([k, v]) => !SBX_DEV_SKIP.has(k) && k[0] !== '_' && !SBX_DEV_IDENT.has(k) && v != null && typeof v !== 'object').map(([k, v]) => `${k.replace(/\.$/, '')} ${v}`).join(', ');
         const what = [t.type, t.subtype].filter((x) => x != null && x !== '').map((x, i) => (i === 0 ? String(x).split('.').pop() : String(x)).replace(/_/g, ' ')).concat(more ? [more] : []).join(' · ');
         return `${t.device_id ? this._name('device:' + t.device_id) : t.domain}: ${what || t.domain}`;
       }
@@ -5887,6 +6071,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     _trigText(t, tv) {
       const p = this._plat(t);
       if (p === 'state' || p === 'numeric_state') return T('sbx_trig_state', { name: this._name(tv.entity_id), state: tv.to_state ? tv.to_state.state : '' });
+      if (p === 'event' && t._zw) return T('sbx_pressed', { what: this._pressText(t._dev) });
       if (p === 'event') return T('sbx_trig_event', { type: tv.event.event_type });
       if (p === 'time' || p === 'time_pattern') return T('sbx_trig_time');
       if (p === 'template') return T('sbx_trig_template');
@@ -5897,6 +6082,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (p === 'tag') return T('sbx_tag_scanned', { tag: tv.tag_id });
       if (p === 'calendar') { const name = this._name(String(t.entity_id)), summary = (tv.calendar_event || {}).summary || ''; return tv.event === 'end' ? T('sbx_cal_ends', { name, summary }) : T('sbx_cal_starts', { name, summary }); }
       if (p === 'conversation') return T('sbx_said', { s: tv.sentence });
+      if (p === 'zwave_js.value_updated' && tv.current_value !== undefined) return T('sbx_zw_trig', { what: this._zwName(tv.device_id, this.zw.get(tv.device_id).byId.get(sbxZwId(tv.node_id, tv.command_class, tv.endpoint, tv.property, tv.property_key)) || { property: tv.property }), value: String(tv.current_value) });
       if (p === 'device' || !SBX_PLATS.has(p)) return T('sbx_pressed', { what: this._pressText(t) });
       // an MQTT device trigger (0.13.0): the device's button, whichever way its message came
       if (p === 'mqtt' && t._mq) return T('sbx_pressed', { what: this._pressText(t._dev) });
@@ -6462,7 +6648,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       } else acts(it.cfg.sequence);
     }
     inputs() {
-      const ents = new Map(), presses = new Map(), hooks = new Map(), tags = new Set(), cals = new Map(), says = new Map(), ha = new Set();
+      const ents = new Map(), presses = new Map(), hooks = new Map(), tags = new Set(), cals = new Map(), says = new Map(), ha = new Set(), zw = new Map();
       const slot = (id, attr) => {
         if (typeof id !== 'string' || !EXACT_RE.test(id)) return null;
         const k = id + '|' + (attr || '');
@@ -6496,6 +6682,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           else if (p === 'template') reads(t.value_template);
           else if (p === 'time') toList(t.at).forEach((a) => { if (EXACT_RE.test(String(a))) slot(String(a), null); });
           else if (p === 'mqtt' && t._mq) presses.set(sbxPressKey(t._dev), this._pressText(t._dev));
+          else if (p === 'zwave_js.value_updated' && this._zwOf(t).length) this._zwOf(t).forEach((x) => zw.set(x, name));
+          else if (p === 'event' && (t._zw || this._zwOf(t).length)) { if (t._zw) presses.set(sbxPressKey(t._dev), this._pressText(t._dev)); this._zwOf(t).forEach((x) => zw.set(x, name)); }
           else if ((p === 'device' && !t._dev) || (!SBX_PLATS.has(p) && !spec && p)) presses.set(sbxPressKey(t), this._pressText(t));
           else if (p === 'webhook' && t.webhook_id != null) hooks.set(String(t.webhook_id), toList(t.allowed_methods || ['POST', 'PUT']).map(String));
           else if (p === 'tag') toList(t.tag_id).forEach((x) => tags.add(String(x)));
@@ -6555,7 +6743,32 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         cals: [...cals].map(([id, evs]) => ({ id, events: [...evs] })),
         says: [...says].map(([v, name]) => ({ v, name })),
         ha: ['start', 'shutdown'].filter((x) => ha.has(x)),
+        // Z-Wave values a trigger listens for (0.13.0): { dev, id, name } (name: the automation's)
+        zwave: [...zw].map(([k, name]) => { const i = k.indexOf('|'); return { dev: k.slice(0, i), id: k.slice(i + 1), name }; }),
       };
+    }
+    // the Z-Wave values a trigger listens for, as 'device|value id': a value updated's, or the scene buttons a value
+    // notification's event data names
+    _zwOf(t) {
+      const out = [], p = this._plat(t);
+      if (p === 'zwave_js.value_updated') {
+        const devs = new Set(toList(t.device_id).map(String));
+        toList(t.entity_id).forEach((e) => { const d = this.o.devOf && this.o.devOf(String(e)); if (d) devs.add(d); });
+        devs.forEach((dev) => {
+          const z = this.zw.get(dev);
+          if (!z) return;
+          const id = sbxZwId(z.node, sbxZwInt(t.command_class), sbxZwInt(t.endpoint), sbxZwInt(t.property), sbxZwInt(t.property_key));
+          if (z.byId.has(id)) out.push(dev + '|' + id);
+        });
+      } else if (p === 'event' && t.event_type === 'zwave_js_value_notification') {
+        const ed = t.event_data || {}, z = this.zw.get(String(ed.device_id));
+        if (!z) return out;
+        z.byId.forEach((v, id) => {
+          const same = (k, x) => ed[k] === undefined || String(ed[k]) === String(x);
+          if ((v.stateful === false || v.cc === 91 || v.cc === 43) && same('command_class', v.cc) && same('property', v.property) && same('property_key', v.property_key) && same('endpoint', v.endpoint || 0)) out.push(ed.device_id + '|' + id);
+        });
+      }
+      return out;
     }
     // what changed since the start: [{ id, from, to }]
     diff() { return [...this.changed].map(([id, s]) => ({ id, from: this.real[id] ? this.real[id].state : null, to: s.state })).filter((x) => x.from !== x.to); }
@@ -6644,7 +6857,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
          items: the automations and scripts that took part (the function's own and the related ones on its board),
          steps: [{ op: set|event|mqtt|run|advance|next, … }], answers: [{ key, text, value }] given to its questions,
          expect: [{ k: state, id, state } | { k: ran|stopped|notran, id }] } ---------- */
-  const CHECK_OPS = new Set(['set', 'event', 'mqtt', 'run', 'advance', 'next', 'press', 'ha', 'webhook', 'tag', 'calendar', 'say', 'behave']);
+  const CHECK_OPS = new Set(['set', 'event', 'mqtt', 'run', 'advance', 'next', 'press', 'ha', 'webhook', 'tag', 'calendar', 'say', 'behave', 'zwave']);
   // one step of a check (or of what you do in the sandbox), done on an engine
   function sbxDoStep(eng, s) {
     switch (s.op) {
@@ -6654,6 +6867,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       case 'run': return eng.userRun(s.id, s.conds, s.ti, s.vars);
       case 'advance': return eng.advance(s.ms);
       case 'press': return eng.userPress(s.key);
+      case 'zwave': return eng.userZwave(s.dev, s.id, s.value);
       case 'ha': return eng.userHA(s.event);
       case 'webhook': return eng.userWebhook(s.id, s.data, s.method);
       case 'tag': return eng.userTag(s.tag);
@@ -6677,6 +6891,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (!x || !CHECK_OPS.has(x.op)) return null;
       if (x.op === 'set') return id(x.id) && Object.assign({ op: 'set', id: x.id, state: x.state == null ? null : str(x.state, 255) }, x.attrs && typeof x.attrs === 'object' && Object.keys(x.attrs).length ? { attrs: plain(x.attrs) } : {});
       if (x.op === 'press') return { op: 'press', key: str(x.key, 1000) };
+      if (x.op === 'zwave') return { op: 'zwave', dev: str(x.dev, 64), id: str(x.id, 255), value: x.value == null || typeof x.value === 'boolean' || typeof x.value === 'number' ? (x.value == null ? null : x.value) : str(x.value, 255) };
       if (x.op === 'ha') return { op: 'ha', event: x.event === 'shutdown' ? 'shutdown' : 'start' };
       if (x.op === 'webhook') return { op: 'webhook', id: str(x.id, 255), method: str(x.method || 'POST', 10).toUpperCase(), data: plain(x.data) };
       if (x.op === 'tag') return { op: 'tag', tag: str(x.tag, 255) };
@@ -7315,7 +7530,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._watch = new Map(); this._toastActs = [];
       // what the board knows of Home Assistant, each fact with the time it was asked (0.10.0): the registries ('reg'),
       // configs ('cfg:<entity id>'), and the time of the shared board data ('data')
-      this._store = new Store((key) => (key === 'reg' ? this._fetchRegistries() : key.startsWith('cfg:') ? this._readConfig(key.slice(4)) : key.startsWith('dtrig:') ? this._readDevTrig(key.slice(6)) : Promise.reject(new Error('the store has no way to read ' + key))));
+      this._store = new Store((key) => (key === 'reg' ? this._fetchRegistries() : key.startsWith('cfg:') ? this._readConfig(key.slice(4)) : key.startsWith('dtrig:') ? this._readDevTrig(key.slice(6)) : key.startsWith('zw:') ? this._readZw(key.slice(3)) : Promise.reject(new Error('the store has no way to read ' + key))));
       this._undoStack = []; this._redoStack = [];
       this._tgt = new Map(); this._src = new Map();
       // developer tools (Phase 9): simulated states, trigger watches, check results, monitors, the debugger
@@ -7791,7 +8006,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     _subscribe() {
       if (this._unsubs.length || !this._hass) return;
       const c = this._haConn;
-      const reload = () => { this._store.changed('reg'); this._store.changed('dtrig:'); this._clock.after('reg', 1200, () => this._reload()); };
+      const reload = () => { this._store.changed('reg'); this._store.changed('dtrig:'); this._store.changed('zw:'); this._clock.after('reg', 1200, () => this._reload()); };
       this._unsubs = [
         c.subscribeEvents((ev) => this._onRegistry(ev), 'entity_registry_updated'),
         // devices: only creation, removal, and labels, names or areas changing matter to the board (5.5)
@@ -9540,6 +9755,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           'sbx-mqtt': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
           'sbx-next': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
           'sbx-press': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
+          'sbx-zw': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
           'sbx-ha': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
           'sbx-hook': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
           'sbx-tag': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
@@ -12039,7 +12255,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       for (const c of list) {
         try {
           const items = await itemsFor(c);
-          const r = await runCheck(c, Object.assign({ items, devMqtt: (await this._devTrigs(this._devIdsIn(items.map((x) => x.cfg), true), true)).mqtt }, o));
+          const cfgs = items.map((x) => x.cfg);
+          const r = await runCheck(c, Object.assign({ items, devMqtt: (await this._devTrigs(this._devIdsIn(cfgs, true), true)).mqtt, zwave: await this._zwFor(this._zwDevIds(cfgs)), devOf: (e) => this._devOfEnt(e) }, o));
           rec.res.set(c.id, { ok: r.ok, unsure: r.unsure, res: r.res });
         }
         catch (e) { rec.res.set(c.id, { ok: false, unsure: (e && e.message) || String(e), res: [] }); }
@@ -13525,6 +13742,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       // the triggers of the function's devices (0.13.0): every one the Press row can offer, and MQTT ones' topics
       const dt = await this._devTrigs(this._sbxDevIds(cfgs));
       g.devPress = dt.press;
+      // and the values of its Z-Wave devices (0.13.0)
+      const zw = await this._zwFor(this._zwDevIds(cfgs, this._sbxDevIds(cfgs)));
       const wholeNote = outside.size ? [P('sbx_whole_n', outside.size, { list: [...outside].map((k) => this._boxName(k)).join(', ') })] : [];
       g.opts = {
         states, items: ids.map((id, i) => ({ id, cfg: cfgs[i], outside: outside.has(id) })), now, tz: this._hass.config && this._hass.config.time_zone, notes: wholeNote,
@@ -13532,7 +13751,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         name: (id) => this._boxName(id), condText: (c) => condText(c, (x) => this._boxName(x)), onLog: () => this._sbxLogged(),
         entityOf: (x) => this._entOfReg(x), scene: (id) => this._sceneCfg(id), actText: (a) => this._actText(a),
         onPause: () => this._renderSbx(),
-        derived, devMqtt: dt.mqtt, pressMore: (t) => this._pressMore(t),
+        derived, devMqtt: dt.mqtt, pressMore: (t) => this._pressMore(t), zwave: zw, devOf: (e) => this._devOfEnt(e),
       };
       g.eng = new Sandbox(g.opts);
       g.tab = 'tl';
@@ -13681,6 +13900,57 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         }).filter((d) => d.topic && d.type != null && d.subtype != null);
       }
       return { trigs, mqtt };
+    }
+    // ---- Z-Wave values (0.13.0) ----
+    // the Z-Wave devices among these, and those the configs' Z-Wave triggers name (a value updated's devices and
+    // entities, a Z-Wave event's device)
+    _zwDevIds(cfgs, more) {
+      const out = new Set(more || []);
+      const walk = (x) => {
+        if (Array.isArray(x)) { x.forEach(walk); return; }
+        if (!x || typeof x !== 'object') return;
+        const p = x.trigger || x.platform;
+        if (p === 'zwave_js.value_updated') { toList(x.device_id).forEach((d) => out.add(String(d))); toList(x.entity_id).forEach((e) => { const d = this._devOfEnt(String(e)); if (d) out.add(d); }); }
+        if (p === 'device' && x.domain === 'zwave_js' && typeof x.device_id === 'string') out.add(x.device_id);
+        if (p === 'event' && /^zwave_js_/.test(String(x.event_type)) && x.event_data && typeof x.event_data.device_id === 'string') out.add(x.event_data.device_id);
+        Object.values(x).forEach(walk);
+      };
+      walk(cfgs);
+      return [...out].filter((d) => { const dev = this._devMap.get(d); return dev && (dev.identifiers || []).some((i) => i[0] === 'zwave_js'); }).slice(0, 60);
+    }
+    _devOfEnt(e) { const x = this._entMap.get(e) || this._entMap.get(this._regIdMap.get(e)); return x ? x.device_id || null : null; }
+    async _zwFor(ids) {
+      if (this._storeMode !== 'shared' || !ids.length) return {};
+      const got = await Promise.all(ids.map((id) => this._ha.quiet(this._store.asOfNow('zw:' + id, 6e4), 'each call it makes reports its own failure', null)));
+      return Object.fromEntries(ids.map((id, i) => [id, got[i]]).filter(([, v]) => v && Array.isArray(v.values)));
+    }
+    // a Z-Wave device's values (functions_board/zwave_values), kept in the store as 'zw:<device>' for a minute
+    _readZw(id) { return this._ws({ type: 'functions_board/zwave_values', device_id: id }, { optional: 'an integration before 0.13 has no such command', fallback: null }); }
+    // the Z-Wave row's values: those the automations listen for first, then each device's others
+    _sbxZwList() {
+      const g = this._sbx, eng = g.eng, used = new Map(((g.ins && g.ins.zwave) || []).map((x) => [x.dev + '|' + x.id, x.name])), out = [];
+      eng.zw.forEach((z, dev) => z.byId.forEach((v, id) => {
+        const k = dev + '|' + id;
+        if (!used.has(k) && (v.readable === false || v.cc === 112)) return;
+        out.push({ k, dev, v, used: used.has(k), l: `${eng._zwName(dev, v)} · ${v.cc_name}` });
+      }));
+      return out.sort((a, b) => (b.used - a.used) || a.l.localeCompare(b.l));
+    }
+    // what the value picked can report: its states, true or false, or what it is now and its range; Other… for any
+    _sbxZwVals() {
+      const g = this._sbx, sel = this._$.drawer.querySelector('.sbzw');
+      if (!g || !sel) return;
+      const i = sel.value.indexOf('|'), z = g.eng.zw.get(sel.value.slice(0, i)), v = z && z.byId.get(sel.value.slice(i + 1));
+      if (!v) return;
+      const cur = g.eng.zwv.has(sel.value) ? g.eng.zwv.get(sel.value) : v.value, opts = [];
+      const put = (raw, l) => { if (raw != null && !opts.some((o) => o.v === JSON.stringify(raw))) opts.push({ v: JSON.stringify(raw), l }); };
+      (v.states || []).forEach(([raw, l]) => put(raw, sbxPyEq(raw, cur) ? T('sbx_state_now', { state: l }) : l));
+      if (v.type === 'boolean') { put(true, 'true'); put(false, 'false'); }
+      put(cur, T('sbx_state_now', { state: String(cur) }));
+      [v.min, v.max].forEach((x) => put(x, String(x)));
+      const first = opts.find((o) => o.v !== JSON.stringify(cur));
+      if (first) first.pick = true;
+      this._sbxOpts('sbzwv', opts, 'pick');
     }
     // a device trigger's choices, as the device's list names them (a scene button's KeyHeldDown), for its name
     _pressMore(t) {
@@ -13860,6 +14130,12 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const used = ins.presses, more = (g.devPress || []).filter((x) => !used.some((u) => u.key === x.key)).map((x) => ({ key: x.key, label: g.eng._pressText(Object.assign({ trigger: 'device' }, x.t)) })).sort((a, b) => a.label.localeCompare(b.label));
       const pOpts = (l) => l.map((x) => o2(x.key, x.label)).join('');
       if (used.length || more.length) rows.push(row(T('sbx_press'), sel('sbpress', T('sbx_press_what'), used.length && more.length ? `<optgroup label="${esc(T('sbx_g_used'))}">${pOpts(used)}</optgroup><optgroup label="${esc(T('sbx_g_devtrig'))}">${pOpts(more)}</optgroup>` : pOpts(used.concat(more))) + '<span class="sbpressx" hidden></span>' + `<button class="chip" data-act="sbx-press">${T('sbx_press_b')}</button>`));
+      // the values of its Z-Wave devices to report (0.13.0)
+      const zwl = this._sbxZwList(), zopt = (l) => l.map((x) => o2(x.k, x.l)).join('');
+      if (zwl.length) {
+        const used = zwl.filter((x) => x.used), rest = zwl.filter((x) => !x.used);
+        rows.push(row(T('sbx_zw'), sel('sbzw', T('sbx_zw_what'), used.length && rest.length ? `<optgroup label="${esc(T('sbx_g_zw_used'))}">${zopt(used)}</optgroup><optgroup label="${esc(T('sbx_g_rest'))}">${zopt(rest)}</optgroup>` : zopt(zwl)) + this._sbxField('sbzwv', [], T('sbx_zw_val')) + `<button class="chip" data-act="sbx-zw">${T('sbx_zw_b')}</button>`));
+      }
       rows.push(row(T('sbx_event'), this._sbxField('sbev', evs.map((x) => ({ v: x, l: x })), T('sbx_event_type')) + this._sbxField('sbevd', [], T('sbx_event_data_ph')) + `<button class="chip" data-act="sbx-fire">${T('sbx_fire')}</button>`));
       const btns = this._sbxButtons();
       g.btnSig = btns.map((x) => x.action).join('|');
@@ -13891,6 +14167,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (pick) this._sbxPick(pick);
       this._sbxTrigs();
       this._sbxPressFields();
+      this._sbxZwVals();
       this._sbxEvData();
       this._sbxPayloads();
       this._sbxHookM();
@@ -14126,6 +14403,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (t.classList.contains('sbrun')) { this._sbxTrigs(); return true; }
       if (t.classList.contains('sbhook')) { this._sbxHookM(); return true; }
       if (t.classList.contains('sbpress')) { this._sbxPressFields(); return true; }
+      if (t.classList.contains('sbzw')) { this._sbxZwVals(); return true; }
       if (t.classList.contains('sbwhole')) { if (t.checked) this._data.ui.sbxWhole = true; else delete this._data.ui.sbxWhole; this._save(); this._ha.soft(this._sbxReset(), 'starting the sandbox again (whole home)', null); return true; }
       if (t.classList.contains('sbstep')) { this._sbx.eng.stepping = t.checked; if (!t.checked) { this._sbx.eng.resumeAll(); this._sbxAfterResume(); } return true; }
       if (t.classList.contains('sbspeed')) { this._sbxSpeed(+t.value); return true; }
@@ -14231,6 +14509,15 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           break;
         }
         case 'sbx-ha': this._sbxStep({ op: 'ha', event: q('.sbha').value }); break;
+        case 'sbx-zw': {
+          const k = q('.sbzw').value, i = k.indexOf('|'), raw = this._sbxVal('sbzwv');
+          if (!k || raw === '') { this._toast(T('sbx_pick_state')); return; }
+          // what's picked is JSON (a number, true, text); what's typed is read as Home Assistant reads a value
+          let value;
+          try { value = JSON.parse(raw); } catch (e) { value = sbxZwCoerce(raw); }
+          this._sbxStep({ op: 'zwave', dev: k.slice(0, i), id: k.slice(i + 1), value }).then(() => this._sbxZwVals());
+          break;
+        }
         case 'sbx-hook': {
           const raw = this._sbxVal('sbhookd');
           let data = {};

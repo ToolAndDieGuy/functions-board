@@ -77,6 +77,12 @@ async function theme() {
     }
     devTrig[d.id] = rec;
   }
+  // each Z-Wave device's values (0.13.0), as functions_board/zwave_values gives them
+  const zwave = {};
+  for (const d of devices.filter((x) => (x.identifiers || []).some((i) => i[0] === 'zwave_js'))) {
+    const z = await ha.ws({ type: 'functions_board/zwave_values', device_id: d.id });
+    if (z) zwave[d.id] = z;
+  }
   // times in states are from the moment of capture; the fake moves them to its own clock
   const snap = {
     captured: new Date().toISOString().slice(0, 10), ha: config.version,
@@ -84,7 +90,7 @@ async function theme() {
     panel: panels.functions, manifests: manifests.map((m) => ({ domain: m.domain, name: m.name, integration_type: m.integration_type })),
     users: users.map((u) => ({ id: u.id, name: u.name, is_owner: u.is_owner, is_active: u.is_active, system_generated: u.system_generated, group_ids: u.group_ids })),
     autos, scripts, autoByEntity, entries, mode: board.mode, triggerPlatforms, conditionPlatforms, helperLists,
-    devTrig,
+    devTrig, zwave,
   };
   // Home Assistant's theme as the board sees it, dark and light: the CSS variables it reads (its colours, so the
   // accessibility audit on the fake judges the same contrast)

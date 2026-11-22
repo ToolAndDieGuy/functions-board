@@ -1301,8 +1301,8 @@
  {
   "name": "sandbox: device triggers not translated",
   "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "        if (!this.devT.has(t)) this.devT.set(t, sbxDevTrig(t, this.o.entityOf) || sbxDevMqtt(t, this.o.devMqtt) || t);",
-  "replace": "        if (!this.devT.has(t)) this.devT.set(t, sbxDevMqtt(t, this.o.devMqtt) || t);",
+  "find": "        if (!this.devT.has(t)) this.devT.set(t, sbxDevTrig(t, this.o.entityOf) || sbxDevMqtt(t, this.o.devMqtt) || sbxDevZwave(t) || t);",
+  "replace": "        if (!this.devT.has(t)) this.devT.set(t, sbxDevMqtt(t, this.o.devMqtt) || sbxDevZwave(t) || t);",
   "suite": "sandbox",
   "expect": "registry id"
  },
@@ -2296,8 +2296,8 @@
  {
   "name": "sandbox: an MQTT device trigger isn't the MQTT trigger it stands for",
   "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "        if (!this.devT.has(t)) this.devT.set(t, sbxDevTrig(t, this.o.entityOf) || sbxDevMqtt(t, this.o.devMqtt) || t);",
-  "replace": "        if (!this.devT.has(t)) this.devT.set(t, sbxDevTrig(t, this.o.entityOf) || t);",
+  "find": "        if (!this.devT.has(t)) this.devT.set(t, sbxDevTrig(t, this.o.entityOf) || sbxDevMqtt(t, this.o.devMqtt) || sbxDevZwave(t) || t);",
+  "replace": "        if (!this.devT.has(t)) this.devT.set(t, sbxDevTrig(t, this.o.entityOf) || sbxDevZwave(t) || t);",
   "suite": "sandbox",
   "expect": "a message with its payload on its topic starts it"
  },
@@ -2376,5 +2376,95 @@
   "suite": "board-regress",
   "only": "0.13.0",
   "expect": "the devices' other triggers"
+ },
+ {
+  "name": "sandbox: Z-Wave from and to don't read hex digits as Home Assistant does",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "    if (/^(0x)?[0-9a-f]+$/.test(w)) return parseInt(w.replace(/^0x/, ''), 16);\n",
+  "replace": "",
+  "suite": "sandbox",
+  "expect": "to as hex digits"
+ },
+ {
+  "name": "sandbox: a Z-Wave true isn't 1",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "const n = (x) => (typeof x === 'boolean' ? +x : x); const x = n(a), y = n(b);",
+  "replace": "const n = (x) => x; const x = n(a), y = n(b);",
+  "suite": "sandbox",
+  "expect": "reading of from and to"
+ },
+ {
+  "name": "sandbox: the entities that show a Z-Wave value don't follow it",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "        else await this.setState(eid, st, null, lid);",
+  "replace": "        else if (false) await this.setState(eid, st, null, lid);",
+  "suite": "sandbox",
+  "expect": "the lock entity follows"
+ },
+ {
+  "name": "sandbox: a scene button's event entity doesn't show the key",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "        if (eid.startsWith('event.') && cur && raw != null)",
+  "replace": "        if (false && eid.startsWith('event.') && cur && raw != null)",
+  "suite": "sandbox",
+  "expect": "its event entity shows the key"
+ },
+ {
+  "name": "sandbox: a Z-Wave press isn't the event Home Assistant fires",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      if (dev && pick.domain === 'zwave_js' && /^event\\./.test(String(pick.type))) return this._pressZwave(pick);\n",
+  "replace": "",
+  "suite": "sandbox",
+  "expect": "that trigger's event is fired"
+ },
+ {
+  "name": "sandbox: a Z-Wave value-updated trigger hears every value of its device",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "        if (sbxZwId(z.node, sbxZwInt(t.command_class), sbxZwInt(t.endpoint), sbxZwInt(t.property), sbxZwInt(t.property_key)) !== v.id) return null;\n",
+  "replace": "",
+  "suite": "sandbox",
+  "expect": "a trigger on the lock's mode \\(any change\\)"
+ },
+ {
+  "name": "backend: a Z-Wave value's disabled entities are listed",
+  "file": "custom_components/functions_board/zwave.py",
+  "find": " and e.disabled_by is None and ",
+  "replace": " and ",
+  "suite": "backend",
+  "expect": "test_zwave_values"
+ },
+ {
+  "name": "backend: a Z-Wave node's Version values are listed",
+  "file": "custom_components/functions_board/zwave.py",
+  "find": "SKIP_CC = {114, 119, 134}",
+  "replace": "SKIP_CC = {114, 119}",
+  "suite": "backend",
+  "expect": "test_zwave_values"
+ },
+ {
+  "name": "board: no Z-Wave row",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "      if (zwl.length) {",
+  "replace": "      if (false) {",
+  "suite": "board-regress",
+  "only": "0.13.0",
+  "expect": "the Z-Wave row: the value the automation listens for first"
+ },
+ {
+  "name": "sandbox: a Z-Wave value updated gives endpoint 0 when the trigger names none",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "          endpoint: t.endpoint == null ? null : sbxZwInt(t.endpoint),",
+  "replace": "          endpoint: t.endpoint == null ? 0 : sbxZwInt(t.endpoint),",
+  "suite": "e2e-sandbox",
+  "only": "0.13.0",
+  "expect": "a value updated: the sandbox's trigger variables are Home Assistant's"
+ },
+ {
+  "name": "fake: no Z-Wave values",
+  "file": "tests/board/fake-ha.js",
+  "find": "case 'functions_board/zwave_values': this._admin(); return clone(this.zwave[m.device_id] || null);",
+  "replace": "case 'functions_board/zwave_values': this._admin(); return null;",
+  "suite": "e2e-contract",
+  "expect": "the same Z-Wave values"
  }
 ]

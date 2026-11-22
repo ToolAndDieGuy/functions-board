@@ -13,6 +13,18 @@ sends that message in the sandbox, so everything on the topic hears it (the remo
 the topic), and a message sent on the MQTT row with its payload starts it. Where its value template reads the payload
 from JSON (`{{ value_json.action }}`), the message is that JSON. Nothing is published.
 
+A **Z-Wave** row in the sandbox reports a value of the function's Z-Wave devices, as the node would: a lock's mode,
+a door's state, a battery level, picked from the states the value can take. Automations with a Z-Wave **value
+updated** trigger on it start, with From and To read as Home Assistant reads them, and the entities that show the value
+follow (the lock locks, the door's binary sensor turns on), which starts the automations on those. The values the
+automations listen for are listed first. The values come from the Z-Wave JS integration as it holds them, through a new
+read-only command; nothing is sent to the node.
+
+A Z-Wave scene button pressed in the sandbox is now what Home Assistant makes of it: the `zwave_js_value_notification`
+event, which event triggers on it hear too, and the scene's event entity shows the key. A door's state reported is a
+value only, as in Z-Wave JS, so a trigger waiting for a Notification event doesn't start on it; one the automations use
+can be pressed on the Press row.
+
 ## 0.12.0 (2026-11-22)
 
 A notification builder. In a function, **Recipes → Notification** (in the toolbar) writes an ordinary Home Assistant

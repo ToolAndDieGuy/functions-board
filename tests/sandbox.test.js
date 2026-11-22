@@ -487,7 +487,7 @@ const st = (sb, id) => (sb.get(id) || {}).state;
     await sb.userPress(lib.sbxPressKey(Object.assign({}, listed, { value: 0 })));
     check('0.13.0 the button pressed: both its triggers start (the value 0 in the config matches the choice "0")', st(sb, 'light.a') === 'on' && st(sb, 'light.b') === 'on' && st(sb, 'light.c') === 'off');
     const tv = kinds(sb, 'trigger').filter((e) => e.key === 'automation.any').pop();
-    check('0.13.0 ... its trigger variables carry the choice pressed', !!tv && tv.vars && tv.vars.trigger && tv.vars.trigger.value === 0 && tv.vars.trigger.property_key === '001', tv);
+    check('0.13.0 ... its trigger variables are the event Home Assistant fires for it, with the choice pressed', !!tv && tv.vars.trigger.platform === 'event' && tv.vars.trigger.event.event_type === 'zwave_js_value_notification' && tv.vars.trigger.event.data.value_raw === 0 && tv.vars.trigger.event.data.property_key === '001', tv);
     check('0.13.0 the press is said with the device trigger it was, the choice named', sb.log.some((e) => e.kind === 'did' && e.key === 'device:kp' && /central scene · Endpoint 0 Scene 001 · KeyPressed/.test(e.text)), sb.log.filter((e) => e.kind === 'did'));
     check('0.13.0 which of a device\'s triggers the Press row offers: one with no entity, and choices only from a list',
       lib.sbxDevPressable(listed, { extra_fields: [{ type: 'select', name: 'value', options: [['0', 'KeyPressed']], optional: true }] })
@@ -544,6 +544,76 @@ const st = (sb, id) => (sb.get(id) || {}).state;
     const c = lib.cleanCheck({ id: 'c1', at: at('20:00'), steps: [{ op: 'press', key: lib.sbxPressKey(dev('rm', 'button_short_press', 'on')) }], expect: [{ k: 'state', id: 'light.on', state: 'on' }, { k: 'state', id: 'light.any', state: 'on' }] });
     const r = await runCheck(c, { states: { 'light.on': S('off'), 'light.any': S('off') }, items: [{ id: 'automation.on', cfg: { triggers: [dev('rm', 'button_short_press', 'on')], actions: on('light.on') } }, { id: 'automation.topic', cfg: { triggers: [{ trigger: 'mqtt', topic: 'fb/remote/#' }], actions: on('light.any') } }], devMqtt: defs, tz: TZ, tpl: async () => ({ ok: false, err: 'none' }), name: (x) => x, condText: () => '' });
     check('0.13.0 a saved check\'s press of an MQTT button replays as its message', r.ok, r.res);
+  }
+
+  // ---- 0.13.0 Z-Wave values: a value reported starts the value-updated triggers on it (from and to as Home Assistant
+  // reads them), moves the entities that show it, and a Notification is also its event; a scene button is a value
+  // notification, with its event entity
+  {
+    const LOCK = 'lock.front', OPEN = 'binary_sensor.front_open', BAT = 'sensor.front_battery', EV = 'event.kp_scene_001';
+    const zwave = {
+      lk: { node_id: 2, home_id: 42, values: [
+        { id: '2-98-0-currentMode', cc: 98, cc_name: 'Door Lock', endpoint: 0, property: 'currentMode', property_key: null, label: 'Current lock mode', type: 'number', states: [[0, 'Unsecured'], [255, 'Secured']], value: 0, stateful: true, entities: [[LOCK, null]] },
+        { id: '2-113-0-Access Control-Door state', cc: 113, cc_name: 'Notification', endpoint: 0, property: 'Access Control', property_key: 'Door state', label: 'Door state', type: 'number', states: [[22, 'Window/door is open'], [23, 'Window/door is closed']], value: 23, stateful: true, notification_type: 6, entities: [[OPEN, 22]] },
+        { id: '2-128-0-level', cc: 128, cc_name: 'Battery', endpoint: 0, property: 'level', property_key: null, label: 'Battery level', type: 'number', states: [], value: 90, stateful: true, entities: [[BAT, null]] },
+      ] },
+      kp: { node_id: 3, home_id: 42, values: [
+        { id: '3-91-0-scene-001', cc: 91, cc_name: 'Central Scene', endpoint: 0, property: 'scene', property_key: '001', label: 'Scene 001', type: 'number', states: [[0, 'KeyPressed'], [1, 'KeyReleased'], [2, 'KeyHeldDown']], value: null, stateful: false, entities: [[EV, null]] },
+      ] },
+    };
+    const on = (id) => [{ action: 'input_boolean.turn_on', target: { entity_id: id } }];
+    const vu = (o) => Object.assign({ trigger: 'zwave_js.value_updated', command_class: 98, property: 'currentMode' }, o);
+    const sb = make({ [LOCK]: S('unlocked'), [OPEN]: S('off'), [BAT]: S('90'), [EV]: S('unknown', { event_types: ['KeyHeldDown', 'KeyPressed', 'KeyReleased'] }), 'counter.l': S('0'), ...Object.fromEntries('abcdefghijk'.split('').map((x) => ['input_boolean.' + x, S('off')])) }, {
+      'automation.a': { triggers: [vu({ device_id: 'lk', to: 'Secured' })], actions: on('input_boolean.a') },
+      'automation.b': { triggers: [vu({ entity_id: LOCK, from: 'Unsecured', to: 255 })], actions: on('input_boolean.b') },
+      'automation.c': { triggers: [vu({ device_id: ['lk'], to: '0xff' })], actions: on('input_boolean.c') },
+      'automation.d': { triggers: [vu({ device_id: 'lk', to: 'Unsecured' })], actions: on('input_boolean.d') },
+      'automation.e': { triggers: [{ trigger: 'state', entity_id: LOCK, to: 'locked' }], actions: on('input_boolean.e') },
+      'automation.f': { triggers: [{ trigger: 'device', domain: 'zwave_js', device_id: 'lk', type: 'event.notification.notification', command_class: 113, 'type.': 6, event: 22 }], actions: on('input_boolean.f') },
+      'automation.g': { triggers: [{ trigger: 'state', entity_id: OPEN, to: 'on' }], actions: on('input_boolean.g') },
+      'automation.h': { triggers: [{ trigger: 'device', domain: 'zwave_js', device_id: 'kp', type: 'event.value_notification.central_scene', property: 'scene', property_key: '001', endpoint: 0, command_class: 91, subtype: 'Endpoint 0 Scene 001', value: 2 }], actions: on('input_boolean.h') },
+      'automation.i': { triggers: [{ trigger: 'event', event_type: 'zwave_js_value_notification', event_data: { device_id: 'kp', property_key: '001' } }], actions: on('input_boolean.i') },
+      'automation.j': { triggers: [{ trigger: 'state', entity_id: EV }], actions: on('input_boolean.j') },
+      'automation.k': { triggers: [Object.assign({ trigger: 'device', domain: 'zwave_js', device_id: 'lk', type: 'zwave_js.value_updated.value', command_class: 128, property: 'level', to: '20' })], actions: on('input_boolean.k') },
+      'automation.l': { triggers: [vu({ device_id: 'lk' })], actions: [{ action: 'counter.increment', target: { entity_id: 'counter.l' } }] },
+    }, { o: { zwave, devOf: (e) => (e.startsWith('lock.front') || e.startsWith('binary_sensor.front') ? 'lk' : null) } });
+    await sb.start();
+    const ins = sb.inputs();
+    const zk = ins.zwave.map((x) => x.dev + '|' + x.id).sort();
+    check('0.13.0 inputs: the Z-Wave values the triggers listen for (by device or entity, a scene button, a device trigger)', JSON.stringify(zk) === JSON.stringify(['kp|3-91-0-scene-001', 'lk|2-128-0-level', 'lk|2-98-0-currentMode']), zk);
+    check('0.13.0 ... a Notification event the automation waits for is on the Press row, as it\'s set', ins.presses.some((x) => x.label === 'device:lk: notification · type 6, event 22'), ins.presses);
+    const b = (x) => st(sb, 'input_boolean.' + x);
+    await sb.userZwave('lk', '2-98-0-currentMode', 255);
+    check('0.13.0 the lock reports Secured: to by label, from and to by number (found by its entity), to as hex digits; not to Unsecured', b('a') === 'on' && b('b') === 'on' && b('c') === 'on' && b('d') === 'off', ['a', 'b', 'c', 'd'].map(b));
+    check('0.13.0 ... the lock entity follows (255 is locked), and that starts its state trigger', st(sb, LOCK) === 'locked' && b('e') === 'on');
+    const tv = kinds(sb, 'trigger').find((e) => e.key === 'automation.b').vars.trigger;
+    check('0.13.0 ... the trigger variables are Home Assistant\'s', tv.platform === 'zwave_js.value_updated' && tv.previous_value === 'Unsecured' && tv.previous_value_raw === 0 && tv.current_value === 'Secured' && tv.current_value_raw === 255 && tv.node_id === 2 && tv.command_class_name === 'Door Lock' && tv.endpoint === null, tv);
+    check('0.13.0 ... and its start is said with the value', kinds(sb, 'trigger').some((e) => e.key === 'automation.a' && /Z-Wave value updated: device:lk: Current lock mode is Secured/.test(e.text)), kinds(sb, 'trigger').map((e) => e.text));
+    await sb.userZwave('lk', '2-98-0-currentMode', 0);
+    check('0.13.0 back to Unsecured: the lock is unlocked, and only the trigger to Unsecured starts', st(sb, LOCK) === 'unlocked' && b('d') === 'on' && kinds(sb, 'trigger').filter((e) => e.key === 'automation.a').length === 1);
+    await sb.userZwave('lk', '2-113-0-Access Control-Door state', 22);
+    check('0.13.0 a Notification value (a state, door open): its binary sensor for that state turns on', st(sb, OPEN) === 'on' && b('g') === 'on');
+    check('0.13.0 ... and no notification event: Z-Wave JS fires none for a state, so the device trigger on type 6, event 22 doesn\'t start', !kinds(sb, 'event').some((e) => e.text === 'zwave_js_notification') && b('f') === 'off');
+    await sb.userPress(ins.presses.find((x) => /notification/.test(x.label)).key);
+    const ev = kinds(sb, 'event').find((e) => e.text === 'zwave_js_notification');
+    check('0.13.0 pressed on the Press row, that trigger\'s event is fired with the node\'s fields, and it starts', !!ev && ev.data.type === 6 && ev.data.event === 22 && ev.data.node_id === 2 && ev.data.command_class_name === 'Notification' && b('f') === 'on', ev);
+    await sb.userZwave('lk', '2-113-0-Access Control-Door state', 23);
+    check('0.13.0 ... and off at another', st(sb, OPEN) === 'off');
+    await sb.userZwave('lk', '2-128-0-level', 20);
+    check('0.13.0 a value-updated device trigger with to as text ("20") starts on 20; the battery sensor shows it', b('k') === 'on' && st(sb, BAT) === '20');
+    check('0.13.0 a trigger on the lock\'s mode (any change) started on each mode reported, not on its door state or battery', st(sb, 'counter.l') === '2', st(sb, 'counter.l'));
+    await sb.userZwave('kp', '3-91-0-scene-001', 0);
+    check('0.13.0 a scene button pressed: the event triggers on it start (any key), the one waiting for held doesn\'t', b('i') === 'on' && b('h') === 'off');
+    check('0.13.0 ... its event entity shows the key, which starts the trigger on it', (sb.get(EV).attributes || {}).event_type === 'KeyPressed' && b('j') === 'on' && kinds(sb, 'event').some((e) => e.text === 'zwave_js_value_notification' && e.data.value === 'KeyPressed' && e.data.value_raw === 0));
+    await sb.userZwave('kp', '3-91-0-scene-001', 2);
+    check('0.13.0 ... held: the device trigger waiting for it starts', b('h') === 'on');
+    check('0.13.0 Home Assistant\'s reading of from and to', lib.sbxZwCoerce('on') === true && lib.sbxZwCoerce('255') === 255 && lib.sbxZwCoerce('0xff') === 255 && lib.sbxZwCoerce('ff') === 255 && lib.sbxZwCoerce('Secured') === 'Secured' && lib.sbxZwCoerce('1.5') === 1.5
+      && lib.sbxZwMatch(true, 'x', 1) && !lib.sbxZwMatch('1', 'x', '1') && lib.sbxZwMatch(['Secured', 0], 'Unsecured', 0) && lib.sbxZwMatch(undefined, 'a', 1) && lib.sbxZwMatch('*', 'a', 1));
+    check('0.13.0 a trigger whose property key reads as a number ("001") is the value keyed 1, as in Home Assistant', lib.sbxZwId(3, 91, undefined, 'scene', lib.sbxZwInt('001')) === '3-91-0-scene-1');
+    // a check keeps a value reported and replays it
+    const c = lib.cleanCheck({ id: 'z1', at: at('20:00'), steps: [{ op: 'zwave', dev: 'lk', id: '2-98-0-currentMode', value: 255 }], expect: [{ k: 'state', id: LOCK, state: 'locked' }, { k: 'state', id: 'input_boolean.a', state: 'on' }] });
+    const r = await runCheck(c, { states: { [LOCK]: S('unlocked'), 'input_boolean.a': S('off') }, items: [{ id: 'automation.a', cfg: { triggers: [vu({ device_id: 'lk', to: 'Secured' })], actions: on('input_boolean.a') } }], zwave, tz: TZ, tpl: async () => ({ ok: false, err: 'none' }), name: (x) => x, condText: () => '' });
+    check('0.13.0 a saved check keeps a Z-Wave value reported and replays it', c.steps[0].op === 'zwave' && c.steps[0].value === 255 && r.ok, r.res);
   }
 
   // ---- 0.11.1 any trigger the sandbox can't see coming (Z-Wave value updated, geo location): fired from the Press row

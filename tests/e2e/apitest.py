@@ -239,6 +239,24 @@ async def main():
         if mm:
             async with s.delete(BASE + f"/api/config/config_entries/entry/{mm}", headers=H):
                 pass
+        # ---- a Z-Wave device's values (0.13.0), from the test home's mock nodes ----
+        devs = (await ws.call(type="config/device_registry/list"))["result"]
+        kp = next((d["id"] for d in devs if d.get("name") == "Scene keypad"), None)
+        lk = next((d["id"] for d in devs if d.get("name") == "Front door lock"), None)
+        zk = await ws.call(type="functions_board/zwave_values", device_id=kp or "none")
+        kv = (zk.get("result") or {}).get("values") or []
+        s1 = next((v for v in kv if v["cc"] == 91 and v["property"] == "scene" and v["property_key"] == "001"), {})
+        check("zwave_values: the keypad's scene 1, its key states and the event entity that shows it", zk.get("success") and zk["result"]["node_id"] == 3 and [1, "KeyReleased"] in s1.get("states", []) and s1.get("entities") == [["event.hall_scene_keypad_scene_001", None]] and s1.get("id") == "3-91-0-scene-001", s1 or zk)
+        check("zwave_values: nothing from Version, Manufacturer Specific or Node Naming", not [v for v in kv if v["cc"] in (114, 119, 134)], [v["cc"] for v in kv])
+        zl = await ws.call(type="functions_board/zwave_values", device_id=lk or "none")
+        lv = (zl.get("result") or {}).get("values") or []
+        mode = next((v for v in lv if v["cc"] == 98 and v["property"] == "currentMode"), {})
+        notif = next((v for v in lv if v["cc"] == 113), {})
+        door = next((v for v in lv if v["id"] == "2-113-0-Access Control-Lock state"), {})
+        check("zwave_values: the lock's current mode with its states, value and lock entity, and a Notification value with its type", mode.get("states") and isinstance(mode.get("value"), int) and ["lock.entry_front_door_lock", None] in mode.get("entities", []) and notif.get("notification_type") == 6, [mode, notif])
+        check("zwave_values: a Notification value's binary sensor, with the state it is on at (disabled ones left out)", door.get("entities") == [["binary_sensor.entry_front_door_lock_lock_jammed", 11]], door)
+        zn = await ws.call(type="functions_board/zwave_values", device_id=next((d["id"] for d in devs if d.get("name") == "Hall remote"), "none"))
+        check("zwave_values: a device that isn't Z-Wave has none", zn.get("success") and zn["result"] is None, zn)
         big_ids = [f"sensor.s{i}" for i in range(501)]
         src3 = await ws.call(type="functions_board/sources", entity_ids=big_ids)
         check("sources: at most 500 entities per call", not src3.get("success"), src3.get("error"))
@@ -272,6 +290,8 @@ async def main():
         check("non-admin get refused", not ug.get("success") and ug.get("error", {}).get("code") == "unauthorized", ug)
         us = await uws.call(type="functions_board/set", data={"v": 1})
         check("non-admin set refused", not us.get("success"), us)
+        uz = await uws.call(type="functions_board/zwave_values", device_id="x")
+        check("non-admin zwave_values refused", not uz.get("success") and uz.get("error", {}).get("code") == "unauthorized", uz)
         await uws.ws.close()
 
         # ---- unload removes the panel, re-add restores ----

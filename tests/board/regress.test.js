@@ -2016,3 +2016,37 @@ test('0.13.0 the sandbox\'s Press row: every trigger of the function\'s devices,
   check('0.13.0 the remote\'s button: sent as its discovered message, which starts the automation on it', JSON.stringify(m) === '["fbtest/hall_remote/action on_single"]' && (await ran('automation.fb_remote_on')) === 1, m);
   check('0.13.0 the Press row: no errors, and nothing sent that changes anything', page.logs.length === 0 && !fake.calls.some((c) => c.kind === 'svc' || /^(call_service|fire_event|execute_script)$/.test(c.type)), page.logs);
 });
+
+test('0.13.0 the sandbox\'s Z-Wave row: a value the automations listen for, reported with one of its states; what shows it follows', async ({ browser, fake }) => {
+  const { page } = await imported(browser);
+  const garage = await openFn(page, /garage/i);
+  // the test home's Z-Wave lock, as recorded (tests/board/capture.js: zwave)
+  const lock = fake.devices.find((d) => d.name === 'Front door lock').id, LOCK = 'lock.entry_front_door_lock', JAM = 'binary_sensor.entry_front_door_lock_lock_jammed';
+  await addPiece(page, fake, 'automation.fb_lock_secured', { alias: 'Garage: lock secured', mode: 'single', triggers: [{ trigger: 'zwave_js.value_updated', device_id: lock, command_class: 98, property: 'currentMode', to: 'Secured' }], conditions: [], actions: [{ action: 'light.turn_on', target: { entity_id: 'light.bed_light' } }] });
+  await addPiece(page, fake, 'automation.fb_lock_jammed', { alias: 'Garage: lock jammed', mode: 'single', triggers: [{ trigger: 'state', entity_id: JAM, to: 'on' }], conditions: [], actions: [{ action: 'light.turn_on', target: { entity_id: 'light.porch_light' } }] });
+  for (const id of ['automation.fb_lock_secured', 'automation.fb_lock_jammed']) await ws(page, { type: 'config/entity_registry/update', entity_id: id, labels: [garage] });
+  await fake.idle(400);
+  await until(() => el(page, (b) => (b._model && b._model.nodes.has('automation.fb_lock_secured') && b._model.nodes.has('automation.fb_lock_jammed')) || null), 10000);
+  fake.calls.length = 0;
+  await fbq(page, '.tools [data-act="sandbox"]').click();
+  await fbq(page, '.modal [data-act="sbx-start"]').click({ timeout: 3000 }).catch(() => {});
+  await fbq(page, '.drawer .sbctl .sbent').waitFor({ timeout: 10000 });
+  check('0.13.0 the board asks for the lock\'s values', fake.calls.some((c) => c.type === 'functions_board/zwave_values' && c.msg.device_id === lock));
+  const row = (await fbq(page, '.drawer .sbzw').count()) > 0;
+  const groups = !row ? [] : await fbq(page, '.drawer .sbzw').evaluate((s) => [...s.querySelectorAll('optgroup')].map((g) => [g.label, [...g.querySelectorAll('option')].map((o) => o.textContent)]));
+  check('0.13.0 the Z-Wave row: the value the automation listens for first, then the device\'s others', row && groups.length === 2 && JSON.stringify(groups[0][1]) === JSON.stringify(['Front door lock: Current lock mode · Door Lock']) && groups[1][1].includes('Front door lock: Lock state · Notification'), groups);
+  if (!row) return;
+  const vals = await fbq(page, '.drawer .sbzwv-sel option').allTextContents();
+  check('0.13.0 ... with its states to report, the one it has now marked', vals.includes('Secured') && vals.some((x) => /Unsecured/.test(x) && /now/i.test(x)), vals);
+  const settle = () => until(() => el(page, (b) => (b._sbx && !b._sbx.busy) || null), 10000);
+  await fbq(page, '.drawer .sbzwv-sel').selectOption({ label: 'Secured' }, { timeout: 5000 });
+  await fbq(page, '.drawer [data-act="sbx-zw"]').click(); await settle();
+  const r = await el(page, (b, a) => ({ lock: b._sbx.eng.get(a.LOCK).state, ran: b._sbx.eng.log.filter((e) => e.kind === 'trigger' && e.key === 'automation.fb_lock_secured').length, step: b._sbx.rec.steps[b._sbx.rec.steps.length - 1] }), { LOCK });
+  check('0.13.0 Secured reported: the automation on it starts, the lock is locked, and the step is kept for a check', r.ran === 1 && r.lock === 'locked' && r.step.op === 'zwave' && r.step.value === 255, r);
+  await fbq(page, '.drawer .sbzw').selectOption({ label: 'Front door lock: Lock state · Notification' }, { timeout: 5000 });
+  await fbq(page, '.drawer .sbzwv-sel').selectOption({ label: 'Lock jammed' }, { timeout: 5000 });
+  await fbq(page, '.drawer [data-act="sbx-zw"]').click(); await settle();
+  const j = await el(page, (b, a) => ({ jam: b._sbx.eng.get(a.JAM).state, ran: b._sbx.eng.log.some((e) => e.kind === 'trigger' && e.key === 'automation.fb_lock_jammed'), ev: b._sbx.eng.log.filter((e) => e.kind === 'event').map((e) => e.text) }), { JAM });
+  check('0.13.0 Lock jammed reported: its binary sensor on, and the automation on that starts (a state: no Notification event, as in Z-Wave JS)', j.jam === 'on' && j.ran && !j.ev.includes('zwave_js_notification'), j);
+  check('0.13.0 the Z-Wave row: no errors, and nothing sent that changes anything', page.logs.length === 0 && !fake.calls.some((c) => c.kind === 'svc' || /^(call_service|fire_event|execute_script)$/.test(c.type)), page.logs);
+});
