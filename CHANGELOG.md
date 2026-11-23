@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+The sandbox's controls are in sections now, each under a header: **Change something**, **Send an event**, **Run and
+replay**, **Time** and **Settings**. Clicking a header folds its section away, and it stays folded the next time you open
+the sandbox (a setting of yours only). On a phone, where the controls filled the screen, fold the ones you don't use.
+
 ## 0.13.0 (2026-11-23)
 
 In the sandbox, the **Press** row lists every trigger of the function's devices, as Home Assistant lists them for its

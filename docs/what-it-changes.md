@@ -35,7 +35,7 @@ Removing the integration takes the page out of the sidebar. Labels and categorie
 
 ## Privacy
 
-The board talks to your Home Assistant and nothing else, and what it keeps stays in Home Assistant's own storage (`.storage/functions_board*`). It has no network code of its own, installs no Python packages and sends no telemetry. What other integrations do with data is up to them: if a test step or making a version active calls a cloud service, that's the service you chose.
+The board talks to your Home Assistant and nothing else, and what it keeps stays in Home Assistant's own storage (`.storage/functions_board*`). It has no network code of its own, adds no outside Python libraries (it uses only what comes with Home Assistant) and sends no telemetry. What other integrations do with data is up to them: if a test step or making a version active calls a cloud service, that's the service you chose.
 
 **Diagnostics** are a file you download and decide what to do with. In the board's **About** dialog, **Diagnostics…** makes you choose every time, with nothing ticked to start with:
 
