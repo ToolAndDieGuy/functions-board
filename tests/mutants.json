@@ -2501,5 +2501,23 @@
   "replace": "for v in list(node.values.values()):",
   "suite": "backend",
   "expect": "test_zwave_values_settings_last"
+ },
+ {
+  "name": "board: a folded sandbox section isn't kept",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "            if (shut.size) this._data.ui.sbxShut = [...shut]; else delete this._data.ui.sbxShut;\n",
+  "replace": "",
+  "suite": "board-regress",
+  "only": "0.13.1",
+  "expect": "kept with your own display settings"
+ },
+ {
+  "name": "board: the sandbox's section headers are disabled while a run is busy",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "d.querySelectorAll('.sbctl button:not([data-act=\"sbx-sec\"])')",
+  "replace": "d.querySelectorAll('.sbctl button')",
+  "suite": "board-regress",
+  "only": "0.13.1",
+  "expect": "the headers still work while a run is busy"
  }
 ]

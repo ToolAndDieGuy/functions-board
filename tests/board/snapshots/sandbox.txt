@@ -1,4 +1,4 @@
-style {65102 chars, #47cb77e4}
+style {65804 chars, #3c9c7c4e}
 div.board.m-panel.pc.sbx
   aside.list
     div.lhead
@@ -446,148 +446,173 @@ Related, not in this function. Select it to add it."
           div.sbnote | A copy of this function's states, with its own clock. Only the automations and scripts on this board run. Templates are read by Home Assistant from the sandbox's states. Nothing is sent to your devices.
           div.sbask
           div.sbctl
-            div.sbrow
-              span.sbl | Set
-              select.sbent aria-label="Entity" ·value="input_boolean.garage_auto_close"
-                optgroup label="Read by the automations"
-                  option value="input_boolean.garage_auto_close" | Garage auto-close
-                  option value="cover.garage_door" | Garage Door
-                  option value="timer.garage_open" | Garage open timer
-                optgroup label="Also on the board"
-                  option value="script.close_garage" | Close garage
-                  option value="automation.garage_closed_stop_timer" | Garage: closed, stop timer
-                  option value="automation.garage_left_open" | Garage: left open
-                  option value="automation.garage_restart_timer_when_reopened" | Garage: restart timer when reopened
-                  option value="automation.garage_start_open_timer" | Garage: start open timer
-              select.sbattr aria-label="State or attribute" ·value=""
-                option value | state
-                option value="editable" | editable
-              span.sbf
-                select.sbsel.sbval-sel aria-label="state" data-f="sbval" ·value="on"
-                  option value="on" | on · a condition in Garage: left open
-                  option value="off" | off (now)
-                  option value="unavailable" | unavailable
-                  option value="unknown" | unknown
-                  option value="other" | Other…
-                input.sbval aria-label="state" hidden placeholder="now off" ·value=""
-              button.chip data-act="sbx-set" | Set
-            div.sbrow
-              span.sbl | Event
-              span.sbf
-                select.sbev-sel.sbsel aria-label="event type" data-f="sbev" ·value="timer.finished"
-                  option value="timer.finished" | timer.finished
-                  option value="timer.cancelled" | timer.cancelled
-                  option value="other" | Other…
-                input.sbev aria-label="event type" hidden placeholder="event type" ·value=""
-              span.sbf
-                select.sbevd-sel.sbsel aria-label="data, e.g. {"entity_id": "timer.hall"}" data-f="sbevd" ·value="{"entity_id":"timer.garage_open"}"
-                  option value="{"entity_id":"timer.garage_open"}" | entity_id: timer.garage_open (what Garage: left open looks for)
-                  option value | no data
-                  option value="other" | Other…
-                input.sbevd aria-label="data, e.g. {"entity_id": "timer.hall"}" hidden placeholder="data, e.g. {"entity_id": "timer.hall"}" ·value=""
-              button.chip data-act="sbx-fire" | Fire
-            div.sbrow
-              span.sbl | Run
-              select.sbrun aria-label="Automation or script to run" ·value="script.close_garage"
-                option value="script.close_garage" | Close garage
-                option value="automation.garage_closed_stop_timer" | Garage: closed, stop timer
-                option value="automation.garage_left_open" | Garage: left open
-                option value="automation.garage_restart_timer_when_reopened" | Garage: restart timer when reopened
-                option value="automation.garage_start_open_timer" | Garage: start open timer
-              select.sbtrig aria-label="As if this trigger fired" hidden ·value=""
-                option value | with no trigger
-              span.sbvarsw hidden
-                span.sbf
-                  select.sbsel.sbvars-sel aria-label="Its fields, as JSON" data-f="sbvars" ·value="other"
-                    option value="other" | Other…
-                  input.sbvars aria-label="Its fields, as JSON" placeholder="Its fields, as JSON" ·value=""
-              label.sbcb | check its conditions
-                input.sbconds checked type="checkbox" ·value="on" ·checked=true
-              button.chip data-act="sbx-run" | Run
-            div.sbrow
-              span.sbl | What if
-              select.sbwhat aria-label="What if" ·value="cut"
-                option value="cut" | A power cut: what the automations read goes unavailable
-                option value="restart" | Home Assistant restarts
-                option value="sunset" | <day>
-                option value="sunrise" | <day>
-                option value="night" | Night (<time>)
-                option value="morning" | Morning (<time>)
-                option value="day" | A day passes
-                option value="week" | A week passes
-              button.chip data-act="sbx-whatif" | Go
-            div.sbrow
-              span.sbl | Device
-              select.sbdev aria-label="What the automations change" ·value="cover.garage_door"
-                option value="cover.garage_door" | Garage Door
-              select.sbhow aria-label="How it answers" ·value="ok"
-                option value="ok" | Answers at once
-                option value="slow" | Answers slowly
-                option value="fails" | Doesn't answer
-                option value="unavailable" | Goes unavailable
-              span.sbf
-                select.sbms-sel.sbsel aria-label="How long it takes" data-f="sbms" ·value="15000"
-                  option value="5000" | after <dur>
-                  option selected value="15000" | after <dur>
-                  option value="30000" | after <dur>
-                  option value="60000" | after <dur>
-                  option value="300000" | after <dur>
-                  option value="other" | Other…
-                input.sbms aria-label="How long it takes" hidden placeholder="<dur>, <dur>" ·value=""
-              button.chip data-act="sbx-behave" | Apply
-            div.sbrow
-              span.sbl | Replay
-              select.sbhist aria-label="Which period to replay" ·value="night"
-                option value="night" | Last night (<time> to <time>)
-                option value="h6" | The last <dur>
-                option value="h12" | The last <dur>
-                option value="h24" | The last <dur>
-              button.chip data-act="sbx-history" title="Start again from your home as it was then, give the sandbox the real changes of what this function reads, in order, and compare what it did with what really happened" | Replay
-            div.sbrow
-              span.sbl | Home
-              label.sbcb title="Also run the automations outside this function that start from what it reads or changes, and the ones those reach in turn. Turning it on or off starts the sandbox again." | Whole home
-                input.sbwhole type="checkbox" ·value="on" ·checked=false
-            div.sbrow
-              span.sbl | Debug
-              label.sbcb | Step through: pause before every condition and action
-                input.sbstep type="checkbox" ·value="on" ·checked=false
-              span.muted.sbbrk | Or Pause here on an automation's box
-            div.sbrow
-              span.sbl | Clock
-              span.sbf
-                select.sbadv-sel.sbsel aria-label="Advance the clock by" data-f="sbadv" ·value="60000"
-                  option value="1000" | +<dur>
-                  option value="10000" | +<dur>
-                  option selected value="60000" | +<dur>
-                  option value="300000" | +<dur>
-                  option value="600000" | +<dur>
-                  option value="1800000" | +<dur>
-                  option value="3600000" | +<dur>
-                  option value="10800000" | +<dur>
-                  option value="21600000" | +<dur>
-                  option value="43200000" | +<dur>
-                  option value="86400000" | +<dur>
-                  option value="604800000" | +<dur>
-                  option value="other" | Other…
-                input.sbadv aria-label="Advance the clock by" hidden placeholder="+<dur>, +<dur>, +<dur>" ·value=""
-              button.chip data-act="sbx-advby" | Advance
-              button.chip.sbnext data-act="sbx-next" disabled | Nothing due
-              select.sbspeed aria-label="Run the clock" ·value="0"
-                option value="0" | Clock stopped
-                option value="1" | 1×
-                option value="10" | 10×
-                option value="60" | 60×
-                option value="600" | 600×
-            div.sbrow
-              span.sbl | Jump to
-              span.sbf
-                select.sbjump-sel.sbsel aria-label="Jump to" data-f="sbjump" ·value="<ms>"
-                  option value="<ms>" | <day>, <date>, <time> · Midnight (in <time>)
-                  option value="<ms>" | <day>, <date>, <time> · <day> (in <time>)
-                  option value="<ms>" | <day>, <date>, <time> · <day> (in <time>)
-                  option value="other" | Other…
-                input.sbjump aria-label="Jump to" hidden placeholder="<time>, 2026-12-24 <time>, +<dur>" ·value=""
-              button.chip data-act="sbx-jump" | Go
+            section.sbsec aria-labelledby="sbsech-change" data-key="sec-change"
+              h3.sbsech
+                button aria-controls="sbsecb-change" aria-expanded="true" data-act="sbx-sec" data-k="change" | Change something
+                  ha-icon icon="mdi:chevron-down"
+              div.sbsecb
+                div.sbrow
+                  span.sbl | Set
+                  select.sbent aria-label="Entity" ·value="input_boolean.garage_auto_close"
+                    optgroup label="Read by the automations"
+                      option value="input_boolean.garage_auto_close" | Garage auto-close
+                      option value="cover.garage_door" | Garage Door
+                      option value="timer.garage_open" | Garage open timer
+                    optgroup label="Also on the board"
+                      option value="script.close_garage" | Close garage
+                      option value="automation.garage_closed_stop_timer" | Garage: closed, stop timer
+                      option value="automation.garage_left_open" | Garage: left open
+                      option value="automation.garage_restart_timer_when_reopened" | Garage: restart timer when reopened
+                      option value="automation.garage_start_open_timer" | Garage: start open timer
+                  select.sbattr aria-label="State or attribute" ·value=""
+                    option value | state
+                    option value="editable" | editable
+                  span.sbf
+                    select.sbsel.sbval-sel aria-label="state" data-f="sbval" ·value="on"
+                      option value="on" | on · a condition in Garage: left open
+                      option value="off" | off (now)
+                      option value="unavailable" | unavailable
+                      option value="unknown" | unknown
+                      option value="other" | Other…
+                    input.sbval aria-label="state" hidden placeholder="now off" ·value=""
+                  button.chip data-act="sbx-set" | Set
+            section.sbsec aria-labelledby="sbsech-events" data-key="sec-events"
+              h3.sbsech
+                button aria-controls="sbsecb-events" aria-expanded="true" data-act="sbx-sec" data-k="events" | Send an event
+                  ha-icon icon="mdi:chevron-down"
+              div.sbsecb
+                div.sbrow
+                  span.sbl | Event
+                  span.sbf
+                    select.sbev-sel.sbsel aria-label="event type" data-f="sbev" ·value="timer.finished"
+                      option value="timer.finished" | timer.finished
+                      option value="timer.cancelled" | timer.cancelled
+                      option value="other" | Other…
+                    input.sbev aria-label="event type" hidden placeholder="event type" ·value=""
+                  span.sbf
+                    select.sbevd-sel.sbsel aria-label="data, e.g. {"entity_id": "timer.hall"}" data-f="sbevd" ·value="{"entity_id":"timer.garage_open"}"
+                      option value="{"entity_id":"timer.garage_open"}" | entity_id: timer.garage_open (what Garage: left open looks for)
+                      option value | no data
+                      option value="other" | Other…
+                    input.sbevd aria-label="data, e.g. {"entity_id": "timer.hall"}" hidden placeholder="data, e.g. {"entity_id": "timer.hall"}" ·value=""
+                  button.chip data-act="sbx-fire" | Fire
+            section.sbsec aria-labelledby="sbsech-run" data-key="sec-run"
+              h3.sbsech
+                button aria-controls="sbsecb-run" aria-expanded="true" data-act="sbx-sec" data-k="run" | Run and replay
+                  ha-icon icon="mdi:chevron-down"
+              div.sbsecb
+                div.sbrow
+                  span.sbl | Run
+                  select.sbrun aria-label="Automation or script to run" ·value="script.close_garage"
+                    option value="script.close_garage" | Close garage
+                    option value="automation.garage_closed_stop_timer" | Garage: closed, stop timer
+                    option value="automation.garage_left_open" | Garage: left open
+                    option value="automation.garage_restart_timer_when_reopened" | Garage: restart timer when reopened
+                    option value="automation.garage_start_open_timer" | Garage: start open timer
+                  select.sbtrig aria-label="As if this trigger fired" hidden ·value=""
+                    option value | with no trigger
+                  span.sbvarsw hidden
+                    span.sbf
+                      select.sbsel.sbvars-sel aria-label="Its fields, as JSON" data-f="sbvars" ·value="other"
+                        option value="other" | Other…
+                      input.sbvars aria-label="Its fields, as JSON" placeholder="Its fields, as JSON" ·value=""
+                  label.sbcb | check its conditions
+                    input.sbconds checked type="checkbox" ·value="on" ·checked=true
+                  button.chip data-act="sbx-run" | Run
+                div.sbrow
+                  span.sbl | What if
+                  select.sbwhat aria-label="What if" ·value="cut"
+                    option value="cut" | A power cut: what the automations read goes unavailable
+                    option value="restart" | Home Assistant restarts
+                    option value="sunset" | <day>
+                    option value="sunrise" | <day>
+                    option value="night" | Night (<time>)
+                    option value="morning" | Morning (<time>)
+                    option value="day" | A day passes
+                    option value="week" | A week passes
+                  button.chip data-act="sbx-whatif" | Go
+                div.sbrow
+                  span.sbl | Replay
+                  select.sbhist aria-label="Which period to replay" ·value="night"
+                    option value="night" | Last night (<time> to <time>)
+                    option value="h6" | The last <dur>
+                    option value="h12" | The last <dur>
+                    option value="h24" | The last <dur>
+                  button.chip data-act="sbx-history" title="Start again from your home as it was then, give the sandbox the real changes of what this function reads, in order, and compare what it did with what really happened" | Replay
+            section.sbsec aria-labelledby="sbsech-time" data-key="sec-time"
+              h3.sbsech
+                button aria-controls="sbsecb-time" aria-expanded="true" data-act="sbx-sec" data-k="time" | Time
+                  ha-icon icon="mdi:chevron-down"
+              div.sbsecb
+                div.sbrow
+                  span.sbl | Clock
+                  span.sbf
+                    select.sbadv-sel.sbsel aria-label="Advance the clock by" data-f="sbadv" ·value="60000"
+                      option value="1000" | +<dur>
+                      option value="10000" | +<dur>
+                      option selected value="60000" | +<dur>
+                      option value="300000" | +<dur>
+                      option value="600000" | +<dur>
+                      option value="1800000" | +<dur>
+                      option value="3600000" | +<dur>
+                      option value="10800000" | +<dur>
+                      option value="21600000" | +<dur>
+                      option value="43200000" | +<dur>
+                      option value="86400000" | +<dur>
+                      option value="604800000" | +<dur>
+                      option value="other" | Other…
+                    input.sbadv aria-label="Advance the clock by" hidden placeholder="+<dur>, +<dur>, +<dur>" ·value=""
+                  button.chip data-act="sbx-advby" | Advance
+                  button.chip.sbnext data-act="sbx-next" disabled | Nothing due
+                  select.sbspeed aria-label="Run the clock" ·value="0"
+                    option value="0" | Clock stopped
+                    option value="1" | 1×
+                    option value="10" | 10×
+                    option value="60" | 60×
+                    option value="600" | 600×
+                div.sbrow
+                  span.sbl | Jump to
+                  span.sbf
+                    select.sbjump-sel.sbsel aria-label="Jump to" data-f="sbjump" ·value="<ms>"
+                      option value="<ms>" | <day>, <date>, <time> · Midnight (in <time>)
+                      option value="<ms>" | <day>, <date>, <time> · <day> (in <time>)
+                      option value="<ms>" | <day>, <date>, <time> · <day> (in <time>)
+                      option value="other" | Other…
+                    input.sbjump aria-label="Jump to" hidden placeholder="<time>, 2026-12-24 <time>, +<dur>" ·value=""
+                  button.chip data-act="sbx-jump" | Go
+            section.sbsec aria-labelledby="sbsech-setup" data-key="sec-setup"
+              h3.sbsech
+                button aria-controls="sbsecb-setup" aria-expanded="true" data-act="sbx-sec" data-k="setup" | Settings
+                  ha-icon icon="mdi:chevron-down"
+              div.sbsecb
+                div.sbrow
+                  span.sbl | Device
+                  select.sbdev aria-label="What the automations change" ·value="cover.garage_door"
+                    option value="cover.garage_door" | Garage Door
+                  select.sbhow aria-label="How it answers" ·value="ok"
+                    option value="ok" | Answers at once
+                    option value="slow" | Answers slowly
+                    option value="fails" | Doesn't answer
+                    option value="unavailable" | Goes unavailable
+                  span.sbf
+                    select.sbms-sel.sbsel aria-label="How long it takes" data-f="sbms" ·value="15000"
+                      option value="5000" | after <dur>
+                      option selected value="15000" | after <dur>
+                      option value="30000" | after <dur>
+                      option value="60000" | after <dur>
+                      option value="300000" | after <dur>
+                      option value="other" | Other…
+                    input.sbms aria-label="How long it takes" hidden placeholder="<dur>, <dur>" ·value=""
+                  button.chip data-act="sbx-behave" | Apply
+                div.sbrow
+                  span.sbl | Home
+                  label.sbcb title="Also run the automations outside this function that start from what it reads or changes, and the ones those reach in turn. Turning it on or off starts the sandbox again." | Whole home
+                    input.sbwhole type="checkbox" ·value="on" ·checked=false
+                div.sbrow
+                  span.sbl | Debug
+                  label.sbcb | Step through: pause before every condition and action
+                    input.sbstep type="checkbox" ·value="on" ·checked=false
+                  span.muted.sbbrk | Or Pause here on an automation's box
           div.sbrec
           div.sbchk data-sig="0|false|0"
             div.ckhead

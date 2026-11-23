@@ -107,7 +107,7 @@ In either mode, the sandbox, the debugger and the problems check only read. The 
 ## Privacy
 
 The board talks to your Home Assistant and nothing else, and what it keeps stays in Home Assistant's own storage. It
-has no network code of its own, installs no Python packages and sends no telemetry. Every push runs checks that hold
+has no network code of its own, adds no outside Python libraries (it uses only what comes with Home Assistant) and sends no telemetry. Every push runs checks that hold
 it to that, each shown to fail when its rule is broken: [how](docs/what-it-changes.md#privacy).
 
 ## Questions

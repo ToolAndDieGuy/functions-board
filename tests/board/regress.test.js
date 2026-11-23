@@ -2091,3 +2091,41 @@ test('0.13.0 touch: a box lifts at a phone\'s long-press (half a second, or when
   check('0.13.0 touch hold: no errors', page.logs.length === 0, page.logs);
   await ctx.close();
 });
+
+test('0.13.1 the sandbox\'s controls in sections under headers, each folded away and kept so', async ({ browser }) => {
+  const { ctx, page } = await imported(browser);
+  await openFn(page, /garage/i);
+  await fbq(page, '.tools [data-act="sandbox"]').click();
+  await fbq(page, '.modal [data-act="sbx-start"]').click({ timeout: 3000 }).catch(() => {});
+  await fbq(page, '.drawer .sbctl .sbent').waitFor({ timeout: 10000 });
+  await until(() => el(page, (b) => (b._sbx && !b._sbx.busy) || null), 15000);
+  const secs = () => el(page, (b) => [...b._$.drawer.querySelectorAll('.sbctl .sbsec')].map((s) => {
+    const h = s.querySelector('.sbsech button');
+    return { k: h.dataset.k, head: h.textContent.trim(), open: h.getAttribute('aria-expanded'), hidden: s.querySelector('.sbsecb').hidden, rows: [...s.querySelectorAll('.sbl')].map((x) => x.textContent), off: h.disabled };
+  }));
+  let s = await secs();
+  check('0.13.1 five sections, each under its header', s.map((x) => x.head).join('|') === 'Change something|Send an event|Run and replay|Time|Settings', s);
+  const rows = Object.fromEntries(s.map((x) => [x.k, x.rows.join(',')]));
+  check('0.13.1 ... each holding its own rows', rows.change === 'Set' && rows.events === 'Event' && rows.run === 'Run,What if,Replay' && rows.time === 'Clock,Jump to' && rows.setup === 'Device,Home,Debug', rows);
+  check('0.13.1 ... all open at first', s.every((x) => x.open === 'true' && !x.hidden), s);
+  const runs = await el(page, (b) => [...b._$.drawer.querySelector('.sbrun').options].map((o) => o.value));
+  await fbq(page, '.drawer .sbrun').selectOption(runs[runs.length - 1]);
+  await fbq(page, '.drawer .sbsech [data-k="run"]').click();
+  s = await secs();
+  const run = s.find((x) => x.k === 'run');
+  check('0.13.1 its header folds a section away (said to a screen reader too)', run.open === 'false' && run.hidden && s.filter((x) => x.k !== 'run').every((x) => !x.hidden), s);
+  check('0.13.1 ... kept with your own display settings', JSON.stringify(await el(page, (b) => b._data.ui.sbxShut)) === '["run"]');
+  await fbq(page, '.drawer .sbsech [data-k="run"]').click();
+  check('0.13.1 ... opened again, the pick in it as it was', (await el(page, (b) => [b._$.drawer.querySelector('#sbsecb-run').hidden, b._$.drawer.querySelector('.sbrun').value, b._data.ui.sbxShut])).join() === [false, runs[runs.length - 1], undefined].join());
+  await fbq(page, '.drawer .sbsech [data-k="run"]').click();
+  await el(page, (b) => { b._renderSbxCtl(); b._sbx.busy = true; b._renderSbx(); });
+  s = await secs();
+  check('0.13.1 ... still folded when the controls are drawn again', s.find((x) => x.k === 'run').hidden, s);
+  check('0.13.1 the headers still work while a run is busy', s.every((x) => !x.off), s);
+  await el(page, (b) => { b._sbx.busy = false; b._renderSbx(); });
+  await fbq(page, '.drawer .sbsech [data-k="run"]').click();
+  s = await secs();
+  check('0.13.1 ... and opens again', !s.find((x) => x.k === 'run').hidden && (await el(page, (b) => b._data.ui.sbxShut)) === undefined, s);
+  check('0.13.1 sandbox sections: no errors', page.logs.length === 0, page.logs);
+  await ctx.close();
+});

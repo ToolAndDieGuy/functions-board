@@ -2711,7 +2711,14 @@ i.fsn{font-style:normal;display:inline-block;min-width:16px;height:16px;padding:
 .dbrow.fin{box-shadow:inset 3px 0 0 color-mix(in srgb,var(--fb-blue) 55%,transparent)}
 .sbclock{font-variant-numeric:tabular-nums;font-size:12.5px;margin-right:4px;padding:2px 8px;border-radius:8px;background:var(--secondary-background-color);white-space:nowrap}
 .sbnote{padding:8px 10px;font-size:12px;color:var(--secondary-text-color);border-bottom:1px solid var(--divider-color)}
-.sbctl{display:flex;flex-direction:column;gap:6px;padding:8px 10px;border-bottom:1px solid var(--divider-color)}
+.sbctl{display:flex;flex-direction:column;gap:2px;padding:6px 10px;border-bottom:1px solid var(--divider-color)}
+.sbsec+.sbsec{border-top:1px solid var(--divider-color);padding-top:2px}
+.sbsech{margin:0;font-size:inherit}
+.sbsech button{display:flex;align-items:center;gap:4px;width:100%;background:none;border:0;padding:2px 0;font:inherit;font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--primary-text-color);cursor:pointer;text-align:left;border-radius:4px;min-height:24px}
+.sbsech ha-icon{--mdc-icon-size:18px;color:var(--secondary-text-color);transition:transform .15s}
+.sbsech button[aria-expanded="false"] ha-icon{transform:rotate(-90deg)}
+.sbsecb{display:flex;flex-direction:column;gap:6px;padding:0 0 4px}
+.sbsecb[hidden]{display:none}
 .sbrow{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .sbl{width:64px;font-size:12px;color:var(--secondary-text-color)}
 .sbrow select,.sbrow input:not([type=checkbox]){font:inherit;font-size:12.5px;padding:4px 8px;border-radius:8px;border:1px solid var(--divider-color);background:var(--card-background-color);color:var(--primary-text-color);min-width:0}
@@ -2792,7 +2799,7 @@ i.fsn{font-style:normal;display:inline-block;min-width:16px;height:16px;padding:
 .dlg textarea{padding:8px 10px;border-radius:8px;border:1px solid var(--divider-color);background:var(--primary-background-color);color:var(--primary-text-color);font-family:var(--ha-font-family-code,monospace);font-size:13px;resize:vertical}
 .warnbox{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;line-height:1.5;padding:8px 10px;border-radius:10px;border:1px solid var(--fb-amber);background:color-mix(in srgb,var(--fb-amber) 10%,transparent)}
 .warnbox ha-icon{--mdc-icon-size:18px;color:var(--fb-amber-ink);flex:none}
-@media (prefers-reduced-motion:reduce){.dhead .rec.on i,.node.pulse,.node.wpulse,.edges path.live,.flowx *{animation:none}.fdot{display:none}}
+@media (prefers-reduced-motion:reduce){.dhead .rec.on i,.node.pulse,.node.wpulse,.edges path.live,.flowx *{animation:none}.fdot{display:none}.sbsech ha-icon{transition:none}}
 /* v0.5: the arrow editor (7.5) */
 .links{position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;pointer-events:none}
 .links path.ltmp{fill:none;stroke:var(--primary-color);stroke-width:2.2;stroke-dasharray:7 5}
@@ -3524,6 +3531,11 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       sbx_run_here: 'Run in the sandbox',
       sbx_run_what: 'Automation or script to run',
       sbx_set: 'Set',
+      sbx_sec_change: 'Change something',
+      sbx_sec_events: 'Send an event',
+      sbx_sec_run: 'Run and replay',
+      sbx_sec_time: 'Time',
+      sbx_sec_setup: 'Settings',
       sbx_set_b: 'Set',
       sbx_set_here: 'Set in the sandbox',
       sbx_state: 'state',
@@ -9757,6 +9769,16 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
             if (!this._sbxOn()) this._openSandbox();
           },
           'sbx-about': () => { this._sbxIntro(); },
+          // a section's header folds it away or opens it (0.13.1); what's picked in its fields stays as it was
+          'sbx-sec': (el) => {
+            const k = el.dataset.k, shut = new Set(this._data.ui.sbxShut || []), open = shut.has(k);
+            if (open) shut.delete(k); else shut.add(k);
+            if (shut.size) this._data.ui.sbxShut = [...shut]; else delete this._data.ui.sbxShut;
+            this._save();
+            el.setAttribute('aria-expanded', open ? 'true' : 'false');
+            const b = this._$.drawer.querySelector('#sbsecb-' + k);
+            if (b) b.hidden = !open;
+          },
           'sbx-set': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
           'sbx-fire': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
           'sbx-run': (el, { a }) => { if (this._sbxOn()) this._sbxBox(a, el); },
@@ -14129,46 +14151,51 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       g.eng.items.forEach((it) => { if (it.kind === 'automation') g.eng._trigs(it).forEach((t) => { if (g.eng._plat(t) === 'mqtt' && t.topic && !/[+#]/.test(t.topic)) topics.add(String(t.topic)); }); });
       const opt = (k) => `<option value="${esc(k)}">${esc(nm(k))}</option>`, o2 = (v, l) => `<option value="${esc(v)}">${esc(l)}</option>`;
       const row = (label, body) => `<div class="sbrow"><span class="sbl">${label}</span>${body}</div>`;
+      // the rows in sections under a header each (0.13.1): what you change, the events you send, runs and replays, the
+      // clock, and how the sandbox behaves; a header folds its section away, remembered as your own display setting
+      const sec = { change: [], events: [], run: [], time: [], setup: [] };
       const sel = (cls, aria, opts) => `<select class="${cls}" aria-label="${esc(aria)}">${opts}</select>`;
       const entOpts = (read.length && rest.length ? `<optgroup label="${esc(T('sbx_g_read'))}">${read.map(opt).join('')}</optgroup><optgroup label="${esc(T('sbx_g_rest'))}">${rest.map(opt).join('')}</optgroup>` : ents.map(opt).join(''));
-      const rows = [
-        row(T('sbx_set'), sel('sbent', T('sbx_entity'), entOpts) + sel('sbattr', T('sbx_attr'), '') + this._sbxField('sbval', [], T('sbx_state')) + `<button class="chip" data-act="sbx-set">${T('sbx_set_b')}</button>`),
-      ];
+      sec.change.push(row(T('sbx_set'), sel('sbent', T('sbx_entity'), entOpts) + sel('sbattr', T('sbx_attr'), '') + this._sbxField('sbval', [], T('sbx_state')) + `<button class="chip" data-act="sbx-set">${T('sbx_set_b')}</button>`));
       // what the automations' triggers press, then (0.13.0) the devices' other triggers, each with its choices
       const used = ins.presses, more = (g.devPress || []).filter((x) => !used.some((u) => u.key === x.key)).map((x) => ({ key: x.key, label: g.eng._pressText(Object.assign({ trigger: 'device' }, x.t)) })).sort((a, b) => a.label.localeCompare(b.label));
       const pOpts = (l) => l.map((x) => o2(x.key, x.label)).join('');
-      if (used.length || more.length) rows.push(row(T('sbx_press'), sel('sbpress', T('sbx_press_what'), used.length && more.length ? `<optgroup label="${esc(T('sbx_g_used'))}">${pOpts(used)}</optgroup><optgroup label="${esc(T('sbx_g_devtrig'))}">${pOpts(more)}</optgroup>` : pOpts(used.concat(more))) + '<span class="sbpressx" hidden></span>' + `<button class="chip" data-act="sbx-press">${T('sbx_press_b')}</button>`));
+      if (used.length || more.length) sec.change.push(row(T('sbx_press'), sel('sbpress', T('sbx_press_what'), used.length && more.length ? `<optgroup label="${esc(T('sbx_g_used'))}">${pOpts(used)}</optgroup><optgroup label="${esc(T('sbx_g_devtrig'))}">${pOpts(more)}</optgroup>` : pOpts(used.concat(more))) + '<span class="sbpressx" hidden></span>' + `<button class="chip" data-act="sbx-press">${T('sbx_press_b')}</button>`));
       // the values of its Z-Wave devices to report (0.13.0)
       const zwl = this._sbxZwList(), zopt = (l) => l.map((x) => o2(x.k, x.l)).join('');
       if (zwl.length) {
         const used = zwl.filter((x) => x.used), rest = zwl.filter((x) => !x.used);
-        rows.push(row(T('sbx_zw'), sel('sbzw', T('sbx_zw_what'), used.length && rest.length ? `<optgroup label="${esc(T('sbx_g_zw_used'))}">${zopt(used)}</optgroup><optgroup label="${esc(T('sbx_g_rest'))}">${zopt(rest)}</optgroup>` : zopt(zwl)) + this._sbxField('sbzwv', [], T('sbx_zw_val')) + `<button class="chip" data-act="sbx-zw">${T('sbx_zw_b')}</button>`));
+        sec.change.push(row(T('sbx_zw'), sel('sbzw', T('sbx_zw_what'), used.length && rest.length ? `<optgroup label="${esc(T('sbx_g_zw_used'))}">${zopt(used)}</optgroup><optgroup label="${esc(T('sbx_g_rest'))}">${zopt(rest)}</optgroup>` : zopt(zwl)) + this._sbxField('sbzwv', [], T('sbx_zw_val')) + `<button class="chip" data-act="sbx-zw">${T('sbx_zw_b')}</button>`));
       }
-      rows.push(row(T('sbx_event'), this._sbxField('sbev', evs.map((x) => ({ v: x, l: x })), T('sbx_event_type')) + this._sbxField('sbevd', [], T('sbx_event_data_ph')) + `<button class="chip" data-act="sbx-fire">${T('sbx_fire')}</button>`));
+      sec.events.push(row(T('sbx_event'), this._sbxField('sbev', evs.map((x) => ({ v: x, l: x })), T('sbx_event_type')) + this._sbxField('sbevd', [], T('sbx_event_data_ph')) + `<button class="chip" data-act="sbx-fire">${T('sbx_fire')}</button>`));
       const btns = this._sbxButtons();
       g.btnSig = btns.map((x) => x.action).join('|');
-      if (btns.length) rows.push(row(T('sbx_nact'), sel('sbnact', T('sbx_nact_what'), btns.map((x) => o2(x.action, x.title === x.action ? x.title : T('sbx_nact_opt', { t: x.title, id: x.action }))).join('')) + `<button class="chip" data-act="sbx-nact" title="${esc(T('sbx_nact_t'))}">${T('sbx_nact_b')}</button>`));
-      if (topics.size) rows.push(row('MQTT', this._sbxField('sbtop', [...topics].map((x) => ({ v: x, l: x })), T('sbx_topic')) + this._sbxField('sbpay', [], T('sbx_payload')) + `<button class="chip" data-act="sbx-mqtt">${T('sbx_send')}</button>`));
-      if (ins.hooks.length) rows.push(row(T('sbx_webhook'), sel('sbhook', T('sbx_webhook'), ins.hooks.map((x) => o2(x.id, x.id)).join('')) + sel('sbhookm', T('sbx_method'), '') + this._sbxField('sbhookd', [{ v: '{}', l: T('sbx_body_empty') }], T('sbx_body_ph')) + `<button class="chip" data-act="sbx-hook">${T('sbx_call')}</button>`));
-      if (ins.tags.length) rows.push(row(T('sbx_tag'), this._sbxField('sbtag', ins.tags.map((x) => ({ v: x, l: x })), T('sbx_tag_id')) + `<button class="chip" data-act="sbx-tag">${T('sbx_scan')}</button>`));
-      if (ins.cals.length) rows.push(row(T('sbx_calendar'), sel('sbcal', T('sbx_calendar'), ins.cals.map((x) => opt(x.id)).join('')) + sel('sbcalev', T('sbx_cal_what'), o2('start', T('sbx_cal_start')) + o2('end', T('sbx_cal_end'))) + this._sbxField('sbcals', [{ v: T('sbx_cal_summary'), l: T('sbx_cal_summary') }], T('sbx_cal_title')) + `<button class="chip" data-act="sbx-cal">${T('sbx_go')}</button>`));
-      if (ins.says.length) rows.push(row(T('sbx_say'), this._sbxField('sbsay', ins.says.map((x) => ({ v: x.v, l: T('sbx_say_as', { s: x.v, name: x.name }) })), T('sbx_sentence')) + `<button class="chip" data-act="sbx-say">${T('sbx_say_b')}</button>`));
-      if (ins.ha.length) rows.push(row(T('sbx_ha'), sel('sbha', T('sbx_ha'), ins.ha.map((x) => o2(x, x === 'shutdown' ? T('sbx_ha_stops') : T('sbx_ha_starts'))).join('')) + `<button class="chip" data-act="sbx-ha">${T('sbx_go')}</button>`));
-      rows.push(row(T('sbx_run'), sel('sbrun', T('sbx_run_what'), runs.map(opt).join('')) + `<select class="sbtrig" aria-label="${T('sbx_as_if')}"></select>` + `<span class="sbvarsw" hidden>${this._sbxField('sbvars', [], T('sbx_vars_ph'))}</span>` + `<label class="sbcb"><input type="checkbox" class="sbconds" checked>${T('sbx_check_conds')}</label>` + `<button class="chip" data-act="sbx-run">${T('sbx_run_b')}</button>`));
+      if (btns.length) sec.events.push(row(T('sbx_nact'), sel('sbnact', T('sbx_nact_what'), btns.map((x) => o2(x.action, x.title === x.action ? x.title : T('sbx_nact_opt', { t: x.title, id: x.action }))).join('')) + `<button class="chip" data-act="sbx-nact" title="${esc(T('sbx_nact_t'))}">${T('sbx_nact_b')}</button>`));
+      if (topics.size) sec.change.push(row('MQTT', this._sbxField('sbtop', [...topics].map((x) => ({ v: x, l: x })), T('sbx_topic')) + this._sbxField('sbpay', [], T('sbx_payload')) + `<button class="chip" data-act="sbx-mqtt">${T('sbx_send')}</button>`));
+      if (ins.hooks.length) sec.events.push(row(T('sbx_webhook'), sel('sbhook', T('sbx_webhook'), ins.hooks.map((x) => o2(x.id, x.id)).join('')) + sel('sbhookm', T('sbx_method'), '') + this._sbxField('sbhookd', [{ v: '{}', l: T('sbx_body_empty') }], T('sbx_body_ph')) + `<button class="chip" data-act="sbx-hook">${T('sbx_call')}</button>`));
+      if (ins.tags.length) sec.events.push(row(T('sbx_tag'), this._sbxField('sbtag', ins.tags.map((x) => ({ v: x, l: x })), T('sbx_tag_id')) + `<button class="chip" data-act="sbx-tag">${T('sbx_scan')}</button>`));
+      if (ins.cals.length) sec.events.push(row(T('sbx_calendar'), sel('sbcal', T('sbx_calendar'), ins.cals.map((x) => opt(x.id)).join('')) + sel('sbcalev', T('sbx_cal_what'), o2('start', T('sbx_cal_start')) + o2('end', T('sbx_cal_end'))) + this._sbxField('sbcals', [{ v: T('sbx_cal_summary'), l: T('sbx_cal_summary') }], T('sbx_cal_title')) + `<button class="chip" data-act="sbx-cal">${T('sbx_go')}</button>`));
+      if (ins.says.length) sec.events.push(row(T('sbx_say'), this._sbxField('sbsay', ins.says.map((x) => ({ v: x.v, l: T('sbx_say_as', { s: x.v, name: x.name }) })), T('sbx_sentence')) + `<button class="chip" data-act="sbx-say">${T('sbx_say_b')}</button>`));
+      if (ins.ha.length) sec.events.push(row(T('sbx_ha'), sel('sbha', T('sbx_ha'), ins.ha.map((x) => o2(x, x === 'shutdown' ? T('sbx_ha_stops') : T('sbx_ha_starts'))).join('')) + `<button class="chip" data-act="sbx-ha">${T('sbx_go')}</button>`));
+      sec.run.push(row(T('sbx_run'), sel('sbrun', T('sbx_run_what'), runs.map(opt).join('')) + `<select class="sbtrig" aria-label="${T('sbx_as_if')}"></select>` + `<span class="sbvarsw" hidden>${this._sbxField('sbvars', [], T('sbx_vars_ph'))}</span>` + `<label class="sbcb"><input type="checkbox" class="sbconds" checked>${T('sbx_check_conds')}</label>` + `<button class="chip" data-act="sbx-run">${T('sbx_run_b')}</button>`));
       // what if: a few things at once (0.11.2)
       const presets = this._sbxPresets();
-      rows.push(row(T('sbx_whatif'), sel('sbwhat', T('sbx_whatif'), presets.map((x) => o2(x.k, x.l)).join('')) + `<button class="chip" data-act="sbx-whatif">${T('sbx_go')}</button>`));
+      sec.run.push(row(T('sbx_whatif'), sel('sbwhat', T('sbx_whatif'), presets.map((x) => o2(x.k, x.l)).join('')) + `<button class="chip" data-act="sbx-whatif">${T('sbx_go')}</button>`));
       // how a device answers what the automations ask of it (0.11.2)
       const outs = this._sbxOutputs();
-      if (outs.length) rows.push(row(T('sbx_device'), sel('sbdev', T('sbx_device_what'), outs.map(opt).join('')) + sel('sbhow', T('sbx_how'), o2('ok', T('sbx_how_ok')) + o2('slow', T('sbx_how_slow')) + o2('fails', T('sbx_how_fails')) + o2('unavailable', T('sbx_how_unav'))) + this._sbxField('sbms', [[5e3, '5 s'], [15e3, '15 s'], [3e4, '30 s'], [6e4, '1 min'], [3e5, '5 min']].map(([v, l]) => ({ v: String(v), l: T('sbx_after_t', { t: l }), pick: v === 15e3 })), T('sbx_ms_ph'), T('sbx_after_a')) + `<button class="chip" data-act="sbx-behave">${T('sbx_apply')}</button>`));
+      if (outs.length) sec.setup.push(row(T('sbx_device'), sel('sbdev', T('sbx_device_what'), outs.map(opt).join('')) + sel('sbhow', T('sbx_how'), o2('ok', T('sbx_how_ok')) + o2('slow', T('sbx_how_slow')) + o2('fails', T('sbx_how_fails')) + o2('unavailable', T('sbx_how_unav'))) + this._sbxField('sbms', [[5e3, '5 s'], [15e3, '15 s'], [3e4, '30 s'], [6e4, '1 min'], [3e5, '5 min']].map(([v, l]) => ({ v: String(v), l: T('sbx_after_t', { t: l }), pick: v === 15e3 })), T('sbx_ms_ph'), T('sbx_after_a')) + `<button class="chip" data-act="sbx-behave">${T('sbx_apply')}</button>`));
       // step-through: pause before every condition and action (breakpoints: Pause here on a box)
-      rows.push(row(T('sbx_replay'), sel('sbhist', T('sbx_replay_when'), [['night', T('sbx_hist_night')], ['h6', T('sbx_hist_h6')], ['h12', T('sbx_hist_h12')], ['h24', T('sbx_hist_h24')]].map(([v, l]) => o2(v, l)).join('')) + `<button class="chip" data-act="sbx-history" title="${esc(T('sbx_replay_t'))}">${T('sbx_replay_b')}</button>`));
-      rows.push(row(T('sbx_home'), `<label class="sbcb" title="${esc(T('sbx_whole_t'))}"><input type="checkbox" class="sbwhole"${this._data.ui.sbxWhole ? ' checked' : ''}>${T('sbx_whole')}</label>${g.outside.size ? `<span class="muted">${esc(P('sbx_whole_k', g.outside.size))}</span>` : ''}`));
-      rows.push(row(T('sbx_debug'), `<label class="sbcb"><input type="checkbox" class="sbstep"${g.eng.stepping ? ' checked' : ''}>${T('sbx_step_through')}</label><span class="sbbrk muted">${g.eng.breaks.size ? P('sbx_breaks_n', g.eng.breaks.size) : T('sbx_breaks_how')}</span>`));
+      sec.run.push(row(T('sbx_replay'), sel('sbhist', T('sbx_replay_when'), [['night', T('sbx_hist_night')], ['h6', T('sbx_hist_h6')], ['h12', T('sbx_hist_h12')], ['h24', T('sbx_hist_h24')]].map(([v, l]) => o2(v, l)).join('')) + `<button class="chip" data-act="sbx-history" title="${esc(T('sbx_replay_t'))}">${T('sbx_replay_b')}</button>`));
+      sec.setup.push(row(T('sbx_home'), `<label class="sbcb" title="${esc(T('sbx_whole_t'))}"><input type="checkbox" class="sbwhole"${this._data.ui.sbxWhole ? ' checked' : ''}>${T('sbx_whole')}</label>${g.outside.size ? `<span class="muted">${esc(P('sbx_whole_k', g.outside.size))}</span>` : ''}`));
+      sec.setup.push(row(T('sbx_debug'), `<label class="sbcb"><input type="checkbox" class="sbstep"${g.eng.stepping ? ' checked' : ''}>${T('sbx_step_through')}</label><span class="sbbrk muted">${g.eng.breaks.size ? P('sbx_breaks_n', g.eng.breaks.size) : T('sbx_breaks_how')}</span>`));
       const steps = [[1e3, '1 s'], [1e4, '10 s'], [6e4, '1 min'], [3e5, '5 min'], [6e5, '10 min'], [18e5, '30 min'], [36e5, '1 h'], [108e5, '3 h'], [216e5, '6 h'], [432e5, '12 h'], [864e5, T('sbx_1day')], [6048e5, T('sbx_1week')]];
-      rows.push(row(T('sbx_clock'), this._sbxField('sbadv', steps.map(([v, l]) => ({ v: String(v), l: '+' + l, pick: v === 6e4 })), T('sbx_adv_ph'), T('sbx_adv_by')) + `<button class="chip" data-act="sbx-advby">${T('sbx_advance')}</button>` + `<button class="chip sbnext" data-act="sbx-next"></button>` + sel('sbspeed', T('sbx_speed'), [[0, T('sbx_speed_0')], [1, '1×'], [10, '10×'], [60, '60×'], [600, '600×']].map(([v, l]) => o2(String(v), l)).join(''))));
-      rows.push(row(T('sbx_jump'), this._sbxField('sbjump', [], T('sbx_jump_ph'), T('sbx_jump')) + `<button class="chip" data-act="sbx-jump">${T('sbx_go')}</button>`));
-      this._put(box, rows.join(''));
+      sec.time.push(row(T('sbx_clock'), this._sbxField('sbadv', steps.map(([v, l]) => ({ v: String(v), l: '+' + l, pick: v === 6e4 })), T('sbx_adv_ph'), T('sbx_adv_by')) + `<button class="chip" data-act="sbx-advby">${T('sbx_advance')}</button>` + `<button class="chip sbnext" data-act="sbx-next"></button>` + sel('sbspeed', T('sbx_speed'), [[0, T('sbx_speed_0')], [1, '1×'], [10, '10×'], [60, '60×'], [600, '600×']].map(([v, l]) => o2(String(v), l)).join(''))));
+      sec.time.push(row(T('sbx_jump'), this._sbxField('sbjump', [], T('sbx_jump_ph'), T('sbx_jump')) + `<button class="chip" data-act="sbx-jump">${T('sbx_go')}</button>`));
+      const shut = new Set(this._data.ui.sbxShut || []);
+      const heads = { change: T('sbx_sec_change'), events: T('sbx_sec_events'), run: T('sbx_sec_run'), time: T('sbx_sec_time'), setup: T('sbx_sec_setup') };
+      this._put(box, Object.keys(sec).filter((k) => sec[k].length).map((k) => `<section class="sbsec" data-key="sec-${k}" aria-labelledby="sbsech-${k}">`
+        + `<h3 class="sbsech"><button id="sbsech-${k}" data-act="sbx-sec" data-k="${k}" aria-expanded="${shut.has(k) ? 'false' : 'true'}" aria-controls="sbsecb-${k}"><ha-icon icon="mdi:chevron-down"></ha-icon>${heads[k]}</button></h3>`
+        + `<div class="sbsecb" id="sbsecb-${k}"${shut.has(k) ? ' hidden' : ''}>${sec[k].join('')}</div></section>`).join(''));
       const spd = box.querySelector('.sbspeed');
       if (spd) spd.value = String(g.speed || 0);
       const pick = this._sel && ents.includes(this._sel) ? this._sel : ents[0];
@@ -14934,7 +14961,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         nx.disabled = !due.length || g.busy;
         nx.textContent = due.length ? T('sbx_next', { label: due[0].label, d: fmtDur(due[0].at - eng.now) }) : T('sbx_nothing_due');
       }
-      d.querySelectorAll('.sbctl button').forEach((b) => { if (b !== nx) b.disabled = !!g.busy; });
+      d.querySelectorAll('.sbctl button:not([data-act="sbx-sec"])').forEach((b) => { if (b !== nx) b.disabled = !!g.busy; });
       const dueBox = d.querySelector('.sbdue');
       // what's coming up, each a button that runs the clock to it
       if (dueBox) this._put(dueBox, due.length ? `<span class="muted">${T('sbx_due')}</span> ` + due.slice(0, 8).map((x) => `<button class="sbd" data-act="sbx-to" data-at="${x.at}" data-key="${x.at}|${esc(x.label)}" title="${esc(T('sbx_to_t', { t: this._sbxWhen(x.at) }))}">${esc(x.label)} · ${esc(fmtDur(x.at - eng.now))}</button>`).join('') : '');
