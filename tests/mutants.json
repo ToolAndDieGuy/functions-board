@@ -2493,5 +2493,13 @@
   "suite": "board-regress",
   "only": "0.13.0 touch",
   "expect": "with one buzz"
+ },
+ {
+  "name": "zwave: settings listed in the node's order, filling the cap",
+  "file": "custom_components/functions_board/zwave.py",
+  "find": "for v in sorted(node.values.values(), key=lambda v: v.command_class == CONFIG_CC):",
+  "replace": "for v in list(node.values.values()):",
+  "suite": "backend",
+  "expect": "test_zwave_values_settings_last"
  }
 ]

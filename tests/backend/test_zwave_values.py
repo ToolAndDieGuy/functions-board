@@ -22,12 +22,14 @@ def _value(node: int, cc: int, cc_name: str, prop, key=None, label="", states=No
                            property_key=key, property_key_name=None if key is None else str(key), metadata=md, value=value)
 
 
-async def _setup(hass: HomeAssistant):
+async def _setup(hass: HomeAssistant, extra=()):
     assert await async_setup_component(hass, "http", {})
     assert await async_setup_component(hass, "functions_board", {})
     entry = MockConfigEntry(domain="zwave_js", title="Z-Wave")
     entry.add_to_hass(hass)
+    # extra values come first in the node's order, as a device's settings can
     values = [
+        *extra,
         _value(2, 98, "Door Lock", "currentMode", label="Current lock mode", states={"0": "Unsecured", "255": "Secured"}, value=0),
         _value(2, 113, "Notification", "Access Control", "Lock state", "Lock state", {"0": "idle", "11": "Lock jammed"}, 0, spec={"notificationType": 6}),
         _value(2, 134, "Version", "firmwareVersions", label="Firmware"),
@@ -77,6 +79,18 @@ async def test_zwave_values(hass: HomeAssistant, hass_ws_client) -> None:
     entry.runtime_data = SimpleNamespace(client=SimpleNamespace(driver=SimpleNamespace(controller=None)))
     m = await _ask(ws, dev.id)
     assert m["success"] and m["result"] is None, m
+
+
+async def test_zwave_values_settings_last(hass: HomeAssistant, hass_ws_client) -> None:
+    """A device with more settings than the cap still lists every other value: its settings (Configuration) come last (0.13.0)."""
+    from custom_components.functions_board.zwave import MAX_VALUES
+    settings = [_value(2, 112, "Configuration", n, label=f"Parameter {n}") for n in range(1, MAX_VALUES + 50)]
+    _entry, dev, _plain, _missing = await _setup(hass, extra=settings)
+    ws = await hass_ws_client(hass)
+    res = (await _ask(ws, dev.id))["result"]
+    ccs = [v["cc"] for v in res["values"]]
+    assert len(ccs) == MAX_VALUES, len(ccs)
+    assert ccs[:3] == [98, 113, 91] and set(ccs[3:]) == {112}, ccs[:5]
 
 
 async def test_zwave_values_needs_an_admin(hass: HomeAssistant, hass_ws_client, hass_read_only_access_token) -> None:

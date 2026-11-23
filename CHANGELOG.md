@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.13.0 (2026-11-23)
 
 In the sandbox, the **Press** row lists every trigger of the function's devices, as Home Assistant lists them for its
 automation editor, not only those the function's automations use: a remote's other buttons, a keypad's other scenes.
@@ -24,6 +24,9 @@ A Z-Wave scene button pressed in the sandbox is now what Home Assistant makes of
 event, which event triggers on it hear too, and the scene's event entity shows the key. A door's state reported is a
 value only, as in Z-Wave JS, so a trigger waiting for a Notification event doesn't start on it; one the automations use
 can be pressed on the Press row.
+
+A Z-Wave device with hundreds of settings (its Configuration parameters) no longer crowds out the rest: a device's
+values are listed with its settings last, up to 600 of them, so the values automations listen for are always there.
 
 On a phone, a box can be moved again. Holding one picked it up only after a second, but the phone's own long-press
 buzz comes at half a second, so a finger that moved then panned the whole board instead. A box is now picked up at half

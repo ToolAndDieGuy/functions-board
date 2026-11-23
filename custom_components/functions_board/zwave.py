@@ -19,7 +19,10 @@ from homeassistant.helpers import device_registry as dr, entity_registry as er
 NODE_IDENT = re.compile(r"^(\d+)-(\d+)$")
 # what no automation listens for: who made it, its name and location, its firmware versions
 SKIP_CC = {114, 119, 134}
-MAX_VALUES = 400
+# a device's settings (Configuration): listed after every other value, so a device with hundreds of them still lists
+# what automations listen for (0.13.0)
+CONFIG_CC = 112
+MAX_VALUES = 600
 
 
 def _plain(v: Any) -> Any:
@@ -62,7 +65,7 @@ def zwave_values(hass: HomeAssistant, device_id: str) -> dict[str, Any] | None:
                     parts = str(e.unique_id).split(".")
                     ents.setdefault(parts[1], []).append([e.entity_id, _key(parts[2]) if len(parts) > 2 else None])
             values = []
-            for v in list(node.values.values()):
+            for v in sorted(node.values.values(), key=lambda v: v.command_class == CONFIG_CC):
                 if v.command_class in SKIP_CC:
                     continue
                 md = v.metadata

@@ -128,7 +128,7 @@ asks Home Assistant to render templates. It never calls a service, fires an even
 
 ## Feedback
 
-This is an early release (v0.12.0), and what would help most is hearing how it does in a real home:
+This is an early release (v0.13.0), and what would help most is hearing how it does in a real home:
 
 - What did **Import** get right or wrong about your setup?
 - Did the board show something you didn't know about your own automations (a problem, a loop, a reason one didn't
