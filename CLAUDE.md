@@ -9,7 +9,8 @@ function out in a sandbox. Published through HACS. Read this before changing any
 - `custom_components/functions_board/`: the integration. Python is small: `__init__.py` (panel, static path,
   optional dashboard card), `websocket.py` (admin-only commands; the board's shared store), `store.py`,
   `nodered.py` (the Node-RED flow summary kept for every board), `versions.py` (saved versions of functions, and which one each function was last made from: kept
-  only; the board makes them and makes one active; a version changes only by `version_overwrite`, Save), `sources.py`, `diagnostics.py` (the diagnostics file and its
+  only; the board makes them and makes one active; a version changes only by `version_overwrite`, Save), `sources.py`, `zwave.py` (a Z-Wave
+  device's values, read from the node Z-Wave JS holds), `diagnostics.py` (the diagnostics file and its
   anonymiser; also the `functions_board/diagnostics` command's), `config_flow.py`.
 - `custom_components/functions_board/frontend/functions-board.js`: the whole board, one plain-JS web component
   (~10,000 lines, no build step, no dependencies). Top to bottom:
@@ -88,7 +89,7 @@ returns everything the library section defines.
 | `tests/link.test.js` | `class Link` against a pretend Home Assistant: the newest answer wins, time limits, failures reported unless optional, lists in a fixed order, what the Diagnostics file carries |
 | `tests/store.test.js` | `class Store` on a pretend clock: an older answer never replaces a newer one, questions in flight shared, a change makes a fact stale, as of now, how old a fact may be, the rule for deleting |
 | `tests/diff/` (pytest) | the sandbox against Home Assistant's own core: every scenario in `corpus.js` run in both, step by step, the calls and states compared (weekly: 1,000 random homes from `random.js`, `FB_DIFF_RANDOM`, `FB_DIFF_SEED`) |
-| `tests/backend/` (pytest) | the Python side: setup, store, websocket commands, diagnostics; `test_mqtt_sources.py`: MQTT entities' topics and rules on the mocked broker; `test_privacy.py`: canary data through the anonymiser and the log, no network modules, the manifest (sockets are blocked in all of it) |
+| `tests/backend/` (pytest) | the Python side: setup, store, websocket commands, diagnostics; `test_mqtt_sources.py`: MQTT entities' topics and rules on the mocked broker; `test_zwave_values.py`: a Z-Wave node's values; `test_privacy.py`: canary data through the anonymiser and the log, no network modules, the manifest (sockets are blocked in all of it) |
 | `tests/board/smoke.test.js` | the board starts, imports and draws the garage, on the fake |
 | `tests/board/a11y.test.js` | axe-core (WCAG 2.2 AA) on every view in dark and light mode, with a problem on the board; the keyboard (roving box focus, arrows, Space, Enter, Escape, dialog and drawer focus in and back); spoken names; less motion |
 | `tests/board/layout.test.js` | large synthetic functions in both directions: no overlap, arrows 16 px apart, none through a box, every crossing hops, rows wrap |
@@ -219,6 +220,14 @@ returns everything the library section defines.
   starts every trigger whose settings it has (`sbxPressHits`). An MQTT device trigger is rewritten into the MQTT trigger
   Home Assistant attaches for it (`sbxDevMqtt`, from the device's `mqtt/device/debug_info`), and its press is sent as the
   message (`sbxMqttSend`). The fake answers these from `devTrig` in `garage.json`.
+  Z-Wave values (0.13.0): `functions_board/zwave_values` (`zwave.py`) reads a Z-Wave device's values from the node the
+  loaded Z-Wave JS integration holds (no Z-Wave JS import), each with its states and the entities that show it
+  (`'zw:<device>'` in the store, a minute). The Z-Wave row reports one (`userZwave`): a stateful value is updated
+  (`zwave_js.value_updated` triggers, from/to coerced as HA's `VALUE_SCHEMA`, `sbxZwMatch`; its entities follow,
+  `sbxZwState`); a stateless one (a scene button) is the `zwave_js_value_notification` event and its event entity. Z-Wave
+  device triggers are rewritten into what HA attaches for them (`sbxDevZwave`: events, or the value-updated trigger). A
+  state Notification (door open) fires no `zwave_js_notification` event in Z-Wave JS, so not here either.
+  `tests/e2e/sandbox.test.js` makes the mock nodes report for real and compares HA's trigger data with the sandbox's.
   MQTT entities (0.11.3) follow their topics: `functions_board/sources` gives each its topics and a rule (`sources.py`
   `_mqtt`, read from the entity as Home Assistant's MQTT platforms use it) and the engine applies a message to them
   after the MQTT triggers (`_mqttEnts`). The board asks for every MQTT entity on it, member or not, draws an arrow

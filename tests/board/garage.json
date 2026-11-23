@@ -39093,6 +39093,1305 @@
    "caps": {}
   }
  },
+ "zwave": {
+  "89fac255d2e8fa20ac723d3dd955a5a1": {
+   "node_id": 1,
+   "home_id": 4219363053,
+   "values": []
+  },
+  "6e0457ba71d9762b9e3a004a3189cc02": {
+   "node_id": 2,
+   "home_id": 4219363053,
+   "values": [
+    {
+     "id": "2-98-0-targetMode",
+     "cc": 98,
+     "cc_name": "Door Lock",
+     "endpoint": 0,
+     "property": "targetMode",
+     "property_name": "targetMode",
+     "property_key": null,
+     "property_key_name": null,
+     "label": "Target lock mode",
+     "type": "number",
+     "states": [
+      [
+       0,
+       "Unsecured"
+      ],
+      [
+       255,
+       "Secured"
+      ]
+     ],
+     "min": 0,
+     "max": 255,
+     "unit": null,
+     "readable": true,
+     "writeable": true,
+     "stateful": true,
+     "value": 0,
+     "notification_type": null,
+     "entities": []
+    },
+    {
+     "id": "2-98-0-operationType",
+     "cc": 98,
+     "cc_name": "Door Lock",
+     "endpoint": 0,
+     "property": "operationType",
+     "property_name": "operationType",
+     "property_key": null,
+     "property_key_name": null,
+     "label": "Lock operation type",
+     "type": "number",
+     "states": [
+      [
+       1,
+       "Constant"
+      ]
+     ],
+     "min": 0,
+     "max": 255,
+     "unit": null,
+     "readable": true,
+     "writeable": true,
+     "stateful": true,
+     "value": 1,
+     "notification_type": null,
+     "entities": []
+    },
+    {
+     "id": "2-98-0-doorStatus",
+     "cc": 98,
+     "cc_name": "Door Lock",
+     "endpoint": 0,
+     "property": "doorStatus",
+     "property_name": "doorStatus",
+     "property_key": null,
+     "property_key_name": null,
+     "label": "Current status of the door",
+     "type": "any",
+     "states": [],
+     "min": null,
+     "max": null,
+     "unit": null,
+     "readable": true,
+     "writeable": false,
+     "stateful": true,
+     "value": "open",
+     "notification_type": null,
+     "entities": [
+      [
+       "binary_sensor.entry_front_door_lock_current_status_of_the_door",
+       null
+      ]
+     ]
+    },
+    {
+     "id": "2-98-0-latchStatus",
+     "cc": 98,
+     "cc_name": "Door Lock",
+     "endpoint": 0,
+     "property": "latchStatus",
+     "property_name": "latchStatus",
+     "property_key": null,
+     "property_key_name": null,
+     "label": "Current status of the latch",
+     "type": "any",
+     "states": [],
+     "min": null,
+     "max": null,
+     "unit": null,
+     "readable": true,
+     "writeable": false,
+     "stateful": true,
+     "value": "open",
+     "notification_type": null,
+     "entities": []
+    },
+    {
+     "id": "2-98-0-boltStatus",
+     "cc": 98,
+     "cc_name": "Door Lock",
+     "endpoint": 0,
+     "property": "boltStatus",
+     "property_name": "boltStatus",
+     "property_key": null,
+     "property_key_name": null,
+     "label": "Current status of the bolt",
+     "type": "any",
+     "states": [],
+     "min": null,
+     "max": null,
+     "unit": null,
+     "readable": true,
+     "writeable": false,
+     "stateful": true,
+     "value": "locked",
+     "notification_type": null,
+     "entities": []
+    },
+    {
+     "id": "2-98-0-insideHandlesCanOpenDoorConfiguration",
+     "cc": 98,
+     "cc_name": "Door Lock",
+     "endpoint": 0,
+     "property": "insideHandlesCanOpenDoorConfiguration",
+     "property_name": "insideHandlesCanOpenDoorConfiguration",
+     "property_key": null,
+     "property_key_name": null,
+     "label": "Which inside handles can open the door (configuration)",
+     "type": "any",
+     "states": [],
+     "min": null,
+     "max": null,
+     "unit": null,
+     "readable": true,
+     "writeable": true,
+     "stateful": true,
+     "value": null,
+     "notification_type": null,
+     "entities": []
+    },
+    {
+     "id": "2-98-0-outsideHandlesCanOpenDoorConfiguration",
+     "cc": 98,
+     "cc_name": "Door Lock",
+     "endpoint": 0,
+     "property": "outsideHandlesCanOpenDoorConfiguration",
+     "property_name": "outsideHandlesCanOpenDoorConfiguration",
+     "property_key": null,
+     "property_key_name": null,
+     "label": "Which outside handles can open the door (configuration)",
+     "type": "any",
+     "states": [],
+     "min": null,
+     "max": null,
+     "unit": null,
+     "readable": true,
+     "writeable": true,
+     "stateful": true,
+     "value": null,
+     "notification_type": null,
+     "entities": []
+    },
+    {
+     "id": "2-98-0-insideHandlesCanOpenDoor",
+     "cc": 98,
+     "cc_name": "Door Lock",
+     "endpoint": 0,
+     "property": "insideHandlesCanOpenDoor",
+     "property_name": "insideHandlesCanOpenDoor",
+     "property_key": null,
+     "property_key_name": null,
+     "label": "Which inside handles can open the door (actual status)",
+     "type": "any",
+     "states": [],
+     "min": null,
+     "max": null,
+     "unit": null,
+     "readable": true,
+     "writeable": false,
+     "stateful": true,
+     "value": null,
+     "notification_type": null,
+     "entities": []
+    },
+    {
+     "id": "2-98-0-outsideHandlesCanOpenDoor",
+     "cc": 98,
+     "cc_name": "Door Lock",
+     "endpoint": 0,
+     "property": "outsideHandlesCanOpenDoor",
+     "property_name": "outsideHandlesCanOpenDoor",
+     "property_key": null,
+     "property_key_name": null,
+     "label": "Which outside handles can open the door (actual status)",
+     "type": "any",
+     "states": [],
+     "min": null,
+     "max": null,
+     "unit": null,
+     "readable": true,
+     "writeable": false,
+     "stateful": true,
+     "value": null,
+     "notification_type": null,
+     "entities": []
+    },
+    {
+     "id": "2-98-0-duration",
+     "cc": 98,
+     "cc_name": "Door Lock",
+     "endpoint": 0,
+     "property": "duration",
+     "property_name": "duration",
+     "property_key": null,
+     "property_key_name": null,
+     "label": "Remaining duration until target lock mode",
+     "type": "duration",
+     "states": [],
+     "min": null,
+     "max": null,
+     "unit": null,
+     "readable": true,
+     "writeable": false,
+     "stateful": true,
+     "value": null,
+     "notification_type": null,
+     "entities": []
+    },
+    {
+     "id": "2-98-0-currentMode",
+     "cc": 98,
+     "cc_name": "Door Lock",
+     "endpoint": 0,
+     "property": "currentMode",
+     "property_name": "currentMode",
+     "property_key": null,
+     "property_key_name": null,
+     "label": "Current lock mode",
+     "type": "number",
+     "states": [
+      [
+       0,
+       "Unsecured"
+      ],
+      [
+       1,
+       "UnsecuredWithTimeout"
+      ],
+      [
+       16,
+       "InsideUnsecured"
+      ],
+      [
+       17,
+       "InsideUnsecuredWithTimeout"
+      ],
+      [
+       32,
+       "OutsideUnsecured"
+      ],
+      [
+       33,
+       "OutsideUnsecuredWithTimeout"
+      ],
+      [
+       254,
+       "Unknown"
+      ],
+      [
+       255,
+       "Secured"
+      ]
+     ],
+     "min": 0,
+     "max": 255,
+     "unit": null,
+     "readable": true,
+     "writeable": false,
+     "stateful": true,
+     "value": 0,
+     "notification_type": null,
+     "entities": [
+      [
+       "lock.entry_front_door_lock",
+       null
+      ],
+      [
+       "select.entry_front_door_lock_current_lock_mode",
+       null
+      ]
+     ]
+    },
+    {
+     "id": "2-98-0-lockTimeoutConfiguration",
+     "cc": 98,
+     "cc_name": "Door Lock",
+     "endpoint": 0,
+     "property": "lockTimeoutConfiguration",
+     "property_name": "lockTimeoutConfiguration",
+     "property_key": null,
+     "property_key_name": null,
+     "label": "Duration of timed mode in seconds",
+     "type": "number",
+     "states": [],
+     "min": 0,
+     "max": 65535,
+     "unit": null,
+     "readable": true,
+     "writeable": true,
+     "stateful": true,
+     "value": null,
+     "notification_type": null,
+     "entities": []
+    },
+    {
+     "id": "2-98-0-lockTimeout",
+     "cc": 98,
+     "cc_name": "Door Lock",
+     "endpoint": 0,
+     "property": "lockTimeout",
+     "property_name": "lockTimeout",
+     "property_key": null,
+     "property_key_name": null,
+     "label": "Seconds until lock mode times out",
+     "type": "number",
+     "states": [],
+     "min": 0,
+     "max": 65535,
+     "unit": null,
+     "readable": true,
+     "writeable": false,
+     "stateful": true,
+     "value": null,
+     "notification_type": null,
+     "entities": []
+    },
+    {
+     "id": "2-113-0-Access Control-Lock state",
+     "cc": 113,
+     "cc_name": "Notification",
+     "endpoint": 0,
+     "property": "Access Control",
+     "property_name": "Access Control",
+     "property_key": "Lock state",
+     "property_key_name": "Lock state",
+     "label": "Lock state",
+     "type": "number",
+     "states": [
+      [
+       0,
+       "idle"
+      ],
+      [
+       11,
+       "Lock jammed"
+      ]
+     ],
+     "min": 0,
+     "max": 255,
+     "unit": null,
+     "readable": true,
+     "writeable": false,
+     "stateful": true,
+     "value": 0,
+     "notification_type": 6,
+     "entities": [
+      [
+       "binary_sensor.entry_front_door_lock_lock_jammed",
+       11
+      ]
+     ]
+    },
+    {
+     "id": "2-113-0-Access Control-Door state",
+     "cc": 113,
+     "cc_name": "Notification",
+     "endpoint": 0,
+     "property": "Access Control",
+     "property_name": "Access Control",
+     "property_key": "Door state",
+     "property_key_name": "Door state",
+     "label": "Door state",
+     "type": "number",
+     "states": [
+      [
+       22,
+       "Window/door is open"
+      ],
+      [
+       23,
+       "Window/door is closed"
+      ],
+      [
+       5632,
+       "Window/door is open in regular position"
+      ],
+      [
+       5633,
+       "Window/door is open in tilt position"
+      ]
+     ],
+     "min": 0,
+     "max": 255,
+     "unit": null,
+     "readable": true,
+     "writeable": false,
+     "stateful": true,
+     "value": null,
+     "notification_type": 6,
+     "entities": []
+    },
+    {
+     "id": "2-113-0-alarmType",
+     "cc": 113,
+     "cc_name": "Notification",
+     "endpoint": 0,
+     "property": "alarmType",
+     "property_name": "alarmType",
+     "property_key": null,
+     "property_key_name": null,
+     "label": "Alarm Type",
+     "type": "number",
+     "states": [],
+     "min": 0,
+     "max": 255,
+     "unit": null,
+     "readable": true,
+     "writeable": false,
+     "stateful": true,
+     "value": null,
+     "notification_type": null,
+     "entities": []
+    },
+    {
+     "id": "2-113-0-alarmLevel",
+     "cc": 113,
+     "cc_name": "Notification",
+     "endpoint": 0,
+     "property": "alarmLevel",
+     "property_name": "alarmLevel",
+     "property_key": null,
+     "property_key_name": null,
+     "label": "Alarm Level",
+     "type": "number",
+     "states": [],
+     "min": 0,
+     "max": 255,
+     "unit": null,
+     "readable": true,
+     "writeable": false,
+     "stateful": true,
+     "value": null,
+     "notification_type": null,
+     "entities": []
+    },
+    {
+     "id": "2-113-0-Access Control-Opening state",
+     "cc": 113,
+     "cc_name": "Notification",
+     "endpoint": 0,
+     "property": "Access Control",
+     "property_name": "Access Control",
+     "property_key": "Opening state",
+     "property_key_name": "Opening state",
+     "label": "Opening state",
+     "type": "number",
+     "states": [
+      [
+       0,
+       "Closed"
+      ],
+      [
+       1,
+       "Open"
+      ]
+     ],
+     "min": 0,
+     "max": 255,
+     "unit": null,
+     "readable": true,
+     "writeable": false,
+     "stateful": true,
+     "value": null,
+     "notification_type": 6,
+     "entities": [
+      [
+       "binary_sensor.entry_front_door_lock",
+       1
+      ]
+     ]
+    },
+    {
+     "id": "2-113-0-Access Control-Door state (simple)",
+     "cc": 113,
+     "cc_name": "Notification",
+     "endpoint": 0,
+     "property": "Access Control",
+     "property_name": "Access Control",
+     "property_key": "Door state (simple)",
+     "property_key_name": "Door state (simple)",
+     "label": "Door state (simple)",
+     "type": "number",
+     "states": [
+      [
+       22,
+       "Window/door is open"
+      ],
+      [
+       23,
+       "Window/door is closed"
+      ]
+     ],
+     "min": 0,
+     "max": 255,
+     "unit": null,
+     "readable": true,
+     "writeable": false,
+     "stateful": true,
+     "value": null,
+     "notification_type": 6,
+     "entities": []
+    },
+    {
+     "id": "2-128-0-level",
+     "cc": 128,
+     "cc_name": "Battery",
+     "endpoint": 0,
+     "property": "level",
+     "property_name": "level",
+     "property_key": null,
+     "property_key_name": null,
+     "label": "Battery level",
+     "type": "number",
+     "states": [],
+     "min": 0,
+     "max": 100,
+     "unit": "%",
+     "readable": true,
+     "writeable": false,
+     "stateful": true,
+     "value": null,
+     "notification_type": null,
+     "entities": [
+      [
+       "sensor.entry_front_door_lock_battery_level",
+       null
+      ]
+     ]
+    }
+   ]
+  },
+  "ea0ff46bd9b457400fd7a879ccf1708c": {
+   "node_id": 3,
+   "home_id": 4219363053,
+   "values": [
+    {
+     "id": "3-91-0-scene-001",
+     "cc": 91,
+     "cc_name": "Central Scene",
+     "endpoint": 0,
+     "property": "scene",
+     "property_name": "scene",
+     "property_key": "001",
+     "property_key_name": "001",
+     "label": "Scene 001",
+     "type": "number",
+     "states": [
+      [
+       0,
+       "KeyPressed"
+      ],
+      [
+       1,
+       "KeyReleased"
+      ],
+      [
+       2,
+       "KeyHeldDown"
+      ],
+      [
+       3,
+       "KeyPressed2x"
+      ],
+      [
+       4,
+       "KeyPressed3x"
+      ]
+     ],
+     "min": 0,
+     "max": 255,
+     "unit": null,
+     "readable": true,
+     "writeable": false,
+     "stateful": false,
+     "value": null,
+     "notification_type": null,
+     "entities": [
+      [
+       "event.hall_scene_keypad_scene_001",
+       null
+      ]
+     ]
+    },
+    {
+     "id": "3-91-0-scene-002",
+     "cc": 91,
+     "cc_name": "Central Scene",
+     "endpoint": 0,
+     "property": "scene",
+     "property_name": "scene",
+     "property_key": "002",
+     "property_key_name": "002",
+     "label": "Scene 002",
+     "type": "number",
+     "states": [
+      [
+       0,
+       "KeyPressed"
+      ],
+      [
+       1,
+       "KeyReleased"
+      ],
+      [
+       2,
+       "KeyHeldDown"
+      ],
+      [
+       3,
+       "KeyPressed2x"
+      ],
+      [
+       4,
+       "KeyPressed3x"
+      ]
+     ],
+     "min": 0,
+     "max": 255,
+     "unit": null,
+     "readable": true,
+     "writeable": false,
+     "stateful": false,
+     "value": null,
+     "notification_type": null,
+     "entities": [
+      [
+       "event.hall_scene_keypad_scene_002",
+       null
+      ]
+     ]
+    },
+    {
+     "id": "3-91-0-scene-003",
+     "cc": 91,
+     "cc_name": "Central Scene",
+     "endpoint": 0,
+     "property": "scene",
+     "property_name": "scene",
+     "property_key": "003",
+     "property_key_name": "003",
+     "label": "Scene 003",
+     "type": "number",
+     "states": [
+      [
+       0,
+       "KeyPressed"
+      ],
+      [
+       1,
+       "KeyReleased"
+      ],
+      [
+       2,
+       "KeyHeldDown"
+      ],
+      [
+       3,
+       "KeyPressed2x"
+      ],
+      [
+       4,
+       "KeyPressed3x"
+      ]
+     ],
+     "min": 0,
+     "max": 255,
+     "unit": null,
+     "readable": true,
+     "writeable": false,
+     "stateful": false,
+     "value": null,
+     "notification_type": null,
+     "entities": [
+      [
+       "event.hall_scene_keypad_scene_003",
+       null
+      ]
+     ]
+    },
+    {
+     "id": "3-91-0-slowRefresh",
+     "cc": 91,
+     "cc_name": "Central Scene",
+     "endpoint": 0,
+     "property": "slowRefresh",
+     "property_name": "slowRefresh",
+     "property_key": null,
+     "property_key_name": null,
+     "label": "Send held down notifications at a slow rate",
+     "type": "boolean",
+     "states": [],
+     "min": null,
+     "max": null,
+     "unit": null,
+     "readable": true,
+     "writeable": true,
+     "stateful": true,
+     "value": null,
+     "notification_type": null,
+     "entities": []
+    },
+    {
+     "id": "3-128-0-level",
+     "cc": 128,
+     "cc_name": "Battery",
+     "endpoint": 0,
+     "property": "level",
+     "property_name": "level",
+     "property_key": null,
+     "property_key_name": null,
+     "label": "Battery level",
+     "type": "number",
+     "states": [],
+     "min": 0,
+     "max": 100,
+     "unit": "%",
+     "readable": true,
+     "writeable": false,
+     "stateful": true,
+     "value": null,
+     "notification_type": null,
+     "entities": [
+      [
+       "sensor.hall_scene_keypad_battery_level",
+       null
+      ]
+     ]
+    }
+   ]
+  },
+  "4e74a140e50e9e3d90c189635beb2d98": {
+   "node_id": 4,
+   "home_id": 4219363053,
+   "values": [
+    {
+     "id": "4-37-0-currentValue",
+     "cc": 37,
+     "cc_name": "Binary Switch",
+     "endpoint": 0,
+     "property": "currentValue",
+     "property_name": "currentValue",
+     "property_key": null,
+     "property_key_name": null,
+     "label": "Current value",
+     "type": "boolean",
+     "states": [],
+     "min": null,
+     "max": null,
+     "unit": null,
+     "readable": true,
+     "writeable": false,
+     "stateful": true,
+     "value": false,
+     "notification_type": null,
+     "entities": [
+      [
+       "switch.garden_garden_outlet",
+       null
+      ]
+     ]
+    },
+    {
+     "id": "4-37-0-targetValue",
+     "cc": 37,
+     "cc_name": "Binary Switch",
+     "endpoint": 0,
+     "property": "targetValue",
+     "property_name": "targetValue",
+     "property_key": null,
+     "property_key_name": null,
+     "label": "Target value",
+     "type": "boolean",
+     "states": [],
+     "min": null,
+     "max": null,
+     "unit": null,
+     "readable": true,
+     "writeable": true,
+     "stateful": true,
+     "value": null,
+     "notification_type": null,
+     "entities": []
+    },
+    {
+     "id": "4-50-0-reset",
+     "cc": 50,
+     "cc_name": "Meter",
+     "endpoint": 0,
+     "property": "reset",
+     "property_name": "reset",
+     "property_key": null,
+     "property_key_name": null,
+     "label": "Reset accumulated values",
+     "type": "boolean",
+     "states": [
+      [
+       "true",
+       "Reset"
+      ]
+     ],
+     "min": null,
+     "max": null,
+     "unit": null,
+     "readable": false,
+     "writeable": true,
+     "stateful": true,
+     "value": null,
+     "notification_type": null,
+     "entities": [
+      [
+       "button.garden_garden_outlet_reset_accumulated_values",
+       null
+      ]
+     ]
+    }
+   ]
+  },
+  "6b0c6fdecfd32ed52894b1383d22de22": {
+   "node_id": 5,
+   "home_id": 4219363053,
+   "values": [
+    {
+     "id": "5-49-0-Air temperature",
+     "cc": 49,
+     "cc_name": "Multilevel Sensor",
+     "endpoint": 0,
+     "property": "Air temperature",
+     "property_name": "Air temperature",
+     "property_key": null,
+     "property_key_name": null,
+     "label": "Air temperature",
+     "type": "number",
+     "states": [],
+     "min": null,
+     "max": null,
+     "unit": "°F",
+     "readable": true,
+     "writeable": false,
+     "stateful": true,
+     "value": 68.5,
+     "notification_type": null,
+     "entities": [
+      [
+       "sensor.hall_hall_multisensor_air_temperature",
+       null
+      ]
+     ]
+    },
+    {
+     "id": "5-49-0-Illuminance",
+     "cc": 49,
+     "cc_name": "Multilevel Sensor",
+     "endpoint": 0,
+     "property": "Illuminance",
+     "property_name": "Illuminance",
+     "property_key": null,
+     "property_key_name": null,
+     "label": "Illuminance",
+     "type": "number",
+     "states": [],
+     "min": null,
+     "max": null,
+     "unit": "%",
+     "readable": true,
+     "writeable": false,
+     "stateful": true,
+     "value": 30,
+     "notification_type": null,
+     "entities": [
+      [
+       "sensor.hall_hall_multisensor_illuminance",
+       null
+      ]
+     ]
+    },
+    {
+     "id": "5-49-0-Humidity",
+     "cc": 49,
+     "cc_name": "Multilevel Sensor",
+     "endpoint": 0,
+     "property": "Humidity",
+     "property_name": "Humidity",
+     "property_key": null,
+     "property_key_name": null,
+     "label": "Humidity",
+     "type": "number",
+     "states": [],
+     "min": null,
+     "max": null,
+     "unit": "%",
+     "readable": true,
+     "writeable": false,
+     "stateful": true,
+     "value": 44,
+     "notification_type": null,
+     "entities": [
+      [
+       "sensor.hall_hall_multisensor_humidity",
+       null
+      ]
+     ]
+    },
+    {
+     "id": "5-112-0-1",
+     "cc": 112,
+     "cc_name": "Configuration",
+     "endpoint": 0,
+     "property": 1,
+     "property_name": "Motion sensitivity",
+     "property_key": null,
+     "property_key_name": null,
+     "label": "Motion sensitivity",
+     "type": "number",
+     "states": [],
+     "min": 0,
+     "max": 3,
+     "unit": null,
+     "readable": true,
+     "writeable": true,
+     "stateful": true,
+     "value": 2,
+     "notification_type": null,
+     "entities": []
+    },
+    {
+     "id": "5-112-0-2",
+     "cc": 112,
+     "cc_name": "Configuration",
+     "endpoint": 0,
+     "property": 2,
+     "property_name": "Motion clear delay (s)",
+     "property_key": null,
+     "property_key_name": null,
+     "label": "Motion clear delay (s)",
+     "type": "number",
+     "states": [],
+     "min": 5,
+     "max": 3600,
+     "unit": null,
+     "readable": true,
+     "writeable": true,
+     "stateful": true,
+     "value": 30,
+     "notification_type": null,
+     "entities": []
+    },
+    {
+     "id": "5-113-0-Home Security-Cover status",
+     "cc": 113,
+     "cc_name": "Notification",
+     "endpoint": 0,
+     "property": "Home Security",
+     "property_name": "Home Security",
+     "property_key": "Cover status",
+     "property_key_name": "Cover status",
+     "label": "Cover status",
+     "type": "number",
+     "states": [
+      [
+       0,
+       "idle"
+      ],
+      [
+       3,
+       "Tampering, product cover removed"
+      ]
+     ],
+     "min": 0,
+     "max": 255,
+     "unit": null,
+     "readable": true,
+     "writeable": false,
+     "stateful": true,
+     "value": 0,
+     "notification_type": 7,
+     "entities": [
+      [
+       "binary_sensor.hall_hall_multisensor_tampering_product_cover_removed",
+       3
+      ]
+     ]
+    },
+    {
+     "id": "5-113-0-Home Security-Motion sensor status",
+     "cc": 113,
+     "cc_name": "Notification",
+     "endpoint": 0,
+     "property": "Home Security",
+     "property_name": "Home Security",
+     "property_key": "Motion sensor status",
+     "property_key_name": "Motion sensor status",
+     "label": "Motion sensor status",
+     "type": "number",
+     "states": [
+      [
+       0,
+       "idle"
+      ],
+      [
+       8,
+       "Motion detection"
+      ]
+     ],
+     "min": 0,
+     "max": 255,
+     "unit": null,
+     "readable": true,
+     "writeable": false,
+     "stateful": true,
+     "value": 0,
+     "notification_type": 7,
+     "entities": [
+      [
+       "binary_sensor.hall_hall_multisensor_motion_detection",
+       8
+      ]
+     ]
+    },
+    {
+     "id": "5-113-0-alarmType",
+     "cc": 113,
+     "cc_name": "Notification",
+     "endpoint": 0,
+     "property": "alarmType",
+     "property_name": "alarmType",
+     "property_key": null,
+     "property_key_name": null,
+     "label": "Alarm Type",
+     "type": "number",
+     "states": [],
+     "min": 0,
+     "max": 255,
+     "unit": null,
+     "readable": true,
+     "writeable": false,
+     "stateful": true,
+     "value": null,
+     "notification_type": null,
+     "entities": []
+    },
+    {
+     "id": "5-113-0-alarmLevel",
+     "cc": 113,
+     "cc_name": "Notification",
+     "endpoint": 0,
+     "property": "alarmLevel",
+     "property_name": "alarmLevel",
+     "property_key": null,
+     "property_key_name": null,
+     "label": "Alarm Level",
+     "type": "number",
+     "states": [],
+     "min": 0,
+     "max": 255,
+     "unit": null,
+     "readable": true,
+     "writeable": false,
+     "stateful": true,
+     "value": null,
+     "notification_type": null,
+     "entities": []
+    },
+    {
+     "id": "5-128-0-level",
+     "cc": 128,
+     "cc_name": "Battery",
+     "endpoint": 0,
+     "property": "level",
+     "property_name": "level",
+     "property_key": null,
+     "property_key_name": null,
+     "label": "Battery level",
+     "type": "number",
+     "states": [],
+     "min": 0,
+     "max": 100,
+     "unit": "%",
+     "readable": true,
+     "writeable": false,
+     "stateful": true,
+     "value": null,
+     "notification_type": null,
+     "entities": [
+      [
+       "sensor.hall_hall_multisensor_battery_level",
+       null
+      ]
+     ]
+    }
+   ]
+  },
+  "43fa4918399245059ff2a623cab86c11": {
+   "node_id": 6,
+   "home_id": 4219363053,
+   "values": [
+    {
+     "id": "6-38-0-currentValue",
+     "cc": 38,
+     "cc_name": "Multilevel Switch",
+     "endpoint": 0,
+     "property": "currentValue",
+     "property_name": "currentValue",
+     "property_key": null,
+     "property_key_name": null,
+     "label": "Current value",
+     "type": "number",
+     "states": [],
+     "min": 0,
+     "max": 99,
+     "unit": null,
+     "readable": true,
+     "writeable": false,
+     "stateful": true,
+     "value": 0,
+     "notification_type": null,
+     "entities": [
+      [
+       "light.kitchen_kitchen_dimmer",
+       null
+      ]
+     ]
+    },
+    {
+     "id": "6-38-0-duration",
+     "cc": 38,
+     "cc_name": "Multilevel Switch",
+     "endpoint": 0,
+     "property": "duration",
+     "property_name": "duration",
+     "property_key": null,
+     "property_key_name": null,
+     "label": "Remaining duration",
+     "type": "duration",
+     "states": [],
+     "min": null,
+     "max": null,
+     "unit": null,
+     "readable": true,
+     "writeable": false,
+     "stateful": true,
+     "value": null,
+     "notification_type": null,
+     "entities": []
+    },
+    {
+     "id": "6-38-0-targetValue",
+     "cc": 38,
+     "cc_name": "Multilevel Switch",
+     "endpoint": 0,
+     "property": "targetValue",
+     "property_name": "targetValue",
+     "property_key": null,
+     "property_key_name": null,
+     "label": "Target value",
+     "type": "number",
+     "states": [],
+     "min": 0,
+     "max": 99,
+     "unit": null,
+     "readable": true,
+     "writeable": true,
+     "stateful": true,
+     "value": 0,
+     "notification_type": null,
+     "entities": []
+    },
+    {
+     "id": "6-38-0-Up",
+     "cc": 38,
+     "cc_name": "Multilevel Switch",
+     "endpoint": 0,
+     "property": "Up",
+     "property_name": "Up",
+     "property_key": null,
+     "property_key_name": null,
+     "label": "Perform a level change (Up)",
+     "type": "boolean",
+     "states": [
+      [
+       "true",
+       "Start"
+      ],
+      [
+       "false",
+       "Stop"
+      ]
+     ],
+     "min": null,
+     "max": null,
+     "unit": null,
+     "readable": false,
+     "writeable": true,
+     "stateful": true,
+     "value": null,
+     "notification_type": null,
+     "entities": []
+    },
+    {
+     "id": "6-38-0-Down",
+     "cc": 38,
+     "cc_name": "Multilevel Switch",
+     "endpoint": 0,
+     "property": "Down",
+     "property_name": "Down",
+     "property_key": null,
+     "property_key_name": null,
+     "label": "Perform a level change (Down)",
+     "type": "boolean",
+     "states": [
+      [
+       "true",
+       "Start"
+      ],
+      [
+       "false",
+       "Stop"
+      ]
+     ],
+     "min": null,
+     "max": null,
+     "unit": null,
+     "readable": false,
+     "writeable": true,
+     "stateful": true,
+     "value": null,
+     "notification_type": null,
+     "entities": []
+    },
+    {
+     "id": "6-38-0-restorePrevious",
+     "cc": 38,
+     "cc_name": "Multilevel Switch",
+     "endpoint": 0,
+     "property": "restorePrevious",
+     "property_name": "restorePrevious",
+     "property_key": null,
+     "property_key_name": null,
+     "label": "Restore previous value",
+     "type": "boolean",
+     "states": [
+      [
+       "true",
+       "Restore"
+      ]
+     ],
+     "min": null,
+     "max": null,
+     "unit": null,
+     "readable": false,
+     "writeable": true,
+     "stateful": true,
+     "value": null,
+     "notification_type": null,
+     "entities": []
+    }
+   ]
+  }
+ },
  "theme": {
   "dark": {
    "--secondary-text-color": "#9b9b9b",

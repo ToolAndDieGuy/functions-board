@@ -27,6 +27,7 @@ from .diagnostics import async_build as async_build_diagnostics
 from .nodered import clean_groups
 from .sources import async_sources
 from .versions import meta as version_meta
+from .zwave import zwave_values
 
 if TYPE_CHECKING:
     from . import BoardData
@@ -46,6 +47,7 @@ def async_register(hass: HomeAssistant) -> None:
         ws_set_layout,
         ws_subscribe,
         ws_sources,
+        ws_zwave_values,
         ws_nodered,
         ws_nodered_keep,
         ws_versions,
@@ -256,6 +258,20 @@ async def ws_sources(
     connection.send_result(
         msg["id"], {"sources": await async_sources(hass, msg["entity_ids"])}
     )
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): "functions_board/zwave_values", vol.Required("device_id"): vol.All(str, vol.Length(max=64))}
+)
+@websocket_api.require_admin
+@callback
+def ws_zwave_values(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """A Z-Wave device's values (0.13.0): {node_id, home_id, values}, or None when it isn't a loaded Z-Wave device."""
+    connection.send_result(msg["id"], zwave_values(hass, msg["device_id"]))
 
 
 @websocket_api.websocket_command({vol.Required("type"): "functions_board/nodered"})

@@ -101,6 +101,13 @@ test('the fake answers like the real Home Assistant', async () => {
   const trigs = (x) => x.triggers.map((t) => JSON.stringify(t.discovery_data)).sort();
   check('contract: the Hall remote\'s MQTT debug info: the same shape and its triggers\' discovery configs', !fits(shape(mf), shape(mr)).length && JSON.stringify(trigs(mf)) === JSON.stringify(trigs(mr)), { shape: fits(shape(mf), shape(mr)), fake: trigs(mf), real: trigs(mr) });
 
+  // a Z-Wave device's values (0.13.0): the same values, states and entities (what each is now aside: tests move them)
+  for (const name of ['Front door lock', 'Scene keypad']) {
+    const [zf, zr] = [await fake.ws({ type: 'functions_board/zwave_values', device_id: devId(fake.devices, name) }), await ha.ws({ type: 'functions_board/zwave_values', device_id: devId(realDevs, name) })];
+    const zn = (z) => z && Object.assign({}, z, { values: z.values.map((v) => Object.assign({}, v, { value: null })) });
+    check(`contract: ${name}: the same Z-Wave values`, !!zr && JSON.stringify(zn(zf)) === JSON.stringify(zn(zr)), { fake: zn(zf), real: zn(zr) });
+  }
+
   // changes: the same results
   const [l1f, l1r] = await both({ type: 'config/label_registry/create', name: 'Contract label' });
   check('contract: creating a label answers in the same shape, with the same ID', !fits(shape(l1f), shape(l1r)).length && l1f.label_id === l1r.label_id, [l1f, l1r]);

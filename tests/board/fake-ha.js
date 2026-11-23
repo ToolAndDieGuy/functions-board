@@ -44,7 +44,8 @@ class FakeHA {
     this.versions = {};
     this.nodered = null;
     this.sources = {};  // what a derived helper reads (functions_board/sources), as a test sets it: id → { entities }
-    this.devTrig = clone(s.devTrig || {});  // each device's own triggers (0.13.0): { list, caps, mqtt }, as recorded or a test sets them
+    this.devTrig = clone(s.devTrig || {});
+    this.zwave = clone(s.zwave || {});  // each Z-Wave device's values (functions_board/zwave_values, 0.13.0)  // each device's own triggers (0.13.0): { list, caps, mqtt }, as recorded or a test sets them
     // the recorder's history (history/history_during_period), as a test sets it: id → compressed rows, or a function
     // (from ms, to ms, ids) → that; an entity without any is its state now, at the start (nothing changed)
     this.history = {};
@@ -320,6 +321,7 @@ class FakeHA {
           : [Object.assign({ s: this.states.get(k).state, lu: from / 1000 }, m.no_attributes ? {} : { a: clone(this.states.get(k).attributes || {}) })]]));
       }
       case 'functions_board/sources': this._admin(); return { sources: Object.fromEntries((m.entity_ids || []).filter((k) => this.sources[k]).map((k) => [k, clone(this.sources[k])])) };
+      case 'functions_board/zwave_values': this._admin(); return clone(this.zwave[m.device_id] || null);
       case 'functions_board/nodered': this._admin(); return { kept: clone(this.nodered) };
       case 'functions_board/nodered_keep': this._admin(); this.nodered = { at: this._now(), slug: m.slug, groups: clone(m.groups) }; await this.notifyStore({ what: 'nodered', client: m.client || '' }); return null;
       case 'functions_board/versions': this._admin(); return { versions: (this.versions[m.label] || []).map(meta), active: (this.vactive || {})[m.label] || null };
