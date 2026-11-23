@@ -1,0 +1,32 @@
+name: First impressions
+description: A minute on how it went in your home. Nothing from your setup needed.
+labels: [feedback]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for trying it. Answer any of these, as briefly as you like; leave the rest empty.
+  - type: textarea
+    id: import
+    attributes:
+      label: Import
+      description: What did Import get right or wrong about your setup? Systems split that belong together, or the other way round?
+  - type: textarea
+    id: learned
+    attributes:
+      label: Anything you didn't know
+      description: Did the board show you something about your own automations you didn't know (a problem, a loop, why one didn't run)?
+  - type: textarea
+    id: sandbox
+    attributes:
+      label: The sandbox
+      description: What did you try in it, and what couldn't it do?
+  - type: textarea
+    id: confusing
+    attributes:
+      label: What was confusing, or missing
+  - type: input
+    id: size
+    attributes:
+      label: Roughly how big is your setup?
+      placeholder: "about 150 automations, 40 scripts"

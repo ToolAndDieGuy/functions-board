@@ -3,7 +3,8 @@
 // node tests/e2e/screens.js [name]   (name: a regular expression; only matching shots are written)
 // It resets the board, imports the demo functions and writes docs/images/<name>.png (FB_SHOTS_OUT to change).
 // Tests run for real on the test Home Assistant; the garage is put back at rest at the end.
-// With sharp installed (NODE_PATH), the PNGs are written with a palette, about a fifth of the size.
+// With sharp installed (NODE_PATH), the PNGs are written with a palette, about a fifth of the size, and the sandbox's
+// run is also written as docs/images/sandbox.gif (each step a frame; the README's first picture).
 const path = require('path');
 const fs = require('fs');
 const { chromium, BASE, session, ws, svc, states, ready, fbq, board, until, reset } = require('./lib');
@@ -240,20 +241,65 @@ const drawerWidth = (page, w) => el(page, (b, w) => { b._$.drawer.style.width = 
     await fbq(page, '.drawer .sbctl .sbent').waitFor({ timeout: 10000 });
     await drawerWidth(page, 600);
     const sbxIdle = () => until(() => el(page, (b) => (!b._sbx.busy && (!b._flow || b._flow.at === b._flow.steps.length - 1)) || null), 20000);
+    // the GIF (the README's first picture): the same run, a frame for each thing done and each step it plays. Only
+    // the board, beside a narrower drawer, with the whole function framed large and held still (stepping would
+    // otherwise move the view to each step)
+    const frames = [], gifOn = !!sharp && (!only || only.test('sandbox.gif'));
+    // a wider window and a slim drawer, so the function fills the frame from side to side; the frame runs from the
+    // sandbox's pill down to the bar of steps under the board, with the function between them
+    if (gifOn) { await page.setViewportSize({ width: 1760, height: H }); await drawerWidth(page, 360); await page.waitForTimeout(1200); }
+    await frame(page, await allBoxes(page), 1.6, 60);
+    if (gifOn) {
+      await el(page, (b, keys) => {
+        const ns = keys.map((x) => b._model.nodes.get(x)).filter(Boolean), k = b._view.k, vp = b._$.vp.getBoundingClientRect();
+        const pill = b.shadowRoot.querySelector('.sbxpill').getBoundingClientRect();
+        const y0 = Math.min(...ns.map((n) => n.y)), y1 = Math.max(...ns.map((n) => n.y + n.h));
+        // its middle halfway between the pill and where the bar of steps starts (about 150 px above the foot)
+        const mid = (pill.bottom + (vp.bottom - 150)) / 2 - vp.y;
+        b._view.y = mid - ((y0 + y1) / 2) * k;
+        b._applyView();
+      }, await allBoxes(page));
+    }
+    await page.waitForTimeout(900);
+    const view = await el(page, (b) => ({ ...b._view }));
+    const clip = await el(page, (b) => {
+      const r = b.getBoundingClientRect(), d = b._$.drawer.getBoundingClientRect(), pill = b.shadowRoot.querySelector('.sbxpill').getBoundingClientRect();
+      const top = Math.max(r.y, pill.y - 12);
+      return { x: r.x, y: top, width: d.x - r.x, height: r.bottom - top };
+    });
+    const hold = () => el(page, (b, v) => { b._clock.cancel('follow'); b._view = { ...v }; b._applyView(); }, view);
+    const grab = async (ms) => { if (gifOn) { await hold(); await page.waitForTimeout(500); frames.push({ buf: await page.screenshot({ clip: inView(clip, 1760, H) }), ms }); } };
+    // every step of what the last thing done set off, one frame each, as ▶ in the bar under the board steps them
+    const steps = async () => {
+      const n = await el(page, (b) => (b._flow ? b._flow.steps.length : 0));
+      for (let i = 0; i < n && gifOn; i++) { await el(page, (b, i) => b._flowGo(i, false), i); await grab(i === n - 1 ? 2200 : 900); }
+    };
+    await grab(1800);
     await fbq(page, '.drawer .sbent').selectOption(AUTO);
     await fbq(page, '.drawer .sbval-sel').selectOption('on');
     await fbq(page, '.drawer [data-act="sbx-set"]').click();
     await sbxIdle();
+    await steps();
     await fbq(page, '.drawer .sbent').selectOption(DOOR);
     await fbq(page, '.drawer .sbval-sel').selectOption('open');
     await fbq(page, '.drawer [data-act="sbx-set"]').click();
     await sbxIdle();
+    await steps();
     await fbq(page, '.drawer [data-act="sbx-next"]').click();
     await sbxIdle();
+    await steps();
+    if (gifOn) { await page.setViewportSize({ width: W, height: H }); await drawerWidth(page, 600); }
     await page.waitForTimeout(1200);
     await frame(page, await chain(page), 1.1, 110);
     await page.waitForTimeout(900);
     await shot(page, 'sandbox', await rect(page, null));
+    if (gifOn && frames.length) {
+      // 960 pixels wide, 128 colours: about the size of two of the PNGs. Each frame shows as long as it asked
+      const m = await sharp(frames[0].buf).metadata(), w = 960, h = Math.round(m.height * w / m.width);
+      const small = await Promise.all(frames.map((f) => sharp(f.buf).resize(w, h).png().toBuffer()));
+      await sharp(small, { join: { animated: true } }).gif({ delay: frames.map((f) => f.ms), loop: 0, colours: 128, effort: 7, dither: 0.5 }).toFile(path.join(OUT, 'sandbox.gif'));
+      console.log('sandbox.gif', frames.length, 'frames', JSON.stringify(clip));
+    }
     await drawerWidth(page, null);
     await fbq(page, '.litbar [data-act="lit-clear"]').click().catch(() => {});
     await el(page, (b) => b._closeDrawer());
