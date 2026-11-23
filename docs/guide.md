@@ -131,7 +131,7 @@ Saving needs Full manager.
 <table>
 <tr>
 <td width="70%" valign="top"><b>Import</b> finds the systems already in your setup, from how your automations and scripts are wired and the categories you already use.<br><br><img src="images/import.png" alt="The import manager listing Garage, Furnace filter and Morning, with the Garage group opened to show its automations, script and helpers"></td>
-<td width="30%" valign="top"><b>On a phone</b> the board works the same. Swipe to move around; hold a box for a second to move it. In the phone app, Home Assistant's editors open full screen, and Back returns to the board.<br><br><img src="images/phone.png" alt="The Garage function on a phone"></td>
+<td width="30%" valign="top"><b>On a phone</b> the board works the same. Swipe to move around; hold a box for half a second (until it lifts and the phone buzzes) to move it. In the phone app, Home Assistant's editors open full screen, and Back returns to the board.<br><br><img src="images/phone.png" alt="The Garage function on a phone"></td>
 </tr>
 </table>
 

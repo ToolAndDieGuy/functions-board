@@ -2466,5 +2466,32 @@
   "replace": "case 'functions_board/zwave_values': this._admin(); return null;",
   "suite": "e2e-contract",
   "expect": "the same Z-Wave values"
+ },
+ {
+  "name": "board: a touch hold lifts after a second again",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "const HOLD_MS = 500;",
+  "replace": "const HOLD_MS = 1000;",
+  "suite": "board-regress",
+  "only": "0.13.0 touch",
+  "expect": "0.13.0 lifted after half a second held"
+ },
+ {
+  "name": "board: the phone's long-press doesn't lift the box",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "{ e.preventDefault(); this._lift(this._drag); }",
+  "replace": "{ e.preventDefault(); }",
+  "suite": "board-regress",
+  "only": "0.13.0 touch",
+  "expect": "0.13.0 the phone's long-press lifts the box at that moment"
+ },
+ {
+  "name": "board: no buzz when a box lifts",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "    window.dispatchEvent(new CustomEvent('haptic', { detail: 'medium', bubbles: true, composed: true }));\n",
+  "replace": "",
+  "suite": "board-regress",
+  "only": "0.13.0 touch",
+  "expect": "with one buzz"
  }
 ]

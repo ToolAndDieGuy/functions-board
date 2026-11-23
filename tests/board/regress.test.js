@@ -228,7 +228,7 @@ test('Phase 7: highlight modes, filters, nearest sides, new boxes by their neigh
   await ctx.close();
 });
 
-test('0.5.4 touch: a box moves only after a one-second hold; a quick swipe pans', async ({ browser }) => {
+test('0.5.4 touch: a box moves only after a hold; a quick swipe pans', async ({ browser }) => {
   const { ctx, page } = await imported(browser, { mobile: true });
   await openFn(page, /garage/i);
   const cdp = await ctx.newCDPSession(page);
@@ -2049,4 +2049,45 @@ test('0.13.0 the sandbox\'s Z-Wave row: a value the automations listen for, repo
   const j = await el(page, (b, a) => ({ jam: b._sbx.eng.get(a.JAM).state, ran: b._sbx.eng.log.some((e) => e.kind === 'trigger' && e.key === 'automation.fb_lock_jammed'), ev: b._sbx.eng.log.filter((e) => e.kind === 'event').map((e) => e.text) }), { JAM });
   check('0.13.0 Lock jammed reported: its binary sensor on, and the automation on that starts (a state: no Notification event, as in Z-Wave JS)', j.jam === 'on' && j.ran && !j.ev.includes('zwave_js_notification'), j);
   check('0.13.0 the Z-Wave row: no errors, and nothing sent that changes anything', page.logs.length === 0 && !fake.calls.some((c) => c.kind === 'svc' || /^(call_service|fire_event|execute_script)$/.test(c.type)), page.logs);
+});
+
+test('0.13.0 touch: a box lifts at a phone\'s long-press (half a second, or when the phone says so) and buzzes as Home Assistant does', async ({ browser }) => {
+  const { ctx, page } = await imported(browser, { mobile: true });
+  await openFn(page, /garage/i);
+  const cdp = await ctx.newCDPSession(page);
+  const touch = (type, x, y) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] });
+  const key = GARAGE[1];
+  const where = () => el(page, (b, k) => { const n = b._model.nodes.get(k), r = b._els.get(k).getBoundingClientRect(); return { x: n.x, y: n.y, cx: r.left + r.width / 2, cy: r.top + r.height / 2, vx: b._view.x }; }, key);
+  const lifted = () => el(page, (b, k) => b._els.get(k).classList.contains('lifted'), key);
+  // Home Assistant's frontend turns a 'haptic' event into the companion app's buzz: count them
+  await page.evaluate(() => { window.__fbHaptic = []; window.addEventListener('haptic', (e) => window.__fbHaptic.push(e.detail)); });
+  await el(page, (b, k) => { b._listOpen = false; b._renderList(); b._centerOn(k); }, key);
+  await page.waitForTimeout(500);
+  let p = await where();
+  await touch('touchStart', p.cx, p.cy);
+  await page.waitForTimeout(350);
+  check('0.13.0 not lifted before a long-press', !(await lifted()));
+  await page.waitForTimeout(300);
+  check('0.13.0 lifted after half a second held, as a phone\'s own long-press', await lifted());
+  check('0.13.0 ... with one buzz, as Home Assistant\'s buttons make it (its haptic event)', JSON.stringify(await page.evaluate(() => window.__fbHaptic)) === '["medium"]', await page.evaluate(() => window.__fbHaptic));
+  for (let i = 1; i <= 6; i++) { await touch('touchMove', p.cx + 10 * i, p.cy); await page.waitForTimeout(16); }
+  await touch('touchEnd');
+  await page.waitForTimeout(400);
+  let q = await where();
+  const k = await el(page, (b) => b._view.k);
+  check('0.13.0 ... and then the box moves with the finger, the board stays', Math.abs(q.x - p.x - 60 / k) < 3 && q.vx === p.vx, { p, q, k });
+  // the phone's long-press (its contextmenu) before half a second: lifted then, and the phone's menu kept shut
+  p = q;
+  await page.evaluate(() => { window.__fbHaptic = []; });
+  await touch('touchStart', p.cx, p.cy);
+  await page.waitForTimeout(150);
+  const shut = await el(page, (b, k) => { const ev = new MouseEvent('contextmenu', { bubbles: true, composed: true, cancelable: true }); b._els.get(k).dispatchEvent(ev); return ev.defaultPrevented; }, key);
+  check('0.13.0 the phone\'s long-press lifts the box at that moment, its own menu kept shut', shut && (await lifted()) && (await page.evaluate(() => window.__fbHaptic.length)) === 1);
+  for (let i = 1; i <= 6; i++) { await touch('touchMove', p.cx, p.cy + 10 * i); await page.waitForTimeout(16); }
+  await touch('touchEnd');
+  await page.waitForTimeout(400);
+  q = await where();
+  check('0.13.0 ... and it moves', Math.abs(q.y - p.y - 60 / k) < 3 && q.vx === p.vx, { p, q });
+  check('0.13.0 touch hold: no errors', page.logs.length === 0, page.logs);
+  await ctx.close();
 });
