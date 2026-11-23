@@ -17,7 +17,7 @@ edit('custom_components/functions_board/frontend/functions-board.js', (s) => s
 edit('custom_components/functions_board/manifest.json', (s) => s.replace(/"version": "[^"]+"/, `"version": "${ver}"`));
 edit('README.md', (s) => s
   .replace(/functions-board\.js\?v=[0-9][^`)\s]*/g, `functions-board.js?v=${ver}`)
-  .replace(/This is a prototype \(v[^)]+\)/, `This is a prototype (v${ver})`));
+  .replace(/This is an early release \(v[^)]+\)/, `This is an early release (v${ver})`));
 const cl = path.join(root, 'CHANGELOG.md');
 const head = `## ${ver} (${new Date().toISOString().slice(0, 10)})\n\n`;
 let log = fs.existsSync(cl) ? fs.readFileSync(cl, 'utf8') : '# Changelog\n\n';

@@ -31,7 +31,12 @@ function out in a sandbox. Published through HACS. Read this before changing any
   needs.
 - `tests/`: everything below. `scripts/`: `bump.js` (version), `gen_sandbox_triggers.py` (see Sandbox),
   `demo_requirements.py` (what `setup.sh` installs before Home Assistant first starts).
-- `docs/images/`: the README's screenshots, taken by `tests/e2e/screens.js` on a fresh test Home Assistant
+- `README.md` is the short version (what it does, install, a quick tour, what it changes, questions, feedback); the
+  rest is in `docs/guide.md` (every feature, the tour, arrows, Node-RED, accessibility, translating),
+  `docs/sandbox.md` and `docs/what-it-changes.md` (with privacy). A new feature goes in the guide or the sandbox
+  page; the README only when it changes what the board is for.
+- `docs/images/`: the README's screenshots, and `sandbox.gif` (its first picture: the sandbox's run, step by step),
+  taken by `tests/e2e/screens.js` on a fresh test Home Assistant
   in CI (weekly, or by hand: Actions → Weekly → pictures). When they change, the job pushes the new ones to the
   branch `readme-pictures` to take by pull request; don't commit pictures taken locally (fonts differ by machine).
 
