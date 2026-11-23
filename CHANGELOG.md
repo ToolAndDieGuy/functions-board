@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.13.1 (2026-11-23)
 
 The sandbox's controls are in sections now, each under a header: **Change something**, **Send an event**, **Run and
 replay**, **Time** and **Settings**. Clicking a header folds its section away, and it stays folded the next time you open

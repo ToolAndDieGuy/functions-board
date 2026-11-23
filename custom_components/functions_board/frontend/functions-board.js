@@ -1,5 +1,5 @@
 /*!
- * Functions board v0.13.0 (prototype) for Home Assistant
+ * Functions board v0.13.1 (prototype) for Home Assistant
  *
  * One page per "function": every automation, script, helper and device that makes one job work,
  * grouped by a Home Assistant label and wired together from their own configs.
@@ -13,7 +13,7 @@
  */
 (() => {
   'use strict';
-  const VERSION = '0.13.0';
+  const VERSION = '0.13.1';
   const loaded = customElements.get('functions-board');
   if (loaded) {
     if (loaded.VERSION !== VERSION) {
