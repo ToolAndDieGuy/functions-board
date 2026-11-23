@@ -24,7 +24,9 @@
   }
   const REPO_URL = 'https://github.com/ToolAndDieGuy/functions-board';
   const STORE = 'functions_board';
-  const HOLD_MS = 1000;  // on a touch screen, how long a box is held before it moves
+  // on a touch screen, how long a box is held before it moves: a phone's own long-press (0.13.0; it was a second, so the
+  // phone's buzz at half a second came before the box could move, and a finger moving then panned the board)
+  const HOLD_MS = 500;
   const CAPTURE_KEY = 'functions_board_capture';
   // Home Assistant builds a new board each time its page is opened again (back from an editor, say). What the
   // last board loaded is kept here so the next one can draw at once: the registries for a few minutes, and
@@ -7901,8 +7903,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       vp.addEventListener('pointerdown', (e) => this._onDown(e));
       vp.addEventListener('pointermove', (e) => { if (this._linking && !this._linking.drag) this._linkMove(e); });
       vp.addEventListener('wheel', (e) => this._onWheel(e), { passive: false });
-      // holding a finger on a box to move it must not open the phone's own menu
-      vp.addEventListener('contextmenu', (e) => { if (this._drag && this._drag.touch) e.preventDefault(); });
+      // holding a finger on a box to move it must not open the phone's own menu; and when the phone says it's a long
+      // press (it buzzes then), the box is picked up at that moment, whatever HOLD_MS says (0.13.0)
+      vp.addEventListener('contextmenu', (e) => { if (this._drag && this._drag.touch) { e.preventDefault(); this._lift(this._drag); } });
       this._$.drawer.addEventListener('mouseover', (e) => { const x = e.target.closest('.run, .dbrow, .wrow'); this._hover(x ? x.dataset.key || null : null); });
       // hovering an arrow that comes from a template shows the template's value right now (9.3)
       const ed = this._$.edges;
@@ -9380,18 +9383,23 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       }
       this._drag = Object.assign(base, { type: 'pan', ox: this._view.x, oy: this._view.y });
     }
-    // On a touch screen a box, frame or note moves only after it has been held still for a second. A finger
-    // that moves sooner pans the board, so swiping across boxes to look around doesn't drag them along.
+    // On a touch screen a box, frame or note moves only after it has been held still for half a second (a phone's
+    // long-press). A finger that moves sooner pans the board, so swiping across boxes to look around doesn't drag them.
     _grab(e, d) {
       this._drag = d;
       if (e.pointerType !== 'touch') return;
       d.touch = true; d.wait = true;
-      this._clock.after('hold', HOLD_MS, () => {
-        if (this._drag !== d || !d.wait) return;
-        d.wait = false;
-        if (d.el) d.el.classList.add('lifted');
-        try { if (navigator.vibrate) navigator.vibrate(20); } catch (err) { /* no buzz on this phone */ }
-      });
+      this._clock.after('hold', HOLD_MS, () => this._lift(d));
+    }
+    // picked up: it shows, and the phone buzzes the way Home Assistant's own buttons make it (0.13.0): its 'haptic'
+    // event, which the companion app turns into the phone's buzz, and a browser into a vibration if the person's
+    // profile allows it (navigator.vibrate alone does nothing in the app)
+    _lift(d) {
+      if (!d || this._drag !== d || !d.wait) return;
+      this._clock.cancel('hold');
+      d.wait = false;
+      if (d.el) d.el.classList.add('lifted');
+      window.dispatchEvent(new CustomEvent('haptic', { detail: 'medium', bubbles: true, composed: true }));
     }
     _dropHold(d) {
       if (!d) return;

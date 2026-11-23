@@ -25,6 +25,11 @@ event, which event triggers on it hear too, and the scene's event entity shows t
 value only, as in Z-Wave JS, so a trigger waiting for a Notification event doesn't start on it; one the automations use
 can be pressed on the Press row.
 
+On a phone, a box can be moved again. Holding one picked it up only after a second, but the phone's own long-press
+buzz comes at half a second, so a finger that moved then panned the whole board instead. A box is now picked up at half
+a second, or as soon as the phone reports its long-press, and the buzz then is Home Assistant's own: the companion app
+buzzes as it does for Home Assistant's buttons.
+
 ## 0.12.0 (2026-11-22)
 
 A notification builder. In a function, **Recipes → Notification** (in the toolbar) writes an ordinary Home Assistant
