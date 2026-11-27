@@ -9,7 +9,9 @@ PANEL_TITLE: Final = "Functions"
 PANEL_ICON: Final = "mdi:sitemap-outline"
 WEBCOMPONENT: Final = "functions-board"
 STATIC_URL: Final = "/functions_board_static"
+STATIC_V_URL: Final = "/functions_board_static_v"
 BOARD_FILE: Final = "functions-board.js"
+CARD_LOADER_FILE: Final = "card-loader.js"
 
 STORAGE_KEY: Final = DOMAIN
 STORAGE_VERSION: Final = 1
@@ -24,11 +26,31 @@ MAX_LABEL_LEN: Final = 100
 MAX_CLIENT_LEN: Final = 64
 MAX_SOURCES: Final = 500
 MAX_NODERED_BYTES: Final = 1_000_000
+# saved sandbox checks (checks.py): decoupled from the 200 KB layout limit
+MAX_CHECKS_PER_FN: Final = 50
+MAX_CHECKS_FN_BYTES: Final = 1_000_000
+MAX_CHECKS_BYTES: Final = 10_000_000
 # saved versions of functions (versions.py): one snapshot, how many per function, all of them together
 MAX_VERSION_BYTES: Final = 1_000_000
 MAX_VERSIONS: Final = 50
 MAX_VERSIONS_BYTES: Final = 20_000_000
 MAX_VERSION_TEXT: Final = 2000
+# allowlisted Home Assistant domains that a saved version snapshot may contain and restore
+VERSION_DOMAINS: Final = frozenset(
+    {
+        "automation",
+        "script",
+        "input_boolean",
+        "input_number",
+        "input_text",
+        "input_select",
+        "input_datetime",
+        "input_button",
+        "counter",
+        "timer",
+        "schedule",
+    }
+)
 
 # options
 CONF_MODE: Final = "mode"

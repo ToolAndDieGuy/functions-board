@@ -120,6 +120,19 @@ const home = { 'cover.garage': S('open'), 'light.porch': S('off'), 'person.ann':
   check('0.11.3 builder: a person with the phones they carry', t.people.length === 2 && t.people[0].id === 'person.ann' && t.people[0].phones.length === 1 && t.people[0].phones[0].svc === 'mobile_app_ann_s_iphone' && t.people[1].phones.length === 0, t.people);
   check('0.11.3 builder: speakers and TTS engines', t.speakers.length === 1 && t.speakers[0].name === 'Kitchen' && t.tts.length === 1 && t.tts[0].id === 'tts.cloud');
   check('0.11.3 builder: names slugified as Home Assistant does', slugify('Ann’s iPhone') === 'ann_s_iphone' && slugify('Café 12') === 'cafe_12');
+  // 0.13.2 renamed iPhone matched by name_by_user or entity slug keeps os: 'ios'
+  const renamed = notifyTargets({
+    states: { 'person.sam': S('home', { friendly_name: 'Sam', device_trackers: ['device_tracker.sam_old_phone'] }) },
+    entities: [{ entity_id: 'device_tracker.sam_old_phone', device_id: 'd_ios' }],
+    devices: [
+      { id: 'd_ios', name: 'Sam iPhone 16', name_by_user: 'Sam Work', manufacturer: 'Apple', identifiers: [['mobile_app', 'ios1']] },
+      { id: 'd_ios2', name: 'Renamed Phone', name_by_user: 'Pat iPhone', manufacturer: 'Apple', identifiers: [['mobile_app', 'ios2']] },
+    ],
+    services: { mobile_app_sam_old_phone: {}, mobile_app_pat_iphone: {} },
+  });
+  check('0.13.2 builder: renamed iPhones matched by entity slug or name_by_user stay iOS',
+    renamed.phones.every((p) => p.os === 'ios') && renamed.phones.length === 2
+    && renamed.people[0].phones.length === 1 && renamed.people[0].phones[0].os === 'ios', renamed);
 }
 
 // ---- run in the sandbox: sent, a button pressed, nobody answering

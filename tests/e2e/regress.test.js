@@ -672,8 +672,8 @@ test('0.9.0 saved checks: a sandbox run kept with what should come of it, replay
   check('0.9.0 ... and suggests what came of it, ticked: the door ends closed, what ran ran', dlg.x.some(([t, on]) => /Garage Door ends closed/.test(t) && on) && dlg.x.some(([t, on]) => /Garage: left open runs to the end/.test(t) && on) && dlg.x.some(([t, on]) => /Close garage runs to the end/.test(t) && on), dlg.x);
   await fbq(page, '.modal input[name="ckname"]').fill('Left open: closes itself');
   await fbq(page, '.modal [data-act="chk-save-go"]').click();
-  const saved = await until(async () => { const L = (await store(page)).layouts[lid]; return L && (L.checks || []).length ? L.checks : null; }, 8000);
-  check('0.9.0 it\'s kept in the function\'s layout (shared, synced)', !!saved && saved[0].name === 'Left open: closes itself' && saved[0].steps.length === 3 && saved[0].start[DOOR].state === 'closed', saved && saved[0]);
+  const saved = await until(async () => { const r = await ws(page, { type: 'functions_board/checks', label: lid }); return r && (r.checks || []).length ? r.checks : null; }, 8000);
+  check('0.9.0 it\'s kept in the function\'s checks store (shared, synced, separate from layout)', !!saved && saved[0].name === 'Left open: closes itself' && saved[0].steps.length === 3 && saved[0].start[DOOR].state === 'closed' && !((await store(page)).layouts[lid] || {}).checks, saved && saved[0]);
   const pass = await until(() => el(page, (b) => { const r = b.shadowRoot.querySelector('.sbchk .ckst'); return r && (r.classList.contains('ok') || r.classList.contains('bad')) ? r.className : null; }), 20000);
   check('0.9.0 it runs straight away and passes', /ok/.test(pass || ''), pass);
   // someone breaks the script: the check fails, and the function shows it as a problem

@@ -116,7 +116,9 @@ def _mqtt_map(domain: str, module: str, c: dict[str, Any]) -> dict[str, Any] | N
     if domain == "binary_sensor":
         return {"how": "map", "map": {get("payload_on", "ON"): "on", get("payload_off", "OFF"): "off", "None": "unknown"}, "blank": "skip"}
     if domain == "switch":
-        return {"how": "map", "map": {get("state_on") or get("payload_on", "ON"): "on", get("state_off") or get("payload_off", "OFF"): "off", "None": "unknown"}}
+        state_on = get("state_on") if get("state_on") is not None else get("payload_on", "ON")
+        state_off = get("state_off") if get("state_off") is not None else get("payload_off", "OFF")
+        return {"how": "map", "map": {state_on: "on", state_off: "off", "None": "unknown"}}
     if domain == "fan":
         return {"how": "map", "map": {get("payload_on", "ON"): "on", get("payload_off", "OFF"): "off", "None": "unknown"}, "blank": "skip", "tpl": "state_value_template"}
     if domain == "lock":

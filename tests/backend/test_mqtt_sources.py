@@ -101,3 +101,11 @@ async def test_mqtt_sensor_whose_unit_is_converted(hass: HomeAssistant, mock_has
     assert res["sensor.temp"]["topics"] == ["h/t", "h/t/av"]
     assert res["sensor.temp"]["rule"] == {"kind": "mqtt", "domain": "sensor", "avail": {"mode": "latest", "list": [{"topic": "h/t/av", "on": "online", "off": "offline", "tpl": None}]}}
     assert res["sensor.bare"] == {"entities": [], "domains": [], "all": False, "how": "mqtt", "topics": ["h/b"]}
+
+
+def test_mqtt_switch_falsy_state_on_off() -> None:
+    """_mqtt_map keeps falsy state_on / state_off values instead of falling back to payload_on/off (0.13.2)."""
+    from custom_components.functions_board.sources import _mqtt_map
+
+    rule = _mqtt_map("switch", "homeassistant.components.mqtt.switch", {"state_on": "", "payload_on": "ON", "state_off": 0, "payload_off": "OFF"})
+    assert rule is not None and rule["map"][""] == "on" and rule["map"][0] == "off", rule

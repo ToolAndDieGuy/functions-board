@@ -121,4 +121,11 @@ check('events, MQTT topics and unknown names inside templates aren\'t judged', f
   const pb = findProblems(it, ['automation.stove'], ctx());
   check('0.11.1 findProblems: one warning on the automation, with what and from which states', pb.length === 1 && pb[0].sev === 'warn' && pb[0].kind === 't_both' && pb[0].ref === 'automation.stove' && pb[0].from.join() === 'off,on' && pb[0].ents[0] === 'binary_sensor.stove', pb);
 }
+{
+  // 0.13.2: a missing targetless service (s_missing) marks its svc: box and the arrow pointing into it
+  const nodes = new Map([['automation.a', {}], ['svc:notify.old_phone', {}], ['light.ok', {}]]);
+  const edges = [{ from: 'automation.a', to: 'svc:notify.old_phone' }, { from: 'automation.a', to: 'light.ok' }];
+  markProblems(nodes, edges, [{ sev: 'error', kind: 's_missing', ref: 'notify.old_phone', by: ['automation.a'] }]);
+  check('0.13.2 markProblems marks missing targetless service box and its arrow', nodes.get('svc:notify.old_phone').prob === 'error' && nodes.get('automation.a').prob === 'error' && edges[0].prob === true && edges[1].prob === false, { nodes: [...nodes], edges });
+}
 

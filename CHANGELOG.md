@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.14.0 (2026-11-27)
+
+Functions Board **v0.14.0** brings a native zero-build ES module frontend, faster and lighter storage for saved versions and checks, security hardening from the HACS review, Home Assistant 2026.11 `target.exclude` support, and a full round of bug fixes across the sandbox, wiring analyzer, debugger, versions, and notification builder.
+
+> **Upgrade note:** On first startup, `v0.14.0` automatically migrates existing saved versions into a lightweight metadata index (`.storage/functions_board.versions`) with on-demand per-function snapshot files (`.storage/functions_board.versions.<hash>`), and moves saved sandbox checks out of layouts into `.storage/functions_board.checks`. This migration is automatic and preserves all existing data, though downgrading back to `v0.13.1` afterwards will not read the new split files.
+
+### Architecture, Storage & Performance
+- **Native ES module frontend:** Split the single ~10,000-line script into 24 zero-build ES modules (`frontend/lib/*`, `frontend/ui/*`, `board-core.js`, and a thin `functions-board.js` entrypoint) served under a disjoint content-hashed path (`/functions_board_static_v/<digest>/`) for atomic cache invalidation across updates and integration reloads, while keeping `/functions_board_static/functions-board.js` working for manual dashboard resources.
+- **Lazy dashboard card loader:** When the **Dashboard card** option is enabled, dashboards now load a tiny (~3 KB) admin-gated `card-loader.js` instead of downloading and parsing the full board for non-admin users or views without the card.
+- **Split version storage:** Version metadata and active pointers live in `.storage/functions_board.versions` while snapshot payloads load lazily from per-function files, so renaming a version or switching active pointers never rewrites large snapshots.
+- **Dedicated saved-checks store:** Saved sandbox checks now live in `.storage/functions_board.checks` (`functions_board/checks`, `functions_board/set_checks`) instead of inside the 200 KB layout store, keeping box drags lightweight and freeing layout space. Checks also sync cleanly on reconnect and restore on Undo after deleting a function.
+- **UI polish:** Dropped the `· prototype` suffix from the version label in the sidebar footer and About dialog, and fixed tall read-only dialogs (such as **About** and **Sandbox** intro) scrolling past their title heading on open.
+- **Per-item version restore options:** When making an older version active that has fewer components than the current function, each added automation, script, or helper now has its own selector: **Turn off** (automations), **Do not include in function (leave on / leave as is)** (removes the function label while leaving the item untouched and running), or **Delete from Home Assistant**.
+
+### Security & Privacy Hardening
+- **Version restore domain allowlist:** Enforced an explicit allowlist of Home Assistant domains (`automation`, `script`, and UI helper domains) on both backend (`version_save`, `version_overwrite`) and frontend (`_verDiff`, `_verPlan`, `_verRestoreGo`, delete Undo) so stored snapshots can never dispatch WebSocket commands for arbitrary domains.
+- **Diagnostics anonymisation:** Offloaded regex compilation and tree anonymisation off Home Assistant's asyncio event loop, made known-name redaction case-insensitive, and prevented short or structural-word label IDs (e.g. `mode`, `on`) from corrupting structural JSON keys/values while still anonymising them in label positions.
+
+### Sandbox & Saved Checks Fixes
+- Fixed duration formatting in saved-check steps, the sandbox clock tooltip, and **Jump to** so offsets always format as durations (`M:SS` / `H:MM:SS` / `Nd H:MM:SS`) instead of local wall-clock times (which showed AM/PM timestamps outside UTC).
+- Fixed `sbxRewrite()` to tokenize Jinja comments (`{# ... #}`), expression/statement tags (`{{ ... }}`, `{% ... %}`), and quoted string literals so plain text words like `states`, `closest`, or `distance` are never rewritten or misreported as location reads.
+- Added explicit saved-check step descriptions for Z-Wave value reports (`zwave`) and device behaviors (`behave`) instead of falling back to "Clock to what's due".
+- Fixed MQTT cover position handling for JSON `0`, non-zero `position_closed` offsets, and inverted covers (`position_closed > position_open`).
+- Derived helpers now converge across multi-hop helper chains, `script.toggle` cancels an already running script, `time_pattern` scheduling handles DST transitions without skipping or repeating an hour, and manual steps or rewinds clear a previous history-replay banner.
+- Fixed a race under slow/jittered connections where sandbox rendering could access the engine before async initialization finished.
+
+### Wiring, Debugger, Problems, Versions & Notification Builder Fixes
+- Added Home Assistant 2026.11 `target.exclude` support across the wiring analyzer, board model, and sandbox target resolution.
+- Missing targetless services (`s_missing`) now mark the service box and incoming arrow on the board, and their **Show** button in the Problems drawer navigates directly to the service box.
+- Fixed a property collision between Trace **Back** navigation and drawer focus restoration so returning from a trace goes back to the Debug or Runs drawer and closing the drawer restores focus cleanly.
+- Fixed Z-Wave JS value discovery for multi-endpoint child devices whose registry identifier uses the `home-node-endpoint` format.
+- Fixed wiring analysis edge cases for `wait_for_trigger` (`wait` mode), templated action targets, `climate`/`water_heater`/`media_player` `turn_on` actions, Node-RED `target` blocks, and `input_number` float formatting (`pyFloat`).
+- Live debugger now captures calls targeting `floor_id` or `label_id` and preserves rapid same-second repeated calls.
+- Version snapshots and restores now resolve renamed scripts via their registry `unique_id` and restore customized entity IDs when recreating deleted helpers.
+- Notification Builder now matches `mobile_app` devices renamed via `name_by_user` (or unmatched devices via entity slugs), skips disabled script IDs when choosing a new script ID, and rejects blank button titles.
+- Backend cleanup: deleting the last version removes empty label buckets, MQTT switch discovery checks explicit `None` for falsy payloads (`""`, `0`), and `functions_board/set` validates layouts via `_layout_problem`.
+
+### Testing & CI
+- Fixed all weekly CI regressions (`mutants`, `jitter`, and `diff` random write-write races), added `include-hidden-files: true` to artifact uploads, expanded unit/board/backend/E2E coverage (including `card-loader.js` and `CHECK_OPS` invariants), and remapped all 319 mutants to the modular frontend.
+
 ## 0.13.1 (2026-11-23)
 
 The sandbox's controls are in sections now, each under a header: **Change something**, **Send an event**, **Run and

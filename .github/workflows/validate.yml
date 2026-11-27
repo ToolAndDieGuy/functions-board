@@ -46,7 +46,7 @@ jobs:
         with:
           node-version: 22
       - name: Syntax
-        run: node --check custom_components/functions_board/frontend/functions-board.js
+        run: find custom_components/functions_board/frontend -name '*.js' -print0 | xargs -0 -n1 node --check
       - name: Self-test, rules, library
         run: sh tests/run.sh --only 'selftest|static|wiring|import|problems|sandbox|builder|clock|link|store'
       - name: Test reports
@@ -55,6 +55,7 @@ jobs:
         with:
           name: results-board
           path: tests/.results/
+          include-hidden-files: true
 
   backend:
     name: Backend unit tests
@@ -80,6 +81,7 @@ jobs:
         with:
           name: results-backend
           path: tests/.results/
+          include-hidden-files: true
 
   fake:
     name: The board on a fake Home Assistant
@@ -109,6 +111,7 @@ jobs:
         with:
           name: results-fake
           path: tests/.results/
+          include-hidden-files: true
 
   e2e:
     name: Browser suites on a real Home Assistant
@@ -162,6 +165,7 @@ jobs:
             ha/home/zwave/*.log
             tests/e2e/.state/shots/
             tests/.results/
+          include-hidden-files: true
 
   e2e2:
     name: Browser suites on a real Home Assistant, part 2
@@ -215,3 +219,4 @@ jobs:
             ha/home/zwave/*.log
             tests/e2e/.state/shots/
             tests/.results/
+          include-hidden-files: true

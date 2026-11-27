@@ -58,4 +58,108 @@ test('a failure the board reports is an error in the test, unless it is expected
   check('J3 ... and not when the test expects that call to fail', page.logs.length === 0, page.logs);
   fake.answers = null;
 });
+
+// Phase 2/3: CONF_CARD=true loads card-loader.js on every page before panel_custom opens /functions.
+// Verify the custom-element shell constructs cleanly without setting host attributes, lazy-loads the full board
+// for admins in both load orders, and never downloads functions-board.js for non-admin users.
+test('card-loader mounts the panel for admins and blocks full-board download for non-admins', async ({ browser }) => {
+  const fs = require('fs');
+  const path = require('path');
+  const { FakeHA } = require('./fake-ha');
+  const FRONT = path.join(__dirname, '..', '..', 'custom_components', 'functions_board', 'frontend');
+
+  const runLoader = async ({ admin, preloadBoard }) => {
+    const f = new FakeHA({ mode: 'full', admin });
+    f.dark = new WeakMap();
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    const page = await ctx.newPage();
+    f.dark.set(page, true);
+    const errors = [];
+    const requested = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+    await ctx.route('**/*', (r) => {
+      const url = r.request().url();
+      if (url.startsWith('http://fake.ha/functions')) {
+        return r.fulfill({ contentType: 'text/html', body: '<!doctype html><html><body style="margin:0"><home-assistant></home-assistant></body></html>' });
+      }
+      if (url.startsWith('http://fake.ha/fb/')) {
+        const rel = url.slice('http://fake.ha/fb/'.length).split('?')[0];
+        requested.push(rel);
+        const full = path.resolve(FRONT, rel);
+        if (full.startsWith(FRONT + path.sep) && full.endsWith('.js') && fs.existsSync(full)) {
+          return r.fulfill({ contentType: 'text/javascript', body: fs.readFileSync(full, 'utf8') });
+        }
+      }
+      return r.fulfill({ status: 204, body: '' });
+    });
+    await page.exposeBinding('__fbHA', async (src, req) => {
+      try { return { ok: true, result: await f._handle(page, req) }; } catch (e) { return { ok: false, error: { code: e.code || 'err', message: e.message } }; }
+    });
+    await page.goto('http://fake.ha/functions');
+    const out = await page.evaluate(async (preload) => {
+      const call = (kind, m) => window.__fbHA({ kind, m }).then((r) => (r.ok ? r.result : Promise.reject(r.error)));
+      const v = (await window.__fbHA({ kind: 'view' })).result;
+      const conn = { subscribeMessage: async () => async () => {}, subscribeEvents: async () => async () => {}, sendMessagePromise: (m) => call('ws', m), addEventListener() {}, removeEventListener() {} };
+      const hass = { states: v.states, user: v.user, themes: { darkMode: true, themes: {} }, language: 'en', locale: { language: 'en' }, config: v.config, services: v.services, panels: { functions: v.panel }, connected: true, auth: { data: { hassUrl: location.origin } }, callWS: (m) => call('ws', m), callApi: (method, p, body) => call('api', { method, path: p, body }), callService: (d, s, data, t) => call('svc', { domain: d, service: s, data, target: t }), connection: conn };
+      document.querySelector('home-assistant').hass = hass;
+      await import('/fb/card-loader.js');
+      if (preload) await import('/fb/functions-board.js');
+      const el = document.createElement('functions-board');
+      const ctor = customElements.get('functions-board');
+      const stub = typeof ctor.getStubConfig === 'function' ? ctor.getStubConfig() : null;
+      el.panel = v.panel;
+      el.narrow = false;
+      el.route = { prefix: '/functions', path: '' };
+      el.isPanel = false;
+      el.layout = 'panel';
+      el.hass = hass;
+      document.body.appendChild(el);
+      if (v.user.is_admin) {
+        const end = Date.now() + 8000;
+        while (Date.now() < end) {
+          const inner = el.shadowRoot && el.shadowRoot.querySelector('functions-board-app');
+          if (inner && inner.shadowRoot && inner.shadowRoot.querySelector('.board')) break;
+          await new Promise((r) => setTimeout(r, 50));
+        }
+      } else {
+        await new Promise((r) => setTimeout(r, 300));
+      }
+      const inner = el.shadowRoot && el.shadowRoot.querySelector('functions-board-app');
+      const board = inner && inner.shadowRoot && inner.shadowRoot.querySelector('.board');
+      const rect = board ? board.getBoundingClientRect() : null;
+      return {
+        hasInner: !!inner,
+        hasBoard: !!board,
+        width: rect ? rect.width : 0,
+        height: rect ? rect.height : 0,
+        version: ctor && ctor.VERSION || null,
+        cardSize: typeof el.getCardSize === 'function' ? el.getCardSize() : null,
+        gridCols: typeof el.getGridOptions === 'function' && el.getGridOptions() ? el.getGridOptions().columns : null,
+        hasStub: !!stub && typeof stub === 'object',
+        panelOk: el.panel === v.panel,
+        deniedText: el.shadowRoot ? el.shadowRoot.textContent.trim() : '',
+      };
+    }, preloadBoard);
+    await ctx.close();
+    return { out, errors, requested };
+  };
+
+  const lazy = await runLoader({ admin: true, preloadBoard: false });
+  check('card-loader (lazy): admin panel mounts full board with zero errors',
+    lazy.errors.length === 0 && lazy.out.hasInner && lazy.out.hasBoard && lazy.out.width > 800 && lazy.out.height > 400
+    && !!lazy.out.version && lazy.out.cardSize === 12 && lazy.out.gridCols === 'full' && lazy.out.hasStub && lazy.out.panelOk,
+    lazy);
+
+  const pre = await runLoader({ admin: true, preloadBoard: true });
+  check('card-loader (panel_custom preload): admin panel mounts immediately with zero errors',
+    pre.errors.length === 0 && pre.out.hasInner && pre.out.hasBoard && pre.out.width > 800 && pre.out.height > 400 && !!pre.out.version,
+    pre);
+
+  const nonAdmin = await runLoader({ admin: false, preloadBoard: false });
+  check('card-loader (non-admin): shows admin-only notice and never downloads functions-board.js',
+    nonAdmin.errors.length === 0 && !nonAdmin.out.hasInner && !nonAdmin.requested.includes('functions-board.js')
+    && /administrators only/i.test(nonAdmin.out.deniedText),
+    nonAdmin);
+});
 test.afterAll(() => done());

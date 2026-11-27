@@ -149,6 +149,8 @@ async function reset() {
   for (const scope of ['automation', 'script', 'helpers']) {
     for (const c of await ws({ type: 'config/category_registry/list', scope })) await ws({ type: 'config/category_registry/delete', scope, category_id: c.category_id });
   }
+  const ch = await ws({ type: 'functions_board/checks' }).catch(() => ({ checks: {} }));
+  for (const label of Object.keys((ch && ch.checks) || {})) await ws({ type: 'functions_board/set_checks', label, checks: [] });
   await ws({ type: 'functions_board/set', data: {} });
   for (const d of (await ws({ type: 'lovelace/dashboards/list' })).filter((x) => /^fb-/.test(x.url_path))) await ws({ type: 'lovelace/dashboards/delete', dashboard_id: d.id });
   for (const r of await ws({ type: 'lovelace/resources' })) if (/functions/.test(r.url)) await ws({ type: 'lovelace/resources/delete', resource_id: r.id });

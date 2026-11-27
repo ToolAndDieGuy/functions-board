@@ -45,7 +45,7 @@ test('privacy', async ({ browser }) => {
     const frames = [];
     for (let s = e.initiator && e.initiator.stack; s; s = s.parent) frames.push(...s.callFrames.map((f) => f.url));
     if (e.initiator && e.initiator.url) frames.push(e.initiator.url);
-    reqs.push({ url: e.request.url, method: e.request.method, body: e.request.postData || '', board: frames.some((u) => /functions-board\.js/.test(u)) });
+    reqs.push({ url: e.request.url, method: e.request.method, body: e.request.postData || '', board: frames.some((u) => /\/functions_board_static(?:_v)?\/|functions-board\.js/.test(u)) });
   });
 
   // the tour: import, a function, its debugger and runs, the sandbox, versions, Node-RED, About, diagnostics
@@ -153,7 +153,7 @@ test('privacy', async ({ browser }) => {
   await page.waitForTimeout(3000);
   const after = files(CONFIG), changed = Object.keys(after).filter((p) => !before[p] || before[p][1] !== after[p][1]);
   const holders = Object.keys(after).filter((p) => { try { const b = fs.readFileSync(path.join(CONFIG, p)); return b.includes(Buffer.from('4321-alarm')) || b.includes(Buffer.from('Bramblewood before winter')); } catch (e) { return false; } });
-  check('C3 the note and the version\'s name are stored only in the integration\'s own files', holders.length > 0 && holders.every((p) => /^\.storage[\\/]functions_board(\.versions)?$/.test(p)), holders);
+  check('C3 the note and the version\'s name are stored only in the integration\'s own files', holders.length > 0 && holders.every((p) => /^\.storage[\\/]functions_board(\.(versions(\.[0-9a-f]{16})?|checks|nodered))?$/.test(p)), holders);
   check('C3 nothing written where Home Assistant serves files without a login (www/), or to media or share', !changed.some((p) => /^(www|media|share)[\\/]/.test(p)), changed.filter((p) => /^(www|media|share)/.test(p)));
   check('C3 the integration\'s files are only in .storage', Object.keys(after).filter((p) => /functions_board/.test(p) && !/^custom_components[\\/]/.test(p)).every((p) => /^\.storage[\\/]/.test(p)), Object.keys(after).filter((p) => /functions_board/.test(p)));
 
@@ -176,7 +176,7 @@ test('privacy', async ({ browser }) => {
   await up.goto(BASE + '/');
   await up.waitForFunction(() => document.querySelector('home-assistant') && document.querySelector('home-assistant').hass, null, { timeout: 30000 });
   const refused = [];
-  for (const m of [{ type: 'functions_board/get' }, { type: 'functions_board/versions', label }, { type: 'functions_board/version_get', label, version_id: vid }, { type: 'functions_board/diagnostics', anonymise: true }, { type: 'functions_board/diagnostics', anonymise: false }]) {
+  for (const m of [{ type: 'functions_board/get' }, { type: 'functions_board/checks' }, { type: 'functions_board/set_checks', label, checks: [] }, { type: 'functions_board/versions', label }, { type: 'functions_board/version_get', label, version_id: vid }, { type: 'functions_board/diagnostics', anonymise: true }, { type: 'functions_board/diagnostics', anonymise: false }]) {
     const r = await up.evaluate((m) => document.querySelector('home-assistant').hass.callWS(m).then(() => 'answered', (e) => e.code), m);
     refused.push(`${m.type}${m.anonymise === undefined ? '' : ' ' + m.anonymise}: ${r}`);
   }

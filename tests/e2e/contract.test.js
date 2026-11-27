@@ -73,7 +73,7 @@ test('the fake answers like the real Home Assistant', async () => {
     { type: 'config/entity_registry/list' }, { type: 'config/device_registry/list' }, { type: 'config/area_registry/list' },
     { type: 'config/floor_registry/list' }, { type: 'config/label_registry/list' }, { type: 'config/category_registry/list', scope: 'automation' },
     { type: 'config_entries/get', domain: 'functions_board' }, { type: 'manifest/list' }, { type: 'config/auth/list' },
-    { type: 'functions_board/get' }, { type: 'functions_board/nodered' }, { type: 'frontend/get_user_data', key: 'functions_board_contract' },
+    { type: 'functions_board/get' }, { type: 'functions_board/checks' }, { type: 'functions_board/nodered' }, { type: 'frontend/get_user_data', key: 'functions_board_contract' },
     { type: 'automation/config', entity_id: 'automation.garage_left_open' }, { type: 'trace/list', domain: 'automation' },
     { type: 'config/entity_registry/get', entity_id: 'cover.garage_door' },
   ]) {

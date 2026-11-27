@@ -69,8 +69,7 @@ function walk(b) {
 }
 
 // the board's own version, which every release changes
-const { BOARD } = require('./fake-ha');
-const VERSION = (fs.readFileSync(BOARD, 'utf8').match(/const VERSION = '([^']+)'/) || [])[1];
+const { VERSION } = require('../lib/board-lib');
 // Times, dates, random ids and the version, evened out (the board shows the clock and how long ago things happened).
 function steady(text) {
   return text

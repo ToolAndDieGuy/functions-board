@@ -993,9 +993,9 @@ test('0.11.3 versions: a version is made active, never overwritten but by Save; 
 });
 
 // an automation or script added to the fake Home Assistant, as its editor would make it
-async function addPiece(page, fake, id, config) {
+async function addPiece(page, fake, id, config, labels = []) {
   const [dom, oid] = id.split('.'), uid = 'fb' + oid;
-  fake.entities.set(id, { entity_id: id, id: 'fbid' + oid, platform: dom, unique_id: dom === 'automation' ? uid : oid, labels: [], area_id: null, device_id: null, disabled_by: null, hidden_by: null, name: null, original_name: config.alias, icon: null, categories: {}, config_entry_id: null, has_entity_name: false, entity_category: null, options: {} });
+  fake.entities.set(id, { entity_id: id, id: 'fbid' + oid, platform: dom, unique_id: dom === 'automation' ? uid : oid, labels: labels.slice(), area_id: null, device_id: null, disabled_by: null, hidden_by: null, name: null, original_name: config.alias, icon: null, categories: {}, config_entry_id: null, has_entity_name: false, entity_category: null, options: {} });
   if (dom === 'automation') { fake.autos[uid] = Object.assign({ id: uid }, config); await fake.setState(id, 'on', { friendly_name: config.alias, id: uid, last_triggered: null, mode: 'single', current: 0 }); }
   else { fake.scripts[oid] = config; await fake.setState(id, 'off', { friendly_name: config.alias, last_triggered: null, mode: 'single', current: 0 }); }
   await el(page, (b) => b._store.changed('reg'));
@@ -1197,12 +1197,12 @@ test('0.11.0 restoring a version never turns off or deletes what was added since
   check('0.11.0 restore: what\'s shared is listed apart, only taken out of the function, with why', /only taken out of this function \(never turned off or deleted\)/.test(text)
     && /Garage and morning light \(stays: it's also in Morning\)/.test(text) && /Garage chime \(stays: used outside this function by Chime at noon\)/.test(text), text);
   const sharedLine = (text.match(/Shared with another function[^\n]*/) || [''])[0];
-  check('0.11.0 restore: what\'s only the function\'s is offered to turn off or delete, not listed as shared', !/Garage only check/.test(sharedLine) && /Garage only check[\s\S]*Turn them off/.test(text), text);
+  check('0.11.0 restore: what\'s only the function\'s is offered per-item actions, not listed as shared', !/Garage only check/.test(sharedLine) && /Garage only check/.test(text) && (await fbq(page, `.modal select.vextra[data-k="${OWN}"]`).count()) === 1, text);
   const warn = (await fbq(page, '.modal .vwshared').count()) ? await fbq(page, '.modal .vwshared').innerText() : '';
   check('0.11.0 restore warns that what it writes back changes in the other function too', /making this version active changes them there too/.test(warn) && /Garage: left open \(also in Morning\)/.test(warn), warn);
   check('0.11.0 ... and where something outside uses it', /Close garage \(used outside this function by Close at night\)/.test(warn), warn);
   check('0.11.0 ... but not for what only this function has (written back all the same)', !/stop timer/.test(warn) && /stop timer/.test(text), { warn, text });
-  await fbq(page, '.modal input[name="vextra"][value="delete"]').check();
+  await fbq(page, `.modal select.vextra[data-k="${OWN}"]`).selectOption('delete');
   await fbq(page, '.modal [data-act="ver-restore-go"]').click();
   await until(() => el(page, (b) => b._$.modal.hidden || null), 20000);
   await fake.idle(500);
@@ -1710,7 +1710,7 @@ test('0.11.2 saved checks: edit one (name, step order and values, what it expect
   // typed last, so only saving reads it
   await fbq(page, '.modal .ckdlg input[name="ckname"]').fill('Door open, timer on');
   await fbq(page, '.modal [data-act="chk-edit-go"]').click();
-  const c = await D((b, label) => JSON.parse(JSON.stringify(b._layout(label).checks[0])), garage);
+  const c = await D((b, label) => JSON.parse(JSON.stringify(b._checksOf(label)[0])), garage);
   check('0.11.2 editing keeps the check (same id) with the new name, step order and values, and expectations', c.id === 'fbck1' && c.name === 'Door open, timer on'
     && c.steps[0].op === 'set' && c.steps[0].state === 'opening' && c.steps[1].op === 'advance' && c.steps[1].ms === 120000
     && c.expect.length === 2 && c.expect[0].k === 'state' && c.expect[0].id === 'timer.garage_open' && c.expect[1].id === 'cover.garage_door' && c.expect[1].state === 'opening', c);
@@ -1728,7 +1728,7 @@ test('0.11.2 saved checks: edit one (name, step order and values, what it expect
   check('0.11.2 Import refuses text that isn\'t a shared check', /isn't a check copied with Share/.test(bad), bad);
   await fbq(page, '.modal textarea.ckjson').fill(text.replace('Door open, timer on', 'From a friend'));
   await fbq(page, '.modal [data-act="chk-import-go"]').click();
-  const list = await D((b, label) => b._layout(label).checks.map((x) => ({ id: x.id, name: x.name, steps: x.steps.length })), garage);
+  const list = await D((b, label) => b._checksOf(label).map((x) => ({ id: x.id, name: x.name, steps: x.steps.length })), garage);
   check('0.11.2 ... and adds a shared one as a new check with its own id', list.length === 2 && list[1].name === 'From a friend' && list[1].id !== 'fbck1' && list[1].steps === 2, list);
   const rows = await fbq(page, '.drawer .sbchk').innerText();
   check('0.11.2 ... listed with the others', /From a friend/.test(rows) && /Door open, timer on/.test(rows), rows);
@@ -1890,6 +1890,7 @@ test('0.11.3 the notification builder: a script made from what\'s picked, opened
   check('0.11.3 a change saved writes over the same script', Object.keys(fake.scripts).filter((k) => k.startsWith('garage_left_open_2')).length === 1);
   await fbq(page, '.toast:not([hidden]) [data-act="toast-act"]').click();
   await until(() => (fake.scripts[OID].sequence[1].data.message === 'The garage is still open') || null, 10000);
+  await until(() => el(page, (b) => (!b._undoBusy && b._redoStack.length > 0) || null), 10000);
   check('0.11.3 ... and Undo puts the script back as it was', fake.scripts[OID].sequence[1].data.message === 'The garage is still open');
   // edited by hand: Home Assistant's editor, with a word why
   fake.scripts[OID] = Object.assign({}, fake.scripts[OID], { sequence: fake.scripts[OID].sequence.concat([{ delay: 5 }]) });
@@ -2127,5 +2128,280 @@ test('0.13.1 the sandbox\'s controls in sections under headers, each folded away
   s = await secs();
   check('0.13.1 ... and opens again', !s.find((x) => x.k === 'run').hidden && (await el(page, (b) => b._data.ui.sbxShut)) === undefined, s);
   check('0.13.1 sandbox sections: no errors', page.logs.length === 0, page.logs);
+  await ctx.close();
+});
+
+test('0.13.2 audit fixes: durations, drawer back/focus, check steps, s_missing, renamed scripts/helpers, history banner, debugger, builder', async ({ browser, fake }) => {
+  const { ctx, page } = await imported(browser);
+  const garage = await openFn(page, /garage/i);
+
+  // 1 & 4 & 11 & Issue #72: durations, zwave/behave step text, history banner clearing, _sbxOn guard
+  await fbq(page, '.tools [data-act="sandbox"]').click();
+  await fbq(page, '.modal [data-act="sbx-start"]').click({ timeout: 3000 }).catch(() => {});
+  await fbq(page, '.drawer .sbctl .sbent').waitFor({ timeout: 10000 });
+  await until(() => el(page, (b) => (b._sbx && b._sbx.eng && !b._sbx.busy) || null), 15000);
+  const sbxRes = await el(page, (b) => {
+    const advTxt = b._chkStepText({ op: 'advance', ms: 900000 });
+    const zwTxt = b._chkStepText({ op: 'zwave', dev: 'd1', id: '2-98-0-currentMode', value: 255 });
+    const behTxt = b._chkStepText({ op: 'behave', id: 'light.porch_light', how: 'slow', ms: 5000 });
+    b._sbx.eng.now += 900000;
+    b._renderSbx();
+    const clkTitle = b._$.drawer.querySelector('.sbclock').title;
+    const jumpLabels = [...b._$.drawer.querySelectorAll('.sbjump-sel option')].map((o) => o.textContent);
+    // Issue #72 jitter guard: _sbxOn() must be false when eng is not ready yet
+    const realEng = b._sbx.eng;
+    b._sbx.eng = null;
+    const onWithoutEng = b._sbxOn();
+    b._sbx.eng = realEng;
+    // history banner cleared on manual step
+    b._sbx.hist = { kind: 'h6', from: 0, to: 1, n: 0, cut: false, inputs: 0, cmp: [] };
+    return { advTxt, zwTxt, behTxt, clkTitle, jumpLabels, onWithoutEng };
+  });
+  check('0.13.2 durations render as M:SS (not wall-clock AM/PM) in check steps, clock tooltip, and Jump to',
+    /15:00/.test(sbxRes.advTxt) && !/\b(?:AM|PM)\b/i.test(sbxRes.advTxt)
+    && /15:00/.test(sbxRes.clkTitle) && !/\b(?:AM|PM)\b/i.test(sbxRes.clkTitle)
+    && sbxRes.jumpLabels.some((l) => /\bin (?:\d+d )?\d+:\d\d(?::\d\d)?\b/.test(l)) && !sbxRes.jumpLabels.some((l) => /\b(?:AM|PM)\b/i.test(l)), sbxRes);
+  check('0.13.2 _chkStepText handles zwave and behave steps instead of falling through',
+    /Z-Wave/.test(sbxRes.zwTxt) && !/due/.test(sbxRes.zwTxt)
+    && /slow/.test(sbxRes.behTxt) && !/due/.test(sbxRes.behTxt), sbxRes);
+  check('0.13.2 _sbxOn is false until sandbox engine is initialized', sbxRes.onWithoutEng === false);
+  await el(page, (b) => b._sbxDo(async () => {}));
+  check('0.13.2 manual sandbox step clears stale history replay banner', await el(page, (b) => b._sbx.hist === null));
+  await el(page, (b) => { b._sbx.hist = { kind: 'h6', from: 0, to: 1, n: 0, cut: false, inputs: 0, cmp: [] }; return b._sbxRewind(0); });
+  check('0.13.2 sandbox rewind clears stale history replay banner', await el(page, (b) => b._sbx.hist === null));
+  await fbq(page, '.drawer [data-act="close"]').click();
+
+  // 3: _drawerBack vs _drawerFocusBack collision (Trace Back button & focus restoration)
+  const dbgBtn = fbq(page, '.tools [data-act="debug"]');
+  await dbgBtn.focus();
+  await dbgBtn.click();
+  await fbq(page, '.drawer .dbg').waitFor({ timeout: 10000 });
+  await el(page, (b) => {
+    b._litRun = { e: { key: 'automation.garage_auto_close', run: { domain: 'automation', item_id: 'garage_auto_close', run_id: 'r1' } }, tr: null };
+    b._openLitTrace();
+  });
+  check('0.13.2 Trace opened from Debug sets _drawerBack to debug while keeping _drawerFocusBack as DOM element',
+    await el(page, (b) => b._drawerBack === 'debug' && b._drawerFocusBack instanceof Element));
+  await fbq(page, '.drawer [data-act="back"]').click();
+  check('0.13.2 Trace Back button returns to Debug drawer', await el(page, (b) => b._drawer && b._drawer.mode === 'debug'));
+  await fbq(page, '.drawer [data-act="close"]').click();
+  check('0.13.2 closing drawer restores focus to the button that opened it',
+    await el(page, (b) => b.shadowRoot.activeElement && b.shadowRoot.activeElement.dataset && b.shadowRoot.activeElement.dataset.act === 'debug'));
+
+  // 11: _dbgCall accepts floor_id/label_id and keeps rapid same-second live repeat calls
+  await dbgBtn.click();
+  await fbq(page, '.drawer .dbg').waitFor({ timeout: 10000 });
+  const dbgCount = await el(page, (b) => {
+    b._model.nodes.set('floor:first', { key: 'floor:first', kind: 'outside', name: 'First' });
+    b._model.nodes.set('label:night', { key: 'label:night', kind: 'outside', name: 'Night' });
+    const now = Date.now() / 1000;
+    const targetEnt = [...b._dbg.ents][0];
+    b._dbgCall({ domain: 'light', service: 'turn_on', service_data: { floor_id: 'first' }, context_id: 'c_fl', when: now }, true);
+    b._dbgCall({ domain: 'light', service: 'turn_on', service_data: { label_id: 'night' }, context_id: 'c_lb', when: now }, true);
+    b._dbgCall({ domain: 'cover', service: 'toggle', service_data: { entity_id: targetEnt }, context_id: 'c_rep', when: now }, true);
+    b._dbgCall({ domain: 'cover', service: 'toggle', service_data: { entity_id: targetEnt }, context_id: 'c_rep', when: now }, true);
+    return {
+      fl: b._dbg.entries.some((e) => e.ctx === 'c_fl'),
+      lb: b._dbg.entries.some((e) => e.ctx === 'c_lb'),
+      rep: b._dbg.entries.filter((e) => e.ctx === 'c_rep').length,
+    };
+  });
+  check('0.13.2 debugger captures floor_id/label_id calls and both rapid same-second live repeat calls',
+    dbgCount.fl && dbgCount.lb && dbgCount.rep === 2, dbgCount);
+  await fbq(page, '.drawer [data-act="close"]').click();
+
+  // 6: missing targetless service (s_missing) shows Show button in Problems drawer and marks box + arrow
+  await addPiece(page, fake, 'automation.fb_missing_svc', {
+    alias: 'Garage: broken notify', mode: 'single',
+    triggers: [{ trigger: 'state', entity_id: 'cover.garage_door', to: 'open' }],
+    conditions: [],
+    actions: [{ action: 'notify.mobile_app_gone_phone', data: { message: 'hi' } }],
+  });
+  await ws(page, { type: 'config/entity_registry/update', entity_id: 'automation.fb_missing_svc', labels: [garage] });
+  await fake.idle(400);
+  await until(() => el(page, (b) => (b._model && b._model.nodes.has('svc:notify.mobile_app_gone_phone')) || null), 10000);
+  const svcMarked = await el(page, (b) => {
+    const n = b._model.nodes.get('svc:notify.mobile_app_gone_phone');
+    const e = b._model.edges.find((x) => x.to === 'svc:notify.mobile_app_gone_phone');
+    return { nodeProb: n && n.prob, edgeProb: e && e.prob };
+  });
+  check('0.13.2 missing targetless service marks svc box and arrow on the board', svcMarked.nodeProb === 'error' && svcMarked.edgeProb === true, svcMarked);
+  await fbq(page, '.pchip').click();
+  await fbq(page, '.drawer .probs .prow').first().waitFor({ timeout: 10000 });
+  const hasShow = await el(page, (b) => !!b._$.drawer.querySelector('.probs [data-act="prob-go"][data-key="svc:notify.mobile_app_gone_phone"]'));
+  check('0.13.2 Problems drawer has Show button targeting svc: box for s_missing', hasShow);
+  await fbq(page, '.drawer [data-act="close"]').click();
+
+  // 12: Notification Builder skips disabled script IDs in _entMap and rejects blank button titles
+  const bldCheck = await el(page, (b) => {
+    b._entMap.set('script.garage_alert', { entity_id: 'script.garage_alert', disabled_by: 'user' });
+    const nextId = b._bldNewId('Garage Alert');
+    b._entMap.delete('script.garage_alert');
+    const whyBlank = b._bldWhy(
+      { message: 'Open', phones: [{ svc: 'mobile_app_p', os: 'ios', name: 'P' }], people: [], speakers: [], tts: null, buttons: [] },
+      'Alert',
+      { buttons: [{ title: '   ', then: [] }] },
+    );
+    return { nextId, whyBlank };
+  });
+  check('0.13.2 builder skips disabled script IDs and validates blank button titles',
+    bldCheck.nextId === 'garage_alert_2' && /label|blank/i.test(bldCheck.whyBlank || ''), bldCheck);
+
+  // 7: _verSnapshot uses reg.unique_id for renamed scripts
+  const renamedSnap = await el(page, async (b) => {
+    const k = 'script.renamed_alias';
+    b._ents.push({ entity_id: k, unique_id: 'orig_script_uid', platform: 'script', labels: [b._data.ui.current] });
+    b._entMap.set(k, b._ents[b._ents.length - 1]);
+    const origWs = b._ws.bind(b), origApi = b._api.bind(b);
+    let apiPath = null;
+    b._ws = async (msg, o) => (msg.type === 'script/config' && msg.entity_id === k ? { config: { alias: 'Renamed', sequence: [] } } : origWs(msg, o));
+    b._api = async (m, p, body, o) => { if (p.startsWith('config/script/config/')) { apiPath = p; return { alias: 'Renamed', sequence: [] }; } return origApi(m, p, body, o); };
+    try {
+      const snap = await b._verSnapshot(b._data.ui.current);
+      return { id: snap.items[k] && snap.items[k].id, yaml: snap.items[k] && snap.items[k].yaml, apiPath };
+    } finally {
+      b._ws = origWs; b._api = origApi;
+      b._ents.pop(); b._entMap.delete(k);
+    }
+  });
+  check('0.13.2 _verSnapshot resolves renamed script via registry unique_id',
+    renamedSnap.id === 'orig_script_uid' && renamedSnap.yaml === false && renamedSnap.apiPath === 'config/script/config/orig_script_uid', renamedSnap);
+
+  // Phase 2 (HACS review hardening): version diff, plan, and restore enforce VER_DOMAINS / VER_HELPERS allowlist
+  const allowRes = await el(page, async (b) => {
+    const label = b._data.ui.current;
+    const rogueSnap = {
+      fmt: 1,
+      members: ['cloud.evil', 'config/auth.evil'],
+      items: {
+        'cloud.evil': { dom: 'cloud', id: '1', name: 'Evil cloud', cfg: { x: 1 } },
+        'config/auth.evil': { dom: 'config/auth', id: '2', name: 'Evil auth', cfg: { y: 2 } },
+      },
+      devices: {},
+      layout: null,
+    };
+    const sent = [];
+    const origWs = b._ws.bind(b);
+    b._ws = async (msg, o) => {
+      if (msg && /^(cloud|config\/auth)\//.test(msg.type || '')) { sent.push(msg.type); return null; }
+      if (msg && msg.type === 'functions_board/version_active' && msg.version_id === '0'.repeat(32)) return null;
+      return origWs(msg, o);
+    };
+    try {
+      const diff = await b._verDiff(label, rogueSnap);
+      const plan = await b._verPlan(label, rogueSnap);
+      // Even if a caller bypasses _verPlan and passes a rogue item directly to _verRestoreGo, it must never send WS
+      b._verPending = { label, v: { id: '0'.repeat(32), name: 'Rogue', snapshot: rogueSnap }, plan: { write: ['cloud.evil'], recreate: ['config/auth.evil'], rejoin: [], shared: [], added: [] }, devmap: {}, savedAs: null };
+      b._$.modal.innerHTML = '<div class="dlg"><div class="aval"></div><button data-act="ver-restore-go">Go</button></div>';
+      await b._verRestoreGo();
+      return { sent, planWrite: plan.write.length, planRecreate: plan.recreate.length, diffChanged: diff.changed.size };
+    } finally {
+      b._ws = origWs;
+      b._verPending = null;
+    }
+  });
+  check('0.13.3 version restore domain allowlist blocks non-allowlisted WS commands in diff, plan, and restore',
+    allowRes.sent.length === 0 && allowRes.planWrite === 0 && allowRes.planRecreate === 0 && allowRes.diffChanged === 0, allowRes);
+
+  // Phase 2: saved checks are persisted via functions_board/set_checks, never inside functions_board/set_layout
+  const chkSep = await el(page, async (b) => {
+    const label = b._data.ui.current;
+    b._setChecks(label, [{ id: 'sep1', name: 'Separate check', at: Date.now(), start: {}, items: [], steps: [{ op: 'advance', ms: 1000 }], answers: [], expect: [{ k: 'ran', id: 'automation.garage_left_open' }] }]);
+    b._save();
+    await b._flushSave();
+    await b._saveChain;
+    // Move a box and save layout: layout write must NOT contain checks
+    b._layout(label).nodes['cover.garage_door'] = { x: 123, y: 456 };
+    b._save();
+    await b._flushSave();
+    await b._saveChain;
+    return { sepChecks: b._sepChecks, hasInChecks: b._checksOf(label).length === 1, hasInLayout: 'checks' in b._layout(label) };
+  });
+  const fakeChk = fake.checks[garage] || [];
+  const fakeLay = (fake.store.data.layouts || {})[garage] || {};
+  check('0.13.3 saved checks are stored via functions_board/set_checks and excluded from set_layout payloads',
+    chkSep.sepChecks && chkSep.hasInChecks && !chkSep.hasInLayout && fakeChk.length === 1 && fakeChk[0].id === 'sep1' && !('checks' in fakeLay),
+    { chkSep, fakeChk, hasLayChecks: 'checks' in fakeLay });
+
+  // Phase 2/3: deleting a function cleans up its decoupled checks, Undo restores them, and About dialog opens at top
+  await fbq(page, '[data-act="about"]').first().click();
+  await page.waitForTimeout(120);
+  const aboutTop = await el(page, (b) => {
+    const dlg = b._$.modal.querySelector('.dlg.about');
+    const top = dlg ? dlg.scrollTop : -1;
+    b._closeModal();
+    return top;
+  });
+  check('0.13.3 opening tall About dialog keeps scroll at top (preventScroll on initial button focus)', aboutTop === 0, aboutTop);
+
+  const delUndoChecks = await el(page, async (b) => {
+    const prevMode = b._fbMode;
+    b._fbMode = 'full';
+    try {
+      const label = b._data.ui.current;
+      await b._deleteFnDialog(label, false);
+      await b._deleteGo();
+      await b._flushSave();
+      await b._saveChain;
+      const afterDel = (b._data.checks || {})[label] || [];
+      await b._undo();
+      await b._flushSave();
+      await b._saveChain;
+      const restoredLabel = b._data.ui.current;
+      const afterUndo = b._checksOf(restoredLabel);
+      return { afterDelLen: afterDel.length, afterUndoLen: afterUndo.length, id: afterUndo[0] && afterUndo[0].id };
+    } finally {
+      b._fbMode = prevMode;
+    }
+  });
+  check('0.13.3 deleting a function removes its decoupled checks and Undo restores them',
+    delUndoChecks.afterDelLen === 0 && delUndoChecks.afterUndoLen === 1 && delUndoChecks.id === 'sep1', delUndoChecks);
+
+  // 0.14.0: per-item restore choices for items added since the saved version (turn off / leave on & unlabel / delete)
+  const garageNow = await el(page, (b) => b._data.ui.current);
+  const baseSnap = await el(page, (b, l) => b._verSnapshot(l), garageNow);
+  const baseVer = await ws(page, { type: 'functions_board/version_save', label: garageNow, name: 'Before per-item additions', desc: '', snapshot: baseSnap });
+  const A_OFF = 'automation.fb_peritem_off', A_LEAVE = 'automation.fb_peritem_leave', A_DEL = 'automation.fb_peritem_del', S_LEAVE = 'script.fb_peritem_leave';
+  await addPiece(page, fake, A_OFF, { alias: 'Added: turn off', triggers: [{ trigger: 'time', at: '01:00:00' }], conditions: [], actions: [] }, [garageNow]);
+  await addPiece(page, fake, A_LEAVE, { alias: 'Added: leave on', triggers: [{ trigger: 'time', at: '02:00:00' }], conditions: [], actions: [] }, [garageNow]);
+  await addPiece(page, fake, A_DEL, { alias: 'Added: delete me', triggers: [{ trigger: 'time', at: '03:00:00' }], conditions: [], actions: [] }, [garageNow]);
+  await addPiece(page, fake, S_LEAVE, { alias: 'Added script: leave', sequence: [] }, [garageNow]);
+  await el(page, (b) => { b._fbMode = 'full'; b._store.changed('reg'); b._store.changed('cfg:'); });
+  await fake.idle(400);
+  await el(page, (b, id) => b._verRestore(id), baseVer.id);
+  await fbq(page, '.modal .vrdlg').waitFor({ timeout: 15000 });
+  const optCheck = await el(page, (b, [aOff, aLeave, aDel, sLeave]) => {
+    const vals = (k) => { const s = b._$.modal.querySelector(`select.vextra[data-k="${k}"]`); return s ? [...s.options].map((o) => o.value) : null; };
+    return { aOff: vals(aOff), aLeave: vals(aLeave), aDel: vals(aDel), sLeave: vals(sLeave) };
+  }, [A_OFF, A_LEAVE, A_DEL, S_LEAVE]);
+  check('0.14.0 version restore offers per-item selectors with off/leave/delete for automations and leave/delete for scripts',
+    JSON.stringify(optCheck.aOff) === '["off","leave","delete"]'
+    && JSON.stringify(optCheck.aLeave) === '["off","leave","delete"]'
+    && JSON.stringify(optCheck.aDel) === '["off","leave","delete"]'
+    && JSON.stringify(optCheck.sLeave) === '["leave","delete"]', optCheck);
+  await fbq(page, `.modal select.vextra[data-k="${A_OFF}"]`).selectOption('off');
+  await fbq(page, `.modal select.vextra[data-k="${A_LEAVE}"]`).selectOption('leave');
+  await fbq(page, `.modal select.vextra[data-k="${A_DEL}"]`).selectOption('delete');
+  await fbq(page, `.modal select.vextra[data-k="${S_LEAVE}"]`).selectOption('leave');
+  await fbq(page, '.modal input[name="vbackup"]').uncheck();
+  await fbq(page, '.modal [data-act="ver-restore-go"]').click();
+  await until(() => el(page, (b) => b._$.modal.hidden || null), 20000);
+  await fake.idle(500);
+  const stOf = (id) => page.evaluate((k) => { const s = document.querySelector('home-assistant').hass.states[k]; return s ? s.state : null; }, id);
+  const perRes = {
+    offState: await stOf(A_OFF),
+    leaveState: await stOf(A_LEAVE),
+    leaveLabeled: await hasLabel(page, A_LEAVE, garageNow),
+    delState: await stOf(A_DEL),
+    scriptState: await stOf(S_LEAVE),
+    scriptLabeled: await hasLabel(page, S_LEAVE, garageNow),
+  };
+  check('0.14.0 version restore applies per-item choices: off turns off, leave removes from function while leaving on, delete deletes',
+    perRes.offState === 'off'
+    && perRes.leaveState === 'on' && !perRes.leaveLabeled
+    && perRes.delState === null
+    && perRes.scriptState !== null && !perRes.scriptLabeled, perRes);
+
+  check('0.13.2 audit fixes: no errors', page.logs.length === 0, page.logs);
   await ctx.close();
 });

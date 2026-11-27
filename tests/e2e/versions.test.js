@@ -110,7 +110,8 @@ test('versions', async ({ browser }) => {
   await fbq(page, '.modal .vrdlg').waitFor({ timeout: 15000 });
   const dlg = await fbq(page, '.modal .vrdlg').textContent();
   check('Restore lists what changes: configs and settings back, YAML ones that can\'t, what was added since', /get their saved configs or settings back/.test(dlg) && /defined in YAML/.test(dlg) && /Garage: added later/.test(dlg), dlg.slice(0, 400));
-  check('... and offers turning off or deleting what was added since', (await fbq(page, '.modal input[name="vextra"]').count()) === 2);
+  const extraOpts = await el(page, (b) => { const s = b._$.modal.querySelector('select.vextra[data-k="automation.garage_added_later"]'); return s ? [...s.options].map((o) => o.value) : []; });
+  check('... and offers turning off, removing from function (leaving on), or deleting per added item', JSON.stringify(extraOpts) === '["off","leave","delete"]', extraOpts);
   const bk = await el(page, (b) => { const c = b._$.modal.querySelector('input[name="vbackup"]'); return { there: !!c, ticked: !!c && c.checked, label: c ? c.parentNode.textContent : '', hint: c ? c.parentNode.nextElementSibling.textContent : '' }; });
   check('0.11.3 saving what\'s there now first is ticked when it isn\'t saved anywhere (it can be unticked)', bk.there && bk.ticked && /Before making … active/.test(bk.label), bk);
   check('0.8.1 ... and the dialog says what\'s there now isn\'t saved anywhere (it was edited since)', /isn.t saved as a version/.test(bk.hint), bk.hint);
@@ -143,7 +144,7 @@ test('versions', async ({ browser }) => {
   // pick a real device as the replacement: the restored step points at it
   const realDev = (await ws(page, { type: 'config/device_registry/list' })).find((d) => d.name);
   await el(page, (b, [o, n]) => { b._verPending.devmap[o] = n; }, [ghostDev, realDev.id]);
-  await fbq(page, '.modal input[name="vextra"][value="delete"]').check();
+  await fbq(page, '.modal select.vextra[data-k="automation.garage_added_later"]').selectOption('delete');
   // what's there now (edited again) isn't saved anywhere, so saving it first is ticked; unticked, nothing is saved
   await fbq(page, '.modal input[name="vbackup"]').uncheck();
   const n0 = (await vlist(page)).length;

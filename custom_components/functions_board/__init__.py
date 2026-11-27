@@ -31,10 +31,12 @@ from homeassistant.loader import async_get_integration
 from homeassistant.util.hass_dict import HassKey
 
 from . import websocket
+from .checks import Checks
 from .nodered import NodeRedKept
 from .versions import Versions
 from .const import (
     BOARD_FILE,
+    CARD_LOADER_FILE,
     CONF_CARD,
     CONF_MODE,
     DOMAIN,
@@ -44,6 +46,7 @@ from .const import (
     PANEL_URL,
     SIGNAL_UPDATED,
     STATIC_URL,
+    STATIC_V_URL,
     STORAGE_KEY,
     STORAGE_MINOR_VERSION,
     STORAGE_VERSION,
@@ -86,10 +89,13 @@ class BoardData:
     revs: dict[str, int] = field(default_factory=dict)
     mode: str = MODE_ORGANISE
     static: bool = False
+    static_digest: str | None = None
     module_url: str | None = None
+    card_loader_url: str | None = None
     extra_js: str | None = None
     nodered: NodeRedKept | None = None
     versions: Versions | None = None
+    checks: Checks | None = None
 
     def stored(self) -> dict[str, Any]:
         """The store's contents."""
@@ -129,28 +135,51 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     await kept.async_load()
     hass.data[DATA_KEY].versions = versions = Versions(hass)
     await versions.async_load()
+    hass.data[DATA_KEY].checks = checks = Checks(hass)
+    await checks.async_load()
+    if checks.migrate_from_layouts(hass.data[DATA_KEY].data.get("layouts")):
+        hass.data[DATA_KEY].save()
     websocket.async_register(hass)
     return True
 
 
-def _file_hash() -> str:
-    """First 8 hex digits of the board file's SHA-256: the page URL changes when the file does."""
-    return hashlib.sha256((FRONTEND_DIR / BOARD_FILE).read_bytes()).hexdigest()[:8]
+def _frontend_hash() -> str:
+    """First 8 hex digits of the combined SHA-256 of every .js file under frontend/.
+
+    Serving all ES modules under /functions_board_static_v/<digest>/ (disjoint from the unversioned
+    /functions_board_static fallback so aiohttp route order never shadows a reloaded digest) ensures
+    every relative import resolves under the same versioned prefix for atomic cache invalidation.
+    """
+    h = hashlib.sha256()
+    for path in sorted(FRONTEND_DIR.rglob("*.js")):
+        rel = path.relative_to(FRONTEND_DIR).as_posix()
+        h.update(rel.encode("utf-8"))
+        h.update(b"\0")
+        h.update(path.read_bytes())
+        h.update(b"\0")
+    return h.hexdigest()[:8]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Serve the page and add it to the sidebar."""
     board = hass.data[DATA_KEY]
     board.mode = entry.options.get(CONF_MODE, MODE_ORGANISE)
-    if not board.static:
-        # the file name carries the content hash, so browsers may keep it as long as they like
+    version = str((await async_get_integration(hass, DOMAIN)).version)
+    digest = await hass.async_add_executor_job(_frontend_hash)
+    if board.static_digest != digest:
+        # versioned prefix carries the combined content hash: browsers may cache every module indefinitely
         await hass.http.async_register_static_paths(
-            [StaticPathConfig(STATIC_URL, str(FRONTEND_DIR), True)]
+            [StaticPathConfig(f"{STATIC_V_URL}/{digest}", str(FRONTEND_DIR), True)]
+        )
+        board.static_digest = digest
+    if not board.static:
+        # backwards-compatible unversioned path for manual dashboard resources (no immutable caching)
+        await hass.http.async_register_static_paths(
+            [StaticPathConfig(STATIC_URL, str(FRONTEND_DIR), False)]
         )
         board.static = True
-    version = str((await async_get_integration(hass, DOMAIN)).version)
-    digest = await hass.async_add_executor_job(_file_hash)
-    board.module_url = f"{STATIC_URL}/{BOARD_FILE}?v={digest}"
+    board.module_url = f"{STATIC_V_URL}/{digest}/{BOARD_FILE}"
+    board.card_loader_url = f"{STATIC_V_URL}/{digest}/{CARD_LOADER_FILE}"
     await panel_custom.async_register_panel(
         hass,
         frontend_url_path=PANEL_URL,
@@ -167,10 +196,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 def _apply_card(hass: HomeAssistant, board: BoardData, on: bool) -> None:
-    """Load the board on dashboard pages (custom:functions-board) without a manual resource, or stop."""
-    if on and not board.extra_js and board.module_url:
-        frontend.add_extra_js_url(hass, board.module_url)
-        board.extra_js = board.module_url
+    """Load the tiny lazy card loader on dashboards (custom:functions-board) without loading the full board for non-admins."""
+    if on and board.extra_js and board.extra_js != board.card_loader_url:
+        frontend.remove_extra_js_url(hass, board.extra_js)
+        board.extra_js = None
+    if on and not board.extra_js and board.card_loader_url:
+        frontend.add_extra_js_url(hass, board.card_loader_url)
+        board.extra_js = board.card_loader_url
     elif not on and board.extra_js:
         frontend.remove_extra_js_url(hass, board.extra_js)
         board.extra_js = None

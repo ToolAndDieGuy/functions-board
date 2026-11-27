@@ -133,6 +133,8 @@ async function reset(page) {
   for (const scope of ['automation', 'script', 'helpers']) {
     for (const c of await ws(page, { type: 'config/category_registry/list', scope })) await ws(page, { type: 'config/category_registry/delete', scope, category_id: c.category_id });
   }
+  const ch = await ws(page, { type: 'functions_board/checks' }).catch(() => ({ checks: {} }));
+  for (const label of Object.keys((ch && ch.checks) || {})) await ws(page, { type: 'functions_board/set_checks', label, checks: [] });
   await ws(page, { type: 'functions_board/set', data: {} });
   await ws(page, { type: 'frontend/set_user_data', key: 'functions_board', value: null });
   await ws(page, { type: 'frontend/set_user_data', key: 'functions_board_ui', value: null });

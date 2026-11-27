@@ -1,4 +1,4 @@
-style {65804 chars, #3c9c7c4e}
+style {66141 chars, #ec8a9b8a}
 div.board.m-panel.pc
   aside.list
     div.lhead
@@ -40,7 +40,7 @@ div.board.m-panel.pc
       button.lbtn data-act="import" | Import manager
         ha-icon icon="mdi:import"
       div.ver
-        span | Functions board v<version> · prototype
+        span | Functions board v<version>
         button.ib data-act="about" title="About, and what the board changes"
           ha-icon icon="mdi:help-circle-outline"
   div.scrim data-act="togglelist"

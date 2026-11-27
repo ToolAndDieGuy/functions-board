@@ -99,3 +99,23 @@ async def test_zwave_values_needs_an_admin(hass: HomeAssistant, hass_ws_client, 
     ws = await hass_ws_client(hass, hass_read_only_access_token)
     m = await _ask(ws, dev.id)
     assert not m["success"] and m["error"]["code"] == "unauthorized", m
+
+
+async def test_zwave_values_multi_endpoint_child(hass: HomeAssistant, hass_ws_client) -> None:
+    """A multi-endpoint child device (<home>-<node>-<endpoint>) returns that endpoint's values (0.13.2)."""
+    ep2 = _value(2, 37, "Binary Switch", "currentValue", label="Current value", value=False)
+    ep2.endpoint = 2
+    ep2.value_id = "2-37-2-currentValue"
+    entry, _dev, _plain, _missing = await _setup(hass, extra=(ep2,))
+    child = dr.async_get(hass).async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={("zwave_js", f"{HOME}-2-2")},
+        name="Dual relay endpoint 2",
+    )
+    ws = await hass_ws_client(hass)
+    msg = await _ask(ws, child.id)
+    assert msg["success"], msg
+    res = msg["result"]
+    assert res is not None and res["node_id"] == 2
+    assert [v["id"] for v in res["values"]] == ["2-37-2-currentValue"]
+    assert res["values"][0]["endpoint"] == 2

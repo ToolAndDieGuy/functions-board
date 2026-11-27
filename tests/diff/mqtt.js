@@ -25,6 +25,10 @@ function mq(id, cfg) {
     if (dom === 'binary_sensor' && cfg.off_delay != null) rule.off_delay = cfg.off_delay;
     if ((dom === 'sensor' || dom === 'binary_sensor') && cfg.expire_after) rule.expire_after = cfg.expire_after;
   }
+  if (dom === 'cover' && cfg.position_topic) {
+    rule.position = { topic: cfg.position_topic, tpl: cfg.position_template || null, closed: get('position_closed', 0), open: get('position_open', 100), state: !!cfg.state_topic };
+    topics.push(cfg.position_topic);
+  }
   if (cfg.json_attributes_topic) { rule.attrs = { topic: cfg.json_attributes_topic, tpl: cfg.json_attributes_template || null }; topics.push(cfg.json_attributes_topic); }
   const avail = [];
   if (cfg.availability_topic) avail.push({ topic: cfg.availability_topic, on: get('payload_available', 'online'), off: get('payload_not_available', 'offline'), tpl: cfg.availability_template || null });

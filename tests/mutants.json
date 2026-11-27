@@ -73,7 +73,7 @@
  },
  {
   "name": "board: Node-RED's address no longer has to be a path here",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/nodered.js",
   "find": "if (!base || !SAME_ORIGIN.test(base)) return",
   "replace": "if (!base) return",
   "suite": "static",
@@ -81,23 +81,23 @@
  },
  {
   "name": "board: a text loses its English",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "      prob_dismiss_t: 'Stop counting",
-  "replace": "      prob_dismiss_x: 'Stop counting",
+  "file": "custom_components/functions_board/frontend/lib/i18n.js",
+  "find": "    prob_dismiss_t: 'Stop counting",
+  "replace": "    prob_dismiss_x: 'Stop counting",
   "suite": "static",
   "expect": "every text call has an English text"
  },
  {
   "name": "problems: a disabled entity is no problem",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "      if (reg && reg.disabled_by) add('warn', 'e_disabled', id, by);",
-  "replace": "      if (false) add('warn', 'e_disabled', id, by);",
+  "file": "custom_components/functions_board/frontend/lib/wiring.js",
+  "find": "    if (reg && reg.disabled_by) add('warn', 'e_disabled', id, by);",
+  "replace": "    if (false) add('warn', 'e_disabled', id, by);",
   "suite": "problems",
   "expect": "a disabled entity is a warning"
  },
  {
   "name": "problems: a dismissal is never forgotten",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/wiring.js",
   "find": "else if (now - d.gone > PROB_FORGET_MS) { changed = true; return; }",
   "replace": "",
   "suite": "problems",
@@ -105,7 +105,7 @@
  },
  {
   "name": "problems: a dismissal doesn't note when its problem went",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/wiring.js",
   "find": "else if (!d.gone) { d = { k: d.k, at: d.at, gone: now }; changed = true; }",
   "replace": "",
   "suite": "problems",
@@ -113,7 +113,7 @@
  },
  {
   "name": "wiring: turn_on is taken to leave its entity in any state (loops)",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/wiring.js",
   "find": "const RESULT = { turn_on: ['on'], ",
   "replace": "const RESULT = { ",
   "suite": "wiring",
@@ -121,7 +121,7 @@
  },
  {
   "name": "sandbox: a \"not\" condition passes when what it negates is true",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
   "find": "return x.hit ? { ok: false, why: T('sbx_not_true'), partly: x.partly }",
   "replace": "return x.hit ? { ok: true, partly: x.partly }",
   "suite": "sandbox",
@@ -129,7 +129,7 @@
  },
  {
   "name": "sandbox: mode single runs again while running",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
   "find": "if (mode === 'single') { this._log(",
   "replace": "if (false) { this._log(",
   "suite": "sandbox",
@@ -153,16 +153,16 @@
  },
  {
   "name": "draw: a button drawn again is a new element",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "      if (n.nodeType === 1 && k.includes('|')) o = (byId.get(k) || [])[0] || null;",
-  "replace": "      if (n.nodeType === 1 && k.includes('|')) o = null;",
+  "file": "custom_components/functions_board/frontend/lib/runtime.js",
+  "find": "    if (n.nodeType === 1 && k.includes('|')) o = (byId.get(k) || [])[0] || null;",
+  "replace": "    if (n.nodeType === 1 && k.includes('|')) o = null;",
   "suite": "board-regress",
   "only": "0.9.1",
   "expect": "gives focus back to its button"
  },
  {
   "name": "board: a box loses focus when the board redraws",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "      this._put(this._$.nodes, [...vis].map((k) => this._nodeHTML(m.nodes.get(k))).join(''));",
   "replace": "      this._$.nodes.innerHTML = [...vis].map((k) => this._nodeHTML(m.nodes.get(k))).join('');",
   "suite": "board-regress",
@@ -171,7 +171,7 @@
  },
  {
   "name": "layout: parallel arrows 10 px apart, not 16",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/geometry.js",
   "find": "const STUB = 18, SEP = 16,",
   "replace": "const STUB = 18, SEP = 10,",
   "suite": "board-layout",
@@ -179,7 +179,7 @@
  },
  {
   "name": "board: Bring back does nothing",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "'pdis-back': (el) => { this._probDismiss(el.dataset.k, 'back'); },",
   "replace": "'pdis-back': () => {},",
   "suite": "board-regress",
@@ -196,7 +196,7 @@
  },
  {
   "name": "board: on a conflict, the other board's layout isn't taken",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "        this._takeRemoteLayout(label, r.layout);\n        this._toast(T('was_rearranged",
   "replace": "        this._toast(T('was_rearranged",
   "suite": "board-regress",
@@ -205,7 +205,7 @@
  },
  {
   "name": "board: asks an outside address for something when it starts",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "      window.addEventListener('keydown', this._winKeyFn);\n    }",
   "replace": "      window.addEventListener('keydown', this._winKeyFn);\n      try { fetch('https://example.invalid/fb.png').catch(() => {}); } catch (e) { /* planted */ }\n    }",
   "suite": "e2e-privacy",
@@ -213,7 +213,7 @@
  },
  {
   "name": "sandbox: is_state() and the like read Home Assistant's states, not the sandbox's",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
   "find": "(m, f) => `fb_${f}(`);",
   "replace": "(m, f) => `${f}(`);",
   "suite": "e2e-sandbox",
@@ -221,7 +221,7 @@
  },
  {
   "name": "versions: a restore doesn't bring back what was deleted since",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/versions.js",
   "find": "for (const k of plan.write.concat(plan.recreate)) {",
   "replace": "for (const k of plan.write) {",
   "suite": "e2e-versions",
@@ -229,7 +229,7 @@
  },
  {
   "name": "board: a simulated state's mark goes before Home Assistant's word of it comes",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "else if (st && at && Date.parse(st.last_updated) < at) { /* not yet */ }",
   "replace": "",
   "suite": "board-regress",
@@ -238,7 +238,7 @@
  },
  {
   "name": "sandbox: and/or/not as they were before 0.9.1",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
   "find": "if (r.ok === want) return { hit: true, r, partly };",
   "replace": "if (r.ok !== want) return { hit: true, r, partly };",
   "suite": "sandbox",
@@ -246,7 +246,7 @@
  },
  {
   "name": "board: an arrow's trigger choices in Home Assistant's order",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/arrows.js",
   "find": "filter((t) => ok((this._trigDesc || {})[t])).sort().forEach(",
   "replace": "filter((t) => ok((this._trigDesc || {})[t])).forEach(",
   "suite": "board-regress",
@@ -255,7 +255,7 @@
  },
  {
   "name": "board: the saved checks' step text takes the name of the runs' one again",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/problems.js",
   "find": "    _chkStepText(s) {",
   "replace": "    _stepText(s) {",
   "suite": "static",
@@ -279,7 +279,7 @@
  },
  {
   "name": "board: a box's last run reads differently (a dash for the dot)",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/i18n.js",
   "find": "ran_3: '{n} · ran {last_triggered}',",
   "replace": "ran_3: '{n} - ran {last_triggered}',",
   "suite": "board-snapshots",
@@ -287,7 +287,7 @@
  },
  {
   "name": "board: a style changes (a live arrow drawn red)",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/styles.js",
   "find": ".edges path.live{stroke:var(--fb-blue);",
   "replace": ".edges path.live{stroke:var(--fb-red);",
   "suite": "board-snapshots",
@@ -295,7 +295,7 @@
  },
  {
   "name": "board: taken off the page, it keeps its subscriptions",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "      u.forEach((p) => this._ha.drop(p));",
   "replace": "      u.forEach((p) => p);",
   "suite": "board-leak",
@@ -303,7 +303,7 @@
  },
  {
   "name": "board: taken off the page, it leaves its key listener on window",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "    disconnectedCallback() {\n      window.removeEventListener('keydown', this._winKeyFn);",
   "replace": "    disconnectedCallback() {",
   "suite": "board-leak",
@@ -311,7 +311,7 @@
  },
  {
   "name": "board: something holds on to every board taken off the page",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "    connectedCallback() {\n      this._clock.start();\n      if (this._data) {",
   "replace": "    connectedCallback() {\n      (window.__fbHeld = window.__fbHeld || []).push(this);\n      this._clock.start();\n      if (this._data) {",
   "suite": "board-leak",
@@ -327,7 +327,7 @@
  },
  {
   "name": "board: sets a timer of its own, not through its clock",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "this._clock.after('frames', 0, () => this._renderFrames());",
   "replace": "setTimeout(() => this._renderFrames(), 0);",
   "suite": "static",
@@ -335,7 +335,7 @@
  },
  {
   "name": "board: taken off the page, its clock goes on",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "      // and nothing it set runs while it's away (0.10.0): the clock starts again when it's back\n      this._clock.stop();\n",
   "replace": "",
   "suite": "board-leak",
@@ -343,24 +343,24 @@
  },
  {
   "name": "clock: after() for a name doesn't replace the wait already set",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "      name = this._name(name);\n      this.cancel(name);\n      if (!this.running) return name;\n      return this._set(name, 't',",
-  "replace": "      name = this._name(name);\n      if (!this.running) return name;\n      return this._set(name, 't',",
+  "file": "custom_components/functions_board/frontend/lib/runtime.js",
+  "find": "    name = this._name(name);\n    this.cancel(name);\n    if (!this.running) return name;\n    return this._set(name, 't',",
+  "replace": "    name = this._name(name);\n    if (!this.running) return name;\n    return this._set(name, 't',",
   "suite": "clock",
   "expect": "C1 after\\(\\)"
  },
  {
   "name": "clock: stop() leaves deadlines waiting for ever",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "      due.forEach((fn) => fn());\n",
+  "file": "custom_components/functions_board/frontend/lib/runtime.js",
+  "find": "    due.forEach((fn) => fn());\n",
   "replace": "",
   "suite": "clock",
   "expect": "C7 stop\\(\\) runs every deadline"
  },
  {
   "name": "clock: a sleep isn't ended when the clock stops",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "      for (const done of [...this._sleeps]) done(false);\n",
+  "file": "custom_components/functions_board/frontend/lib/runtime.js",
+  "find": "    for (const done of [...this._sleeps]) done(false);\n",
   "replace": "",
   "suite": "clock",
   "expect": "C6 a sleep still waiting"
@@ -375,7 +375,7 @@
  },
  {
   "name": "board: put back on the page, its clock doesn't start again",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "    connectedCallback() {\n      this._clock.start();\n",
   "replace": "    connectedCallback() {\n",
   "suite": "board-regress",
@@ -384,7 +384,7 @@
  },
  {
   "name": "clock: frame() drops the frame's time",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/runtime.js",
   "find": "this._env.raf((t) => { this._w.delete(name); fn(t); })",
   "replace": "this._env.raf(() => { this._w.delete(name); fn(); })",
   "suite": "clock",
@@ -392,7 +392,7 @@
  },
  {
   "name": "board: deletes functions on registries older than the board data",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "      if (this._data && this._store.newer('reg', 'data')) {",
   "replace": "      if (this._data) {",
   "suite": "board-regress",
@@ -401,23 +401,23 @@
  },
  {
   "name": "rules: code a mutant breaks changes and the mutant goes stale",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "      due.forEach((fn) => fn());\n",
-  "replace": "      due.forEach((f) => f());\n",
+  "file": "custom_components/functions_board/frontend/lib/runtime.js",
+  "find": "    due.forEach((fn) => fn());\n",
+  "replace": "    due.forEach((f) => f());\n",
   "suite": "static",
   "expect": "every mutant in tests/mutants.json still finds its text"
  },
  {
   "name": "link: an older answer can land last",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "      const newer = () => (e.n !== n ? e.p : null);",
-  "replace": "      const newer = () => null;",
+  "file": "custom_components/functions_board/frontend/lib/runtime.js",
+  "find": "    const newer = () => (e.n !== n ? e.p : null);",
+  "replace": "    const newer = () => null;",
   "suite": "link",
   "expect": "L1 an older answer arriving last"
  },
  {
   "name": "link: a call has no time limit",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/runtime.js",
   "find": "const stop = this.clock.limit(ms || this.timeout,",
   "replace": "const stop = this.clock.limit(1e12,",
   "suite": "link",
@@ -425,31 +425,31 @@
  },
  {
   "name": "link: a failure isn't reported",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "        if (!o.optional) this.report(kind, what, e);\n",
+  "file": "custom_components/functions_board/frontend/lib/runtime.js",
+  "find": "      if (!o.optional) this.report(kind, what, e);\n",
   "replace": "",
   "suite": "link",
   "expect": "L3 a failure is thrown to the caller and reported"
  },
  {
   "name": "link: an optional call's failure is reported anyway",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "        if (!o.optional) this.report(kind, what, e);\n",
-  "replace": "        this.report(kind, what, e);\n",
+  "file": "custom_components/functions_board/frontend/lib/runtime.js",
+  "find": "      if (!o.optional) this.report(kind, what, e);\n",
+  "replace": "      this.report(kind, what, e);\n",
   "suite": "link",
   "expect": "L3 an optional call answers its fallback and isn't reported"
  },
  {
   "name": "link: lists come in Home Assistant's order",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "    if (!k) return r;\n    return r.slice().sort(",
-  "replace": "    return r;\n    return r.slice().sort(",
+  "file": "custom_components/functions_board/frontend/lib/runtime.js",
+  "find": "  if (!k) return r;\n  return r.slice().sort(",
+  "replace": "  return r;\n  return r.slice().sort(",
   "suite": "link",
   "expect": "L4 a registry list comes in a fixed order"
  },
  {
   "name": "link: the anonymised Diagnostics file carries a failure's message",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/runtime.js",
   "find": "(anonymise ? { at: new Date(x.at).toISOString(), kind: x.kind, type:",
   "replace": "(anonymise ? { message: x.message, at: new Date(x.at).toISOString(), kind: x.kind, type:",
   "suite": "link",
@@ -457,7 +457,7 @@
  },
  {
   "name": "board: a failed call isn't in the Diagnostics file",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/diagnostics.js",
   "find": "Object.assign(await this._ws(msg), { board_errors: this._ha.exportErrors(anonymise) })",
   "replace": "Object.assign(await this._ws(msg), {})",
   "suite": "board-regress",
@@ -466,7 +466,7 @@
  },
  {
   "name": "rules: the board drops an error without a reason",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/tools.js",
   "find": "const types = await this._api('GET', 'events', undefined, { fallback: [] });",
   "replace": "const types = await this._api('GET', 'events').catch(() => []);",
   "suite": "static",
@@ -474,7 +474,7 @@
  },
  {
   "name": "rules: an optional call without its reason",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/arrows.js",
   "find": "{ optional: 'a Home Assistant before 2025.12 has no purpose-specific triggers or conditions', fallback: [] }",
   "replace": "{ optional: true, fallback: [] }",
   "suite": "static",
@@ -482,7 +482,7 @@
  },
  {
   "name": "rules: the board calls Home Assistant around the link",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "    _ws(msg, o) { return this._ha.ask(msg, o); }",
   "replace": "    _ws(msg, o) { return this._hass.callWS(msg); }",
   "suite": "static",
@@ -490,7 +490,7 @@
  },
  {
   "name": "rules: a property hides a method of the same name",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "      this._haConn = {\n",
   "replace": "      this._link = this._ha;\n      this._haConn = {\n",
   "suite": "static",
@@ -506,40 +506,40 @@
  },
  {
   "name": "store: an older answer replaces a newer one",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "      if (h && h.asked > t) return false;\n",
+  "file": "custom_components/functions_board/frontend/lib/runtime.js",
+  "find": "    if (h && h.asked > t) return false;\n",
   "replace": "",
   "suite": "store",
   "expect": "S1 the older answer, coming last"
  },
  {
   "name": "store: a fact read before a change is taken as current",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "      return !h || h.asked < this.changedAt(key) || (maxAge != null",
-  "replace": "      return !h || (maxAge != null",
+  "file": "custom_components/functions_board/frontend/lib/runtime.js",
+  "find": "    return !h || h.asked < this.changedAt(key) || (maxAge != null",
+  "replace": "    return !h || (maxAge != null",
   "suite": "board-regress",
   "only": "0.10.0 a config read before",
   "expect": "0.10.0 \\.\\.\\. but isn't kept as the current config"
  },
  {
   "name": "store: as of now asks again instead of waiting for the reload in flight",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "      return this.load(key, Math.max(this.changedAt(key), maxAge != null ? this._now() - maxAge : 0));",
-  "replace": "      return this.load(key);",
+  "file": "custom_components/functions_board/frontend/lib/runtime.js",
+  "find": "    return this.load(key, Math.max(this.changedAt(key), maxAge != null ? this._now() - maxAge : 0));",
+  "replace": "    return this.load(key);",
   "suite": "store",
   "expect": "S3 a reload in flight asked after the change is waited for"
  },
  {
   "name": "store: an older load answers before the newer one in flight",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "        if (f && f.asked > asked) { try { await f.p; }",
-  "replace": "        if (false) { try { await f.p; }",
+  "file": "custom_components/functions_board/frontend/lib/runtime.js",
+  "find": "      if (f && f.asked > asked) { try { await f.p; }",
+  "replace": "      if (false) { try { await f.p; }",
   "suite": "store",
   "expect": "S2 \\.\\.\\. and every caller gets the newest fact"
  },
  {
   "name": "board: the restore plan reads the registries as they were",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/versions.js",
   "find": "      await this._regNow();\n      const diff = await this._verDiff(label, snap)",
   "replace": "      const diff = await this._verDiff(label, snap)",
   "suite": "board-regress",
@@ -548,7 +548,7 @@
  },
  {
   "name": "actions: a button's action has no handler",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "          'mgr-more': () => { this._mgr.pshow = (this._mgr.pshow || 200) + 200; this._renderPicks(); },\n",
   "replace": "",
   "suite": "static",
@@ -556,7 +556,7 @@
  },
  {
   "name": "actions: a handler no button names",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "          'mgr-more': () => { this._mgr.pshow = (this._mgr.pshow || 200) + 200; this._renderPicks(); },\n",
   "replace": "          'mgr-more': () => { this._mgr.pshow = (this._mgr.pshow || 200) + 200; this._renderPicks(); },\n          'never-named': () => {},\n",
   "suite": "static",
@@ -564,7 +564,7 @@
  },
  {
   "name": "actions: an action in two tables",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "          'mgr-more': () => { this._mgr.pshow = (this._mgr.pshow || 200) + 200; this._renderPicks(); },\n",
   "replace": "          'mgr-more': () => { this._mgr.pshow = (this._mgr.pshow || 200) + 200; this._renderPicks(); },\n          'undo': () => {},\n",
   "suite": "static",
@@ -572,15 +572,15 @@
  },
  {
   "name": "actions: actionMap lets a later table's name win",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "        if (m.has(name)) throw new Error(",
-  "replace": "        if (false) throw new Error(",
+  "file": "custom_components/functions_board/frontend/lib/runtime.js",
+  "find": "      if (m.has(name)) throw new Error(",
+  "replace": "      if (false) throw new Error(",
   "suite": "static",
   "expect": "actionMap joins the tables, and refuses"
  },
  {
   "name": "actions: an undo step made around _history",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "    _history(step) {\n      if (this._ver) return;\n      this._undoStack.push(step);",
   "replace": "    _history(step) {\n      if (this._ver) return;\n      this._undoStack.push(step); if (step.twice) this._undoStack.push(step);",
   "suite": "static",
@@ -588,7 +588,7 @@
  },
  {
   "name": "actions: handlers aren't told the open function",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "      if (h) h(el, { a, label, need, ev });",
   "replace": "      if (h) h(el, { a, need, ev });",
   "suite": "board-snapshots",
@@ -596,39 +596,39 @@
  },
  {
   "name": "draw: a field with focus loses what's being typed",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "    if (old === focused) return;\n    const t = old.tagName;",
-  "replace": "    const t = old.tagName;",
+  "file": "custom_components/functions_board/frontend/lib/runtime.js",
+  "find": "  if (old === focused) return;\n  const t = old.tagName;",
+  "replace": "  const t = old.tagName;",
   "suite": "board-draw",
   "expect": "D3 \\.\\.\\. the one with focus keeps"
  },
  {
   "name": "draw: an element moved loses focus",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "    if (focused && focused !== doc.body && target.contains(focused) && root.activeElement !== focused) focused.focus({ preventScroll: true });\n",
+  "file": "custom_components/functions_board/frontend/lib/runtime.js",
+  "find": "  if (focused && focused !== doc.body && target.contains(focused) && root.activeElement !== focused) focused.focus({ preventScroll: true });\n",
   "replace": "",
   "suite": "board-draw",
   "expect": "D2 \\.\\.\\. it keeps focus"
  },
  {
   "name": "draw: what's no longer in the HTML stays on the page",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "    while (old.childNodes.length > nu.childNodes.length) old.removeChild(old.lastChild);\n",
+  "file": "custom_components/functions_board/frontend/lib/runtime.js",
+  "find": "  while (old.childNodes.length > nu.childNodes.length) old.removeChild(old.lastChild);\n",
   "replace": "",
   "suite": "board-draw",
   "expect": "D1 morph makes what innerHTML would"
  },
  {
   "name": "draw: an attribute no longer in the HTML stays",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "    for (const a of [...old.attributes]) if (!nu.hasAttribute(a.name)) old.removeAttribute(a.name);\n",
+  "file": "custom_components/functions_board/frontend/lib/runtime.js",
+  "find": "  for (const a of [...old.attributes]) if (!nu.hasAttribute(a.name)) old.removeAttribute(a.name);\n",
   "replace": "",
   "suite": "board-draw",
   "expect": "D1 morph makes what innerHTML would"
  },
  {
   "name": "rules: a working view replaced instead of drawn in place",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "      d.hidden = true; this._put(d, '');",
   "replace": "      d.hidden = true; d.innerHTML = '';",
   "suite": "static",
@@ -636,7 +636,7 @@
  },
  {
   "name": "parts: one part reads another's state",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "    _closeModal() { this._$.modal.hidden = true;",
   "replace": "    _closeModal() { if (this._mgr) this._mgr.closed = true; this._$.modal.hidden = true;",
   "suite": "static",
@@ -644,15 +644,15 @@
  },
  {
   "name": "parts: two parts own the same state",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "    list: { owns: ['_findQ'], table: 'list' },",
-  "replace": "    list: { owns: ['_findQ', '_mgr'], table: 'list' },",
+  "file": "custom_components/functions_board/frontend/lib/runtime.js",
+  "find": "  list: { owns: ['_findQ'], table: 'list' },",
+  "replace": "  list: { owns: ['_findQ', '_mgr'], table: 'list' },",
   "suite": "static",
   "expect": "no state is owned by two parts"
  },
  {
   "name": "parts: a method outside every part",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "    /* ======================================================================================================\n       part: core:",
   "replace": "    _stray() { return 1; }\n    /* ======================================================================================================\n       part: core:",
   "suite": "static",
@@ -660,7 +660,7 @@
  },
  {
   "name": "board: a box turned off since the board was built keeps its old problems",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "      if (m.probSig != null && !this._ver && this._probSig(m, this._hass.states) !== m.probSig) {",
   "replace": "      if (false) {",
   "suite": "board-regress",
@@ -687,7 +687,7 @@
  },
  {
   "name": "board: the config of an automation that isn't loaded is asked for (and its not_found reported)",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "      if (!this._hass.states[entityId]) return null;\n",
   "replace": "",
   "suite": "board-regress",
@@ -696,7 +696,7 @@
  },
  {
   "name": "board: a save asked off the page waits for the board's return",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "      if (!this._clock.running) { this._flushSave(); return; }\n",
   "replace": "",
   "suite": "board-regress",
@@ -705,7 +705,7 @@
  },
  {
   "name": "board: a board put back on the page doesn't catch up",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "        // and what changed while it was away\n        this._catchUp();\n",
   "replace": "",
   "suite": "board-regress",
@@ -714,7 +714,7 @@
  },
  {
   "name": "board: the connection coming back isn't heard",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "        c.onReady(() => this._catchUp()),\n",
   "replace": "",
   "suite": "board-regress",
@@ -723,17 +723,17 @@
  },
  {
   "name": "link: ready() can't be stopped",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "    ready(cb) { return this.to.ready ? this.to.ready(cb) : () => {}; }",
-  "replace": "    ready(cb) { if (this.to.ready) this.to.ready(cb); return () => {}; }",
+  "file": "custom_components/functions_board/frontend/lib/runtime.js",
+  "find": "  ready(cb) { return this.to.ready ? this.to.ready(cb) : () => {}; }",
+  "replace": "  ready(cb) { if (this.to.ready) this.to.ready(cb); return () => {}; }",
   "suite": "link",
   "expect": "L6 ready"
  },
  {
   "name": "leak: the board leaves its listener on the connection",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "    ready(cb) { return this.to.ready ? this.to.ready(cb) : () => {}; }",
-  "replace": "    ready(cb) { if (this.to.ready) this.to.ready(cb); return () => {}; }",
+  "file": "custom_components/functions_board/frontend/lib/runtime.js",
+  "find": "  ready(cb) { return this.to.ready ? this.to.ready(cb) : () => {}; }",
+  "replace": "  ready(cb) { if (this.to.ready) this.to.ready(cb); return () => {}; }",
   "suite": "board-leak",
   "expect": "listens on the connection"
  },
@@ -805,7 +805,7 @@
  },
  {
   "name": "import: an automation that also does much else joins what it switches",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/wiring.js",
   "find": "ts.forEach((t) => (ts.length * 2 >= does ? union(L, t) : tie(L, t, 'switches', L, t)));",
   "replace": "ts.forEach((t) => union(L, t));",
   "suite": "import",
@@ -813,7 +813,7 @@
  },
  {
   "name": "import: a mode that switches eight joins them",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/wiring.js",
   "find": "if (!ts.length || ts.length > 6) return;",
   "replace": "if (!ts.length) return;",
   "suite": "import",
@@ -821,7 +821,7 @@
  },
  {
   "name": "import: any two first words fence a helper",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/wiring.js",
   "find": "if (said) [...by.keys()]",
   "replace": "if (false) [...by.keys()]",
   "suite": "import",
@@ -829,15 +829,15 @@
  },
  {
   "name": "import: no name fences",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "      Ls = side(Ls, gl, fam, fam(gl), like, true);\n",
+  "file": "custom_components/functions_board/frontend/lib/wiring.js",
+  "find": "    Ls = side(Ls, gl, fam, fam(gl), like, true);\n",
   "replace": "",
   "suite": "import",
   "expect": "F2 the systems that set them are parts of their own"
  },
  {
   "name": "import: a switch's taps pair up before the devices claim theirs",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/wiring.js",
   "find": "const keys = [...srcs.keys()].sort((x, y) => x.startsWith('buttons:') - y.startsWith('buttons:'));",
   "replace": "const keys = [...srcs.keys()];",
   "suite": "import",
@@ -845,7 +845,7 @@
  },
  {
   "name": "import: the taps go by what was grouped before the devices",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/wiring.js",
   "find": "if (k.startsWith('buttons:') && (!ki || !keys[ki - 1].startsWith('buttons:'))) part0 = snapshot();",
   "replace": "",
   "suite": "import",
@@ -853,31 +853,31 @@
  },
  {
   "name": "import: names that say two systems on one device are one part",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "      let heads;\n      if (named.length >= 2) {",
-  "replace": "      let heads;\n      if (false) {",
+  "file": "custom_components/functions_board/frontend/lib/wiring.js",
+  "find": "    let heads;\n    if (named.length >= 2) {",
+  "replace": "    let heads;\n    if (false) {",
   "suite": "import",
   "expect": "F7 names that say two systems on one device"
  },
  {
   "name": "import: two parts meeting at a device become one",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "        if (roots.length > 1) {",
-  "replace": "        if (false) {",
+  "file": "custom_components/functions_board/frontend/lib/wiring.js",
+  "find": "      if (roots.length > 1) {",
+  "replace": "      if (false) {",
   "suite": "import",
   "expect": "F6 two parts that start from one device stay apart"
  },
  {
   "name": "import: the piece that operates a device doesn't join",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "      if (cs.length && cs.length <= 3) cs.filter((L) => !part0.has(L)).forEach((L) => union(Ls[0], L));",
+  "file": "custom_components/functions_board/frontend/lib/wiring.js",
+  "find": "    if (cs.length && cs.length <= 3) cs.filter((L) => !part0.has(L)).forEach((L) => union(Ls[0], L));",
   "replace": "",
   "suite": "import",
   "expect": "F6 automations that start from one device are one part, with the tap"
  },
  {
   "name": "import: no tie for checking another part's helper",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/wiring.js",
   "find": "(reads.get(gl) || new Set()).forEach((L) => tie(L, gl, 'reads', L, gl));",
   "replace": "",
   "suite": "import",
@@ -885,7 +885,7 @@
  },
  {
   "name": "import: no tie for changing what another part starts from",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/wiring.js",
   "find": "cs.forEach((C) => Ls.forEach((L) => tie(C, L, 'starts', C, via.get(k))));",
   "replace": "",
   "suite": "import",
@@ -893,7 +893,7 @@
  },
  {
   "name": "import: a Node-RED tab's groups and tabs named alike stay apart",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/wiring.js",
   "find": "if (tabs.has(t)) union(tabs.get(t), L); else tabs.set(t, L);",
   "replace": "tabs.set(t, L);",
   "suite": "import",
@@ -901,7 +901,7 @@
  },
  {
   "name": "import: a flow with one piece it uses is a part",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/wiring.js",
   "find": "ids.filter((id) => kind(id) !== 'nodered').length >= 2",
   "replace": "ids.filter((id) => kind(id) !== 'nodered').length >= 1",
   "suite": "import",
@@ -909,7 +909,7 @@
  },
  {
   "name": "import: a family the name says doesn't join",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/wiring.js",
   "find": "byPre.forEach((s) => { const g = [...s]; g.forEach((id) => union(g[0], id)); });",
   "replace": "",
   "suite": "import",
@@ -917,7 +917,7 @@
  },
  {
   "name": "import: any number of automations starting alike pair up",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/wiring.js",
   "find": "if (g.length >= 2 && g.length <= 8)",
   "replace": "if (g.length >= 2)",
   "suite": "import",
@@ -925,7 +925,7 @@
  },
  {
   "name": "nrGroups: a disabled tab isn't marked",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/wiring.js",
   "find": "events: [...events], off: !!(tab && tab.disabled) });",
   "replace": "events: [...events], off: false });",
   "suite": "import",
@@ -933,7 +933,7 @@
  },
  {
   "name": "nrGroups: a disabled node still counts",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/wiring.js",
   "find": "tabs.has(n.z) && !n.d && !['tab', 'comment', 'group'].includes(n.type)",
   "replace": "tabs.has(n.z) && !['tab', 'comment', 'group'].includes(n.type)",
   "suite": "import",
@@ -941,7 +941,7 @@
  },
  {
   "name": "import manager: no offers shown",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/manager.js",
   "find": "          c.offers.push({ k, rows: others });",
   "replace": "",
   "suite": "board-regress",
@@ -950,7 +950,7 @@
  },
  {
   "name": "import manager: Separate keeps the merge",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/manager.js",
   "find": "if (split) [...g.joins].forEach",
   "replace": "if (false) [...g.joins].forEach",
   "suite": "board-regress",
@@ -959,7 +959,7 @@
  },
  {
   "name": "import manager: a merge ticks every piece again",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/manager.js",
   "find": "        c.keep = new Set([...c.keep].filter((id) => !g.drop.has(id)));\n",
   "replace": "",
   "suite": "board-regress",
@@ -968,7 +968,7 @@
  },
  {
   "name": "import manager: no offer for a category over two groups",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "if (mine.length >= 2) offers.push(",
   "replace": "if (false) offers.push(",
   "suite": "board-regress",
@@ -977,7 +977,7 @@
  },
  {
   "name": "import manager: a category over one group leaves the rest out",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "          rest.forEach((id) => o.ids.add(id));\n",
   "replace": "",
   "suite": "board-regress",
@@ -986,7 +986,7 @@
  },
  {
   "name": "import manager: Node-RED flows aren't read",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/manager.js",
   "find": "g.roles = roles; g.catList = cats; g.ids = ids; g.nr = (nr && nr.groups) || [];",
   "replace": "g.roles = roles; g.catList = cats; g.ids = ids; g.nr = [];",
   "suite": "board-regress",
@@ -995,7 +995,7 @@
  },
  {
   "name": "Node-RED box: a disabled tab isn't shown",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "return n.nr.off ? { text: T('node_red_off', { tabLabel, count }), off: true } :",
   "replace": "return false ? { text: T('node_red_off', { tabLabel, count }), off: true } :",
   "suite": "board-regress",
@@ -1012,15 +1012,15 @@
  },
  {
   "name": "import: a device a dozen automations start from joins them",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "      if (Ls.length < 2 || Ls.length > 12) return;",
-  "replace": "      if (Ls.length < 2) return;",
+  "file": "custom_components/functions_board/frontend/lib/wiring.js",
+  "find": "    if (Ls.length < 2 || Ls.length > 12) return;",
+  "replace": "    if (Ls.length < 2) return;",
   "suite": "import",
   "expect": "F11 thirteen automations"
  },
  {
   "name": "delete with items: a piece in another function goes",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "if (other.size) return plain ? T('shared_also_in'",
   "replace": "if (false) return plain ? T('shared_also_in'",
   "suite": "board-regress",
@@ -1029,7 +1029,7 @@
  },
  {
   "name": "delete with items: a piece used outside goes",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "if (who.size) return plain ? T('shared_used_by'",
   "replace": "if (false) return plain ? T('shared_used_by'",
   "suite": "board-regress",
@@ -1038,7 +1038,7 @@
  },
  {
   "name": "delete with items: a helper set up with something outside goes",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "if (with_.length) return T('stays_set_up_with'",
   "replace": "if (false) return T('stays_set_up_with'",
   "suite": "board-regress",
@@ -1047,7 +1047,7 @@
  },
  {
   "name": "delete with items: a group outside holding it isn't seen",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "x !== st.entity_id && want.has(x)) add(x, st.entity_id);",
   "replace": "x !== st.entity_id && want.has(x)) void 0;",
   "suite": "board-regress",
@@ -1056,7 +1056,7 @@
  },
  {
   "name": "delete with items: a helper outside reading it isn't seen",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "((src && src.entities) || []).forEach((x) => { if (want.has(x)) add(x, k); })",
   "replace": "((src && src.entities) || []).forEach((x) => { if (want.has(x)) void 0; })",
   "suite": "board-regress",
@@ -1065,7 +1065,7 @@
  },
  {
   "name": "delete with items: a Node-RED flow using it isn't seen",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "forEach((x) => { if (want.has(x)) add(x, 'nr:' + g.name); })",
   "replace": "forEach((x) => { if (want.has(x)) void 0; })",
   "suite": "board-regress",
@@ -1074,7 +1074,7 @@
  },
  {
   "name": "delete with items: everything shared is deleted",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/functions.js",
   "find": "const why = p.can && this._sharedWhy(p, label, ents, used);",
   "replace": "const why = null;",
   "suite": "board-regress",
@@ -1083,7 +1083,7 @@
  },
  {
   "name": "restore: what's shared is turned off or deleted with the rest",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/versions.js",
   "find": "plan.shared = cand.map((k) => ({ k, why: this._sharedWhy({ id: k }, label, mine, uses) })).filter((x) => x.why);",
   "replace": "plan.shared = [];",
   "suite": "board-regress",
@@ -1092,7 +1092,7 @@
  },
  {
   "name": "restore: what's shared stays in the function",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/versions.js",
   "find": "        try { await this._label(x.k, label, false, false); } catch (e) {",
   "replace": "        try { void 0; } catch (e) {",
   "suite": "board-regress",
@@ -1101,7 +1101,7 @@
  },
  {
   "name": "restore: no warning for rewriting what's shared",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/versions.js",
   "find": "plan.writeShared = plan.write.map((k) => ({ k, why: this._sharedWhy({ id: k }, label, mine, uses, true) })).filter((x) => x.why);",
   "replace": "plan.writeShared = [];",
   "suite": "board-regress",
@@ -1110,7 +1110,7 @@
  },
  {
   "name": "scenes and groups: arrows to what they set or hold",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "      const held = this._wireGroups(nodes);",
   "replace": "      const held = this._wireGroups(nodes); [...nodes.keys()].forEach((k) => { const st = this._hass.states[k]; if (st && /^(scene|group)\\./.test(k)) toList(st.attributes.entity_id).forEach((x) => { if (nodes.has(x)) this._link(edges, k, x, { role: 'action', svc: '' }); }); });",
   "suite": "board-regress",
@@ -1119,7 +1119,7 @@
  },
  {
   "name": "scenes: no count of what they set",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "      if (n.setN) r.text += ' · ' + P('sets_n', n.setN);",
   "replace": "",
   "suite": "board-regress",
@@ -1128,7 +1128,7 @@
  },
  {
   "name": "groups: no count of their members",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "      if (n.memN) r.text += ' · ' + P('members_n', n.memN);",
   "replace": "",
   "suite": "board-regress",
@@ -1137,7 +1137,7 @@
  },
  {
   "name": "sandbox: an entity shown only as its device gets a temporary box",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/sandbox.js",
   "find": "        if (reg && reg.device_id && vis.has('device:' + reg.device_id)) return 'device:' + reg.device_id;",
   "replace": "",
   "suite": "board-regress",
@@ -1146,7 +1146,7 @@
  },
  {
   "name": "sandbox: one arrow drawn twice",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/sandbox.js",
   "find": "          if (old) { if (via && !old.via.includes(via)) old.via.push(via); return; }",
   "replace": "",
   "suite": "board-regress",
@@ -1155,7 +1155,7 @@
  },
  {
   "name": "scenes: loops through them not found",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "      const plain = list.filter((e) => !TGT_RE.test(e.from) && !TGT_RE.test(e.to)), extra = held.slice();",
   "replace": "      const plain = list.filter((e) => !TGT_RE.test(e.from) && !TGT_RE.test(e.to)), extra = [];",
   "suite": "board-regress",
@@ -1164,7 +1164,7 @@
  },
  {
   "name": "sandbox: no words over a stand-in box",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/sandbox.js",
   "find": "      if (f && f.at >= 0) {\n        const say = new Map();",
   "replace": "      if (false) {\n        const say = new Map();",
   "suite": "board-regress",
@@ -1173,7 +1173,7 @@
  },
  {
   "name": "sandbox: a call's words name only the first entity",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/sandbox.js",
   "find": "          if (old) { if (via && !old.via.includes(via)) old.via.push(via); return; }",
   "replace": "          if (old) return;",
   "suite": "board-regress",
@@ -1182,7 +1182,7 @@
  },
  {
   "name": "sandbox: a call's words leave out its settings",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/sandbox.js",
   "find": "return `${e.svc} → ${via.map(nm).join(', ')}${set.length ? ' (' + set.join(', ') + ')' : ''}`;",
   "replace": "return `${e.svc} → ${via.map(nm).join(', ')}`;",
   "suite": "board-regress",
@@ -1191,7 +1191,7 @@
  },
  {
   "name": "sandbox: no note on a trigger firing into a From state",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
   "find": "&& trigger.from_state && to != null && from.includes(to)) {",
   "replace": "&& trigger.from_state && to != null && from.includes(to) && false) {",
   "suite": "sandbox",
@@ -1199,7 +1199,7 @@
  },
  {
   "name": "sandbox: the From note ignores To",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
   "find": "if (this._plat(t) === 'state' && from.length && t.to == null && t.not_to == null",
   "replace": "if (this._plat(t) === 'state' && from.length && t.not_to == null",
   "suite": "sandbox",
@@ -1207,15 +1207,15 @@
  },
  {
   "name": "problems: ignored for good is forgotten like a dismissal",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "      if (d.ever) { out.push(d); return; }\n",
+  "file": "custom_components/functions_board/frontend/lib/wiring.js",
+  "find": "    if (d.ever) { out.push(d); return; }\n",
   "replace": "",
   "suite": "problems",
   "expect": "never forgotten"
  },
  {
   "name": "problems: ignored for good still shows",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/wiring.js",
   "find": "shown: problems.filter((p) => !off.has(probKey(p)) && !ever.has(probKey(p)))",
   "replace": "shown: problems.filter((p) => !off.has(probKey(p)))",
   "suite": "problems",
@@ -1223,7 +1223,7 @@
  },
  {
   "name": "problems: the layout drops ignored for good",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/clean.js",
   "find": ", d.ever ? { ever: true } : {}));",
   "replace": "));",
   "suite": "problems",
@@ -1231,7 +1231,7 @@
  },
  {
   "name": "problems: one From state starts both ways",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/wiring.js",
   "find": "if (from.length >= 2 && !from.some((x) => TPL_RE.test(x)) && ents.length)",
   "replace": "if (from.length >= 1 && !from.some((x) => TPL_RE.test(x)) && ents.length)",
   "suite": "problems",
@@ -1239,15 +1239,15 @@
  },
  {
   "name": "problems: both ways not reported",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "    for (const it of items) (it.both || []).forEach((b) => { const p = add('warn', 't_both', it.key, null); if (!p.ents) Object.assign(p, { ents: b.ents, from: b.from }); });\n",
+  "file": "custom_components/functions_board/frontend/lib/wiring.js",
+  "find": "  for (const it of items) (it.both || []).forEach((b) => { const p = add('warn', 't_both', it.key, null); if (!p.ents) Object.assign(p, { ents: b.ents, from: b.from }); });\n",
   "replace": "",
   "suite": "problems",
   "expect": "findProblems: one warning"
  },
  {
   "name": "sandbox: a dismissed note is said again",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/sandbox.js",
   "find": "      const log = eng.log.filter((e) => !(e.pk && off.has(e.pk)));",
   "replace": "      const log = eng.log;",
   "suite": "board-regress",
@@ -1256,7 +1256,7 @@
  },
  {
   "name": "problems: Ignore for good does nothing",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "'pdis-ever': (el) => { this._probDismiss(el.dataset.k, 'ever'); },",
   "replace": "'pdis-ever': () => {},",
   "suite": "board-regress",
@@ -1265,7 +1265,7 @@
  },
  {
   "name": "problems: Undo after Ignore for good brings it all the way back",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/problems.js",
   "find": "this._probDismiss(k, was ? (was.ever ? 'ever' : 'off') : 'back')",
   "replace": "this._probDismiss(k, 'back')",
   "suite": "board-regress",
@@ -1274,7 +1274,7 @@
  },
  {
   "name": "sandbox: words over a box don't hold the play",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/sandbox.js",
   "find": "words ? Math.min(5000, 1200 + 45 * words) : 0);",
   "replace": "0);",
   "suite": "board-regress",
@@ -1283,7 +1283,7 @@
  },
  {
   "name": "sandbox: words over a box only for the current step",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/sandbox.js",
   "find": "f.steps.slice(0, f.at + 1).forEach((st, i) => this._flowSays(st)",
   "replace": "f.steps.slice(f.at, f.at + 1).forEach((st, i) => this._flowSays(st)",
   "suite": "board-regress",
@@ -1292,39 +1292,39 @@
  },
  {
   "name": "sandbox: binary sensor device types all on",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "    return /^(no|not)_/.test(ty) ? 'off' : 'on';",
-  "replace": "    return 'on';",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "  return /^(no|not)_/.test(ty) ? 'off' : 'on';",
+  "replace": "  return 'on';",
   "suite": "sandbox",
   "expect": "binary sensor types"
  },
  {
   "name": "sandbox: device triggers not translated",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "        if (!this.devT.has(t)) this.devT.set(t, sbxDevTrig(t, this.o.entityOf) || sbxDevMqtt(t, this.o.devMqtt) || sbxDevZwave(t) || t);",
-  "replace": "        if (!this.devT.has(t)) this.devT.set(t, sbxDevMqtt(t, this.o.devMqtt) || sbxDevZwave(t) || t);",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "      if (!this.devT.has(t)) this.devT.set(t, sbxDevTrig(t, this.o.entityOf) || sbxDevMqtt(t, this.o.devMqtt) || sbxDevZwave(t) || t);",
+  "replace": "      if (!this.devT.has(t)) this.devT.set(t, sbxDevMqtt(t, this.o.devMqtt) || sbxDevZwave(t) || t);",
   "suite": "sandbox",
   "expect": "registry id"
  },
  {
   "name": "sandbox: device conditions asked",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "          const x = sbxDevCond(c, this.o.entityOf);\n          if (x) return this._cond(x, run);",
-  "replace": "          const x = null;",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "        const x = sbxDevCond(c, this.o.entityOf);\n        if (x) return this._cond(x, run);",
+  "replace": "        const x = null;",
   "suite": "sandbox",
   "expect": "without asking you"
  },
  {
   "name": "sandbox: zone.home isn't \"home\"",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "      if (id === 'zone.home') return 'home';\n",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "    if (id === 'zone.home') return 'home';\n",
   "replace": "",
   "suite": "sandbox",
   "expect": "entering home"
  },
  {
   "name": "sandbox: before sunrise and after sunset both at once",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
   "find": "c.before === 'sunrise' && c.after === 'sunset' ? this.now < b || this.now >= a :",
   "replace": "false ? this.now < b || this.now >= a :",
   "suite": "sandbox",
@@ -1332,15 +1332,15 @@
  },
  {
   "name": "sandbox: sun offsets left out",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "      this._at(base + off, () => {",
-  "replace": "      this._at(base, () => {",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "    this._at(base + off, () => {",
+  "replace": "    this._at(base, () => {",
   "suite": "sandbox",
   "expect": "less 30 minutes"
  },
  {
   "name": "sandbox: no value past an above threshold",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
   "find": "if (a != null) { add(id, attr, sbxStep(a, true),",
   "replace": "if (a != null) { add(id, attr, sbxStep(a, false),",
   "suite": "sandbox",
@@ -1348,7 +1348,7 @@
  },
  {
   "name": "sandbox: attributes of per-entity triggers not offered",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
   "find": "const attr = ds.attr && !(ds.attr === 'is_closed' && id.startsWith('cover.')) ? ds.attr : null;",
   "replace": "const attr = null;",
   "suite": "sandbox",
@@ -1356,15 +1356,15 @@
  },
  {
   "name": "sandbox: a press fires every button",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "        (t) => this._plat(t) !== 'state' && !t._mq && sbxPressHits(t, pick),",
-  "replace": "        (t) => this._plat(t) !== 'state' && !t._mq,",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "      (t) => this._plat(t) !== 'state' && !t._mq && sbxPressHits(t, pick),",
+  "replace": "      (t) => this._plat(t) !== 'state' && !t._mq,",
   "suite": "sandbox",
   "expect": "not the other"
  },
  {
   "name": "sandbox: webhook methods ignored",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
   "find": " && (!t.allowed_methods || toList(t.allowed_methods).map((x) => String(x).toUpperCase()).includes(String(method || 'POST').toUpperCase())),",
   "replace": ",",
   "suite": "sandbox",
@@ -1372,23 +1372,23 @@
  },
  {
   "name": "sandbox: optional words required",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "      else if (ch === ']') src += ')?';",
-  "replace": "      else if (ch === ']') src += ')';",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "    else if (ch === ']') src += ')?';",
+  "replace": "    else if (ch === ']') src += ')';",
   "suite": "sandbox",
   "expect": "optional words can be left out"
  },
  {
   "name": "sandbox: scenes set nothing",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "            if (st != null) await this._answer(id, String(st), A, cid);\n",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "          if (st != null) await this._answer(id, String(st), A, cid);\n",
   "replace": "",
   "suite": "sandbox",
   "expect": "a scene sets what its config holds"
  },
  {
   "name": "sandbox: timers don't say they finished",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
   "find": "remaining: '0:00:00', last_transition: 'finished' }, cid); await this.fireEvent('timer.finished', { entity_id: id }, cid); }), null,",
   "replace": "remaining: '0:00:00' }, cid); await this.fireEvent('timer.finished', { entity_id: id }, cid); }), null,",
   "suite": "sandbox",
@@ -1396,7 +1396,7 @@
  },
  {
   "name": "sandbox: other triggers not offered to fire",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
   "find": " || (!SBX_PLATS.has(p) && !spec && p)) presses.set(",
   "replace": " || false) presses.set(",
   "suite": "sandbox",
@@ -1404,15 +1404,15 @@
  },
  {
   "name": "checks: a press step dropped",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "      if (x.op === 'press') return { op: 'press', key: str(x.key, 1000) };\n",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "    if (x.op === 'press') return { op: 'press', key: str(x.key, 1000) };\n",
   "replace": "",
   "suite": "sandbox",
   "expect": "checks keep a press"
  },
  {
   "name": "sandbox: Set's values don't say why",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/sandbox.js",
   "find": "((g.ins && g.ins.ents) || []).filter((x) => x.id === k && (x.attr || '') === (attr || ''))",
   "replace": "((g.ins && g.ins.ents) || []).filter((x) => false)",
   "suite": "board-regress",
@@ -1421,7 +1421,7 @@
  },
  {
   "name": "sandbox: no attribute choice",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/sandbox.js",
   "find": "      sel.hidden = !attrs.length && !rest.length;",
   "replace": "      sel.hidden = true;",
   "suite": "board-regress",
@@ -1430,7 +1430,7 @@
  },
  {
   "name": "sandbox: typed minutes read as seconds",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/sandbox.js",
   "find": "{ s: 1e3, m: 6e4, h: 36e5, d: 864e5, w: 6048e5 }",
   "replace": "{ s: 1e3, m: 6e3, h: 36e5, d: 864e5, w: 6048e5 }",
   "suite": "board-regress",
@@ -1439,15 +1439,15 @@
  },
  {
   "name": "sandbox: never pauses",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "      if (!this.stepping && !this.breaks.has(run.item.id)) return;\n      if (run.cancelled) throw SBX_CANCEL;",
-  "replace": "      return;",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "    if (!this.stepping && !this.breaks.has(run.item.id)) return;\n    if (run.cancelled) throw SBX_CANCEL;",
+  "replace": "    return;",
   "suite": "sandbox",
   "expect": "stepping: the run waits"
  },
  {
   "name": "sandbox: going on isn't counted as work",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
   "find": "this.paused.delete(lid); this.busy++; p.res(); return true; }",
   "replace": "this.paused.delete(lid); p.res(); return true; }",
   "suite": "sandbox",
@@ -1455,31 +1455,31 @@
  },
  {
   "name": "sandbox: a slow device has no moving state",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "      if (mid) await this.setState(id, mid, {}, cid);\n",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "    if (mid) await this.setState(id, mid, {}, cid);\n",
   "replace": "",
   "suite": "sandbox",
   "expect": "a slow cover is opening first"
  },
  {
   "name": "sandbox: a lock that fails doesn't jam",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "        if (id.startsWith('lock.')) await this.setState(id, 'jammed', {}, cid);\n",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "      if (id.startsWith('lock.')) await this.setState(id, 'jammed', {}, cid);\n",
   "replace": "",
   "suite": "sandbox",
   "expect": "a lock that fails jams"
  },
  {
   "name": "sandbox: calls ignore how a device answers",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "        await this._answer(id, eff[0] == null ? (this.get(id) || {}).state : eff[0], eff[1], cid);",
-  "replace": "        await this.setState(id, eff[0] == null ? (this.get(id) || {}).state : eff[0], eff[1], cid);",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "      await this._answer(id, eff[0] == null ? (this.get(id) || {}).state : eff[0], eff[1], cid);",
+  "replace": "      await this.setState(id, eff[0] == null ? (this.get(id) || {}).state : eff[0], eff[1], cid);",
   "suite": "sandbox",
   "expect": "a light set to go unavailable"
  },
  {
   "name": "sandbox: calls keep no variables",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
   "find": "ents: dom === 'script' && !['turn_on', 'turn_off', 'toggle'].includes(s) ? ['script.' + s] : ents, vars: this._snap(run.vars) });",
   "replace": "ents: dom === 'script' && !['turn_on', 'turn_off', 'toggle'].includes(s) ? ['script.' + s] : ents });",
   "suite": "sandbox",
@@ -1487,7 +1487,7 @@
  },
  {
   "name": "coverage: a choose option taken isn't marked",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
   "find": "if (r.ok) { if (opt && typeof opt === 'object') this.hit.add(opt); return this._seq(opt.sequence, run); }",
   "replace": "if (r.ok) { return this._seq(opt.sequence, run); }",
   "suite": "sandbox",
@@ -1495,7 +1495,7 @@
  },
  {
   "name": "coverage: every condition seen true",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
   "find": "const x = this.cres.get(c) || { t: false, f: false }; if (r.ok) x.t = true; else x.f = true;",
   "replace": "const x = this.cres.get(c) || { t: false, f: false }; x.t = true;",
   "suite": "sandbox",
@@ -1503,7 +1503,7 @@
  },
  {
   "name": "coverage: triggers never marked fired",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
   "find": "push(`t/${i}`, 'trigger', t, { hit: engs.some((e) => e.fired.has(id + '#' + i)) });",
   "replace": "push(`t/${i}`, 'trigger', t, { hit: false });",
   "suite": "sandbox",
@@ -1511,7 +1511,7 @@
  },
  {
   "name": "explorer: no fights",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
   "find": "if (a.id === b.id && a.by && b.by && a.by !== b.by && a.to !== b.to &&",
   "replace": "if (false &&",
   "suite": "sandbox",
@@ -1519,31 +1519,31 @@
  },
  {
   "name": "explorer: a day passing not tried",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "    const out = [{ step: { op: 'advance', ms: 864e5 }, what: T('sbx_x_day') }];",
-  "replace": "    const out = [];",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "  const out = [{ step: { op: 'advance', ms: 864e5 }, what: T('sbx_x_day') }];",
+  "replace": "  const out = [];",
   "suite": "sandbox",
   "expect": "a day passing is tried"
  },
  {
   "name": "sun: moved when nothing reads it",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "      if (!this.get('sun.sun') || !this._readsSun()) return;",
-  "replace": "      if (!this.get('sun.sun')) return;",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "    if (!this.get('sun.sun') || !this._readsSun()) return;",
+  "replace": "    if (!this.get('sun.sun')) return;",
   "suite": "sandbox",
   "expect": "nothing reads sun.sun"
  },
  {
   "name": "sun: a template reading it not seen",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "      return [...this.items.values()].some((it) => has(it.cfg)) ||",
-  "replace": "      return false &&",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "    return [...this.items.values()].some((it) => has(it.cfg)) ||",
+  "replace": "    return false &&",
   "suite": "sandbox",
   "expect": "a template that reads sun.sun"
  },
  {
   "name": "explorer: a day past what's due next",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
   "find": "&& e.nextAt() <= end; k++) await e.toNext();",
   "replace": "&& e.nextAt() - e.now <= 864e5; k++) await e.toNext();",
   "suite": "sandbox",
@@ -1551,7 +1551,7 @@
  },
  {
   "name": "sandbox: no sentence of what came of it",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/sandbox.js",
   "find": "      if (g.rec.steps.length === step0 && step0 > 0 && g.lastAdv === g.rec.steps[step0 - 1]) act.step0 = step0 - 1;\n      act.sum = this._sbxSum(act);",
   "replace": "      if (g.rec.steps.length === step0 && step0 > 0 && g.lastAdv === g.rec.steps[step0 - 1]) act.step0 = step0 - 1;",
   "suite": "board-regress",
@@ -1560,7 +1560,7 @@
  },
  {
   "name": "sandbox: Undo keeps every step",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/sandbox.js",
   "find": "const steps = g.rec.steps.slice(0, Math.max(0, k)),",
   "replace": "const steps = g.rec.steps.slice(0),",
   "suite": "board-regress",
@@ -1569,7 +1569,7 @@
  },
  {
   "name": "sandbox: changed states not first",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/sandbox.js",
   "find": ".sort((a, b) => (changed(b) - changed(a)) || nm(a).localeCompare(nm(b)));",
   "replace": ".sort((a, b) => nm(a).localeCompare(nm(b)));",
   "suite": "board-regress",
@@ -1578,7 +1578,7 @@
  },
  {
   "name": "sandbox: the clock at speed moves a second a second",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/sandbox.js",
   "find": "this._sbxStep({ op: 'advance', ms: 1000 * g.speed });",
   "replace": "this._sbxStep({ op: 'advance', ms: 1000 });",
   "suite": "board-regress",
@@ -1587,7 +1587,7 @@
  },
  {
   "name": "sandbox: a power cut cuts nothing",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/sandbox.js",
   "find": "g.cut.set(id, eng.get(id).state); steps.push({ op: 'set', id, state: 'unavailable' });",
   "replace": "g.cut.set(id, eng.get(id).state);",
   "suite": "board-regress",
@@ -1596,7 +1596,7 @@
  },
  {
   "name": "sandbox: Pause here does nothing",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/sandbox.js",
   "find": "const br = this._sbx.eng.breaks; if (br.has(k)) br.delete(k); else br.add(k);",
   "replace": "const br = this._sbx.eng.breaks; br.delete(k);",
   "suite": "board-regress",
@@ -1605,7 +1605,7 @@
  },
  {
   "name": "sandbox: queued max counts only the running",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
   "find": "act.length + (mode === 'queued' ? (this.queue.get(it.id) || []).length : 0) >= max",
   "replace": "act.length >= max",
   "suite": "sandbox",
@@ -1613,7 +1613,7 @@
  },
  {
   "name": "sandbox: a paused timer keeps what's left in words",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
   "find": "await this.setState(id, 'paused', { remaining: hms(left),",
   "replace": "await this.setState(id, 'paused', { remaining: fmtDur(Math.max(0, left)),",
   "suite": "sandbox",
@@ -1621,15 +1621,15 @@
  },
  {
   "name": "sandbox: refuses nothing",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "        if (no) throw Object.assign(new Error(no.text), { cfg: !!no.cfg });\n",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "      if (no) throw Object.assign(new Error(no.text), { cfg: !!no.cfg });\n",
   "replace": "",
   "suite": "sandbox",
   "expect": "set past its range"
  },
  {
   "name": "sandbox: continue_on_error carries on from anything",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
   "find": "if (a.continue_on_error && !(e && e.cfg))",
   "replace": "if (a.continue_on_error)",
   "suite": "sandbox",
@@ -1637,111 +1637,111 @@
  },
  {
   "name": "sandbox: conditions not looked at when triggered",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "        if (opt.conds !== false) {\n          for (const c of toList(cfg.conditions != null ? cfg.conditions : cfg.condition)) {",
-  "replace": "        if (false) {\n          for (const c of toList(cfg.conditions != null ? cfg.conditions : cfg.condition)) {",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "      if (opt.conds !== false) {\n        for (const c of toList(cfg.conditions != null ? cfg.conditions : cfg.condition)) {",
+  "replace": "      if (false) {\n        for (const c of toList(cfg.conditions != null ? cfg.conditions : cfg.condition)) {",
   "suite": "sandbox",
   "expect": "at 10 minutes the automation fires and its condition passes"
  },
  {
   "name": "sandbox: automation.trigger doesn't wait",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "          if (r) await new Promise((res) => { r.parkP.then(() => { if (!r.done) this._parked(run); }); this.busy--; r.onDone = () => { this.busy++; this._moving(run); res(); }; });\n",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "        if (r) await new Promise((res) => { r.parkP.then(() => { if (!r.done) this._parked(run); }); this.busy--; r.onDone = () => { this.busy++; this._moving(run); res(); }; });\n",
   "replace": "",
   "suite": "sandbox",
   "expect": "automation.trigger waits"
  },
  {
   "name": "sandbox: not_from ignored (the differential test sees it)",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "      if (t.not_from != null && inList(ov, t.not_from)) return false;",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "    if (t.not_from != null && inList(ov, t.not_from)) return false;",
   "replace": "",
   "suite": "diff",
   "expect": "not_from"
  },
  {
   "name": "sandbox: a change made while another is handed out isn't queued",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "      if (this.dispatching) { this.evq.push(fn); return; }\n",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "    if (this.dispatching) { this.evq.push(fn); return; }\n",
   "replace": "",
   "suite": "sandbox",
   "expect": "an automation that starts itself runs again"
  },
  {
   "name": "sandbox: a satisfied wait goes on in the middle of the handing out",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "          this._later(() => { this.busy++; this._moving(run); res(v); });",
-  "replace": "          this.busy++; this._moving(run); res(v);",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "        this._later(() => { this.busy++; this._moving(run); res(v); });",
+  "replace": "        this.busy++; this._moving(run); res(v);",
   "suite": "sandbox",
   "expect": "a waiting run is still running until the handing out is done"
  },
  {
   "name": "sandbox: handing out a change doesn't wait for the runs it starts",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "      this._start(it, { trigger }, lid, { conds: true, stop });\n      await stop.p;",
-  "replace": "      this._start(it, { trigger }, lid, { conds: true, stop });",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "    this._start(it, { trigger }, lid, { conds: true, stop });\n    await stop.p;",
+  "replace": "    this._start(it, { trigger }, lid, { conds: true, stop });",
   "suite": "sandbox",
   "expect": "two triggers on one change both run"
  },
  {
   "name": "sandbox: a run hears the change that started it",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "    _listening() { const ws = [...this.waiters]; return () => ws.filter((w) => this.waiters.has(w)); }",
-  "replace": "    _listening() { return () => [...this.waiters]; }",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "  _listening() { const ws = [...this.waiters]; return () => ws.filter((w) => this.waiters.has(w)); }",
+  "replace": "  _listening() { return () => [...this.waiters]; }",
   "suite": "sandbox",
   "expect": "doesn't hear the change that started it"
  },
  {
   "name": "sandbox: Python's round without its exact ties",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "    if (/^50*$/.test(s.slice(i + 1 + d))) {",
-  "replace": "    if (Number.isInteger(x * Math.pow(10, d) * 2) && !Number.isInteger(x * Math.pow(10, d))) {",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "  if (/^50*$/.test(s.slice(i + 1 + d))) {",
+  "replace": "  if (Number.isInteger(x * Math.pow(10, d) * 2) && !Number.isInteger(x * Math.pow(10, d))) {",
   "suite": "sandbox",
   "expect": "Python's round"
  },
  {
   "name": "sandbox: helpers don't follow what they read",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "      await this._follow(id, lid);\n",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "    await this._follow(id, lid);\n",
   "replace": "",
   "suite": "sandbox",
   "expect": "a min/max follows its input"
  },
  {
   "name": "sandbox: a threshold without its hysteresis",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "      const below = (x, t) => x < t - h, above = (x, t) => x > t + h;",
-  "replace": "      const below = (x, t) => x < t, above = (x, t) => x > t;",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "    const below = (x, t) => x < t - h, above = (x, t) => x > t + h;",
+  "replace": "    const below = (x, t) => x < t, above = (x, t) => x > t;",
   "suite": "sandbox",
   "expect": "threshold: over the limit"
  },
  {
   "name": "sandbox: a group's all is any",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "      const mode = rule.all ? (f) => sts.every(f) : (f) => sts.some(f);",
-  "replace": "      const mode = (f) => sts.some(f);",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "    const mode = rule.all ? (f) => sts.every(f) : (f) => sts.some(f);",
+  "replace": "    const mode = (f) => sts.some(f);",
   "suite": "sandbox",
   "expect": "group: any or all"
  },
  {
   "name": "sandbox: a min/max takes a state that isn't a number",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "        if (!PYNUM_RE.test(String(st.state))) return;\n",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "      if (!PYNUM_RE.test(String(st.state))) return;\n",
   "replace": "",
   "suite": "sandbox",
   "expect": "isn't a number leaves what it held"
  },
  {
   "name": "sandbox: a min/max sum leaves out the unknown",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "        case 'sum': v = vals.some(([, x]) => x === 'unknown') ? null : pyRound(vals.reduce((a, [, x]) => a + x, 0), dig); break;",
-  "replace": "        case 'sum': v = !ok.length ? null : pyRound(ok.reduce((a, [, x]) => a + x, 0), dig); break;",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "      case 'sum': v = vals.some(([, x]) => x === 'unknown') ? null : pyRound(vals.reduce((a, [, x]) => a + x, 0), dig); break;",
+  "replace": "      case 'sum': v = !ok.length ? null : pyRound(ok.reduce((a, [, x]) => a + x, 0), dig); break;",
   "suite": "sandbox",
   "expect": "sum \\(unknown makes it unknown\\)"
  },
  {
   "name": "board: the sandbox doesn't ask for the rules it's missing",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "    async _followRules(nodes, states) {\n      await this._askSources(nodes);",
   "replace": "    async _followRules(nodes, states) {",
   "suite": "board-regress",
@@ -1758,7 +1758,7 @@
  },
  {
   "name": "board: saved checks replay without the helpers' rules",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/problems.js",
   "find": ", scene: (id) => this._sceneCfg(id), derived: await this._followRules(own, this._hass.states) };",
   "replace": ", scene: (id) => this._sceneCfg(id) };",
   "suite": "board-regress",
@@ -1767,7 +1767,7 @@
  },
  {
   "name": "sandbox: whole home starts only from what the function changes",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/sandbox.js",
   "find": "      ids.forEach((id, i) => { if (cfgs[i]) ['trigger', 'condition', 'action'].forEach((role) => refs(cfgs[i], id, role).forEach((x) => reached.add(x))); });",
   "replace": "      ids.forEach((id, i) => { if (cfgs[i]) refs(cfgs[i], id, 'action').forEach((x) => reached.add(x)); });",
   "suite": "board-regress",
@@ -1776,7 +1776,7 @@
  },
  {
   "name": "sandbox: whole home goes no further than one step",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/sandbox.js",
   "find": "          refs(cfgOf.get(k), k, 'action').forEach((x) => reached.add(x));\n",
   "replace": "",
   "suite": "board-regress",
@@ -1785,7 +1785,7 @@
  },
  {
   "name": "sandbox: coverage counts the automations outside",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/sandbox.js",
   "find": "      return sbxCoverage(engs, g.opts.items.filter((x) => !x.outside), (k, x) =>",
   "replace": "      return sbxCoverage(engs, g.opts.items, (k, x) =>",
   "suite": "board-regress",
@@ -1794,7 +1794,7 @@
  },
  {
   "name": "sandbox: whole home isn't kept for a saved check",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/sandbox.js",
   "find": "      g.rec = { at: now, start: this._checkStart(states), items: ids.slice(), steps: [], answers: [] };",
   "replace": "      g.rec = { at: now, start: this._checkStart(states), items: ids.filter((k) => !outside.has(k)), steps: [], answers: [] };",
   "suite": "board-regress",
@@ -1803,7 +1803,7 @@
  },
  {
   "name": "checks: an edit saves without what was typed",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/problems.js",
   "find": "    _checkEditGo() {\n      const d = this._chkEdit, m = this._$.modal;\n      if (!d) return;\n      this._checkEditRead();\n",
   "replace": "    _checkEditGo() {\n      const d = this._chkEdit, m = this._$.modal;\n      if (!d) return;\n",
   "suite": "board-regress",
@@ -1812,16 +1812,16 @@
  },
  {
   "name": "checks: an edit is saved as another check",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "      L.checks = (L.checks || []).map((x) => (x.id === d.id ? c : x));",
-  "replace": "      L.checks = (L.checks || []).concat([c]);",
+  "file": "custom_components/functions_board/frontend/ui/problems.js",
+  "find": "      this._setChecks(label, this._checksOf(label).map((x) => (x.id === d.id ? c : x)));",
+  "replace": "      this._setChecks(label, this._checksOf(label).concat([c]));",
   "suite": "board-regress",
   "expect": "editing keeps the check",
   "only": "0.11.2 saved checks: edit one"
  },
  {
   "name": "checks: Share keeps the id",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/problems.js",
   "find": "      delete out.id;\n",
   "replace": "",
   "suite": "board-regress",
@@ -1830,7 +1830,7 @@
  },
  {
   "name": "checks: Import takes any JSON",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/problems.js",
   "find": "      if (!o || typeof o !== 'object' || o.functions_board_check !== 1) { say(T('chk_import_bad')); return; }",
   "replace": "      if (!o || typeof o !== 'object') { say(T('chk_import_bad')); return; }",
   "suite": "board-regress",
@@ -1839,7 +1839,7 @@
  },
  {
   "name": "checks: a step moves the wrong way",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/problems.js",
   "find": "      const st = d.c.steps, j = i + by;",
   "replace": "      const st = d.c.steps, j = i - by;",
   "suite": "board-regress",
@@ -1848,7 +1848,7 @@
  },
  {
   "name": "checks: a run expected of anything",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/problems.js",
   "find": "      if (k !== 'state' && !/^(automation|script)\\./.test(id)) { m.querySelector('.dval').textContent = T('chk_e_need_run'); return; }\n",
   "replace": "",
   "suite": "board-regress",
@@ -1857,15 +1857,15 @@
  },
  {
   "name": "history: changes after the end are replayed",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "    ins.forEach((id) => walk(id, (x, i) => { if (i > 0 && x.t > o.from && x.t <= o.to) changes.push(Object.assign({ id }, x)); }));",
-  "replace": "    ins.forEach((id) => walk(id, (x, i) => { if (i > 0 && x.t > o.from) changes.push(Object.assign({ id }, x)); }));",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "  ins.forEach((id) => walk(id, (x, i) => { if (i > 0 && x.t > o.from && x.t <= o.to) changes.push(Object.assign({ id }, x)); }));",
+  "replace": "  ins.forEach((id) => walk(id, (x, i) => { if (i > 0 && x.t > o.from) changes.push(Object.assign({ id }, x)); }));",
   "suite": "sandbox",
   "expect": "none after the end"
  },
  {
   "name": "history: an attribute-only row is a change of an output",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
   "find": "&& x.t <= o.to && (!out.length || out[out.length - 1].s !== x.state)) out.push({ t: x.t, s: x.state }); });",
   "replace": "&& x.t <= o.to) out.push({ t: x.t, s: x.state }); });",
   "suite": "sandbox",
@@ -1873,7 +1873,7 @@
  },
  {
   "name": "history: every automation row is a run",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
   "find": "if (lt && lt !== last) { const t = Date.parse(lt);",
   "replace": "if (lt) { const t = Date.parse(lt);",
   "suite": "sandbox",
@@ -1881,15 +1881,15 @@
  },
  {
   "name": "history: the comparison ignores times",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "    const near = (a, b) => Math.abs(a - b) <= sl;",
-  "replace": "    const near = () => true;",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "  const near = (a, b) => Math.abs(a - b) <= sl;",
+  "replace": "  const near = () => true;",
   "suite": "sandbox",
   "expect": "a changed one doesn't"
  },
  {
   "name": "board: a replay starts now, not at the period's start",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/sandbox.js",
   "find": "      await this._sbxNew(g.label, { at: from, start: h.start, answers: [], items: g.opts.items.map((x) => x.id) }, g.extra);",
   "replace": "      await this._sbxNew(g.label, { at: Date.now(), start: h.start, answers: [], items: g.opts.items.map((x) => x.id) }, g.extra);",
   "suite": "board-regress",
@@ -1898,7 +1898,7 @@
  },
  {
   "name": "board: a replay doesn't ask for the automations' runs",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/sandbox.js",
   "find": "      try { const [a, b] = await Promise.all([ask(inputs.concat(autos), true), ask(outputs, false)]);",
   "replace": "      try { const [a, b] = await Promise.all([ask(inputs, true), ask(outputs, false)]);",
   "suite": "board-regress",
@@ -1907,7 +1907,7 @@
  },
  {
   "name": "integrations: no notification buttons",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/sandbox.js",
   "find": "        analyze(it.cfg, it.id.startsWith('script.'), known).refs.forEach((r) => { if (r.role === 'action' && r.ref.startsWith('nact:')",
   "replace": "        analyze(it.cfg, it.id.startsWith('script.'), known).refs.forEach((r) => { if (r.role === 'trigger' && r.ref.startsWith('nact:')",
   "suite": "board-regress",
@@ -1916,7 +1916,7 @@
  },
  {
   "name": "integrations: a button press fires the wrong event",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/sandbox.js",
   "find": "        case 'sbx-nact': { const id = q('.sbnact') && q('.sbnact').value; if (!id) return; const [type, key] = this._sbxNotifyEvent(); this._sbxStep({ op: 'event', type, data: { [key]: id } }); break; }",
   "replace": "        case 'sbx-nact': { const id = q('.sbnact') && q('.sbnact').value; if (!id) return; const [, key] = this._sbxNotifyEvent(); this._sbxStep({ op: 'event', type: 'notification_pressed', data: { [key]: id } }); break; }",
   "suite": "board-regress",
@@ -1925,23 +1925,23 @@
  },
  {
   "name": "integrations: a value_template's field isn't made JSON",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "    return m ? JSON.stringify({ [m[1] || m[2]]: p }) : p;",
-  "replace": "    return p;",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "  return m ? JSON.stringify({ [m[1] || m[2]]: p }) : p;",
+  "replace": "  return p;",
   "suite": "sandbox",
   "expect": "as the JSON its value_template reads"
  },
  {
   "name": "integrations: no Frigate events",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "    if (p[1] === 'events') {",
-  "replace": "    if (p[1] === 'events_') {",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "  if (p[1] === 'events') {",
+  "replace": "  if (p[1] === 'events_') {",
   "suite": "sandbox",
   "expect": "Frigate: its events"
  },
  {
   "name": "sandbox awaits: a run woken from its delay goes on at once",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
   "find": "const t = this._at(this.now + Math.max(0, ms), () => this._later(() => { this.busy++; this._moving(run); res(); }), run, label);",
   "replace": "const t = this._at(this.now + Math.max(0, ms), () => { this.busy++; this._moving(run); res(); }, run, label);",
   "suite": "sandbox",
@@ -1949,15 +1949,15 @@
  },
  {
   "name": "sandbox awaits: the timers due at one moment are not one round",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "      else if (this.round) this.round.push(go);\n",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "    else if (this.round) this.round.push(go);\n",
   "replace": "",
   "suite": "sandbox",
   "expect": "a for: due at the moment another run's delay ends"
  },
  {
   "name": "sandbox awaits: a run that published goes on at once",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
   "find": "data.payload != null ? data.payload : data.payload_template, cid); await this._yield(run); return; }",
   "replace": "data.payload != null ? data.payload : data.payload_template, cid); return; }",
   "suite": "sandbox",
@@ -1965,7 +1965,7 @@
  },
  {
   "name": "sandbox awaits: a restarted run starts at once",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
   "find": "if (restarting && (this.dispatching || this.round)) {",
   "replace": "if (false) {",
   "suite": "sandbox",
@@ -2005,7 +2005,7 @@
  },
  {
   "name": "wiring: a publish goes to an mqtt.publish action box, not its topic's",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/wiring.js",
   "find": "if (svc === 'mqtt.publish' && typeof data.topic === 'string' && data.topic && !TPL_RE.test(data.topic)) {",
   "replace": "if (false) {",
   "suite": "wiring",
@@ -2013,7 +2013,7 @@
  },
  {
   "name": "board: the board doesn't ask what an MQTT entity follows unless it's a member",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "['template', 'mqtt'].includes((this._entMap.get(k) || {}).platform)",
   "replace": "['template'].includes((this._entMap.get(k) || {}).platform)",
   "suite": "board-regress",
@@ -2022,7 +2022,7 @@
  },
  {
   "name": "board: no arrow from a topic's box into the MQTT entity that follows it",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "toList(s.topics).forEach((tp) => { if (nodes.has('mqtt:' + tp)) this._link(",
   "replace": "toList(s.topics).forEach((tp) => { if (false) this._link(",
   "suite": "board-regress",
@@ -2031,7 +2031,7 @@
  },
  {
   "name": "static: a fourth mention of mqtt.publish in the board goes unreviewed",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/wiring.js",
   "find": "if (svc === 'mqtt.publish' && typeof data.topic === 'string' && data.topic && !TPL_RE.test(data.topic)) {",
   "replace": "if (svc === 'mqtt.publish' && typeof data.topic === 'string' && data.topic && !TPL_RE.test(data.topic) && 'mqtt.publish') {",
   "suite": "static",
@@ -2039,7 +2039,7 @@
  },
  {
   "name": "sandbox: an MQTT entity on the board isn't given its topics",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
   "find": "if (d && d.rule && d.rule.kind === 'mqtt') { this.mq.set(id, { rule: d.rule, mem: null }); return; }",
   "replace": "if (d && d.rule && d.rule.kind === 'mqtt') { return; }",
   "suite": "e2e-sandbox",
@@ -2047,7 +2047,7 @@
  },
  {
   "name": "versions: active only by an exact match",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/versions.js",
   "find": "(from.print === print || made.print === print)",
   "replace": "from.print === print",
   "suite": "board-regress",
@@ -2056,7 +2056,7 @@
  },
  {
   "name": "versions: making one active isn't noted",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/versions.js",
   "find": "try { await this._ws({ type: 'functions_board/version_active', label, version_id: v.id,",
   "replace": "try { if (0) await this._ws({ type: 'functions_board/version_active', label, version_id: v.id,",
   "suite": "board-regress",
@@ -2065,7 +2065,7 @@
  },
  {
   "name": "versions: unsaved changes not saved first by default",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/versions.js",
   "find": "<input type=\"checkbox\" name=\"vbackup\" checked>",
   "replace": "<input type=\"checkbox\" name=\"vbackup\">",
   "suite": "board-regress",
@@ -2090,7 +2090,7 @@
  },
  {
   "name": "versions: the active one not pinned at the top",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/versions.js",
   "find": "        ? row(active, true, saveOver + copy)",
   "replace": "        ? ''",
   "suite": "board-regress",
@@ -2099,7 +2099,7 @@
  },
  {
   "name": "builder: every run's buttons have the same ids",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/builders.js",
   "find": "const seq = asks ? [{ variables: { fb_id: \"{{ 'fb_' ~ context.id }}\" } }] : [];",
   "replace": "const seq = asks ? [{ variables: { fb_id: 'fb' } }] : [];",
   "suite": "builder",
@@ -2107,7 +2107,7 @@
  },
  {
   "name": "builder: only when away sends anyway",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/builders.js",
   "find": "phones.filter((x) => !x.who || !x.who.away).forEach",
   "replace": "phones.forEach",
   "suite": "builder",
@@ -2115,7 +2115,7 @@
  },
  {
   "name": "builder: critical held back in quiet hours",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/builders.js",
   "find": "const quietly = !!s.quiet && !crit,",
   "replace": "const quietly = !!s.quiet,",
   "suite": "builder",
@@ -2123,7 +2123,7 @@
  },
  {
   "name": "builder: no clearing after an answer",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/builders.js",
   "find": "if (s.clear) phones.forEach((x) => seq.push({ action: 'notify.' + x.p.svc, data: { message: 'clear_notification', data: { tag } } }));",
   "replace": "",
   "suite": "builder",
@@ -2131,7 +2131,7 @@
  },
  {
   "name": "builder: a hand edit taken for the builder's",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/builders.js",
   "find": "return !!cfg && canonJSON(strip(cfg)) === canonJSON(strip(notifyScript(spec, {})));",
   "replace": "return !!cfg;",
   "suite": "builder",
@@ -2139,7 +2139,7 @@
  },
  {
   "name": "builder: a kept spec not cleaned",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/clean.js",
   "find": "out.builders[k] = { kind: 'notify', spec: cleanNotify(b.spec) };",
   "replace": "out.builders[k] = { kind: 'notify', spec: b.spec };",
   "suite": "builder",
@@ -2147,7 +2147,7 @@
  },
  {
   "name": "sandbox: a wait's event data not rendered",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
   "find": "ts.push(this._plat(t) === 'event' && /\\{[{%]/.test(",
   "replace": "ts.push(false && /\\{[{%]/.test(",
   "suite": "builder",
@@ -2155,15 +2155,15 @@
  },
  {
   "name": "sandbox: runs have no context",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "          if (cfg.variables) Object.assign(run.vars, await this._render(cfg.variables, run));\n          run.vars.context = this._ctx();\n",
-  "replace": "          if (cfg.variables) Object.assign(run.vars, await this._render(cfg.variables, run));\n",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "        if (cfg.variables) Object.assign(run.vars, await this._render(cfg.variables, run));\n        run.vars.context = this._ctx();\n",
+  "replace": "        if (cfg.variables) Object.assign(run.vars, await this._render(cfg.variables, run));\n",
   "suite": "builder",
   "expect": "the run's own ids, rendered"
  },
  {
   "name": "builder: Edit on its box opens Home Assistant's editor",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "if (!ha && n.domain === 'script' && this._bldHas(n.key)) { this._bldEdit(n); return; }",
   "replace": "",
   "suite": "board-regress",
@@ -2172,7 +2172,7 @@
  },
  {
   "name": "builder: Save in Organise only mode",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/builders.js",
   "find": "${full ? '' : ` disabled title=\"${esc(T('full_manager_only_switch_it'))}\"`}>${T('save')}</button></div></div>`;",
   "replace": ">${T('save')}</button></div></div>`;",
   "suite": "board-regress",
@@ -2181,7 +2181,7 @@
  },
  {
   "name": "builder: a new script not put in the function",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/builders.js",
   "find": "      if (!b.oid) labelled = await this._bldLabel(key, label);\n",
   "replace": "",
   "suite": "board-regress",
@@ -2190,7 +2190,7 @@
  },
  {
   "name": "builder: Undo doesn't put the script back",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/builders.js",
   "find": "        undo: () => (before ? put(before, had) : gone()),",
   "replace": "        undo: () => null,",
   "suite": "board-regress",
@@ -2215,24 +2215,24 @@
  },
  {
   "name": "sandbox: a script's own variables see the run's context",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "        } else {\n          if (cfg.variables) Object.assign(run.vars, await this._render(cfg.variables, run));\n          run.vars.context",
-  "replace": "        } else {\n          run.vars.context = this._ctx();\n          if (cfg.variables) Object.assign(run.vars, await this._render(cfg.variables, run));\n          run.vars.context",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "      } else {\n        if (cfg.variables) Object.assign(run.vars, await this._render(cfg.variables, run));\n        run.vars.context",
+  "replace": "      } else {\n        run.vars.context = this._ctx();\n        if (cfg.variables) Object.assign(run.vars, await this._render(cfg.variables, run));\n        run.vars.context",
   "suite": "builder",
   "expect": "own variables don't see"
  },
  {
   "name": "versions: no Save on the active version's row",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/versions.js",
   "find": "        ? row(active, true, saveOver + copy)",
   "replace": "        ? row(active, true, copy)",
   "suite": "board-regress",
   "only": "0.11.3 versions",
-  "expect": "only the layout changed"
+  "expect": "with Save and Save as copy on it"
  },
  {
   "name": "toolbar: no Recipes menu",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "        <button data-act=\"recipes\" title=\"${T('rcp_t')}\"",
   "replace": "        <button hidden data-act=\"recipes\" title=\"${T('rcp_t')}\"",
   "suite": "board-regress",
@@ -2241,7 +2241,7 @@
  },
  {
   "name": "versions: no Save when no version is noted as made",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/versions.js",
   "find": "const base = active || from || cands[0] || vs[vs.length - 1] || null;",
   "replace": "const base = active || from || cands[0] || null;",
   "suite": "board-regress",
@@ -2250,7 +2250,7 @@
  },
  {
   "name": "versions: the open drawer doesn't follow a change",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/versions.js",
   "find": "    _verRefresh() { if (this._drawer && this._drawer.mode === 'versions') this._renderVersions(); }",
   "replace": "    _verRefresh() { }",
   "suite": "board-regress",
@@ -2259,7 +2259,7 @@
  },
  {
   "name": "versions: the layout isn't compared",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/versions.js",
   "find": "if (verLayoutKey((await this._verSnapOf(label, v)).layout, keys) === mine) { active = v; break; }",
   "replace": "active = v; break;",
   "suite": "board-regress",
@@ -2268,7 +2268,7 @@
  },
  {
   "name": "versions: a position left over from a box that's gone counts",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/constants.js",
   "find": "c.nodes = Object.fromEntries(Object.entries(c.nodes || {}).filter(([k]) => keys.has(k) || k.startsWith('tool:')));",
   "replace": "",
   "suite": "board-regress",
@@ -2277,7 +2277,7 @@
  },
  {
   "name": "versions: deleting one offers to delete what a function still has",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/versions.js",
   "find": "&& (this._hass.states[k] || this._entMap.has(k)) && !inFn(k));",
   "replace": "&& (this._hass.states[k] || this._entMap.has(k)));",
   "suite": "board-regress",
@@ -2286,7 +2286,7 @@
  },
  {
   "name": "versions: what only a version has is deleted without a tick",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/versions.js",
   "find": "also = (this._verDelPlan || []).filter((p, i) => picks.has(i));",
   "replace": "also = (this._verDelPlan || []);",
   "suite": "board-regress",
@@ -2295,47 +2295,47 @@
  },
  {
   "name": "sandbox: an MQTT device trigger isn't the MQTT trigger it stands for",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "        if (!this.devT.has(t)) this.devT.set(t, sbxDevTrig(t, this.o.entityOf) || sbxDevMqtt(t, this.o.devMqtt) || sbxDevZwave(t) || t);",
-  "replace": "        if (!this.devT.has(t)) this.devT.set(t, sbxDevTrig(t, this.o.entityOf) || sbxDevZwave(t) || t);",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "      if (!this.devT.has(t)) this.devT.set(t, sbxDevTrig(t, this.o.entityOf) || sbxDevMqtt(t, this.o.devMqtt) || sbxDevZwave(t) || t);",
+  "replace": "      if (!this.devT.has(t)) this.devT.set(t, sbxDevTrig(t, this.o.entityOf) || sbxDevZwave(t) || t);",
   "suite": "sandbox",
   "expect": "a message with its payload on its topic starts it"
  },
  {
   "name": "sandbox: a device trigger's choice is ignored when pressed",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "    return Object.keys(t).filter((k) => !SBX_DEV_SKIP.has(k)).every((k) => k in pick && same(t[k], pick[k]));",
-  "replace": "    return Object.keys(t).filter((k) => !SBX_DEV_SKIP.has(k) && k !== 'value').every((k) => k in pick && same(t[k], pick[k]));",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "  return Object.keys(t).filter((k) => !SBX_DEV_SKIP.has(k)).every((k) => k in pick && same(t[k], pick[k]));",
+  "replace": "  return Object.keys(t).filter((k) => !SBX_DEV_SKIP.has(k) && k !== 'value').every((k) => k in pick && same(t[k], pick[k]));",
   "suite": "sandbox",
   "expect": "the button held"
  },
  {
   "name": "sandbox: an MQTT press sends its payload bare whatever the template reads",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "    const out = keys.reduceRight((v, k) => ({ [k]: v }), p);\n    return { payload: JSON.stringify(out), exact: true };",
-  "replace": "    return { payload: p, exact: true };",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "  const out = keys.reduceRight((v, k) => ({ [k]: v }), p);\n  return { payload: JSON.stringify(out), exact: true };",
+  "replace": "  return { payload: p, exact: true };",
   "suite": "sandbox",
   "expect": "value_json\\.action"
  },
  {
   "name": "sandbox: an MQTT press found by device, type and subtype only, never by discovery id",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "    return (t.discovery_id != null && list.find((x) => x.discovery_id === t.discovery_id)) || list.find(",
-  "replace": "    return (t.discovery_id != null && list.find((x) => x.discovery_id === t.discovery_id + 'x')) || list.find(",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "  return (t.discovery_id != null && list.find((x) => x.discovery_id === t.discovery_id)) || list.find(",
+  "replace": "  return (t.discovery_id != null && list.find((x) => x.discovery_id === t.discovery_id + 'x')) || list.find(",
   "suite": "sandbox",
   "expect": "found by its discovery id"
  },
  {
   "name": "sandbox: a press doesn't name the choice it was set to",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "        const what = [t.type, t.subtype].filter((x) => x != null && x !== '').map((x, i) => (i === 0 ? String(x).split('.').pop() : String(x)).replace(/_/g, ' ')).concat(more ? [more] : []).join(' · ');",
-  "replace": "        const what = [t.type, t.subtype].filter((x) => x != null && x !== '').map((x, i) => (i === 0 ? String(x).split('.').pop() : String(x)).replace(/_/g, ' ')).join(' · ');",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "      const what = [t.type, t.subtype].filter((x) => x != null && x !== '').map((x, i) => (i === 0 ? String(x).split('.').pop() : String(x)).replace(/_/g, ' ')).concat(more ? [more] : []).join(' · ');",
+  "replace": "      const what = [t.type, t.subtype].filter((x) => x != null && x !== '').map((x, i) => (i === 0 ? String(x).split('.').pop() : String(x)).replace(/_/g, ' ')).join(' · ');",
   "suite": "sandbox",
   "expect": "named by its device, its kind, the button and the choice"
  },
  {
   "name": "board: the Press row offers only the triggers the automations use",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/sandbox.js",
   "find": "      g.devPress = dt.press;",
   "replace": "      g.devPress = [];",
   "suite": "e2e-sandbox",
@@ -2344,7 +2344,7 @@
  },
  {
   "name": "board: the choice picked on the Press row isn't pressed",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/sandbox.js",
   "find": "          if (fs.length) { const o = JSON.parse(key); fs.forEach((f) => { o[f.dataset.f] = sbxNum(f.value); }); key = sbxPressKey(o); }",
   "replace": "          if (fs.length) { const o = JSON.parse(key); key = sbxPressKey(o); }",
   "suite": "e2e-sandbox",
@@ -2353,7 +2353,7 @@
  },
  {
   "name": "board: an MQTT device's triggers' topics aren't read",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/sandbox.js",
   "find": "      if (own.some((t) => t.domain === 'mqtt')) {",
   "replace": "      if (own.some((t) => t.domain === 'mqtt-x')) {",
   "suite": "e2e-sandbox",
@@ -2370,7 +2370,7 @@
  },
  {
   "name": "board: the Press row offers only the triggers the automations use (on the fake)",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/sandbox.js",
   "find": "      g.devPress = dt.press;",
   "replace": "      g.devPress = [];",
   "suite": "board-regress",
@@ -2379,15 +2379,15 @@
  },
  {
   "name": "sandbox: Z-Wave from and to don't read hex digits as Home Assistant does",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "    if (/^(0x)?[0-9a-f]+$/.test(w)) return parseInt(w.replace(/^0x/, ''), 16);\n",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "  if (/^(0x)?[0-9a-f]+$/.test(w)) return parseInt(w.replace(/^0x/, ''), 16);\n",
   "replace": "",
   "suite": "sandbox",
   "expect": "to as hex digits"
  },
  {
   "name": "sandbox: a Z-Wave true isn't 1",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
   "find": "const n = (x) => (typeof x === 'boolean' ? +x : x); const x = n(a), y = n(b);",
   "replace": "const n = (x) => x; const x = n(a), y = n(b);",
   "suite": "sandbox",
@@ -2395,32 +2395,32 @@
  },
  {
   "name": "sandbox: the entities that show a Z-Wave value don't follow it",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "        else await this.setState(eid, st, null, lid);",
-  "replace": "        else if (false) await this.setState(eid, st, null, lid);",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "      else await this.setState(eid, st, null, lid);",
+  "replace": "      else if (false) await this.setState(eid, st, null, lid);",
   "suite": "sandbox",
   "expect": "the lock entity follows"
  },
  {
   "name": "sandbox: a scene button's event entity doesn't show the key",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "        if (eid.startsWith('event.') && cur && raw != null)",
-  "replace": "        if (false && eid.startsWith('event.') && cur && raw != null)",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "      if (eid.startsWith('event.') && cur && raw != null)",
+  "replace": "      if (false && eid.startsWith('event.') && cur && raw != null)",
   "suite": "sandbox",
   "expect": "its event entity shows the key"
  },
  {
   "name": "sandbox: a Z-Wave press isn't the event Home Assistant fires",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "      if (dev && pick.domain === 'zwave_js' && /^event\\./.test(String(pick.type))) return this._pressZwave(pick);\n",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "    if (dev && pick.domain === 'zwave_js' && /^event\\./.test(String(pick.type))) return this._pressZwave(pick);\n",
   "replace": "",
   "suite": "sandbox",
   "expect": "that trigger's event is fired"
  },
  {
   "name": "sandbox: a Z-Wave value-updated trigger hears every value of its device",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "        if (sbxZwId(z.node, sbxZwInt(t.command_class), sbxZwInt(t.endpoint), sbxZwInt(t.property), sbxZwInt(t.property_key)) !== v.id) return null;\n",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "      if (sbxZwId(z.node, sbxZwInt(t.command_class), sbxZwInt(t.endpoint), sbxZwInt(t.property), sbxZwInt(t.property_key)) !== v.id) return null;\n",
   "replace": "",
   "suite": "sandbox",
   "expect": "a trigger on the lock's mode \\(any change\\)"
@@ -2443,7 +2443,7 @@
  },
  {
   "name": "board: no Z-Wave row",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/sandbox.js",
   "find": "      if (zwl.length) {",
   "replace": "      if (false) {",
   "suite": "board-regress",
@@ -2452,9 +2452,9 @@
  },
  {
   "name": "sandbox: a Z-Wave value updated gives endpoint 0 when the trigger names none",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "          endpoint: t.endpoint == null ? null : sbxZwInt(t.endpoint),",
-  "replace": "          endpoint: t.endpoint == null ? 0 : sbxZwInt(t.endpoint),",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "        endpoint: t.endpoint == null ? null : sbxZwInt(t.endpoint),",
+  "replace": "        endpoint: t.endpoint == null ? 0 : sbxZwInt(t.endpoint),",
   "suite": "e2e-sandbox",
   "only": "0.13.0",
   "expect": "a value updated: the sandbox's trigger variables are Home Assistant's"
@@ -2469,7 +2469,7 @@
  },
  {
   "name": "board: a touch hold lifts after a second again",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/lib/constants.js",
   "find": "const HOLD_MS = 500;",
   "replace": "const HOLD_MS = 1000;",
   "suite": "board-regress",
@@ -2478,7 +2478,7 @@
  },
  {
   "name": "board: the phone's long-press doesn't lift the box",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "{ e.preventDefault(); this._lift(this._drag); }",
   "replace": "{ e.preventDefault(); }",
   "suite": "board-regress",
@@ -2487,7 +2487,7 @@
  },
  {
   "name": "board: no buzz when a box lifts",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "    window.dispatchEvent(new CustomEvent('haptic', { detail: 'medium', bubbles: true, composed: true }));\n",
   "replace": "",
   "suite": "board-regress",
@@ -2504,7 +2504,7 @@
  },
  {
   "name": "board: a folded sandbox section isn't kept",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/board-core.js",
   "find": "            if (shut.size) this._data.ui.sbxShut = [...shut]; else delete this._data.ui.sbxShut;\n",
   "replace": "",
   "suite": "board-regress",
@@ -2513,11 +2513,162 @@
  },
  {
   "name": "board: the sandbox's section headers are disabled while a run is busy",
-  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "file": "custom_components/functions_board/frontend/ui/sandbox.js",
   "find": "d.querySelectorAll('.sbctl button:not([data-act=\"sbx-sec\"])')",
   "replace": "d.querySelectorAll('.sbctl button')",
   "suite": "board-regress",
   "only": "0.13.1",
   "expect": "the headers still work while a run is busy"
+ },
+ {
+  "name": "sandbox: _chkStepText uses clockShort on advance durations again",
+  "file": "custom_components/functions_board/frontend/ui/problems.js",
+  "find": "if (s.op === 'advance') return T('chk_s_advance', { dur: esc(fmtDurLong(s.ms)) });",
+  "replace": "if (s.op === 'advance') return T('chk_s_advance', { dur: esc(clockShort(s.ms)) });",
+  "suite": "board-regress",
+  "only": "0.13.2",
+  "expect": "durations render as M:SS"
+ },
+ {
+  "name": "sandbox: sbxRewrite rewrites plain text outside Jinja blocks",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "res += raw.slice(pos, next);",
+  "replace": "res += rewriteCode(raw.slice(pos, next));",
+  "suite": "sandbox",
+  "expect": "sbxRewrite leaves plain text and Jinja comments untouched"
+ },
+ {
+  "name": "board: _watchDrawer reuses _drawerBack for focus restoration",
+  "file": "custom_components/functions_board/frontend/ui/tools.js",
+  "find": "this._drawerFocusBack = a && !d.contains(a) ? a : null;",
+  "replace": "this._drawerBack = a && !d.contains(a) ? a : null;",
+  "suite": "board-regress",
+  "only": "0.13.2",
+  "expect": "Trace opened from Debug sets _drawerBack"
+ },
+ {
+  "name": "sandbox: MQTT cover position drops JSON zero again",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "if (pos === '' || pos == null || n == null) continue;",
+  "replace": "if (!pos || n == null) continue;",
+  "suite": "sandbox",
+  "expect": "MQTT cover position handles JSON 0"
+ },
+ {
+  "name": "problems: missing targetless service box is not marked",
+  "file": "custom_components/functions_board/frontend/lib/wiring.js",
+  "find": "if (pr.kind === 's_missing' && nodes.has('svc:' + pr.ref)) mark('svc:' + pr.ref, pr.sev);",
+  "replace": "",
+  "suite": "problems",
+  "expect": "markProblems marks missing targetless service box"
+ },
+ {
+  "name": "wiring: analyze walks into target.exclude again",
+  "file": "custom_components/functions_board/frontend/lib/wiring.js",
+  "find": "if (k === 'exclude') continue;",
+  "replace": "",
+  "suite": "wiring",
+  "expect": "analyze skips target.exclude"
+ },
+ {
+  "name": "sandbox: target.exclude ignored in action targets",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "this._excludeSet(t.exclude).forEach((e) => out.delete(e));",
+  "replace": "",
+  "suite": "sandbox",
+  "expect": "Sandbox respects target.exclude"
+ },
+ {
+  "name": "sandbox: script.toggle starts instead of cancelling an active script",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "if (s === 'toggle' && this._active(id).length > 0) { this._active(id).forEach((r) => this._cancel(r)); continue; }",
+  "replace": "",
+  "suite": "sandbox",
+  "expect": "script.toggle starts when idle and cancels when running"
+ },
+ {
+  "name": "sandbox: _sbxOn ignores whether eng is initialized",
+  "file": "custom_components/functions_board/frontend/ui/sandbox.js",
+  "find": "_sbxOn() { return !!(this._sbx && this._sbx.eng && this._drawer && this._drawer.mode === 'sandbox'); }",
+  "replace": "_sbxOn() { return !!(this._sbx && this._drawer && this._drawer.mode === 'sandbox'); }",
+  "suite": "board-regress",
+  "only": "0.13.2",
+  "expect": "_sbxOn is false until sandbox engine is initialized"
+ },
+ {
+  "name": "zwave: multi-endpoint child devices ignored again",
+  "file": "custom_components/functions_board/zwave.py",
+  "find": "if endpoint is not None and (v.endpoint or 0) != endpoint:",
+  "replace": "if False:",
+  "suite": "backend",
+  "expect": "test_zwave_values_multi_endpoint_child"
+ },
+ {
+  "name": "versions: deleting last version leaves empty label key",
+  "file": "custom_components/functions_board/versions.py",
+  "find": "            if keep:\n                self.by_label[label] = keep\n            else:\n                del self.by_label[label]",
+  "replace": "            self.by_label[label] = keep",
+  "suite": "backend",
+  "expect": "test_versions_remove_last_cleans_label_key"
+ },
+ {
+  "name": "versions: restore sends WS commands for non-allowlisted domains",
+  "file": "custom_components/functions_board/frontend/ui/versions.js",
+  "find": "          else if (VER_HELPERS.has(it.dom)) {\n            if (exists(k)) await this._ws(Object.assign({}, cfg, { type: it.dom + '/update', [it.dom + '_id']: it.id }));",
+  "replace": "          else if (true) {\n            if (exists(k)) await this._ws(Object.assign({}, cfg, { type: it.dom + '/update', [it.dom + '_id']: it.id }));",
+  "suite": "board-regress",
+  "only": "0.13.2",
+  "expect": "version restore domain allowlist blocks"
+ },
+ {
+  "name": "versions: backend accepts non-allowlisted domain in snapshot",
+  "file": "custom_components/functions_board/versions.py",
+  "find": "        if snapshot_problem(snapshot):\n            return None, \"invalid_format\"\n        size = len(json_bytes(snapshot))\n        if size > MAX_VERSION_BYTES:\n            return None, \"too_large\"\n        vs = list",
+  "replace": "        size = len(json_bytes(snapshot))\n        if size > MAX_VERSION_BYTES:\n            return None, \"too_large\"\n        vs = list",
+  "suite": "backend",
+  "expect": "test_versions_domain_allowlist"
+ },
+ {
+  "name": "diagnostics: known-name regex is case-sensitive again",
+  "file": "custom_components/functions_board/diagnostics.py",
+  "find": "r\")(?![\\w])\", re.IGNORECASE)",
+  "replace": "r\")(?![\\w])\")",
+  "suite": "backend",
+  "expect": "test_anonymiser_case_insensitive_and_structural_label_safe"
+ },
+ {
+  "name": "checks: frontend puts saved checks back inside layout payloads",
+  "file": "custom_components/functions_board/frontend/board-core.js",
+  "find": "this._sepChecks = !!(chRes && chRes.checks && typeof chRes.checks === 'object');",
+  "replace": "this._sepChecks = false;",
+  "suite": "board-regress",
+  "only": "0.13.2",
+  "expect": "saved checks are stored via functions_board/set_checks"
+ },
+ {
+  "name": "card-loader: drops admin check before importing full board",
+  "file": "custom_components/functions_board/frontend/card-loader.js",
+  "find": "if (!h.user.is_admin) {",
+  "replace": "if (false) {",
+  "suite": "static",
+  "expect": "card-loader.js is tiny"
+ },
+ {
+  "name": "card-loader: sets host style attribute inside custom element constructor",
+  "file": "custom_components/functions_board/frontend/card-loader.js",
+  "find": "    constructor() {\n      super();\n      this.attachShadow({ mode: 'open' });\n      this._p = {};\n    }",
+  "replace": "    constructor() {\n      super();\n      this.attachShadow({ mode: 'open' });\n      this._p = {};\n      this.style.display = 'block';\n    }",
+  "suite": "board-smoke",
+  "only": "card-loader mounts the panel",
+  "expect": "card-loader \\(lazy\\)"
+ },
+ {
+  "name": "versions: per-item leave option turns automation off instead of removing from function",
+  "file": "custom_components/functions_board/frontend/ui/versions.js",
+  "find": "          if (dom === 'automation') {\n            if (act === 'leave') {\n              await this._label(k, label, false, false);",
+  "replace": "          if (dom === 'automation') {\n            if (false && act === 'leave') {\n              await this._label(k, label, false, false);",
+  "suite": "board-regress",
+  "only": "0.13.2",
+  "expect": "0.14.0 version restore applies per-item choices"
  }
 ]

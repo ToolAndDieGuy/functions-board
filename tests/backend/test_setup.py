@@ -42,8 +42,9 @@ async def test_panel_registered_with_hashed_url_and_removed_on_unload(hass: Home
     panel = panels["functions"]
     assert panel.require_admin is True
     url = panel.config["_panel_custom"]["module_url"]
-    assert url.startswith("/functions_board_static/functions-board.js?v=")
-    assert len(url.rsplit("=", 1)[1]) == 8
+    assert url.startswith("/functions_board_static_v/") and url.endswith("/functions-board.js")
+    digest = url.split("/")[2]
+    assert len(digest) == 8 and all(c in "0123456789abcdef" for c in digest)
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
     assert entry.state is ConfigEntryState.NOT_LOADED
@@ -63,7 +64,8 @@ async def test_options_set_mode_and_card_in_place(hass: HomeAssistant) -> None:
     assert result["type"] is FlowResultType.CREATE_ENTRY
     await hass.async_block_till_done()
     assert board.mode == "full"
-    assert board.extra_js == board.module_url
+    assert board.extra_js == board.card_loader_url
+    assert board.card_loader_url is not None and board.card_loader_url.startswith("/functions_board_static_v/") and board.card_loader_url.endswith("/card-loader.js")
     assert entry.state is ConfigEntryState.LOADED
     result = await hass.config_entries.options.async_init(entry.entry_id)
     await hass.config_entries.options.async_configure(result["flow_id"], {"mode": "organise", "card": False})
@@ -82,3 +84,13 @@ async def test_static_file_served(hass: HomeAssistant, hass_client) -> None:
     assert "javascript" in resp.headers["Content-Type"]
     assert "max-age" in resp.headers.get("Cache-Control", "")
     assert "customElements.define" in await resp.text()
+    compat_resp = await client.get("/functions_board_static/functions-board.js")
+    assert compat_resp.status == 200
+    assert "javascript" in compat_resp.headers["Content-Type"]
+    from custom_components.functions_board import DATA_KEY  # noqa: PLC0415
+
+    loader_resp = await client.get(hass.data[DATA_KEY].card_loader_url)
+    assert loader_resp.status == 200
+    assert "javascript" in loader_resp.headers["Content-Type"]
+    loader_text = await loader_resp.text()
+    assert len(loader_text.encode("utf-8")) < 4096 and "is_admin" in loader_text

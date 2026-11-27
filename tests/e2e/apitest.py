@@ -131,7 +131,7 @@ async def main():
             cc = cfg.get("_panel_custom") or {}
             check("panel title/icon", fp.get("title") == "Functions" and fp.get("icon") == "mdi:sitemap-outline", fp)
             check("panel require_admin", fp.get("require_admin") is True, fp)
-            check("panel module_url versioned", str(cc.get("module_url", "")).startswith("/functions_board_static/functions-board.js?v="), cc)
+            check("panel module_url versioned", str(cc.get("module_url", "")).startswith("/functions_board_static_v/") and str(cc.get("module_url", "")).endswith("/functions-board.js"), cc)
             check("panel element name", cc.get("name") == "functions-board", cc)
             murl = cc.get("module_url", "")
             async with s.get(BASE + murl) as r:
@@ -140,7 +140,7 @@ async def main():
                 check("static js content-type", "javascript" in r.headers.get("Content-Type", ""), r.headers.get("Content-Type"))
                 check("static js may be cached (its address changes with its content)", "max-age" in r.headers.get("Cache-Control", ""), r.headers.get("Cache-Control"))
             import re as _re
-            check("module url carries the file's hash (5.3)", _re.fullmatch(r"/functions_board_static/functions-board\.js\?v=[0-9a-f]{8}", murl or "") is not None, murl)
+            check("module url carries the file's hash (5.3)", _re.fullmatch(r"/functions_board_static_v/[0-9a-f]{8}/functions-board\.js", murl or "") is not None, murl)
 
         # ---- options: Full manager and the dashboard card (8.4, 5.3) ----
         if entry_id:
@@ -156,7 +156,8 @@ async def main():
             check("panel untouched by an options change (open boards keep their state)", (p2.get("config", {}).get("_panel_custom") or {}).get("module_url") == murl, p2.get("config"))
             async with s.get(BASE + "/") as r:
                 html = await r.text()
-            check("card option loads the board on dashboards", (p2.get("config", {}).get("_panel_custom") or {}).get("module_url", "#") in html, html[-400:])
+            loader_url = murl.replace("/functions-board.js", "/card-loader.js") if murl else "#"
+            check("card option loads the board on dashboards", loader_url in html, html[-400:])
             async with s.get(BASE + f"/api/diagnostics/config_entry/{entry_id}", headers=H) as r:
                 diag = await r.json() if r.status == 200 else {}
             dd = diag.get("data") or {}
@@ -169,7 +170,7 @@ async def main():
             await asyncio.sleep(2)
             async with s.get(BASE + "/") as r:
                 html = await r.text()
-            check("card option off removes it again", "functions-board.js" not in html, "")
+            check("card option off removes it again", "card-loader.js" not in html and "functions-board.js" not in html, "")
 
         # ---- storage round trip; changes reach subscribers, not the event bus (1.3) ----
         bus = await ws.call(type="subscribe_events", event_type="functions_board_updated")

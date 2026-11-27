@@ -72,8 +72,9 @@ function one(r, n) {
   const autos = {};
   const count = r.int(1, 3);
   for (let i = 0; i < count; i++) {
-    // the helpers this one may change: from a random place in the order on
-    const from = r.int(0, HELP.length - 1), mine = HELP.slice(from);
+    // each automation changes only its own helper in x, y, z (and may trigger on helpers before it), so chains work
+    // without two concurrent runs racing to write conflicting states to the same input_boolean
+    const mine = [HELP[i]];
     const a = { triggers: [trigger(r, mine)] };
     if (r.maybe(0.3)) a.triggers.push(trigger(r, mine));
     // a trigger on a helper this one changes would make a loop: drop it

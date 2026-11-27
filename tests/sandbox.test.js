@@ -359,7 +359,8 @@ const st = (sb, id) => (sb.get(id) || {}).state;
 
   // ---- effects and durations
   check('durations: seconds, HH:MM:SS, HH:MM, objects', durMs(90) === 90000 && durMs('00:10:00') === 600000 && durMs('1:30') === 5400000 && durMs({ minutes: 2, seconds: 5 }) === 125000);
-  check('effects: number clamps to its range, select cycles, lock, cover position', sbxEffect('input_number', 'set_value', S('5', { min: 0, max: 10 }), { value: 40 })[0] === '10'
+  check('effects: number clamps to its range, select cycles, lock, cover position', sbxEffect('input_number', 'set_value', S('5.0', { min: 0, max: 10 }), { value: 40 })[0] === '10.0'
+    && sbxEffect('input_number', 'increment', S('5.0', { min: 0, max: 10, step: 1 }), {})[0] === '6.0'
     && sbxEffect('input_select', 'select_next', S('c', { options: ['a', 'b', 'c'] }), {})[0] === 'a' && sbxEffect('lock', 'unlock', S('locked'), {})[0] === 'unlocked'
     && sbxEffect('cover', 'set_cover_position', S('open'), { position: 0 })[0] === 'closed');
   check('effects: what it doesn\'t know is null', sbxEffect('notify', 'send', null, {}) === null && sbxEffect('script', 'reload', null, {}) === null);
@@ -483,6 +484,17 @@ const st = (sb, id) => (sb.get(id) || {}).state;
     check('0.13.0 a Z-Wave scene button is named by its device, its kind, the button and the choice set', ins.presses.some((x) => /^device:kp: central scene · Endpoint 0 Scene 001 · KeyPressed$/.test(x.label)), ins.presses);
     await sb.userPress(lib.sbxPressKey(Object.assign({}, listed, { value: 2 })));
     check('0.13.0 the button held: the trigger with no key set starts, the one set to pressed and the other button\'s don\'t', st(sb, 'light.b') === 'on' && st(sb, 'light.a') === 'off' && st(sb, 'light.c') === 'off');
+    // generic (non-Z-Wave/non-MQTT) device trigger with a value choice goes through sbxPressHits()
+    const gen = (btn, value) => Object.assign({ trigger: 'device', device_id: 'btn1', domain: 'hue', type: 'remote_button', subtype: btn }, value === undefined ? {} : { value });
+    const gsb = make({ 'light.g1': S('off'), 'light.g2': S('off') }, {
+      'automation.g_pressed': { triggers: [gen('top', 0)], actions: on('light.g1') },
+      'automation.g_any': { triggers: [gen('top')], actions: on('light.g2') },
+    });
+    await gsb.start();
+    await gsb.userPress(lib.sbxPressKey(gen('top', 2)));
+    check('0.13.2 the button held (generic device trigger choice via sbxPressHits)', st(gsb, 'light.g2') === 'on' && st(gsb, 'light.g1') === 'off');
+    await gsb.userPress(lib.sbxPressKey(gen('top', 0)));
+    check('0.13.2 generic device trigger matching choice starts both', st(gsb, 'light.g1') === 'on' && st(gsb, 'light.g2') === 'on');
     await sb.userSet('light.b', 'off');
     await sb.userPress(lib.sbxPressKey(Object.assign({}, listed, { value: 0 })));
     check('0.13.0 the button pressed: both its triggers start (the value 0 in the config matches the choice "0")', st(sb, 'light.a') === 'on' && st(sb, 'light.b') === 'on' && st(sb, 'light.c') === 'off');
@@ -1063,6 +1075,88 @@ const st = (sb, id) => (sb.get(id) || {}).state;
     const ev = sbxKnownPayloads('frigate/events'), cnt = sbxKnownPayloads('frigate/driveway/person'), mo = sbxKnownPayloads('frigate/driveway/motion');
     check('0.11.2 Frigate: its events (a person, a car, gone), a label\'s count on a camera, and motion; nothing for other topics', ev.length === 3 && JSON.parse(ev[0].v).type === 'new' && JSON.parse(ev[0].v).after.label === 'person' && JSON.parse(ev[2].v).type === 'end'
       && cnt.map((x) => x.v).join() === '1,0' && mo.map((x) => x.v).join() === 'ON,OFF' && sbxKnownPayloads('zigbee2mqtt/hall').length === 0);
+  }
+
+  // ---- 0.13.2 bug-fix regressions: durations, sbxRewrite, MQTT cover position, target.exclude, followAll, script.toggle, DST
+  {
+    const { fmtDurLong, sbxRewrite } = lib;
+    check('0.13.2 fmtDurLong formats durations independent of timezone',
+      fmtDurLong(900000) === '15:00' && fmtDurLong(3661000) === '1:01:01' && fmtDurLong(90061000) === '1d 1:01:01',
+      [fmtDurLong(900000), fmtDurLong(3661000), fmtDurLong(90061000)]);
+
+    const rw1 = sbxRewrite("The states changed near closest distance: {{ states('sensor.a') }} {# states closest #}");
+    check('0.13.2 sbxRewrite leaves plain text and Jinja comments untouched',
+      rw1.text === "The states changed near closest distance: {{ fb_states('sensor.a') }} {# states closest #}" && rw1.leftovers.length === 0, rw1);
+    const rw2 = sbxRewrite("{{ 'states' }} and {{ \"closest\" }} and {{ states['light.kitchen'].state }}");
+    check('0.13.2 sbxRewrite leaves quoted string literals untouched and rewrites real states[]',
+      rw2.text === "{{ 'states' }} and {{ \"closest\" }} and {{ fb_obj('light.kitchen').state }}" && rw2.leftovers.length === 0, rw2);
+    const rw3 = sbxRewrite("{{ closest(zone.home) }}");
+    check('0.13.2 sbxRewrite still flags real closest() in leftovers', rw3.leftovers.includes('closest'), rw3);
+
+    // MQTT cover position: JSON 0, non-zero range (10..90), inverted range (100..0)
+    const mqCov = make(
+      { 'cover.std': S('open', { current_position: 50 }), 'cover.off': S('closed', { current_position: 0 }), 'cover.inv': S('open', { current_position: 100 }) },
+      {},
+      { o: { derived: {
+        'cover.std': { reads: [], rule: { kind: 'mqtt', domain: 'cover', position: { topic: 'c/std', tpl: null, closed: 0, open: 100, state: false } } },
+        'cover.off': { reads: [], rule: { kind: 'mqtt', domain: 'cover', position: { topic: 'c/off', tpl: null, closed: 10, open: 90, state: false } } },
+        'cover.inv': { reads: [], rule: { kind: 'mqtt', domain: 'cover', position: { topic: 'c/inv', tpl: null, closed: 100, open: 0, state: false } } },
+      } } },
+    );
+    await mqCov.start();
+    await mqCov.userMqtt('c/std', '{"position": 0}');
+    await mqCov.userMqtt('c/off', '50');
+    await mqCov.userMqtt('c/inv', '25');
+    check('0.13.2 MQTT cover position handles JSON 0, non-zero closed offset, and inverted range',
+      st(mqCov, 'cover.std') === 'closed' && mqCov.get('cover.std').attributes.current_position === 0
+      && st(mqCov, 'cover.off') === 'open' && mqCov.get('cover.off').attributes.current_position === 50
+      && st(mqCov, 'cover.inv') === 'open' && mqCov.get('cover.inv').attributes.current_position === 75,
+      { std: mqCov.get('cover.std'), off: mqCov.get('cover.off'), inv: mqCov.get('cover.inv') });
+
+    // target.exclude in Sandbox._targets() and _etargets()
+    const resolve = (ref) => (ref === 'area:down' ? ['light.a', 'light.b', 'light.c'] : ref === 'label:night' ? ['light.c'] : []);
+    const exSb = make({ 'light.a': S('off'), 'light.b': S('off'), 'light.c': S('off'), 'binary_sensor.go': S('off'), 'input_boolean.hit': S('off') }, {
+      'automation.act': { triggers: [{ trigger: 'state', entity_id: 'binary_sensor.go', to: 'on' }], actions: [{ action: 'light.turn_on', target: { area_id: 'down', exclude: { entity_id: 'light.b', label_id: 'night' } } }] },
+      'automation.etrig': { triggers: [{ trigger: 'light.turned_on', target: { area_id: 'down', exclude: { entity_id: 'light.a' } } }], actions: [{ action: 'input_boolean.turn_on', target: { entity_id: 'input_boolean.hit' } }] },
+    }, { o: { resolve } });
+    await exSb.start();
+    await exSb.userSet('binary_sensor.go', 'on');
+    check('0.13.2 Sandbox respects target.exclude in actions and per-entity triggers',
+      st(exSb, 'light.a') === 'on' && st(exSb, 'light.b') === 'off' && st(exSb, 'light.c') === 'off' && st(exSb, 'input_boolean.hit') === 'off',
+      { a: st(exSb, 'light.a'), b: st(exSb, 'light.b'), c: st(exSb, 'light.c'), hit: st(exSb, 'input_boolean.hit') });
+    await exSb.userSet('light.b', 'on');
+    check('0.13.2 Sandbox per-entity trigger still fires for non-excluded entities', st(exSb, 'input_boolean.hit') === 'on');
+
+    // followAll() multi-pass for chained derived helpers when B precedes A in map order
+    const chSb = make({ 'binary_sensor.raw': S('on'), 'binary_sensor.b': S('unknown'), 'binary_sensor.a': S('unknown') }, {}, { o: { derived: {
+      'binary_sensor.b': { reads: ['binary_sensor.a'], rule: { kind: 'group', entities: ['binary_sensor.a'], all: false } },
+      'binary_sensor.a': { reads: ['binary_sensor.raw'], rule: { kind: 'group', entities: ['binary_sensor.raw'], all: false } },
+    } } });
+    await chSb.followAll();
+    check('0.13.2 followAll converges for chained derived helpers regardless of order',
+      st(chSb, 'binary_sensor.a') === 'on' && st(chSb, 'binary_sensor.b') === 'on',
+      { a: st(chSb, 'binary_sensor.a'), b: st(chSb, 'binary_sensor.b') });
+
+    // script.toggle cancels an active script instead of starting another run
+    const tgSb = make({ 'binary_sensor.btn': S('off'), 'light.done': S('off'), 'script.slow': S('off') }, {
+      'script.slow': { sequence: [{ delay: { seconds: 30 } }, { action: 'light.turn_on', target: { entity_id: 'light.done' } }] },
+      'automation.tog': { triggers: [{ trigger: 'state', entity_id: 'binary_sensor.btn' }], actions: [{ action: 'script.toggle', target: { entity_id: 'script.slow' } }] },
+    });
+    await tgSb.start();
+    await tgSb.userSet('binary_sensor.btn', 'on');
+    const running1 = tgSb.running('script.slow');
+    await tgSb.userSet('binary_sensor.btn', 'off');
+    const running2 = tgSb.running('script.slow');
+    await tgSb.advance(40000);
+    check('0.13.2 script.toggle starts when idle and cancels when running', running1 && !running2 && st(tgSb, 'light.done') === 'off', { running1, running2, done: st(tgSb, 'light.done') });
+
+    // _patternNext across America/New_York spring-forward DST (2026-03-08 01:59 EST -> 03:00 EDT)
+    const beforeSpring = Date.parse('2026-03-08T06:50:00Z'); // 01:50 EST
+    const dstSb = make({}, {}, { now: beforeSpring, o: {} });
+    const next3 = dstSb._patternNext({ hours: '3', minutes: '0', seconds: '0' }, beforeSpring);
+    const next3Local = new Intl.DateTimeFormat('en-GB', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(next3));
+    check('0.13.2 _patternNext lands on exact local wall time across DST spring-forward',
+      next3 === Date.parse('2026-03-08T07:00:00Z') && next3Local === '03:00', { next3: new Date(next3).toISOString(), next3Local });
   }
 
 })().catch((e) => check('the sandbox tests ran to the end', false, String(e && e.stack || e)));

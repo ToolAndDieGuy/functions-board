@@ -106,6 +106,8 @@ async def test_non_admin_refused(hass: HomeAssistant, hass_ws_client, hass_read_
         {"type": "functions_board/set_layout", "label": "a", "layout": {}},
         {"type": "functions_board/subscribe"},
         {"type": "functions_board/sources", "entity_ids": []},
+        {"type": "functions_board/checks"},
+        {"type": "functions_board/set_checks", "label": "a", "checks": []},
     ):
         await ws.send_json_auto_id(msg)
         res = await ws.receive_json()
@@ -260,3 +262,111 @@ async def test_a_version_that_cant_be_kept_takes_nothing_with_it(hass: HomeAssis
     # one that fits once the oldest automatic one has gone is kept, and that one goes
     v, problem = store.add("f", "Before restoring", "", "", {"pad": "y" * 100}, auto=True)
     assert problem is None and [x["name"] for x in store.list("f")] == ["v1", "v2", "Before restoring"]
+
+
+async def test_versions_remove_last_cleans_label_key(hass: HomeAssistant) -> None:
+    """Deleting the last saved version of a function removes its empty key from by_label (0.13.2)."""
+    from custom_components.functions_board import versions as vmod
+
+    store = vmod.Versions(hass)
+    v, problem = store.add("only_one", "v1", "", "", {"items": {}})
+    assert v is not None and problem is None
+    assert store.counts()["functions"] == 1
+    assert store.remove("only_one", v["id"]) is True
+    assert "only_one" not in store.by_label
+    assert store.counts()["functions"] == 0
+
+
+async def test_ws_set_validates_layouts(hass: HomeAssistant, hass_ws_client) -> None:
+    """functions_board/set rejects invalid layout shapes consistently with set_layout (0.13.2)."""
+    await _ready(hass)
+    ws = await hass_ws_client(hass)
+    await ws.send_json_auto_id({
+        "type": "functions_board/set",
+        "data": {"functions": ["garage"], "layouts": {"garage": {"nodes": {"light.a": {"x": "bad", "y": 0}}}}},
+    })
+    msg = await ws.receive_json()
+    assert not msg["success"] and msg["error"]["code"] == "invalid_format", msg
+
+
+async def test_versions_domain_allowlist(hass: HomeAssistant, hass_ws_client) -> None:
+    """Phase 2 (HACS review hardening): version_save and version_overwrite reject non-allowlisted domains."""
+    await _ready(hass)
+    ws = await hass_ws_client(hass)
+    bad_snaps = [
+        {"items": {"cloud.evil": {"dom": "cloud", "id": "1", "cfg": {}}}},
+        {"items": {"config/auth.evil": {"dom": "config/auth", "id": "1", "cfg": {}}}},
+        {"items": {"light.kitchen": {"dom": "automation", "id": "1", "cfg": {}}}},
+    ]
+    for snap in bad_snaps:
+        await ws.send_json_auto_id({"type": "functions_board/version_save", "label": "garage", "name": "Bad", "snapshot": snap})
+        res = await ws.receive_json()
+        assert not res["success"] and res["error"]["code"] == "invalid_format", (snap, res)
+    # Valid snapshot succeeds, then overwriting it with a rogue domain fails
+    good = {"items": {"input_boolean.ok": {"dom": "input_boolean", "id": "ok", "cfg": {"name": "OK"}}}}
+    await ws.send_json_auto_id({"type": "functions_board/version_save", "label": "garage", "name": "Good", "snapshot": good})
+    saved = await ws.receive_json()
+    assert saved["success"], saved
+    vid = saved["result"]["id"]
+    await ws.send_json_auto_id({"type": "functions_board/version_overwrite", "label": "garage", "version_id": vid, "snapshot": bad_snaps[0], "print": "p1"})
+    over = await ws.receive_json()
+    assert not over["success"] and over["error"]["code"] == "invalid_format", over
+
+
+async def test_versions_split_metadata_and_lazy_blobs(hass: HomeAssistant, hass_storage) -> None:
+    """Phase 2: legacy inline snapshots migrate to per-function blob stores; metadata stays lean and blobs load on demand."""
+    from custom_components.functions_board import versions as vmod
+
+    legacy_snap = {"items": {"automation.a": {"dom": "automation", "id": "1", "cfg": {"alias": "A"}}}}
+    vid = "a" * 32
+    hass_storage[vmod.STORAGE_KEY] = {
+        "version": 1,
+        "minor_version": 1,
+        "key": vmod.STORAGE_KEY,
+        "data": {
+            "functions": {"garage": [{"id": vid, "name": "Legacy", "desc": "", "at": 1, "by": "", "size": 50, "auto": False, "print": "p", "snapshot": legacy_snap}]},
+            "active": {"garage": {"id": vid, "print": "p"}},
+        },
+    }
+    store = vmod.Versions(hass)
+    await store.async_load()
+    # Index store on disk no longer embeds snapshot payloads
+    stored_index = hass_storage[vmod.STORAGE_KEY]["data"]
+    assert "snapshot" not in stored_index["functions"]["garage"][0]
+    # Fresh instance loads only metadata (blobs not cached until async_get)
+    fresh = vmod.Versions(hass)
+    await fresh.async_load()
+    assert fresh.list("garage")[0]["name"] == "Legacy"
+    assert "garage" not in fresh._blobs
+    assert fresh.edit("garage", vid, "Renamed", None) is not None
+    assert "garage" not in fresh._blobs
+    got = await fresh.async_get("garage", vid)
+    assert got is not None and got["snapshot"] == legacy_snap
+
+
+async def test_checks_store_and_layout_migration(hass: HomeAssistant, hass_ws_client, hass_storage) -> None:
+    """Phase 2: saved checks live in their own store, auto-migrating any legacy layout.checks on load."""
+    from custom_components.functions_board.const import STORAGE_KEY
+
+    legacy_chk = {"id": "k1", "name": "Migrated check", "at": 0, "steps": [{"op": "advance", "ms": 1000}], "expect": []}
+    hass_storage[STORAGE_KEY] = {
+        "version": 1,
+        "minor_version": 2,
+        "key": STORAGE_KEY,
+        "data": {"functions": ["garage"], "layouts": {"garage": {"nodes": {}, "checks": [legacy_chk]}}, "revs": {"garage": 1}},
+    }
+    await _ready(hass)
+    ws = await hass_ws_client(hass)
+    await ws.send_json_auto_id({"type": "functions_board/get"})
+    board_data = (await ws.receive_json())["result"]["data"]
+    assert "checks" not in board_data["layouts"]["garage"]
+    await ws.send_json_auto_id({"type": "functions_board/checks", "label": "garage"})
+    assert (await ws.receive_json())["result"]["checks"] == [legacy_chk]
+    # Saving new checks works and notifies subscribers; malformed checks are rejected
+    await ws.send_json_auto_id({"type": "functions_board/set_checks", "label": "garage", "checks": [{"id": "bad id!", "name": "x", "steps": [], "expect": []}]})
+    assert (await ws.receive_json())["error"]["code"] == "invalid_format"
+    new_chk = {"id": "k2", "name": "Fresh check", "at": 1, "steps": [], "expect": []}
+    await ws.send_json_auto_id({"type": "functions_board/set_checks", "label": "garage", "checks": [new_chk]})
+    assert (await ws.receive_json())["success"]
+    await ws.send_json_auto_id({"type": "functions_board/checks", "label": "garage"})
+    assert (await ws.receive_json())["result"]["checks"] == [new_chk]
