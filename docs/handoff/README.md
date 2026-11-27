@@ -11,15 +11,16 @@ This folder documents the full audit triage, bug fixes, test apparatus hardening
 1. [`issue-72-triage.md`](./issue-72-triage.md) — Root-cause analysis and fixes for all three failing weekly CI jobs in Issue #72 (`mutants`, `jitter`, `diff`) plus the `actions/upload-artifact@v4` dot-directory fix.
 2. [`phase-1-audit-fixes.md`](./phase-1-audit-fixes.md) — Complete itemized breakdown of all Phase 1 (Batches 1A, 1B, 1C) bug fixes, affected files, regression tests, static invariants, and mutants.
 3. [`phase-2-hardening.md`](./phase-2-hardening.md) — Phase 2 backend hardening & Frenck's version restore domain allowlist (allowlist, diagnostics executor offload & case-insensitive/structural redaction, split version metadata/blobs, decoupled saved checks store, lazy dashboard card loader).
-4. [`roadmap-next-phases.md`](./roadmap-next-phases.md) — Remaining roadmap for Phase 3 (native zero-build ES module split), Phase 4 (Recipes & features), and Issue #73 (`readme-pictures`).
+4. [`phase-3-es-modules.md`](./phase-3-es-modules.md) — Phase 3 native zero-build ES module refactor (24 ES modules under `frontend/lib/` + `frontend/ui/` + `board-core.js`, atomic `/functions_board_static/<digest>/` cache busting, `mixParts()`, and updated static/test/mutant harness).
+5. [`roadmap-next-phases.md`](./roadmap-next-phases.md) — Remaining roadmap for Phase 4 (Recipes & features) and Issue #73 (`readme-pictures`).
 
 ---
 
 ## Files Modified on This Branch
 
-- **Frontend:** `custom_components/functions_board/frontend/functions-board.js`, `custom_components/functions_board/frontend/card-loader.js` (new)
-- **Backend:** `custom_components/functions_board/__init__.py`, `const.py`, `checks.py` (new), `diagnostics.py`, `sources.py`, `versions.py`, `websocket.py`, `zwave.py`
-- **CI & Docs:** `.github/workflows/validate.yml`, `.github/workflows/weekly.yml`, `CHANGELOG.md`, `CLAUDE.md`, `docs/handoff/*`
+- **Frontend (Native ES Modules):** `custom_components/functions_board/frontend/functions-board.js` (thin entrypoint), `card-loader.js`, `board-core.js`, `lib/*.js` (10 modules), `ui/*.js` (13 modules)
+- **Backend:** `custom_components/functions_board/__init__.py`, `const.py`, `checks.py`, `diagnostics.py`, `sources.py`, `versions.py`, `websocket.py`, `zwave.py`
+- **CI, Scripts & Docs:** `.github/workflows/validate.yml`, `.github/workflows/weekly.yml`, `scripts/bump.js`, `scripts/gen_sandbox_triggers.py`, `CHANGELOG.md`, `CLAUDE.md`, `docs/handoff/*`
 - **Test Suites & Mutants:**
   - `tests/static.test.js` (`CHECK_OPS` <-> `_chkStepText` rule, `WS_OK` for checks commands, `card-loader.js` security/size checks)
   - `tests/sandbox.test.js`, `tests/wiring.test.js`, `tests/problems.test.js`, `tests/builder.test.js`

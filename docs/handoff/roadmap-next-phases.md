@@ -1,28 +1,6 @@
-# Remaining Audit Roadmap (Phases 3–4 & Open Items)
+# Remaining Audit Roadmap (Phase 4 & Open Items)
 
-Phases 1 and 2 (plus Issue #72 triage and Frenck's version restore domain allowlist hardening) are implemented on `fix/v0.13.2-audit`. This document summarizes the remaining roadmap so Opus can pick up cleanly once Phases 1–2 are verified locally and released.
-
----
-
-## Phase 3 — Native Zero-Build ES Module Split (Suggested `v0.14.0`)
-
-A pure **no-behavior-change** split of `custom_components/functions_board/frontend/functions-board.js` into native browser ES modules served directly by Home Assistant (zero bundler, zero build step):
-
-- **Pre-conditions:**
-  - Keep `tests/board/snapshots.test.js` at **zero diff** before and after the split.
-  - Keep `sh tests/run.sh --ha` and `node tests/mutants.js --ha` green.
-- **Important caveats discovered during audit:**
-  1. **`tests/static.test.js` & `tests/mutants.json`:** Both currently read a single `functions-board.js` path and scan `PARTS` / `STR.en` / `_actionTables` inside one file. Update the static test loader (concatenating or walking the module list) and remap `mutants.json` `"file"` fields in the same PR.
-  2. **`scripts/compare-builds.js`:** Assumes a single `functions-board.js` file; update it if cross-version comparisons are still needed across the module split boundary.
-  3. **`tests/lib/board-lib.js`:** Currently evaluates the library slice of `functions-board.js` in Node (`vm` / `new Function`); with ES modules, Node can load the pure library modules directly (or via a thin CJS/ESM shim).
-  4. **Suggested module boundaries (aligned with existing `PARTS`):**
-     - `i18n.js` (`STR`, `T`, `P`)
-     - `styles.js` (`STYLE`)
-     - `core/clock.js`, `core/link.js`, `core/store.js`, `core/morph.js`
-     - `model/wiring.js`, `model/problems.js`, `model/import.js`, `model/layout.js`
-     - `sandbox/engine.js`, `sandbox/templates.js`, `sandbox/mqtt.js`, `sandbox/builder.js`
-     - `board/*.js` (UI parts matching `PARTS`: `list`, `canvas`, `drawer`, `sandbox`, `debug`, `versions`, `mgr`, `builder`)
-     - `functions-board.js` (thin entrypoint registering `<functions-board>`)
+Phases 1, 2, and 3 (plus Issue #72 triage, Frenck's version restore domain allowlist hardening, and removing the `prototype` UI tag) are implemented on `fix/v0.13.2-audit`. This document summarizes the remaining roadmap so Opus can pick up cleanly once Phases 1–3 are verified locally and released.
 
 ---
 

@@ -20,6 +20,10 @@
 - Version snapshots and restores now resolve renamed scripts via their registry `unique_id` and restore customized entity IDs when recreating deleted helpers.
 - Notification Builder now matches `mobile_app` devices renamed via `name_by_user` (or unmatched devices via entity slugs), skips disabled script IDs when choosing a new script ID, and rejects blank button titles.
 
+### Architecture & UI Polish
+- Split the frontend into native zero-build ES modules (`frontend/lib/*`, `frontend/ui/*`, `board-core.js`, thin `functions-board.js` entrypoint) served under an atomic hashed static path (`/functions_board_static/<digest>/`) for clean cache invalidation across updates, while preserving `/functions_board_static/functions-board.js` for manual dashboard resources.
+- Removed the `· prototype` label from the version text in the sidebar footer and About dialog.
+
 ### Backend, Security, Performance & CI
 - Enforced an explicit allowlist of Home Assistant domains (`automation`, `script`, and UI helper domains) when saving, diffing, planning, and restoring saved versions on both backend and frontend.
 - Offloaded diagnostics anonymisation off Home Assistant's asyncio event loop, made known-name redaction case-insensitive, and prevented short or structural-word label IDs (e.g. `mode`, `on`) from corrupting structural keys/values while still anonymising them in label positions.

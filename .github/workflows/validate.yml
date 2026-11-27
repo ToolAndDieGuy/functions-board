@@ -46,7 +46,7 @@ jobs:
         with:
           node-version: 22
       - name: Syntax
-        run: node --check custom_components/functions_board/frontend/functions-board.js
+        run: find custom_components/functions_board/frontend -name '*.js' -print0 | xargs -0 -n1 node --check
       - name: Self-test, rules, library
         run: sh tests/run.sh --only 'selftest|static|wiring|import|problems|sandbox|builder|clock|link|store'
       - name: Test reports

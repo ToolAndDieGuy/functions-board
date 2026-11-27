@@ -1,8 +1,7 @@
 // Lazy loader for the Functions Board dashboard card (CONF_CARD).
-// Registered via frontend.add_extra_js_url() so non-admin users and dashboards without the
-// card never download or parse the full functions-board.js bundle.
-const mParam = new URLSearchParams(import.meta.url.split('?')[1] || '').get('m') || '';
-const BOARD_URL = /^[0-9a-f]{8}$/.test(mParam) ? `./functions-board.js?v=${mParam}` : './functions-board.js';
+// Registered via frontend.add_extra_js_url() under /functions_board_static/<digest>/ so non-admin
+// users and dashboards without the card never download or parse the full board modules.
+const BOARD_URL = './functions-board.js';
 
 let loading = null;
 const waiters = new Set();

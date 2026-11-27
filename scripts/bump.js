@@ -11,8 +11,9 @@ const edit = (rel, fn) => {
   const p = path.join(root, rel), before = fs.readFileSync(p, 'utf8'), after = fn(before);
   if (after !== before) { fs.writeFileSync(p, after); console.log('updated ' + rel); }
 };
+edit('custom_components/functions_board/frontend/lib/i18n.js', (s) => s
+  .replace(/export const VERSION = '[^']+'/, `export const VERSION = '${ver}'`));
 edit('custom_components/functions_board/frontend/functions-board.js', (s) => s
-  .replace(/const VERSION = '[^']+'/, `const VERSION = '${ver}'`)
   .replace(/Functions board v[0-9][^ ]*(?: \(prototype\))?/, `Functions board v${ver}`));
 edit('custom_components/functions_board/manifest.json', (s) => s.replace(/"version": "[^"]+"/, `"version": "${ver}"`));
 edit('README.md', (s) => s

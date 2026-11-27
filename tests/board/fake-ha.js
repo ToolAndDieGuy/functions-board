@@ -8,7 +8,8 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-const BOARD = path.join(__dirname, '..', '..', 'custom_components', 'functions_board', 'frontend', 'functions-board.js');
+const FRONTEND_DIR = path.join(__dirname, '..', '..', 'custom_components', 'functions_board', 'frontend');
+const BOARD = path.join(FRONTEND_DIR, 'functions-board.js');
 const SNAP = path.join(__dirname, 'garage.json');
 const clone = (x) => (x === undefined ? x : JSON.parse(JSON.stringify(x)));
 const slug = (s) => String(s || '').toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'unnamed';
@@ -117,7 +118,13 @@ class FakeHA {
     await ctx.route('**/*', (r) => {
       const url = r.request().url();
       if (url.startsWith('http://fake.ha/functions')) return r.fulfill({ contentType: 'text/html', body: this._html(opts) });
-      if (url.startsWith('http://fake.ha/fb/functions-board.js')) return r.fulfill({ contentType: 'text/javascript', body: fs.readFileSync(BOARD, 'utf8') });
+      if (url.startsWith('http://fake.ha/fb/')) {
+        const rel = url.slice('http://fake.ha/fb/'.length).split('?')[0];
+        const full = path.resolve(FRONTEND_DIR, rel);
+        if (full.startsWith(FRONTEND_DIR + path.sep) && full.endsWith('.js') && fs.existsSync(full)) {
+          return r.fulfill({ contentType: 'text/javascript', body: fs.readFileSync(full, 'utf8') });
+        }
+      }
       return r.fulfill({ status: 204, body: '' });
     });
     this.dark = this.dark || new WeakMap();

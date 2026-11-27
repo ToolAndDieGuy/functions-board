@@ -29,7 +29,7 @@ import re
 import homeassistant.components as comps
 from homeassistant.helpers.trigger import entity_trigger as et
 
-BOARD = Path(__file__).resolve().parent.parent / "custom_components" / "functions_board" / "frontend" / "functions-board.js"
+BOARD = Path(__file__).resolve().parent.parent / "custom_components" / "functions_board" / "frontend" / "lib" / "sandbox.js"
 KINDS = [
     (et.EntityTargetStateTriggerBase, "target"),
     (et.EntityTransitionTriggerBase, "transition"),

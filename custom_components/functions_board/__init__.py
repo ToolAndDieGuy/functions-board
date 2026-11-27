@@ -88,6 +88,7 @@ class BoardData:
     revs: dict[str, int] = field(default_factory=dict)
     mode: str = MODE_ORGANISE
     static: bool = False
+    static_digest: str | None = None
     module_url: str | None = None
     card_loader_url: str | None = None
     extra_js: str | None = None
@@ -141,26 +142,42 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     return True
 
 
-def _file_hash(filename: str = BOARD_FILE) -> str:
-    """First 8 hex digits of a frontend file's SHA-256: its URL changes when the file does."""
-    return hashlib.sha256((FRONTEND_DIR / filename).read_bytes()).hexdigest()[:8]
+def _frontend_hash() -> str:
+    """First 8 hex digits of the combined SHA-256 of every .js file under frontend/.
+
+    Serving all ES modules under /functions_board_static/<digest>/ ensures every relative
+    import resolves under the same versioned prefix for atomic cache invalidation.
+    """
+    h = hashlib.sha256()
+    for path in sorted(FRONTEND_DIR.rglob("*.js")):
+        rel = path.relative_to(FRONTEND_DIR).as_posix()
+        h.update(rel.encode("utf-8"))
+        h.update(b"\0")
+        h.update(path.read_bytes())
+        h.update(b"\0")
+    return h.hexdigest()[:8]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Serve the page and add it to the sidebar."""
     board = hass.data[DATA_KEY]
     board.mode = entry.options.get(CONF_MODE, MODE_ORGANISE)
-    if not board.static:
-        # the file name carries the content hash, so browsers may keep it as long as they like
+    version = str((await async_get_integration(hass, DOMAIN)).version)
+    digest = await hass.async_add_executor_job(_frontend_hash)
+    if board.static_digest != digest:
+        # versioned prefix carries the combined content hash: browsers may cache every module indefinitely
         await hass.http.async_register_static_paths(
-            [StaticPathConfig(STATIC_URL, str(FRONTEND_DIR), True)]
+            [StaticPathConfig(f"{STATIC_URL}/{digest}", str(FRONTEND_DIR), True)]
+        )
+        board.static_digest = digest
+    if not board.static:
+        # backwards-compatible unversioned path for manual dashboard resources (no immutable caching)
+        await hass.http.async_register_static_paths(
+            [StaticPathConfig(STATIC_URL, str(FRONTEND_DIR), False)]
         )
         board.static = True
-    version = str((await async_get_integration(hass, DOMAIN)).version)
-    digest = await hass.async_add_executor_job(_file_hash, BOARD_FILE)
-    loader_digest = await hass.async_add_executor_job(_file_hash, CARD_LOADER_FILE)
-    board.module_url = f"{STATIC_URL}/{BOARD_FILE}?v={digest}"
-    board.card_loader_url = f"{STATIC_URL}/{CARD_LOADER_FILE}?v={loader_digest}&m={digest}"
+    board.module_url = f"{STATIC_URL}/{digest}/{BOARD_FILE}"
+    board.card_loader_url = f"{STATIC_URL}/{digest}/{CARD_LOADER_FILE}"
     await panel_custom.async_register_panel(
         hass,
         frontend_url_path=PANEL_URL,
