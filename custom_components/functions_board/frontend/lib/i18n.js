@@ -1729,8 +1729,8 @@ export const STR = {
     ts_lint_now: 'Uses now(): Home Assistant automatically re-evaluates this template once a minute.',
     ts_sum_empty: 'Empty template.',
     ts_sum_plain: 'Plain text (no Jinja expressions).',
-    ts_sum_branch: 'Chooses between {n} outcomes using {ents} referenced entities.',
-    ts_sum_steps: 'Runs {steps} template steps reading {ents} referenced entities.',
+    ts_sum_branch: 'Chooses between {n} outcomes using {ents}.',
+    ts_sum_steps: 'Runs {steps} steps reading {ents}.',
     // 9 Template Helper Recipes
     ts_r_count: 'Count matching',
     ts_r_count_d: 'Count how many lights, doors, or sensors are on or open ("3 lights on"), skipping unavailable entities.',

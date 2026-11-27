@@ -519,129 +519,557 @@ export function parseTemplate(src) {
 
 // ---- Plain-English expression translator ----
 
-function describeFilter(part, nm) {
+const SUN_ATTR_NAMES = {
+  next_setting: 'next sunset',
+  next_rising: 'next sunrise',
+  next_noon: 'next solar noon',
+  next_midnight: 'next solar midnight',
+  next_dawn: 'next dawn',
+  next_dusk: 'next dusk',
+  elevation: 'sun elevation',
+  azimuth: 'sun azimuth',
+};
+const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const CMP_WORDS = { '==': 'equals', '!=': 'does not equal', '>': 'is greater than', '>=': 'is at least', '<': 'is less than', '<=': 'is at most' };
+
+function stripOuterParens(s) {
+  let t = String(s || '').trim();
+  while (t.startsWith('(') && t.endsWith(')')) {
+    let d = 0, wraps = true;
+    for (let i = 0; i < t.length - 1; i++) {
+      const c = t[i];
+      if (c === "'" || c === '"') { i = skipQuoted(t, i); continue; }
+      if ('([{'.includes(c)) d++;
+      else if (')]}'.includes(c)) d--;
+      if (d === 0) { wraps = false; break; }
+    }
+    if (!wraps) break;
+    t = t.slice(1, -1).trim();
+  }
+  return t;
+}
+
+function splitTopOp(expr, ops) {
+  const s = String(expr || '');
+  let depth = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === "'" || c === '"') { i = skipQuoted(s, i); continue; }
+    if ('([{'.includes(c)) { depth++; continue; }
+    if (')]}'.includes(c)) { depth = Math.max(0, depth - 1); continue; }
+    if (depth !== 0) continue;
+    for (const op of ops) {
+      if (s.slice(i, i + op.length) !== op) continue;
+      if (/^[a-z]/i.test(op)) {
+        const before = i > 0 ? s[i - 1] : ' ';
+        const after = i + op.length < s.length ? s[i + op.length] : ' ';
+        if (/\w/.test(before) || /\w/.test(after)) continue;
+      }
+      if ((op === '<' || op === '>') && (s[i + 1] === '=' || s[i - 1] === '<' || s[i - 1] === '>')) continue;
+      if (op === '=' && (s[i + 1] === '=' || s[i - 1] === '=' || s[i - 1] === '!' || s[i - 1] === '<' || s[i - 1] === '>')) continue;
+      return { left: s.slice(0, i).trim(), op, right: s.slice(i + op.length).trim() };
+    }
+  }
+  return null;
+}
+
+function splitAllTopOp(expr, op) {
+  const out = [];
+  let rest = String(expr || '');
+  while (true) {
+    const sp = splitTopOp(rest, [op]);
+    if (!sp) { out.push(rest.trim()); break; }
+    out.push(sp.left);
+    rest = sp.right;
+  }
+  return out.filter(Boolean);
+}
+
+function splitTopTernary(expr) {
+  const s = String(expr || '');
+  let depth = 0, ifPos = -1, elsePos = -1, nest = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === "'" || c === '"') { i = skipQuoted(s, i); continue; }
+    if ('([{'.includes(c)) { depth++; continue; }
+    if (')]}'.includes(c)) { depth = Math.max(0, depth - 1); continue; }
+    if (depth !== 0) continue;
+    const prev = i > 0 ? s[i - 1] : ' ';
+    if (!/\w/.test(prev) && s.slice(i, i + 2) === 'if' && !/\w/.test(s[i + 2] || ' ')) {
+      if (ifPos < 0) ifPos = i; else nest++;
+      i += 1;
+    } else if (!/\w/.test(prev) && s.slice(i, i + 4) === 'else' && !/\w/.test(s[i + 4] || ' ')) {
+      if (ifPos >= 0) {
+        if (nest === 0) { elsePos = i; break; }
+        nest--;
+      }
+      i += 3;
+    }
+  }
+  if (ifPos > 0 && elsePos > ifPos) {
+    return {
+      thenExpr: s.slice(0, ifPos).trim(),
+      condExpr: s.slice(ifPos + 2, elsePos).trim(),
+      elseExpr: s.slice(elsePos + 4).trim(),
+    };
+  }
+  return null;
+}
+
+function friendlyTimedelta(argsStr) {
+  const parts = [];
+  for (const seg of splitArgs(argsStr)) {
+    const m = /^(days|hours|minutes|seconds|weeks)\s*=\s*(-?\d+(?:\.\d+)?)$/.exec(seg.trim());
+    if (!m) { parts.push(seg.trim()); continue; }
+    const n = Number(m[2]), unit = n === 1 ? m[1].slice(0, -1) : m[1];
+    parts.push(`${n} ${unit}`);
+  }
+  return parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}` : (parts[0] || argsStr);
+}
+
+function friendlyStrftime(fmt) {
+  if (fmt === '%I:%M %p') return '12-hour clock time (e.g. 01:05 PM)';
+  if (fmt === '%H:%M') return '24-hour clock time (e.g. 13:05)';
+  if (fmt === '%H:%M:%S') return '24-hour clock time with seconds';
+  if (fmt === '%Y-%m-%d') return 'date (YYYY-MM-DD)';
+  return `formatted date/time ("${fmt}")`;
+}
+
+function friendlyList(raw, conj = 'or') {
+  const inner = String(raw || '').trim().replace(/^\[|\]$/g, '');
+  const items = splitArgs(inner).map((x) => unquote(x));
+  if (items.length === 2 && items.includes('unavailable') && items.includes('unknown')) return 'offline or unavailable';
+  const q = items.map((x) => `"${x}"`);
+  if (q.length <= 1) return q[0] || raw;
+  return `${q.slice(0, -1).join(', ')} ${conj} ${q[q.length - 1]}`;
+}
+
+function friendlyDays(raw) {
+  const nums = splitArgs(String(raw || '').replace(/^\[|\]$/g, '')).map(Number).filter((n) => Number.isInteger(n) && n >= 0 && n <= 6);
+  const sig = nums.join(',');
+  if (sig === '0,1,2,3,4') return 'a weekday (Mon–Fri)';
+  if (sig === '5,6') return 'the weekend (Sat–Sun)';
+  if (sig === '0,1,2,3,4,5,6') return 'any day of the week';
+  return nums.map((d) => DAY_NAMES[d]).join(', ');
+}
+
+function friendlyEntityList(ents, nm) {
+  const names = ents.slice(0, 3).map(nm);
+  if (ents.length === 1) return names[0];
+  if (ents.length === 2) return `${names[0]} and ${names[1]}`;
+  if (ents.length === 3) return `${names[0]}, ${names[1]}, and ${names[2]}`;
+  return `${names.join(', ')} (+${ents.length - 3} more)`;
+}
+
+function capFirst(s) {
+  const t = String(s || '').trim();
+  return t ? t[0].toUpperCase() + t.slice(1) : '';
+}
+
+function describeFilter(part) {
   const fm = /^([a-zA-Z_]\w*)(?:\s*\(([\s\S]*)\))?$/.exec(part.trim());
   if (!fm) return `apply ${part.trim()}`;
   const fn = fm[1], args = fm[2] ? splitArgs(fm[2]) : [];
   switch (fn) {
-    case 'float': return args.length ? `convert to a decimal number (default ${args[0]} if not numeric)` : 'convert to a decimal number';
-    case 'int': return args.length ? `convert to a whole number (default ${args[0]} if not numeric)` : 'convert to a whole number';
-    case 'round': return args.length ? `round to ${args[0]} decimal place${args[0] === '1' ? '' : 's'}` : 'round to the nearest whole number';
-    case 'abs': return 'take the positive (absolute) value';
-    case 'count': case 'length': return 'count how many items matched';
-    case 'list': return 'collect into a list';
-    case 'first': return 'take the first item';
-    case 'last': return 'take the last item';
-    case 'sort': return 'sort in order';
-    case 'unique': return 'remove duplicates';
-    case 'join': return `join with ${args[0] || "''"}`;
-    case 'lower': return 'convert to lowercase';
-    case 'upper': return 'convert to uppercase';
-    case 'title': return 'capitalize each word';
-    case 'trim': return 'trim surrounding spaces';
-    case 'default': return `fall back to ${args[0] || "''"} if empty or missing`;
-    case 'bool': return args.length ? `convert to true/false (default ${args[0]})` : 'convert to true/false';
-    case 'min': return 'pick the smallest value';
-    case 'max': return 'pick the largest value';
-    case 'sum': return 'add all values together';
-    case 'average': return 'compute the average';
+    case 'float': return args.length ? `as a decimal number (default ${args[0]})` : 'as a decimal number';
+    case 'int': return args.length ? `as a whole number (default ${args[0]})` : 'as a whole number';
+    case 'round': {
+      const d = args[0];
+      if (!d || d === '0') return 'rounded to the nearest whole number';
+      return `rounded to ${d} decimal place${d === '1' ? '' : 's'}`;
+    }
+    case 'abs': return 'as a positive number';
+    case 'count': case 'length': return 'count how many matched';
+    case 'list': return '';
+    case 'first': return 'first item';
+    case 'last': return 'last item';
+    case 'sort': return 'sorted in order';
+    case 'unique': return 'without duplicates';
+    case 'join': return `joined with "${unquote(args[0] || '')}"`;
+    case 'lower': return 'in lowercase';
+    case 'upper': return 'in uppercase';
+    case 'title': return 'with Each Word Capitalized';
+    case 'string': return '';
+    case 'trim': return 'with extra spaces removed';
+    case 'default': return `or ${args[0] ? `"${unquote(args[0])}"` : '""'} if empty`;
+    case 'bool': return args.length ? `as true/false (default ${args[0]})` : 'as true/false';
+    case 'min': return 'smallest value';
+    case 'max': return 'largest value';
+    case 'sum': return 'summed together';
+    case 'average': return 'averaged';
     case 'selectattr': {
       const attr = unquote(args[0] || 'state'), op = unquote(args[1] || 'defined'), val = args[2];
-      const opWord = { eq: 'equals', equalto: 'equals', ne: 'is not', in: 'is one of', lt: 'is under', le: 'is at most', gt: 'is over', ge: 'is at least', defined: 'is defined' }[op] || op;
-      return val != null ? `keep items where ${attr} ${opWord} ${val}` : `keep items where ${attr} ${opWord}`;
+      if (attr === 'attributes.device_class' && op === 'defined') return '';
+      if (attr === 'attributes.device_class' && op === 'eq' && val) return `that are ${unquote(val)} sensors`;
+      if (attr === 'domain' && op === 'eq' && val) return `in the ${unquote(val)} domain`;
+      if (attr === 'state' && (op === 'eq' || op === 'equalto') && val) return `whose state is "${unquote(val)}"`;
+      if (attr === 'state' && op === 'in' && val) return `whose state is ${friendlyList(val)}`;
+      const opWord = { eq: 'is', equalto: 'is', ne: 'is not', in: 'is one of', lt: 'is under', le: 'is at most', gt: 'is over', ge: 'is at least', defined: 'is present' }[op] || op;
+      return val != null ? `where ${attr} ${opWord} ${val}` : `where ${attr} ${opWord}`;
     }
     case 'rejectattr': {
       const attr = unquote(args[0] || 'state'), op = unquote(args[1] || 'defined'), val = args[2];
-      const opWord = { eq: 'equals', equalto: 'equals', in: 'is one of', ne: 'is not' }[op] || op;
-      return val != null ? `skip items where ${attr} ${opWord} ${val}` : `skip items where ${attr} ${opWord}`;
+      if (attr === 'state' && op === 'in' && val && /unavailable/.test(val)) return 'skipping offline or unavailable ones';
+      const opWord = { eq: 'is', equalto: 'is', in: 'is one of', ne: 'is not' }[op] || op;
+      return val != null ? `skipping any where ${attr} ${opWord} ${val}` : `skipping any where ${attr} ${opWord}`;
     }
-    case 'reject': return args.length ? `drop ${unquote(args[0])} values` : 'drop empty values';
-    case 'select': return args.length ? `keep ${unquote(args[0])} values` : 'keep truthy values';
+    case 'reject': return args.length && unquote(args[0]) === 'none' ? 'skipping non-numeric or offline ones' : (args.length ? `skipping ${unquote(args[0])} values` : 'skipping empty values');
+    case 'select': return args.length ? `keeping ${unquote(args[0])} values` : 'keeping non-empty values';
     case 'map': {
       const raw = fm[2] || '';
       const attrM = /attribute\s*=\s*['"]([^'"]+)['"]/.exec(raw);
-      if (attrM) return `take each item's ${attrM[1] === 'name' ? 'friendly name' : attrM[1]}`;
-      if (args.length) return `apply ${unquote(args[0])} to each item`;
-      return 'transform each item';
+      if (attrM) {
+        if (attrM[1] === 'name') return 'taking each friendly name';
+        if (attrM[1] === 'state') return 'reading each state';
+        return `taking each item's ${attrM[1]}`;
+      }
+      if (args.length && unquote(args[0]) === 'float') return 'converting each to a number';
+      if (args.length) return `applying ${unquote(args[0])} to each`;
+      return 'transforming each item';
     }
-    case 'as_timestamp': return 'convert to seconds';
-    case 'as_datetime': return 'parse as a date/time';
-    case 'as_local': return 'convert to your local timezone';
-    case 'replace': return `replace ${args[0] || "''"} with ${args[1] || "''"}`;
+    case 'as_timestamp': return 'in seconds';
+    case 'as_datetime': return 'as a date/time';
+    case 'as_local': return 'in your local timezone';
+    case 'replace': {
+      const a = unquote(args[0] || ''), b = unquote(args[1] || '');
+      if (a === '_' && b === ' ') return 'replacing underscores with spaces';
+      return `replacing "${a}" with "${b}"`;
+    }
     default: return args.length ? `${fn}(${args.join(', ')})` : fn;
   }
 }
 
-function describeBase(expr, nm) {
-  const s = expr.trim();
+function callInner(s, fnName) {
+  const re = new RegExp(`^${fnName}\\s*\\(`);
+  const m = re.exec(s);
+  if (!m || !s.endsWith(')')) return null;
+  let d = 0;
+  for (let i = m[0].length - 1; i < s.length; i++) {
+    const c = s[i];
+    if (c === "'" || c === '"') { i = skipQuoted(s, i); continue; }
+    if ('([{'.includes(c)) d++;
+    else if (')]}'.includes(c)) d--;
+    if (d === 0) return i === s.length - 1 ? s.slice(m[0].length, -1).trim() : null;
+  }
+  return null;
+}
+
+function describeDateExpr(s, nm) {
   let m;
+  const loc = callInner(s, 'as_local');
+  if (loc != null) {
+    const dt = callInner(loc, 'as_datetime');
+    if (dt != null) {
+      if ((m = /^state_attr\s*\(\s*['"]sun\.sun['"]\s*,\s*['"]([^'"]+)['"]\s*\)$/.exec(dt))) {
+        return `the ${SUN_ATTR_NAMES[m[1]] || m[1]} in your local timezone`;
+      }
+      if ((m = /^state_attr\s*\(\s*['"]([^'"]+)['"]\s*,\s*['"]start_time['"]\s*\)$/.exec(dt))) {
+        return `the next start time of ${nm(m[1])} in your local timezone`;
+      }
+      if ((m = /^state_attr\s*\(\s*['"]([^'"]+)['"]\s*,\s*['"]([^'"]+)['"]\s*\)$/.exec(dt))) {
+        return `${nm(m[1])}'s ${m[2]} in your local timezone`;
+      }
+      if ((m = /^states\s*\(\s*['"]([^'"]+)['"]\s*\)$/.exec(dt))) {
+        return `the date/time of ${nm(m[1])} in your local timezone`;
+      }
+      if ((m = /^['"]([^'"]+)['"]$/.exec(dt))) {
+        return `${m[1]} in your local timezone`;
+      }
+      return `${describeExpr(dt, nm)} in your local timezone`;
+    }
+    return `${describeExpr(loc, nm)} in your local timezone`;
+  }
+  const dtOnly = callInner(s, 'as_datetime');
+  if (dtOnly != null) return `the date/time of ${describeExpr(dtOnly, nm)}`;
+  return null;
+}
+
+function describeBase(expr, nm) {
+  const s = stripOuterParens(expr);
+  let m;
+
+  // Date/time + or - timedelta(...) (handles chained `- timedelta(days=1) + timedelta(hours=2)`)
+  if (/\btimedelta\s*\(/.test(s)) {
+    if ((m = /^([\s\S]+?)\s*-\s*timedelta\s*\(\s*days\s*=\s*1\s*\)\s*\+\s*timedelta\s*\(([^)]+)\)$/.exec(s))) {
+      return `1 day before ${describeBase(m[1], nm)}, plus ${friendlyTimedelta(m[2])}`;
+    }
+    if ((m = /^([\s\S]+?)\s*([+-])\s*timedelta\s*\(([^)]+)\)$/.exec(s))) {
+      const base = describeBase(m[1], nm), td = friendlyTimedelta(m[3]);
+      return m[2] === '-' ? `${td} before ${base}` : `${td} after ${base}`;
+    }
+  }
+
+  // Nested date/time conversions
+  const dt = describeDateExpr(s, nm);
+  if (dt) return dt;
+
+  // Elapsed minutes since last_changed
+  if ((m = /^\(?as_timestamp\s*\(\s*now\s*\(\s*\)\s*\)\s*-\s*as_timestamp\s*\(\s*states\.([a-z_]+\.[a-z0-9_]+)\.last_changed[\s\S]*\)\s*\/\s*60$/.exec(s))) {
+    return `minutes since ${nm(m[1])} last changed`;
+  }
+  if ((m = /^as_timestamp\s*\(\s*now\s*\(\s*\)\s*\)\s*-\s*as_timestamp\s*\(\s*([a-zA-Z_]\w*)\b[\s\S]*\)$/.exec(s))) {
+    return `seconds elapsed since ${m[1]}`;
+  }
+  if ((m = /^as_timestamp\s*\(\s*([a-zA-Z_]\w*)\b[\s\S]*\)\s*-\s*as_timestamp\s*\(\s*now\s*\(\s*\)\s*\)$/.exec(s))) {
+    return `seconds remaining until ${m[1]}`;
+  }
+
+  // Common time unit divisions & remainders
+  if ((m = /^([a-zA-Z_]\w*)\s*\/\/\s*86400$/.exec(s))) return `whole days from ${m[1]}`;
+  if ((m = /^\(?\s*([a-zA-Z_]\w*)\s*%\s*86400\s*\)?\s*\/\/\s*3600$/.exec(s))) return `remaining whole hours from ${m[1]}`;
+  if ((m = /^\(?\s*([a-zA-Z_]\w*)\s*%\s*3600\s*\)?\s*\/\/\s*60$/.exec(s))) return `remaining whole minutes from ${m[1]}`;
+  if ((m = /^([a-zA-Z_]\w*)\s*\/\/\s*60$/.exec(s))) return `whole hours from ${m[1]}`;
+  if ((m = /^([a-zA-Z_]\w*)\s*%\s*60$/.exec(s))) return `remaining minutes after whole hours`;
+  if ((m = /^([a-zA-Z_]\w*)\s*\/\s*86400$/.exec(s))) return `${m[1]} converted to days`;
+  if ((m = /^([a-zA-Z_]\w*)\s*\/\s*3600$/.exec(s))) return `${m[1]} converted to hours`;
+  if ((m = /^([a-zA-Z_]\w*)\s*\/\s*60$/.exec(s))) return `${m[1]} converted to minutes`;
+
+  // Common scaling & unit conversions
+  if ((m = /^([a-zA-Z_]\w*)\s*\|\s*float\s*\(\s*0\s*\)\s*\/\s*255\s*\*\s*100$/.exec(s))) return `${m[1]} converted from 0–255 brightness to 0–100%`;
+  if ((m = /^\(\s*([a-zA-Z_]\w*)\s*\*\s*9\s*\/\s*5\s*\)\s*\+\s*32$/.exec(s))) return `${m[1]} converted from °C to °F`;
+  if ((m = /^\(\s*([a-zA-Z_]\w*)\s*-\s*32\s*\)\s*\*\s*5\s*\/\s*9$/.exec(s))) return `${m[1]} converted from °F to °C`;
+  if ((m = /^([a-zA-Z_]\w*)\s*\|\s*sum\s*\/\s*\(\s*\1\s*\|\s*count\s*\)$/.exec(s))) return `the average of ${m[1]}`;
+  if ((m = /^([a-zA-Z_]\w*)\s*\/\s*(\d+(?:\.\d+)?)$/.exec(s))) return `${m[1]} divided by ${m[2]}`;
+  if ((m = /^([a-zA-Z_]\w*)\s*\*\s*(\d+(?:\.\d+)?)$/.exec(s))) return `${m[1]} multiplied by ${m[2]}`;
+  if ((m = /^([a-zA-Z_]\w*)\s*\*\s*(\d+(?:\.\d+)?)\s*([+-])\s*(\d+(?:\.\d+)?)$/.exec(s))) {
+    return `${m[1]} multiplied by ${m[2]} ${m[3] === '+' ? 'plus' : 'minus'} ${m[4]}`;
+  }
+
+  // Formatting & ISO timestamp
+  if ((m = /^([a-zA-Z_]\w*)\.isoformat\s*\(\s*\)$/.exec(s))) return `${m[1]} as a full timestamp (ready for automation triggers and dashboards)`;
+  if ((m = /^([a-zA-Z_]\w*)\.strftime\s*\(\s*['"]([^'"]+)['"]\s*\)$/.exec(s))) return `${m[1]} as a ${friendlyStrftime(m[2])}`;
+
+  // Dictionary literal & .get() lookup
+  if (/^\{[\s\S]*\}$/.test(s) && s.includes(':')) {
+    const pairs = splitArgs(s.slice(1, -1)).slice(0, 4).map((p) => {
+      const kv = p.split(':');
+      return kv.length === 2 ? `"${unquote(kv[0])}" → "${unquote(kv[1])}"` : p;
+    });
+    return `a translation table (${pairs.join(', ')}${splitArgs(s.slice(1, -1)).length > 4 ? ', …' : ''})`;
+  }
+  if ((m = /^([a-zA-Z_]\w*)\.get\s*\(([\s\S]+)\)$/.exec(s))) {
+    const a = splitArgs(m[2]);
+    if (a.length >= 2) return `the matching label for ${describeExpr(a[0], nm)} from ${m[1]} (or "${unquote(a[1])}" if not listed)`;
+  }
+
+  // Loop list append (`ns.low + [e.name ~ ...]`)
+  if ((m = /^([a-zA-Z_]\w*\.[a-zA-Z_]\w*)\s*\+\s*\[([\s\S]+)\]$/.exec(s))) {
+    const inner = m[2].trim();
+    if (/e\.name/.test(inner) && /e\.state/.test(inner)) return `add this device's name and reading to ${m[1]}`;
+    return `add ${describeExpr(inner, nm)} to ${m[1]}`;
+  }
+
+  // Namespace loop container
+  if ((m = /^namespace\s*\(\s*([a-zA-Z_]\w*)\s*=\s*\[\s*\]\s*\)$/.exec(s))) {
+    return `an empty list (${m[1]}) to collect matching items in the loop`;
+  }
+  if (/^namespace\s*\(/.test(s)) return `a loop variable container (${s})`;
+
+  // String concatenation (`a ~ b ~ c`) — with friendly formatting for common duration & count phrases
+  const tilde = splitAllTopOp(s, '~');
+  if (tilde.length > 1) {
+    if (s === "d ~ 'd ' ~ h ~ 'h'") return 'days and hours (e.g. "3d 4h")';
+    if (s === "h ~ 'h ' ~ m ~ 'm'") return 'hours and minutes (e.g. "1h 15m")';
+    if (s === "m ~ ' min'") return 'minutes (e.g. "12 min")';
+    if (/ns\.low\s*\|\s*count\s*~\s*': '\s*~\s*\(?\s*ns\.low\s*\|\s*join/.test(s)) return 'the count and list of matching devices';
+    const bits = tilde.map((part) => {
+      const p = stripOuterParens(part);
+      if ((p.startsWith("'") && p.endsWith("'")) || (p.startsWith('"') && p.endsWith('"'))) return `"${unquote(p)}"`;
+      if (/^([a-zA-Z_]\w*(?:\.[a-zA-Z_]\w*)?)\s*\|\s*join\s*\(\s*['"]([^'"]*)['"]\s*\)$/.test(p)) {
+        const jm = /^([a-zA-Z_]\w*(?:\.[a-zA-Z_]\w*)?)\s*\|\s*join\s*\(\s*['"]([^'"]*)['"]\s*\)$/.exec(p);
+        return `${jm[1]} separated by "${jm[2]}"`;
+      }
+      if (/^([a-zA-Z_]\w*(?:\.[a-zA-Z_]\w*)?)\s*\|\s*count$/.test(p)) {
+        const cm = /^([a-zA-Z_]\w*(?:\.[a-zA-Z_]\w*)?)\s*\|\s*count$/.exec(p);
+        return `the count of ${cm[1]}`;
+      }
+      return describeExpr(p, nm);
+    });
+    return bits.join(' followed by ');
+  }
+
+  // Core Home Assistant functions
+  if ((m = /^not\s+is_state\s*\(\s*['"]([^'"]+)['"]\s*,\s*([\s\S]+)\)$/.exec(s))) {
+    return `${nm(m[1])} is not ${friendlyList(m[2])}`;
+  }
   if ((m = /^is_state\s*\(\s*['"]([^'"]+)['"]\s*,\s*([\s\S]+)\)$/.exec(s))) {
-    return `${nm(m[1])} is ${m[2].trim()}`;
+    return `${nm(m[1])} is ${friendlyList(m[2])}`;
   }
   if ((m = /^is_state_attr\s*\(\s*['"]([^'"]+)['"]\s*,\s*['"]([^'"]+)['"]\s*,\s*([\s\S]+)\)$/.exec(s))) {
-    return `${nm(m[1])}'s ${m[2]} is ${m[3].trim()}`;
+    return `${nm(m[1])}'s ${m[2]} is ${friendlyList(m[3])}`;
   }
   if ((m = /^has_value\s*\(\s*['"]([^'"]+)['"]\s*\)$/.exec(s))) {
-    return `${nm(m[1])} has a valid value (not unavailable/unknown)`;
+    return `${nm(m[1])} is online and has a valid reading`;
   }
   if ((m = /^states\s*\(\s*['"]([^'"]+)['"]\s*\)$/.exec(s))) {
-    return `state of ${nm(m[1])}`;
+    return `the current state of ${nm(m[1])}`;
+  }
+  if ((m = /^state_attr\s*\(\s*['"]sun\.sun['"]\s*,\s*['"]([^'"]+)['"]\s*\)$/.exec(s))) {
+    return `the ${SUN_ATTR_NAMES[m[1]] || m[1]}`;
   }
   if ((m = /^state_attr\s*\(\s*['"]([^'"]+)['"]\s*,\s*['"]([^'"]+)['"]\s*\)$/.exec(s))) {
-    return `${m[2]} attribute of ${nm(m[1])}`;
+    return `the ${m[2]} of ${nm(m[1])}`;
   }
   if ((m = /^expand\s*\(\s*([\s\S]+)\)$/.exec(s))) {
     const ents = extractTemplateEntities(m[1]);
-    if (ents.length) return `expand ${ents.length} ${ents.length === 1 ? 'entity' : 'entities'} (${ents.slice(0, 3).map(nm).join(', ')}${ents.length > 3 ? `, +${ents.length - 3} more` : ''})`;
+    if (ents.length) return friendlyEntityList(ents, nm);
     if (/area_entities\s*\(\s*['"]([^'"]+)['"]\s*\)/.test(m[1])) {
       const am = /area_entities\s*\(\s*['"]([^'"]+)['"]\s*\)/.exec(m[1]);
-      return `all entities in area "${am[1]}"`;
+      return `all entities in the "${am[1]}" area`;
     }
     if (/label_entities\s*\(\s*['"]([^'"]+)['"]\s*\)/.test(m[1])) {
       const lm = /label_entities\s*\(\s*['"]([^'"]+)['"]\s*\)/.exec(m[1]);
-      return `all entities with label "${lm[1]}"`;
+      return `all entities with the "${lm[1]}" label`;
     }
-    return `expand ${m[1].trim()}`;
+    return `all entities in ${m[1].trim()}`;
   }
   if ((m = /^states\.([a-z_]+)$/.exec(s))) return `all ${m[1].replace(/_/g, ' ')} entities`;
   if ((m = /^states\.([a-z_]+\.[a-z0-9_]+)\.last_changed$/.exec(s))) return `when ${nm(m[1])} last changed`;
-  if ((m = /^states\.([a-z_]+\.[a-z0-9_]+)\.state$/.exec(s))) return `state of ${nm(m[1])}`;
+  if ((m = /^states\.([a-z_]+\.[a-z0-9_]+)\.state$/.exec(s))) return `the state of ${nm(m[1])}`;
+  if (s === 'e.state') return 'this item\'s reading';
+  if (s === 'e.name') return 'this item\'s friendly name';
   if ((m = /^iif\s*\(([\s\S]+)\)$/.exec(s))) {
     const a = splitArgs(m[1]);
-    if (a.length >= 3) return `if ${describeExpr(a[0], nm)}, return ${a[1]}; otherwise ${a[2]}`;
+    if (a.length >= 3) return `if ${describeExpr(a[0], nm)}, use ${describeExpr(a[1], nm)}; otherwise ${describeExpr(a[2], nm)}`;
   }
-  if (/^now\s*\(\s*\)/.test(s)) return s.replace(/now\(\)/g, 'current time');
-  if (/^today_at\s*\(/.test(s)) return s.replace(/today_at\s*\(\s*['"]([^'"]+)['"]\s*\)/g, 'today at $1');
-  if (/^namespace\s*\(/.test(s)) return `create loop container ${s}`;
-  // Inline entity names inside comparisons / arithmetic
+  if (/^now\s*\(\s*\)$/.test(s)) return 'the current time';
+  if ((m = /^today_at\s*\(\s*['"]([^'"]+)['"]\s*\)$/.exec(s))) return `today at ${m[1]}`;
+  if ((s.startsWith("'") && s.endsWith("'")) || (s.startsWith('"') && s.endsWith('"'))) return `"${unquote(s)}"`;
+
+  // Fallback inline cleanup for custom user expressions
   return s
-    .replace(/\bis_state\s*\(\s*['"]([^'"]+)['"]\s*,\s*([^)]+)\)/g, (_, id, v) => `${nm(id)} is ${v.trim()}`)
-    .replace(/\bhas_value\s*\(\s*['"]([^'"]+)['"]\s*\)/g, (_, id) => `${nm(id)} is available`)
+    .replace(/\bis_state\s*\(\s*['"]([^'"]+)['"]\s*,\s*([^)]+)\)/g, (_, id, v) => `${nm(id)} is ${friendlyList(v)}`)
+    .replace(/\bhas_value\s*\(\s*['"]([^'"]+)['"]\s*\)/g, (_, id) => `${nm(id)} is online`)
     .replace(/\bstates\s*\(\s*['"]([^'"]+)['"]\s*\)/g, (_, id) => `${nm(id)}`)
+    .replace(/\bstate_attr\s*\(\s*['"]sun\.sun['"]\s*,\s*['"]([^'"]+)['"]\s*\)/g, (_, a) => SUN_ATTR_NAMES[a] || a)
     .replace(/\bstate_attr\s*\(\s*['"]([^'"]+)['"]\s*,\s*['"]([^'"]+)['"]\s*\)/g, (_, id, a) => `${nm(id)}'s ${a}`)
-    .replace(/\bas_local\s*\(([^()]+)\)/g, (_, inner) => `local time of ${inner.trim()}`)
-    .replace(/\bas_datetime\s*\(([^()]+)\)/g, (_, inner) => `date/time of ${inner.trim()}`)
-    .replace(/\btimedelta\s*\(([^)]+)\)/g, (_, inner) => inner.replace(/=/g, ' ').replace(/,/g, ' '))
-    .replace(/\.strftime\s*\(\s*['"]([^'"]+)['"]\s*\)/g, (_, fmt) => ` formatted as "${fmt}"`)
-    .replace(/\.isoformat\s*\(\s*\)/g, ' as an ISO timestamp')
     .replace(/\btoday_at\s*\(\s*['"]([^'"]+)['"]\s*\)/g, (_, t) => t)
-    .replace(/\bnow\(\)/g, 'current time');
+    .replace(/\bnow\(\)/g, 'the current time');
+}
+
+function describePipeChain(s, nm) {
+  const parts = splitPipes(s);
+  if (parts.length === 1) return describeBase(parts[0], nm);
+
+  const head = stripOuterParens(parts[0]);
+  const filters = parts.slice(1).map((p) => p.trim());
+
+  // Special smooth English rewrites for the most common Home Assistant filter pipelines
+  const hasCount = filters.some((f) => /^(?:count|length)\b/.test(f));
+  const hasNameMap = filters.some((f) => /^map\s*\(\s*attribute\s*=\s*['"]name['"]\s*\)/.test(f));
+  const hasFloatMap = filters.some((f) => /^map\s*\(\s*['"]float['"]/.test(f));
+  const hasSkipUnav = filters.some((f) => /^rejectattr\s*\(\s*['"]state['"]\s*,\s*['"]in['"]/.test(f) && /unavailable/.test(f));
+  const selState = filters.find((f) => /^selectattr\s*\(\s*['"]state['"]/.test(f));
+
+  if (hasCount && selState) {
+    const sm = /^selectattr\s*\(\s*['"]state['"]\s*,\s*['"]([^'"]+)['"]\s*,\s*([\s\S]+)\)$/.exec(selState);
+    if (sm) {
+      return `how many of ${describeBase(head, nm)} are ${friendlyList(sm[2])}`;
+    }
+  }
+  if (hasNameMap && selState) {
+    const sm = /^selectattr\s*\(\s*['"]state['"]\s*,\s*['"]([^'"]+)['"]\s*,\s*([\s\S]+)\)$/.exec(selState);
+    if (sm) {
+      return `the friendly names of ${describeBase(head, nm)} that are ${friendlyList(sm[2])}`;
+    }
+  }
+  if (selState && !hasCount && !hasNameMap && filters.every((f) => f === selState || f === 'list')) {
+    const sm = /^selectattr\s*\(\s*['"]state['"]\s*,\s*['"]([^'"]+)['"]\s*,\s*([\s\S]+)\)$/.exec(selState);
+    if (sm) {
+      return `only those in ${describeBase(head, nm)} that are ${friendlyList(sm[2])}`;
+    }
+  }
+  if (hasFloatMap && filters.some((f) => /^reject\s*\(\s*['"]none['"]\s*\)/.test(f))) {
+    return `the numeric readings of ${describeBase(head, nm)} (ignoring any that are offline)`;
+  }
+  if (head === 'states.sensor' && filters.some((f) => /'battery'/.test(f))) {
+    return hasSkipUnav ? 'every online battery sensor in Home Assistant' : 'every battery sensor in Home Assistant';
+  }
+  if (filters.length === 1 && /^(?:count|length)$/.test(filters[0])) {
+    return `how many items are in ${describeBase(head, nm)}`;
+  }
+
+  const headDesc = describeBase(head, nm);
+  const steps = filters.map((p) => describeFilter(p)).filter(Boolean);
+  if (!steps.length) return headDesc;
+  return `${headDesc}, ${steps.join(', ')}`;
 }
 
 export function describeExpr(expr, nameOf) {
   const nm = (id) => (typeof nameOf === 'function' ? nameOf(id) : id);
-  const s = String(expr || '').trim();
+  const s = stripOuterParens(expr);
   if (!s) return '';
-  // Inline Python/Jinja ternary: `A if COND else B`
-  const tern = /^([\s\S]+?)\s+\bif\b\s+([\s\S]+?)\s+\belse\b\s+([\s\S]+)$/.exec(s);
-  if (tern && !/[()]/.test(tern[2].replace(/\([^()]*\)/g, ''))) {
-    return `If ${describeExpr(tern[2], nm)}, output ${describeExpr(tern[1], nm)}; otherwise ${describeExpr(tern[3], nm)}`;
+
+  // 1. Overnight & daytime schedule patterns
+  let m;
+  if ((m = /^now\(\)\s*>=\s*today_at\s*\(\s*['"]([^'"]+)['"]\s*\)\s+or\s+now\(\)\s*<\s*today_at\s*\(\s*['"]([^'"]+)['"]\s*\)$/.exec(s))) {
+    return `the current time is between ${m[1]} and ${m[2]} (overnight)`;
   }
-  const parts = splitPipes(s);
-  if (parts.length === 1) return describeBase(parts[0], nm);
-  const head = describeBase(parts[0], nm);
-  const steps = parts.slice(1).map((p) => describeFilter(p, nm));
-  return `${head} → ${steps.join(' → ')}`;
+  if ((m = /^today_at\s*\(\s*['"]([^'"]+)['"]\s*\)\s*<=\s*now\(\)\s*<\s*today_at\s*\(\s*['"]([^'"]+)['"]\s*\)$/.exec(s))) {
+    return `the current time is between ${m[1]} and ${m[2]}`;
+  }
+  if ((m = /^now\(\)\.weekday\(\)\s+in\s+(\[[^\]]+\])$/.exec(s))) {
+    return `today is ${friendlyDays(m[1])}`;
+  }
+
+  // 2. Inline Python/Jinja ternary: `A if COND else B` (paren-aware, supports chained ternaries)
+  const tern = splitTopTernary(s);
+  if (tern) {
+    const elseNested = splitTopTernary(stripOuterParens(tern.elseExpr));
+    if (elseNested) {
+      return `if ${describeExpr(tern.condExpr, nm)}, use ${describeExpr(tern.thenExpr, nm)}; else if ${describeExpr(elseNested.condExpr, nm)}, use ${describeExpr(elseNested.thenExpr, nm)}; otherwise use ${describeExpr(elseNested.elseExpr, nm)}`;
+    }
+    return `if ${describeExpr(tern.condExpr, nm)}, use ${describeExpr(tern.thenExpr, nm)}; otherwise use ${describeExpr(tern.elseExpr, nm)}`;
+  }
+
+  // 3. Chained range check: `A <= X <= B` or `A <= X < B`
+  if ((m = /^([^<>]+?)\s*(<=|<)\s*([^<>]+?)\s*(<=|<)\s*([^<>]+)$/.exec(s)) && !/[()[\]{}]/.test(m[3].replace(/now\(\)/g, ''))) {
+    return `${describeExpr(m[3], nm)} is between ${describeExpr(m[1], nm)} and ${describeExpr(m[5], nm)}`;
+  }
+
+  // 4. Logical `or` / `and` at top level
+  const orSplit = splitAllTopOp(s, 'or');
+  if (orSplit.length > 1) {
+    return `either ${orSplit.map((p) => describeExpr(p, nm)).join(' or ')}`;
+  }
+  const andSplit = splitAllTopOp(s, 'and');
+  if (andSplit.length > 1) {
+    if (andSplit.length === 2 && /\bcount\s*>\s*0\b/.test(andSplit[0]) && /\bcount\s*==\s*/.test(andSplit[1])) {
+      return 'at least 1 entity is online and every online one meets the condition';
+    }
+    const bareVars = andSplit.every((p) => /^[a-zA-Z_]\w*$/.test(p.trim()));
+    const tail = bareVars ? ' are true' : '';
+    return andSplit.length === 2
+      ? `both ${describeExpr(andSplit[0], nm)} and ${describeExpr(andSplit[1], nm)}${tail}`
+      : `all of (${andSplit.map((p) => describeExpr(p, nm)).join(', ')})${tail}`;
+  }
+
+  // 5. `is not none` / `is none`
+  if ((m = /^([\s\S]+?)\s+is\s+not\s+none$/.exec(s))) {
+    return `${describeExpr(m[1], nm)} is available`;
+  }
+  if ((m = /^([\s\S]+?)\s+is\s+none$/.exec(s))) {
+    return `${describeExpr(m[1], nm)} is missing`;
+  }
+
+  // 6. Top-level comparison (`==`, `!=`, `>=`, `<=`, `>`, `<`) — keeps pipes intact on each side!
+  const cmp = splitTopOp(s, ['==', '!=', '>=', '<=', '>', '<']);
+  if (cmp) {
+    if (cmp.op === '>' && cmp.right === '0' && /\|\s*(?:count|length)\s*$/.test(cmp.left)) {
+      const target = cmp.left.replace(/\|\s*(?:count|length)\s*$/, '').trim();
+      return `at least 1 item is in ${describeExpr(target, nm)}`;
+    }
+    if (cmp.op === '==' && /\|\s*(?:count|length)\s*$/.test(cmp.left) && /\|\s*(?:count|length)\s*$/.test(cmp.right)) {
+      return 'every online entity meets the condition';
+    }
+    return `${describeExpr(cmp.left, nm)} ${CMP_WORDS[cmp.op] || cmp.op} ${describeExpr(cmp.right, nm)}`;
+  }
+
+  // 7. Top-level string concatenation (`~`) — evaluate before splitting pipes so `a | count ~ ': ' ~ (a | join)` stays intact!
+  if (splitAllTopOp(s, '~').length > 1) return describeBase(s, nm);
+
+  // 8. Pipe chain or base expression
+  return describePipeChain(s, nm);
 }
 
 // ---- Smart Linter & Unavailable Trap Detector ----
@@ -732,6 +1160,81 @@ export function lintTemplate(src) {
 
 // ---- Full Plain-English Explainer ----
 
+const VAR_HINTS = {
+  sun_dt: 'that sun time',
+  prev_dt: 'the previous sun time',
+  target: 'the target time',
+  prev_target: "today's target time",
+  dt: 'that date/time',
+  secs: 'the seconds',
+  mins: 'the elapsed minutes',
+  a: 'that duration',
+  d: 'days',
+  h: 'hours',
+  m: 'minutes',
+  v: 'that value',
+  n: 'that count',
+  val: 'that attribute',
+  vals: 'those numbers',
+  items: 'those entities',
+  valid: 'the online entities',
+  matched: 'the matching entities',
+  names: 'the matching names',
+  labels: 'the translation table',
+  in_time: 'within the time window',
+  in_day: 'on a selected weekday',
+};
+
+function friendlyVarRef(v, defined) {
+  if (!defined.has(v)) return v;
+  if (VAR_HINTS[v]) return VAR_HINTS[v];
+  const cm = /^c(\d+)$/.exec(v);
+  if (cm) return `condition ${cm[1]}`;
+  return v;
+}
+
+function humanizeVars(sentence, defined) {
+  let out = String(sentence || '');
+  defined.forEach((v) => {
+    const label = friendlyVarRef(v, defined);
+    if (label === v) return;
+    // Replace standalone variable identifiers outside quoted text
+    const parts = out.split(/("[^"]*")/g);
+    const re = new RegExp(`\\b${v}\\b`, 'g');
+    out = parts.map((p, i) => (i % 2 === 1 ? p : p.replace(re, label))).join('');
+  });
+  return out;
+}
+
+function phraseSetAction(varName, rawExpr, desc, defined) {
+  const clean = humanizeVars(desc, defined);
+  if (/^an empty list/.test(clean)) return `Start with ${clean}.`;
+  if (/^add /.test(clean)) return `${capFirst(clean)}.`;
+  if (/^if /i.test(clean)) return `${capFirst(clean)} (saved as ${varName}).`;
+  if (varName.includes('.')) return `Update ${varName} to ${clean}.`;
+  if (/^only those /.test(clean)) return `Keep ${clean} (saved as ${varName}).`;
+  if (/^how many /.test(clean)) return `Count ${clean} (saved as ${varName}).`;
+  if (/^a translation table/.test(clean)) return `Define ${clean} (saved as ${varName}).`;
+  if (/^(whole |remaining |\d+ (?:day|hour|minute|second)|seconds |minutes |the average|.+ (?:divided|multiplied|converted) )/.test(clean)) {
+    return `Calculate ${clean} (saved as ${varName}).`;
+  }
+  const hasCmp = /\b(?:is greater than|is less than|is at least|is at most|equals|does not equal|is between|meets the condition)\b/.test(clean);
+  const isCheck = hasCmp || (/\b(?:is|are|between|both|either|online|available|missing)\b/.test(clean)
+    && !/^the (?:current state|next |date\/time|friendly names|numeric readings|matching label|average|state)/.test(clean));
+  if (isCheck) return `Check whether ${clean} (saved as ${varName}).`;
+  return `Get ${clean} (saved as ${varName}).`;
+}
+
+function phraseExprAction(rawBody, desc, defined) {
+  const clean = humanizeVars(desc, defined);
+  if (/^if /i.test(clean)) return `${capFirst(clean).replace(/,\s*use /g, ', return ').replace(/;\s*otherwise use /g, '; otherwise return ')}.`;
+  const isBool = /\b(?:is|are|equals|between|at least|at most|greater than|less than|both|either|meets the condition)\b/.test(clean)
+    && !/^the (?:current state|next |date\/time|friendly names|numeric readings|matching label|average|state)/.test(clean)
+    && !/as a full timestamp|clock time|followed by|separated by/.test(clean);
+  if (isBool) return `Return true if ${clean} (otherwise false).`;
+  return `Return ${clean}.`;
+}
+
 export function explainTemplate(src, nameOf) {
   const nm = (id) => (typeof nameOf === 'function' ? nameOf(id) : id);
   const text = String(src == null ? '' : src);
@@ -739,6 +1242,7 @@ export function explainTemplate(src, nameOf) {
   const clauses = [];
   const allEntities = new Set(extractTemplateEntities(text));
   const conceptSet = new Set();
+  const definedVars = new Set();
   let depth = 0;
   const setLines = [];
 
@@ -753,7 +1257,7 @@ export function explainTemplate(src, nameOf) {
       continue;
     }
     if (tok.kind === 'text') {
-      clauses.push({ kind: 'text', depth, raw: tok.raw.trim(), english: `Literal text: "${tok.raw.trim()}"`, evalExpr: null, entities: [], concepts: [] });
+      clauses.push({ kind: 'text', depth, raw: tok.raw.trim(), english: depth > 0 ? `Return "${tok.raw.trim()}".` : `Static text: "${tok.raw.trim()}"`, evalExpr: null, entities: [], concepts: [] });
       continue;
     }
     if (tok.kind === 'error') {
@@ -768,16 +1272,18 @@ export function explainTemplate(src, nameOf) {
       if (tag === 'set' && tok.varName && tok.expr) {
         const pre = setLines.join('');
         setLines.push(tok.raw);
+        const desc = describeExpr(tok.expr, nm);
         clauses.push({
           kind: 'set', depth, raw: tok.raw, varName: tok.varName,
-          english: `Set ${tok.varName} = ${describeExpr(tok.expr, nm)}`,
+          english: phraseSetAction(tok.varName, tok.expr, desc, definedVars),
           evalExpr: `${pre}{{ (${tok.expr}) }}`,
           entities: ents, concepts,
         });
+        if (!tok.varName.includes('.')) definedVars.add(tok.varName);
       } else if (tag === 'if') {
         clauses.push({
           kind: 'if', depth, raw: tok.raw,
-          english: `If ${describeExpr(tok.rest, nm)}:`,
+          english: `If ${humanizeVars(describeExpr(tok.rest, nm), definedVars)}:`,
           evalExpr: `${setLines.join('')}{{ (${tok.rest}) | bool }}`,
           entities: ents, concepts,
         });
@@ -785,7 +1291,7 @@ export function explainTemplate(src, nameOf) {
       } else if (tag === 'elif') {
         clauses.push({
           kind: 'elif', depth, raw: tok.raw,
-          english: `Otherwise, if ${describeExpr(tok.rest, nm)}:`,
+          english: `Otherwise, if ${humanizeVars(describeExpr(tok.rest, nm), definedVars)}:`,
           evalExpr: `${setLines.join('')}{{ (${tok.rest}) | bool }}`,
           entities: ents, concepts,
         });
@@ -795,15 +1301,17 @@ export function explainTemplate(src, nameOf) {
         depth++;
       } else if (tag === 'for') {
         const fm = /^(.+?)\s+in\s+([\s\S]+)$/.exec(tok.rest);
+        const loopVar = fm ? fm[1].trim() : '';
+        const itemWord = loopVar === 'e' ? 'each sensor' : `each ${loopVar}`;
         clauses.push({
           kind: 'for', depth, raw: tok.raw,
-          english: fm ? `For each ${fm[1].trim()} in ${describeExpr(fm[2], nm)}:` : `Loop: ${tok.rest}`,
+          english: fm ? `Check ${itemWord} in ${humanizeVars(describeExpr(fm[2], nm), definedVars)}:` : `Repeat for ${tok.rest}:`,
           evalExpr: fm ? `${setLines.join('')}{{ (${fm[2]}) | list | count }}` : null,
           entities: ents, concepts,
         });
         depth++;
       } else if (tag === 'do') {
-        clauses.push({ kind: 'do', depth, raw: tok.raw, english: `Run: ${describeExpr(tok.rest, nm)}`, evalExpr: null, entities: ents, concepts });
+        clauses.push({ kind: 'do', depth, raw: tok.raw, english: `Run: ${humanizeVars(describeExpr(tok.rest, nm), definedVars)}`, evalExpr: null, entities: ents, concepts });
       } else if (tag === 'endif' || tag === 'endfor' || tag === 'endmacro' || tag === 'endset') {
         // Closing tags kept subtle (structural marker, no extra noise)
       } else {
@@ -813,9 +1321,10 @@ export function explainTemplate(src, nameOf) {
       continue;
     }
     if (tok.kind === 'expr') {
+      const desc = describeExpr(tok.body, nm);
       clauses.push({
         kind: 'expr', depth, raw: tok.raw,
-        english: `Output ${describeExpr(tok.body, nm)}`,
+        english: phraseExprAction(tok.body, desc, definedVars),
         evalExpr: depth === 0 ? `${setLines.join('')}{{ (${tok.body}) }}` : null,
         entities: ents, concepts,
       });
@@ -826,11 +1335,12 @@ export function explainTemplate(src, nameOf) {
   let summary = '';
   const exprs = clauses.filter((c) => c.kind === 'expr');
   const ifs = clauses.filter((c) => c.kind === 'if' || c.kind === 'elif');
+  const entsLabel = allEntities.size === 1 ? '1 entity' : `${allEntities.size} entities`;
   if (!text.trim()) summary = T('ts_sum_empty');
   else if (!TPL_RE.test(text)) summary = T('ts_sum_plain');
-  else if (ifs.length > 0) summary = T('ts_sum_branch', { n: ifs.length + 1, ents: allEntities.size });
+  else if (ifs.length > 0) summary = T('ts_sum_branch', { n: ifs.length + 1, ents: entsLabel });
   else if (exprs.length === 1 && clauses.filter((c) => c.kind === 'set').length === 0) summary = exprs[0].english;
-  else summary = T('ts_sum_steps', { steps: clauses.length, ents: allEntities.size });
+  else summary = T('ts_sum_steps', { steps: clauses.length, ents: entsLabel });
 
   return {
     summary,

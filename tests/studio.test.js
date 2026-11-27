@@ -37,10 +37,21 @@ const {
   check('0.15.0 explainTemplate translates variables, filters, and conditions into plain English using friendly names',
     exp.clauses.length >= 4
     && /Kitchen Temp/.test(exp.clauses[0].english) && /decimal number/.test(exp.clauses[0].english)
-    && /Garage Door is 'open'/.test(exp.clauses[1].english)
+    && /Garage Door is "open"/.test(exp.clauses[1].english)
     && exp.concepts.some((c) => c.key === 'states')
     && exp.concepts.some((c) => c.key === 'float')
     && exp.concepts.some((c) => c.key === 'is_state'), exp);
+
+  const sunWalk = explainTemplate(generateTplRecipe('tpl_sun_offset', { event: 'next_setting', dir: 'before', hours: 16, minutes: 0, output: 'clock12' }).state);
+  const winWalk = explainTemplate(generateTplRecipe('tpl_time_window', { from: '22:00', to: '07:00', days: [0, 1, 2, 3, 4] }).state);
+  const walkText = sunWalk.clauses.concat(winWalk.clauses).map((c) => c.english).join('\n');
+  check('0.15.0 explainTemplate produces true plain English with no raw Jinja syntax leaks',
+    /next sunset in your local timezone/i.test(walkText)
+    && /16 hours before/i.test(walkText)
+    && /12-hour clock time/i.test(walkText)
+    && /between 22:00 and 07:00 \(overnight\)/i.test(walkText)
+    && /weekday \(Mon–Fri\)/i.test(walkText)
+    && !/as_local\(|timedelta\(|%I:%M|today_at\(|weekday\(\)|apply count/.test(walkText), walkText);
 
   const probe = buildExplainProbe(exp.clauses);
   check('0.15.0 buildExplainProbe bundles evaluable clauses into one tojson template',
