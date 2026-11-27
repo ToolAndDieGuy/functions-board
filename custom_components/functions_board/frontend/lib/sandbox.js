@@ -941,8 +941,9 @@ export class Sandbox {
       if (p === 'tag') trigger.tag_id = toList(t.tag_id)[0];
       if (p === 'conversation') Object.assign(trigger, { sentence: String(toList(t.command)[0] || ''), slots: {}, details: {} });
     }
+    const timeSrc = t && this._plat(t) === 'time' ? toList(t.at).map((a) => (typeof a === 'object' && a ? a.entity_id : a)).find((x) => typeof x === 'string' && EXACT_RE.test(x)) : null;
     const src = trigger.entity_id || (trigger.event && trigger.event.event_type ? 'event:' + trigger.event.event_type : trigger.topic ? 'mqtt:' + trigger.topic : null)
-      || (t && toList(t.entity_id).find((x) => typeof x === 'string' && EXACT_RE.test(x))) || null;
+      || (t && toList(t.entity_id).find((x) => typeof x === 'string' && EXACT_RE.test(x))) || timeSrc || null;
     const cause = this._log({ kind: 'trigger', key: id, text: t ? T('sbx_run_as', { n: ti + 1, p: this._plat(t) }) : T('sbx_run_by_you'), by: 'you', src });
     this._start(it, { trigger }, cause, { conds: checkConds });
     await this.settle();
@@ -1399,7 +1400,7 @@ export class Sandbox {
         } else if (this._espec(p) && this._eFires(this._espec(p), t, id, old, nu)) {
           const spec = this._espec(p), vars = { platform: p, entity_id: id, from_state: old ? this.obj0(id, old) : null, to_state: this.obj0(id, nu) };
           await this._fireFor(it, i, Object.assign({}, t, { for: (t.options || {}).for }), vars, lid, id, async (st) => this._eValid(spec, t, id, st));
-        } else if (p === 'time' && toList(t.at).includes(id)) {
+        } else if (p === 'time' && toList(t.at).some((a) => (typeof a === 'object' && a ? a.entity_id : a) === id)) {
           this._armTime(it, t, i);
         } else if (p === 'zone' && this._zoneHit(t, id, old, nu)) {
           await this._fire(it, i, { platform: 'zone', entity_id: id, from_state: old ? this.obj0(id, old) : null, to_state: this.obj0(id, nu), zone: this.obj(String(t.zone)), event: t.event || 'enter' }, lid);
@@ -1647,26 +1648,28 @@ export class Sandbox {
   }
   // time triggers: the next time each `at` comes round, on the sandbox clock
   _timeAt(at, from) {
-    if (EXACT_RE.test(String(at))) {
-      const s = this.get(String(at));
+    const off = typeof at === 'object' && at && at.offset != null ? (durMs(at.offset) || 0) : 0;
+    const ref = typeof at === 'object' && at ? at.entity_id : at;
+    if (EXACT_RE.test(String(ref))) {
+      const s = this.get(String(ref));
       if (!s) return null;
-      if (String(at).startsWith('input_datetime.')) {
+      if (String(ref).startsWith('input_datetime.')) {
         const A = s.attributes || {};
         if (A.has_time === false) return null;
-        if (A.has_date) { const ms = Date.parse(String(s.state).replace(' ', 'T')); return isFinite(ms) && ms > from ? ms : null; }
+        if (A.has_date) { const ms = Date.parse(String(s.state).replace(' ', 'T')) + off; return isFinite(ms) && ms > from ? ms : null; }
         const hms = parseHMS(s.state);
         if (!hms) return null;
-        let t = localAt(from, hms, this.tz);
-        if (t <= from) t = localAt(from + 86400000, hms, this.tz);
+        let t = localAt(from, hms, this.tz) + off;
+        if (t <= from) t = localAt(from + 86400000, hms, this.tz) + off;
         return t;
       }
-      const ms = Date.parse(s.state);
+      const ms = Date.parse(s.state) + off;
       return isFinite(ms) && ms > from ? ms : null;
     }
-    const hms = parseHMS(at);
+    const hms = parseHMS(ref);
     if (!hms) return null;
-    let t = localAt(from, hms, this.tz);
-    if (t <= from) t = localAt(from + 86400000, hms, this.tz);
+    let t = localAt(from, hms, this.tz) + off;
+    if (t <= from) t = localAt(from + 86400000, hms, this.tz) + off;
     return t;
   }
   _armTime(it, t, i) {
@@ -1674,15 +1677,19 @@ export class Sandbox {
     if (t.enabled === false || (p !== 'time' && p !== 'time_pattern')) return;
     const key = 'time:' + it.id + '#' + i;
     this.timers.filter((x) => x.slot === key).forEach((x) => this._drop(x));
-    let at = null, label = '';
+    let at = null, label = '', src = null;
     if (p === 'time') {
-      toList(t.at).forEach((a) => { const x = this._timeAt(a, this.now); if (x != null && (at == null || x < at)) at = x; });
+      toList(t.at).forEach((a) => {
+        const eid = typeof a === 'object' && a ? a.entity_id : (EXACT_RE.test(String(a)) ? String(a) : null);
+        const x = this._timeAt(a, this.now);
+        if (x != null && (at == null || x < at)) { at = x; src = eid && EXACT_RE.test(String(eid)) ? String(eid) : null; }
+      });
       label = T('sbx_time_label', { name: this._name(it.id) });
     } else { at = this._patternNext(t, this.now); label = T('sbx_pattern_label', { name: this._name(it.id) }); }
     if (at == null) return;
     this._at(at, () => {
       const wd = t.weekday ? toList(t.weekday) : null, ok = !wd || wd.includes(WD[tzParts(this.now, this.tz).wd]);
-      if (ok && this._on(it)) this._task(() => this._fire(it, i, { platform: p, now: this.iso() }, null));
+      if (ok && this._on(it)) this._task(() => this._fire(it, i, { platform: p, now: this.iso() }, null, null, src));
       this._armTime(it, t, i);
     }, null, label, it.id).slot = key;
   }
@@ -1719,10 +1726,10 @@ export class Sandbox {
   _vars(run) { return run ? Object.assign({}, run.vars) : {}; }
   _active(id) { return (this.runs.get(id) || []).filter((r) => !r.done); }
   running(id) { return this._active(id).length > 0; }
-  async _fire(it, i, tv, cause, partly) {
+  async _fire(it, i, tv, cause, partly, src) {
     const t = this._trigs(it)[i] || {};
     const trigger = Object.assign({ id: t.id != null ? String(t.id) : String(i), idx: String(i) }, tv);
-    const lid = this._log({ kind: 'trigger', key: it.id, text: this._trigText(t, trigger), ent: trigger.entity_id || null, to: trigger.to_state ? trigger.to_state.state : null, cause, partly, vars: this._snap({ trigger }) });
+    const lid = this._log({ kind: 'trigger', key: it.id, text: this._trigText(t, trigger), ent: trigger.entity_id || null, src: src || null, to: trigger.to_state ? trigger.to_state.state : null, cause, partly, vars: this._snap({ trigger }) });
     this.fired.add(it.id + '#' + i);
     // a state trigger with From and no To fires on a change into a state it lists under From: from [off, on] starts
     // on off → on and on → off alike. Said once it happens, as a fact; it may be meant (0.11.1)
