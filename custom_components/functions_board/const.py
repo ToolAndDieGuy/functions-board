@@ -9,6 +9,7 @@ PANEL_TITLE: Final = "Functions"
 PANEL_ICON: Final = "mdi:sitemap-outline"
 WEBCOMPONENT: Final = "functions-board"
 STATIC_URL: Final = "/functions_board_static"
+STATIC_V_URL: Final = "/functions_board_static_v"
 BOARD_FILE: Final = "functions-board.js"
 CARD_LOADER_FILE: Final = "card-loader.js"
 

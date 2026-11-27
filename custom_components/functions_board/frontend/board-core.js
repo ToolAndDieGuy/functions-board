@@ -360,6 +360,22 @@ export class FunctionsBoard extends HTMLElement {
           this._revs[label] = revs[label] || 0;
         });
         this._lastShared = this._sharedJson();
+        if (this._sepChecks) {
+          const chRes = await this._ws({ type: 'functions_board/checks' }, { optional: 'older integrations keep saved checks inside each layout', fallback: null });
+          if (chRes && chRes.checks && typeof chRes.checks === 'object') {
+            this._data.checks = this._data.checks || {};
+            this._lastChecks = this._lastChecks || new Map();
+            const chLabels = new Set([...Object.keys(chRes.checks), ...Object.keys(this._data.checks)]);
+            chLabels.forEach((label) => {
+              const cur = this._data.checks[label], mine = cur && cur.length ? JSON.stringify(cur) : null;
+              const synced = this._lastChecks.has(label) ? this._lastChecks.get(label) : null;
+              if (mine !== synced) return;
+              const list = (Array.isArray(chRes.checks[label]) ? chRes.checks[label] : []).slice(0, 50).map(cleanCheck).filter(Boolean);
+              if (list.length) { this._data.checks[label] = list; this._lastChecks.set(label, JSON.stringify(list)); }
+              else { delete this._data.checks[label]; this._lastChecks.delete(label); }
+            });
+          }
+        }
         this._renderList();
         if (this._data.ui.current && this._data.functions.includes(this._data.ui.current)) this._open(this._data.ui.current, true);
       } catch (e) { /* keep what we have */ }
@@ -598,9 +614,14 @@ export class FunctionsBoard extends HTMLElement {
       // be one made since (0.9.2: the last board's registries, reused, deleted a function another board had made)
       if (this._data && this._store.newer('reg', 'data')) {
         this._data.functions = this._data.functions.filter((l) => this._labelMap.has(l));
-        // a label deleted in Home Assistant takes its layout with it; hidden functions keep theirs
+        // a label deleted in Home Assistant takes its layout and saved checks with it; hidden functions keep theirs
         const gone = Object.keys(this._data.layouts).filter((k) => !this._labelMap.has(k));
-        if (gone.length) { gone.forEach((k) => delete this._data.layouts[k]); this._save(); }
+        const goneChecks = Object.keys(this._data.checks || {}).filter((k) => !this._labelMap.has(k));
+        if (gone.length || goneChecks.length) {
+          gone.forEach((k) => delete this._data.layouts[k]);
+          goneChecks.forEach((k) => delete this._data.checks[k]);
+          this._save();
+        }
       }
     }
     _cleanLayouts(all) {
@@ -3388,10 +3409,12 @@ export class FunctionsBoard extends HTMLElement {
       }
       // 2. the categories (Home Assistant un-files whatever is still in them)
       for (const c of st.cats) await this._ws({ type: 'config/category_registry/delete', scope: c.scope, category_id: c.id }, { fallback: null });
-      // 3. the label (Home Assistant takes it off every entity, device and area) and the layout
+      // 3. the label (Home Assistant takes it off every entity, device and area), the layout, and saved checks
+      const savedChecks = this._checksOf(label).map((c) => JSON.parse(JSON.stringify(c)));
       await this._ws({ type: 'config/label_registry/delete', label_id: label });
       this._takeOff(label);
       delete this._data.layouts[label];
+      this._setChecks(label, []);
       this._save();
       this._history({
         label: null, text: T('delete', { name }),
@@ -3427,6 +3450,7 @@ export class FunctionsBoard extends HTMLElement {
             if (a) await this._ws({ type: 'config/area_registry/update', area_id: aid, labels: [...new Set((a.labels || []).concat([newId]))] }, { fallback: null });
           }
           if (layout) { const L = cleanLayout(layout); if (Object.keys(catIds).length) L.categories = Object.assign({}, L.categories || {}, catIds); this._data.layouts[newId] = L; }
+          if (savedChecks.length) this._setChecks(newId, savedChecks);
           if (!this._data.functions.includes(newId)) this._data.functions.splice(Math.max(0, pos), 0, newId);
           this._data.ui.current = newId;
           st.label = newId;
@@ -3450,6 +3474,7 @@ export class FunctionsBoard extends HTMLElement {
       await this._ws({ type: 'config/label_registry/delete', label_id: label }, { fallback: null });
       this._takeOff(label);
       delete this._data.layouts[label];
+      this._setChecks(label, []);
       this._save();
     }
 

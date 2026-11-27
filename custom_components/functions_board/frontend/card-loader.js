@@ -1,5 +1,5 @@
 // Lazy loader for the Functions Board dashboard card (CONF_CARD).
-// Registered via frontend.add_extra_js_url() under /functions_board_static/<digest>/ so non-admin
+// Registered via frontend.add_extra_js_url() under /functions_board_static_v/<digest>/ so non-admin
 // users and dashboards without the card never download or parse the full board modules.
 const BOARD_URL = './functions-board.js';
 const HOST_STYLE = '<style>:host{display:block}</style>';
@@ -53,7 +53,7 @@ if (!customElements.get('functions-board')) {
       if (!h.user.is_admin) {
         if (!this._denied) {
           this._denied = true;
-          this.shadowRoot.innerHTML = HOST_STYLE + '<div style="padding:16px;font:14px/1.4 system-ui,sans-serif;color:var(--secondary-text-color,#666)">Functions Board is for Home Assistant administrators only.</div>';
+          this.shadowRoot.innerHTML = HOST_STYLE + '<div class="noadmin" style="padding:16px;font:14px/1.4 system-ui,sans-serif;color:var(--secondary-text-color,#666)">Functions Board is for Home Assistant administrators only.</div>';
         }
         return;
       }

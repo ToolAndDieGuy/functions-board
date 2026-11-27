@@ -2323,6 +2323,40 @@ test('0.13.2 audit fixes: durations, drawer back/focus, check steps, s_missing, 
     chkSep.sepChecks && chkSep.hasInChecks && !chkSep.hasInLayout && fakeChk.length === 1 && fakeChk[0].id === 'sep1' && !('checks' in fakeLay),
     { chkSep, fakeChk, hasLayChecks: 'checks' in fakeLay });
 
+  // Phase 2/3: deleting a function cleans up its decoupled checks, Undo restores them, and About dialog opens at top
+  await fbq(page, '[data-act="about"]').first().click();
+  await page.waitForTimeout(120);
+  const aboutTop = await el(page, (b) => {
+    const dlg = b._$.modal.querySelector('.dlg.about');
+    const top = dlg ? dlg.scrollTop : -1;
+    b._closeModal();
+    return top;
+  });
+  check('0.13.3 opening tall About dialog keeps scroll at top (preventScroll on initial button focus)', aboutTop === 0, aboutTop);
+
+  const delUndoChecks = await el(page, async (b) => {
+    const prevMode = b._fbMode;
+    b._fbMode = 'full';
+    try {
+      const label = b._data.ui.current;
+      await b._deleteFnDialog(label, false);
+      await b._deleteGo();
+      await b._flushSave();
+      await b._saveChain;
+      const afterDel = (b._data.checks || {})[label] || [];
+      await b._undo();
+      await b._flushSave();
+      await b._saveChain;
+      const restoredLabel = b._data.ui.current;
+      const afterUndo = b._checksOf(restoredLabel);
+      return { afterDelLen: afterDel.length, afterUndoLen: afterUndo.length, id: afterUndo[0] && afterUndo[0].id };
+    } finally {
+      b._fbMode = prevMode;
+    }
+  });
+  check('0.13.3 deleting a function removes its decoupled checks and Undo restores them',
+    delUndoChecks.afterDelLen === 0 && delUndoChecks.afterUndoLen === 1 && delUndoChecks.id === 'sep1', delUndoChecks);
+
   check('0.13.2 audit fixes: no errors', page.logs.length === 0, page.logs);
   await ctx.close();
 });

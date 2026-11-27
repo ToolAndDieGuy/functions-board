@@ -6,23 +6,11 @@ function out in a sandbox. Published through HACS. Read this before changing any
 
 ## Where things are
 
-- `custom_components/functions_board/`: the integration. Python is small: `__init__.py` (panel, static path,
-  optional dashboard card, `BoardStore`), `websocket.py` (admin-only commands; the board's shared store),
-  `nodered.py` (the Node-RED flow summary kept for every board), `versions.py` (saved versions of functions, and which one each function was last made from: kept
-  only; the board makes them and makes one active; a version changes only by `version_overwrite`, Save), `sources.py`, `zwave.py` (a Z-Wave
-  device's values, read from the node Z-Wave JS holds), `diagnostics.py` (the diagnostics file and its
-  anonymiser; also the `functions_board/diagnostics` command's), `config_flow.py`.
-- `custom_components/functions_board/frontend/functions-board.js`: the whole board, one plain-JS web component
-  (~10,000 lines, no build step, no dependencies). Top to bottom:
-  - the **library section** (pure functions, testable in Node without a browser): the clock (`class Clock`), the link
-    to Home Assistant (`class Link`), the store (`class Store`), config analysis (`analyze`,
-    `condText`), the import's grouping (`findFunctions`), layout (`layeredOnce`, `layered`), arrow routing (`arrowGeo`, `orthoAll`, `laneSpread`,
-    `untangle`, `busDots`, `hopsOf`), the **sandbox engine** (`class Sandbox`, `sbxEffect`, `sbxRewrite`,
-    `SBX_PRELUDE`, `SBX_ETRIG`), the English text table (`T()`, `P()` for plurals);
-  - then `class FunctionsBoard extends HTMLElement`, in parts (`PARTS`): core (start and stop, data and sync, the
-    store's maps, drawing the board, the drawer, the actions in `_actionTables()`, undo), then list, functions,
-    manager, problems, tools, debug, arrows, sandbox, builders, versions, nodered and diagnostics, each a block under a
-    `part:` heading.
+- `custom_components/functions_board/`: the integration. Python is small: `__init__.py` (panel, hashed static path `/functions_board_static_v/<digest>/` plus unversioned `/functions_board_static/` fallback, optional lazy dashboard card loader, `BoardStore`), `websocket.py` (admin-only commands; the board's shared store), `checks.py` (saved sandbox checks per function in `.storage/functions_board.checks`), `nodered.py` (the Node-RED flow summary kept for every board), `versions.py` (saved versions of functions: metadata/active pointers in `.storage/functions_board.versions` and lazy per-function snapshot blobs in `.storage/functions_board.versions.<hash>`; kept only, validated against `VERSION_DOMAINS`), `sources.py`, `zwave.py` (a Z-Wave device's values, read from the node Z-Wave JS holds, including multi-endpoint child devices), `diagnostics.py` (the diagnostics file and its executor-offloaded anonymiser; also `functions_board/diagnostics`), `config_flow.py`.
+- `custom_components/functions_board/frontend/`: native zero-build ES modules (no bundler, no runtime dependencies):
+  - `functions-board.js` (thin entrypoint: mixes UI parts onto `FunctionsBoard`, registers `<functions-board>` or hands off to `card-loader.js` via `<functions-board-app>`, registers `window.customCards`) and `card-loader.js` (~3 KB admin-gated lazy loader for `CONF_CARD`).
+  - `lib/` (pure functions, loaded directly in Node via `tests/lib/board-lib.js`): `index.js`, `i18n.js` (`VERSION`, `STR`, `T()`, `P()`, `setLang`), `styles.js` (`STYLE`, `DEFS`), `runtime.js` (`Clock`, `Link`, `Store`, `morph`, `PARTS`, `actionMap`), `constants.js`, `builders.js` (`notifyScript`, `cleanNotify`, `nbSame`, `notifyTargets`), `geometry.js` (`arrowGeo`, `orthoAll`, `focusSet`, `setCurved`), `wiring.js` (`analyze`, `findProblems`, `markProblems`, `layered`, `findFunctions`, `nrGroups`), `sandbox.js` (`class Sandbox`, `sbxEffect`, `sbxRewrite`, `SBX_PRELUDE`, `SBX_ETRIG`, `cleanCheck`, `runCheck`), `clean.js` (`cleanLayout`).
+  - `board-core.js` (`class FunctionsBoard extends HTMLElement`, `part: core`) and `ui/*.js` (`mix.js` plus one module per `PARTS` entry: `list`, `functions`, `manager`, `problems`, `tools`, `debug`, `arrows`, `sandbox`, `builders`, `versions`, `nodered`, `diagnostics`).
 - `tests/home/`: what the test Home Assistant talks to (its README): an MQTT broker with discovered and YAML MQTT
   entities, Z-Wave JS on a five-node mock controller, Node-RED with the Home Assistant nodes, a phone in the mobile
   app. `tests/start-ha.sh` starts it first (state and logs in `ha/home/`), `tests/e2e/hasetup.js` sets each up through
@@ -263,12 +251,7 @@ returns everything the library section defines.
   Dismissed ones (`layout.dismissed`, `splitDismissed()`, keyed `kind|ref` by `probKey()`) are left out of
   `model.problems` (kept in `model.dismissed`) before `markProblems()` marks the board; a dismissal notes `gone`
   when its problem isn't there and is dropped a day later. A version tab shows every problem.
-- **Saved checks** (0.9.0): `cleanCheck()` and `runCheck()` in the library section; a check is kept in the
-  layout (`layout.checks`) with its starting states, clock, the automations and scripts that took part (`items`,
-  related ones included), steps, answers and expectations. The open sandbox records into `_sbx.rec`; `_runChecks()`
-  replays them on the current configs (results per config generation, `_cfgGen`), and failing ones join the
-  problems (`c_failed`, `c_unsure`). The engine passes itself to `tpl(template, vars, engine)`, so templates read
-  the states of the engine that asked.
+- **Saved checks** (0.9.0; decoupled store in Phase 2): `cleanCheck()` and `runCheck()` in `lib/sandbox.js`; checks are kept per function in `.storage/functions_board.checks` (`checks.py`, `functions_board/checks`, `functions_board/set_checks`, auto-migrated from legacy `layout.checks`) with starting states, clock, the automations and scripts that took part (`items`, related ones included), steps, answers and expectations. The open sandbox records into `_sbx.rec`; `_runChecks()` replays them on the current configs (results per config generation, `_cfgGen`), and failing ones join the problems (`c_failed`, `c_unsure`). The engine passes itself to `tpl(template, vars, engine)`, so templates read the states of the engine that asked.
 - **The clock** (0.10.0, `class Clock` in the library section, `this._clock`): every wait the board sets, by name.
   `after` replaces the wait of that name (debounce), `once` keeps it (throttle), `every` repeats, `frame` waits for
   the next frame, `deadline` is how long a call may take (run at once when the clock stops), `sleep` is a pause

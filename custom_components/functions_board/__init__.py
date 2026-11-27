@@ -46,6 +46,7 @@ from .const import (
     PANEL_URL,
     SIGNAL_UPDATED,
     STATIC_URL,
+    STATIC_V_URL,
     STORAGE_KEY,
     STORAGE_MINOR_VERSION,
     STORAGE_VERSION,
@@ -145,8 +146,9 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 def _frontend_hash() -> str:
     """First 8 hex digits of the combined SHA-256 of every .js file under frontend/.
 
-    Serving all ES modules under /functions_board_static/<digest>/ ensures every relative
-    import resolves under the same versioned prefix for atomic cache invalidation.
+    Serving all ES modules under /functions_board_static_v/<digest>/ (disjoint from the unversioned
+    /functions_board_static fallback so aiohttp route order never shadows a reloaded digest) ensures
+    every relative import resolves under the same versioned prefix for atomic cache invalidation.
     """
     h = hashlib.sha256()
     for path in sorted(FRONTEND_DIR.rglob("*.js")):
@@ -167,7 +169,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if board.static_digest != digest:
         # versioned prefix carries the combined content hash: browsers may cache every module indefinitely
         await hass.http.async_register_static_paths(
-            [StaticPathConfig(f"{STATIC_URL}/{digest}", str(FRONTEND_DIR), True)]
+            [StaticPathConfig(f"{STATIC_V_URL}/{digest}", str(FRONTEND_DIR), True)]
         )
         board.static_digest = digest
     if not board.static:
@@ -176,8 +178,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             [StaticPathConfig(STATIC_URL, str(FRONTEND_DIR), False)]
         )
         board.static = True
-    board.module_url = f"{STATIC_URL}/{digest}/{BOARD_FILE}"
-    board.card_loader_url = f"{STATIC_URL}/{digest}/{CARD_LOADER_FILE}"
+    board.module_url = f"{STATIC_V_URL}/{digest}/{BOARD_FILE}"
+    board.card_loader_url = f"{STATIC_V_URL}/{digest}/{CARD_LOADER_FILE}"
     await panel_custom.async_register_panel(
         hass,
         frontend_url_path=PANEL_URL,
@@ -195,6 +197,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 def _apply_card(hass: HomeAssistant, board: BoardData, on: bool) -> None:
     """Load the tiny lazy card loader on dashboards (custom:functions-board) without loading the full board for non-admins."""
+    if on and board.extra_js and board.extra_js != board.card_loader_url:
+        frontend.remove_extra_js_url(hass, board.extra_js)
+        board.extra_js = None
     if on and not board.extra_js and board.card_loader_url:
         frontend.add_extra_js_url(hass, board.card_loader_url)
         board.extra_js = board.card_loader_url

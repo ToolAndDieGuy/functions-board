@@ -21,8 +21,9 @@
 - Notification Builder now matches `mobile_app` devices renamed via `name_by_user` (or unmatched devices via entity slugs), skips disabled script IDs when choosing a new script ID, and rejects blank button titles.
 
 ### Architecture & UI Polish
-- Split the frontend into native zero-build ES modules (`frontend/lib/*`, `frontend/ui/*`, `board-core.js`, thin `functions-board.js` entrypoint) served under an atomic hashed static path (`/functions_board_static/<digest>/`) for clean cache invalidation across updates, while preserving `/functions_board_static/functions-board.js` for manual dashboard resources.
+- Split the frontend into native zero-build ES modules (`frontend/lib/*`, `frontend/ui/*`, `board-core.js`, thin `functions-board.js` entrypoint) served under a disjoint atomic hashed static path (`/functions_board_static_v/<digest>/`) for clean cache invalidation across updates and config-entry reloads, while preserving `/functions_board_static/functions-board.js` for manual dashboard resources.
 - Removed the `· prototype` label from the version text in the sidebar footer and About dialog.
+- Prevented tall read-only dialogs (such as **About** and **Sandbox** intro) from scrolling past their title heading when focusing their initial action button on open.
 
 ### Backend, Security, Performance & CI
 - Enforced an explicit allowlist of Home Assistant domains (`automation`, `script`, and UI helper domains) when saving, diffing, planning, and restoring saved versions on both backend and frontend.

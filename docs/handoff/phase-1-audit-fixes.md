@@ -1,6 +1,6 @@
 # Phase 1 Codebase Audit Fixes (Targeting `v0.13.2`)
 
-All fixes below were audited against baseline `v0.13.1` (`1797f688`), verified against the codebase, implemented on branch `fix/v0.13.2-audit`, and paired with regression tests and mutation anchors. `manifest.json` / `VERSION` remain at `0.13.1` until local Home Assistant testing is complete and a release is requested.
+All fixes below were audited against baseline `v0.13.1` (`1797f688`), verified against the codebase, implemented on branch `fix/v0.13.2-audit` (initially in `functions-board.js`, now split cleanly across `frontend/lib/*`, `frontend/ui/*`, and `frontend/board-core.js` in Phase 3), and paired with regression tests and mutation anchors. `manifest.json` / `VERSION` remain at `0.13.1` until local Home Assistant testing is complete and a release is requested.
 
 ---
 
@@ -45,5 +45,5 @@ All fixes below were audited against baseline `v0.13.1` (`1797f688`), verified a
 3. **All `CLAUDE.md` invariants preserved:**
    - Zero outside network calls, zero new runtime Python dependencies.
    - All new UI strings live in `STR.en` (`chk_s_zwave`, `chk_s_behave`, `nb_need_btn_title`) and are called via literal `T(...)`.
-   - Every method remains inside its `part:` block and respects `PARTS` state ownership.
-   - Every entry in `tests/mutants.json` (313 total) matches its target file **exactly once**.
+   - Every method remains inside its `part:` module and respects `PARTS` state ownership.
+   - Every entry in `tests/mutants.json` (319 total) matches its target file **exactly once**.

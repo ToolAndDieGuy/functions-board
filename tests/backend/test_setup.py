@@ -42,7 +42,7 @@ async def test_panel_registered_with_hashed_url_and_removed_on_unload(hass: Home
     panel = panels["functions"]
     assert panel.require_admin is True
     url = panel.config["_panel_custom"]["module_url"]
-    assert url.startswith("/functions_board_static/") and url.endswith("/functions-board.js")
+    assert url.startswith("/functions_board_static_v/") and url.endswith("/functions-board.js")
     digest = url.split("/")[2]
     assert len(digest) == 8 and all(c in "0123456789abcdef" for c in digest)
     assert await hass.config_entries.async_unload(entry.entry_id)
@@ -65,7 +65,7 @@ async def test_options_set_mode_and_card_in_place(hass: HomeAssistant) -> None:
     await hass.async_block_till_done()
     assert board.mode == "full"
     assert board.extra_js == board.card_loader_url
-    assert board.card_loader_url is not None and board.card_loader_url.startswith("/functions_board_static/") and board.card_loader_url.endswith("/card-loader.js")
+    assert board.card_loader_url is not None and board.card_loader_url.startswith("/functions_board_static_v/") and board.card_loader_url.endswith("/card-loader.js")
     assert entry.state is ConfigEntryState.LOADED
     result = await hass.config_entries.options.async_init(entry.entry_id)
     await hass.config_entries.options.async_configure(result["flow_id"], {"mode": "organise", "card": False})

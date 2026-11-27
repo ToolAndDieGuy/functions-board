@@ -553,7 +553,7 @@ export const toolsPart = {
         if (open && !this._modalOpen) {
           this._modalOpen = true;
           this._modalBack = this.shadowRoot.activeElement;
-          this._clock.after('modal-focus', 60, () => { if (md.hidden) return; const f = md.querySelector('input:not([type=hidden]):not([disabled]), textarea, select, button.primary:not([disabled])') || md.querySelector('button'); if (f && !md.contains(this.shadowRoot.activeElement)) f.focus(); });
+          this._clock.after('modal-focus', 60, () => { if (md.hidden) return; const f = md.querySelector('input:not([type=hidden]):not([disabled]), textarea, select, button.primary:not([disabled])') || md.querySelector('button'); if (f && !md.contains(this.shadowRoot.activeElement)) f.focus({ preventScroll: true }); });
         } else if (!open && this._modalOpen) {
           this._modalOpen = false;
           const back = this._modalBack && this._modalBack.isConnected ? this._modalBack : null, box = this._roveKey && this._els.get(this._roveKey);

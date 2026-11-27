@@ -21,7 +21,7 @@ Weekly workflow run `45672517445` (baseline `v0.13.1`, commit `1797f688`) failed
 - **Symptom:** Both `0.13.0 the Press row` and `0.13.0 the Z-Wave row` threw uncaught browser errors:
   `pageerror: Cannot read properties of undefined (reading 'pending')`.
 - **Root cause:** In `FunctionsBoard._sbxNew()`, `this._sbx = g` was assigned *before* awaiting asynchronous setup calls (`_followRules`, `_devTrigs`, `_zwFor`) and *before* `g.eng = new Sandbox(g.opts)`. Under delayed/reordered WebSocket jitter, incoming HA state/event updates called `_sbxOn()` (which only checked `this._sbx && this._drawer?.mode === 'sandbox'`) and triggered `_renderSbx()` / `_paintFlow()`, dereferencing `g.eng.pending()` while `g.eng` was still `undefined`.
-- **Fix (`custom_components/functions_board/frontend/functions-board.js`):**
+- **Fix (`frontend/ui/sandbox.js` after Phase 3 split):**
   1. `_sbxOn()` now requires `this._sbx && this._sbx.eng && this._drawer && this._drawer.mode === 'sandbox'`.
   2. `_sbxNew()` constructs `g.eng` before assigning `this._sbx = g`, and bails out cleanly if the sandbox drawer was closed or replaced while awaiting async setup.
   3. `_sbxEnd()` guards `if (g.eng)` before tearing down engine timers/listeners.

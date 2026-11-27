@@ -13,7 +13,7 @@ Completed on branch `fix/v0.13.2-audit` alongside Phase 1 & Issue #72 fixes. All
 - **Backend enforcement (`const.py`, `versions.py`, `websocket.py`):**
   - Added `VERSION_DOMAINS` in `const.py` and `snapshot_problem()` in `versions.py`.
   - Both `Versions.add()` (`functions_board/version_save`) and `Versions.overwrite()` (`functions_board/version_overwrite`) reject any snapshot item whose `dom` is outside `VERSION_DOMAINS` or mismatches its entity key prefix with `invalid_format`.
-- **Frontend enforcement (`frontend/functions-board.js`):**
+- **Frontend enforcement (`frontend/lib/constants.js`, `frontend/ui/versions.js`, `frontend/ui/manager.js`):**
   - Added `VER_DOMAINS` alongside `VER_HELPERS`.
   - `_verDiff()` only sends `it.dom + '/list'` when `VER_HELPERS.has(it.dom)`.
   - `_verPlan()` skips any item not in `VER_DOMAINS`.
@@ -51,18 +51,18 @@ Completed on branch `fix/v0.13.2-audit` alongside Phase 1 & Issue #72 fixes. All
 - **Dedicated store (`.storage/functions_board.checks`):** New `checks.py` module (`MAX_CHECKS_PER_FN = 50`, `MAX_CHECKS_FN_BYTES = 1 MB`, `MAX_CHECKS_BYTES = 10 MB`).
 - **Admin-only WS commands:** `functions_board/checks` (optional `label`) and `functions_board/set_checks` (`label`, `checks`, optional `client`), publishing `{"what": "checks", "label": ..., "client": ...}` to subscribed boards.
 - **Transparent auto-migration:** On startup (`__init__.py`), `Checks.migrate_from_layouts()` moves any legacy `layout.checks` into `.storage/functions_board.checks` and strips them from `layouts`.
-- **Frontend (`functions-board.js`):** Loads checks via `functions_board/checks` (gracefully falling back to `L.checks` on older integrations / card-only mode), saves checks solely via `functions_board/set_checks`, and strips `checks` from `functions_board/set_layout` payloads so box drags never serialize saved checks.
-- **Test apparatus updated:** `tests/static.test.js` (`WS_OK`), `tests/board/fake-ha.js`, `tests/e2e/contract.test.js`, `tests/e2e/ha-api.js` (`reset()`), `tests/e2e/regress.test.js`, `tests/board/regress.test.js`, `tests/backend/test_websocket.py`, `tests/backend/test_privacy.py`, and `tests/mutants.json`.
+- **Frontend (`frontend/board-core.js`, `frontend/ui/problems.js`, `frontend/ui/sandbox.js`):** Loads checks via `functions_board/checks` (gracefully falling back to `L.checks` on older integrations / card-only mode), saves checks solely via `functions_board/set_checks`, strips `checks` from `functions_board/set_layout` payloads, syncs checks on reconnect (`_onShared({ what: 'all' })`), prunes checks when labels are deleted in HA (`_index()`), and deletes/restores checks across Delete Function + Undo (`_runFnDelete()`).
+- **Test apparatus updated:** `tests/static.test.js` (`WS_OK`), `tests/board/fake-ha.js`, `tests/e2e/contract.test.js`, `tests/e2e/ha-api.js` & `tests/e2e/lib.js` (`reset()`), `tests/e2e/privacy.test.js` (`.storage/functions_board.checks` & `.versions.<hash>` + non-admin refusal), `tests/e2e/regress.test.js`, `tests/board/regress.test.js`, `tests/backend/test_websocket.py`, `tests/backend/test_privacy.py`, and `tests/mutants.json`.
 
 ---
 
 ## 5. Lazy Dashboard Card Loader (`frontend/card-loader.js`, `__init__.py`)
 
 - **Problem:** Enabling `CONF_CARD` previously loaded the full ~1.15 MB `functions-board.js` via `frontend.add_extra_js_url()` for every user (including non-admins) on every dashboard.
-- **Fix:** Shipped a ~3.5 KB `frontend/card-loader.js` registered via `add_extra_js_url(hass, board.card_loader_url)` (`/functions_board_static/<digest>/card-loader.js`):
-  - Spec-compliant Custom Element constructor (only `super(); this.attachShadow({ mode: 'open' });` — never sets `this.style` or host attributes inside `constructor()`, using `<style>:host{display:block}</style>` inside Shadow DOM so `document.createElement('functions-board')` never throws `NotSupportedError`).
-  - Registers card picker metadata once in `window.customCards` and forwards `setConfig`, `getCardSize`, `getGridOptions`, `static getStubConfig`, `panel`, `narrow`, `route`, `isPanel`, `layout`, `hass`, and static `VERSION` / `STR` / `morph` once mounted.
-  - If `hass.user.is_admin === false`, renders a short admin-only notice in Shadow DOM without ever downloading `functions-board.js`.
+- **Fix:** Shipped a ~3.1 KB `frontend/card-loader.js` registered via `add_extra_js_url(hass, board.card_loader_url)` (`/functions_board_static_v/<digest>/card-loader.js`):
+  - Spec-compliant Custom Element constructor (only `super(); this.attachShadow({ mode: 'open' }); this._p = {};` — never sets `this.style` or host attributes inside `constructor()`, using `<style>:host{display:block}</style>` inside Shadow DOM so `document.createElement('functions-board')` never throws `NotSupportedError`).
+  - Registers card picker metadata once in `window.customCards` and forwards `setConfig`, `getCardSize` (`12`), `getGridOptions`, `static getStubConfig`, `panel`, `narrow`, `route`, `isPanel`, `layout`, `hass`, and static `VERSION` / `STR` / `morph` once mounted.
+  - If `hass.user.is_admin === false`, renders a short `.noadmin` notice in Shadow DOM without ever downloading `functions-board.js`.
   - If `hass.user.is_admin === true`, dynamically imports `./functions-board.js` once and mounts `<functions-board-app>`, handling disconnect/reconnect cleanly.
   - Compatible with opening the sidebar panel first (`card-loader.js` no-ops if `<functions-board>` is already defined) or opening a dashboard/page first (`functions-board.js` detects `__fbLoader`, defines `<functions-board-app>`, and resolves waiting elements).
-- **Tests & Mutants:** `tests/static.test.js` (size < 4 KB, zero outside URLs / network APIs, single relative `import(BOARD_URL)`, admin guard, constructor attribute check), `tests/board/smoke.test.js` (lazy admin mount, panel-preloaded mount, and non-admin isolation in real Chromium), `tests/backend/test_setup.py`, and `tests/mutants.json` (admin-guard mutant + constructor-attribute mutant).
+- **Tests & Mutants:** `tests/static.test.js` (size < 4 KB, zero outside URLs / network APIs, single relative `import(BOARD_URL)`, admin guard, constructor attribute check), `tests/board/smoke.test.js` (lazy admin mount, panel-preloaded mount, and non-admin isolation in real Chromium), `tests/backend/test_setup.py`, `tests/e2e/apitest.py`, and `tests/mutants.json` (admin-guard mutant + constructor-attribute mutant).
