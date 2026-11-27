@@ -397,19 +397,22 @@ check('A4 MQTT: the board listens; a message is published only by the person\'s 
   check('every saved-check step op in CHECK_OPS is handled in _chkStepText', CHECK_OPS.size >= 10 && missingOps.length === 0, missingOps);
 }
 
-// Phase 2: lazy dashboard card loader (card-loader.js) stays tiny, local-only, and admin-gated
+// Phase 2: lazy dashboard card loader (card-loader.js) stays tiny, local-only, admin-gated, and spec-compliant
 {
   const loader = readFront('card-loader.js');
   const loaderCode = loader.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`\\])\/\/[^\n]*/g, '$1');
   const loaderUrls = loaderCode.match(/\b(?:https?|wss?|ftp):\/\/[^\s'"`<>)]+/g) || [];
   const loaderNet = loaderCode.match(/\b(fetch|XMLHttpRequest|WebSocket|EventSource|sendBeacon|Worker)\b/g) || [];
   const loaderImports = loaderCode.match(/\bimport\s*\([^)]*\)/g) || [];
+  const ctorStart = loaderCode.indexOf('constructor()');
+  const ctorBody = ctorStart >= 0 ? balanced(loaderCode, loaderCode.indexOf('{', ctorStart)) : '';
   check('card-loader.js is tiny (< 4 KB), has no outside URLs or network APIs, and only imports BOARD_URL',
     Buffer.byteLength(loader, 'utf8') < 4096
     && loaderUrls.length === 0
     && loaderNet.length === 0
     && loaderImports.length === 1 && loaderImports[0] === 'import(BOARD_URL)'
     && /const BOARD_URL = '\.\/functions-board\.js';/.test(loaderCode)
-    && /if \(!h\.user\.is_admin\)/.test(loaderCode),
-    { bytes: Buffer.byteLength(loader, 'utf8'), loaderUrls, loaderNet, loaderImports });
+    && /if \(!h\.user\.is_admin\)/.test(loaderCode)
+    && ctorBody.length > 0 && !/\bthis\.(style|setAttribute|classList|className|id)\b/.test(ctorBody),
+    { bytes: Buffer.byteLength(loader, 'utf8'), loaderUrls, loaderNet, loaderImports, ctorBody });
 }

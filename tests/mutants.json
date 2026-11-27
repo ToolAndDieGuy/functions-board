@@ -2652,5 +2652,14 @@
   "replace": "if (false) {",
   "suite": "static",
   "expect": "card-loader.js is tiny"
+ },
+ {
+  "name": "card-loader: sets host style attribute inside custom element constructor",
+  "file": "custom_components/functions_board/frontend/card-loader.js",
+  "find": "    constructor() {\n      super();\n      this.attachShadow({ mode: 'open' });\n      this._p = {};\n    }",
+  "replace": "    constructor() {\n      super();\n      this.attachShadow({ mode: 'open' });\n      this._p = {};\n      this.style.display = 'block';\n    }",
+  "suite": "board-smoke",
+  "only": "card-loader mounts the panel",
+  "expect": "card-loader \\(lazy\\)"
  }
 ]

@@ -59,9 +59,10 @@ Completed on branch `fix/v0.13.2-audit` alongside Phase 1 & Issue #72 fixes. All
 ## 5. Lazy Dashboard Card Loader (`frontend/card-loader.js`, `__init__.py`)
 
 - **Problem:** Enabling `CONF_CARD` previously loaded the full ~1.15 MB `functions-board.js` via `frontend.add_extra_js_url()` for every user (including non-admins) on every dashboard.
-- **Fix:** Shipped a ~2 KB `frontend/card-loader.js` registered via `add_extra_js_url(hass, board.card_loader_url)` (`/functions_board_static/card-loader.js?v=<loader_hash>&m=<board_hash>`):
-  - Registers card picker metadata once in `window.customCards`.
+- **Fix:** Shipped a ~3.5 KB `frontend/card-loader.js` registered via `add_extra_js_url(hass, board.card_loader_url)` (`/functions_board_static/<digest>/card-loader.js`):
+  - Spec-compliant Custom Element constructor (only `super(); this.attachShadow({ mode: 'open' });` — never sets `this.style` or host attributes inside `constructor()`, using `<style>:host{display:block}</style>` inside Shadow DOM so `document.createElement('functions-board')` never throws `NotSupportedError`).
+  - Registers card picker metadata once in `window.customCards` and forwards `setConfig`, `getCardSize`, `getGridOptions`, `static getStubConfig`, `panel`, `narrow`, `route`, `isPanel`, `layout`, `hass`, and static `VERSION` / `STR` / `morph` once mounted.
   - If `hass.user.is_admin === false`, renders a short admin-only notice in Shadow DOM without ever downloading `functions-board.js`.
-  - If `hass.user.is_admin === true`, dynamically imports the validated relative `./functions-board.js?v=<m>` URL once and mounts `<functions-board-app>`, forwarding `setConfig`, `panel`, `narrow`, `route`, and `hass`.
-  - Compatible with opening the sidebar panel first (`card-loader.js` no-ops if `<functions-board>` is already defined) or opening a dashboard first (`functions-board.js` detects `__fbLoader`, defines `<functions-board-app>`, and resolves waiting cards).
-- **Tests & Mutants:** `tests/static.test.js` (size < 4 KB, zero outside URLs / network APIs, single relative `import(BOARD_URL)`, admin guard), `tests/backend/test_setup.py`, and `tests/mutants.json`.
+  - If `hass.user.is_admin === true`, dynamically imports `./functions-board.js` once and mounts `<functions-board-app>`, handling disconnect/reconnect cleanly.
+  - Compatible with opening the sidebar panel first (`card-loader.js` no-ops if `<functions-board>` is already defined) or opening a dashboard/page first (`functions-board.js` detects `__fbLoader`, defines `<functions-board-app>`, and resolves waiting elements).
+- **Tests & Mutants:** `tests/static.test.js` (size < 4 KB, zero outside URLs / network APIs, single relative `import(BOARD_URL)`, admin guard, constructor attribute check), `tests/board/smoke.test.js` (lazy admin mount, panel-preloaded mount, and non-admin isolation in real Chromium), `tests/backend/test_setup.py`, and `tests/mutants.json` (admin-guard mutant + constructor-attribute mutant).
