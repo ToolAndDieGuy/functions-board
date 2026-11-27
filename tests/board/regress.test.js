@@ -2419,28 +2419,44 @@ test('0.15.0 Template Studio, 12-Recipes Gallery, Template helper config flow, a
   const tplCards = await fbq(page, '.modal .rcpcard').count();
   await fbq(page, '.modal [data-act="rcp-cat"][data-cat="automation"]').click();
   const autoCards = await fbq(page, '.modal .rcpcard').count();
-  check('0.15.0 Recipes Gallery lists all 14 recipes (11 templates, 1 notification, 2 automations)',
-    totalCards === 14 && tplCards === 11 && autoCards === 2, { totalCards, tplCards, autoCards });
+  check('0.15.0 Recipes Gallery lists all 20 recipes (17 templates, 1 notification, 2 automations)',
+    totalCards === 20 && tplCards === 17 && autoCards === 2, { totalCards, tplCards, autoCards });
 
-  // Open Template Studio via toolbar -> opens Big-Picture -> Small-Picture Goal Wizard first!
+  // Open Template Studio via toolbar -> opens 5-goal Big-Picture -> Small-Picture Goal Wizard first!
   await fbq(page, '.modal [data-act="modal-cancel"]').click();
   await fbq(page, '.tools [data-act="recipes"]').click();
   await fbq(page, '.menu [data-act="ts-open"]').click();
   await fbq(page, '.modal .tsdlg .tswiz').waitFor({ timeout: 8000 });
   const goalCount = await fbq(page, '.modal .tsgoalcard').count();
-  await fbq(page, '.modal .tsgoalcard[data-goal="bool"]').click();
-  const narrowedCount = await fbq(page, '.modal .tsgoalcard').count();
-  await fbq(page, '.modal .tsgoalcard[data-kind="tpl_compare"]').click();
-  const hasStep3 = await fbq(page, '.modal select[name="ts_cmpmode"]').count();
-  check('0.15.0 Template Studio guides users Big Picture -> Narrow Down -> Setup without requiring Jinja knowledge',
-    goalCount === 4 && narrowedCount === 3 && hasStep3 === 1, { goalCount, narrowedCount, hasStep3 });
+  await fbq(page, '.modal .tsgoalcard[data-goal="time"]').click();
+  const timeCards = await fbq(page, '.modal .tsgoalcard').count();
+  await fbq(page, '.modal .tsgoalcard[data-kind="tpl_sun_offset"]').click();
+  const sunTpl = await fbq(page, '.modal textarea[name="tstpl"]').inputValue();
+  const sunDc = await fbq(page, '.modal select[name="tsdclass"]').inputValue();
+  await fbq(page, '.modal .tsconcept[data-key="timedelta"]').first().click();
+  const tdPop = await fbq(page, '.modal .tsconceptpop').innerText();
+  await fbq(page, '.modal select[name="ts_sun_out"]').selectOption('clock12');
+  const sun12Tpl = await fbq(page, '.modal textarea[name="tstpl"]').inputValue();
+  const sun12Dc = await fbq(page, '.modal select[name="tsdclass"]').inputValue();
+  check('0.15.0 Template Studio 5-goal wizard walks Time -> Before/after sunset (16h default, timestamp device_class, ? timedelta pill, clock12 toggle)',
+    goalCount === 5 && timeCards === 4 && sunTpl.includes('timedelta(hours=16)') && sunTpl.includes('target.isoformat()') && sunDc === 'timestamp'
+    && /16 hours before sunset/i.test(tdPop) && sun12Tpl.includes("strftime('%I:%M %p')") && sun12Dc === '',
+    { goalCount, timeCards, sunDc, sun12Dc, tdPop: tdPop.slice(0, 120) });
+
+  // Verify live attribute picker on tpl_attribute reads real entity attributes
+  await fbq(page, '.modal [data-act="ts-goal"][data-goal=""]').click();
+  await fbq(page, '.modal .tsgoalcard[data-goal="text"]').click();
+  await fbq(page, '.modal .tsgoalcard[data-kind="tpl_attribute"]').click();
+  await fbq(page, '.modal select[name="ts_ent_one"]').selectOption('cover.garage_door');
+  const attrOpts = await fbq(page, '.modal select[name="ts_attr_pick"] option').count();
+  check('0.15.0 Extract Attribute recipe populates live attributes from the chosen entity', attrOpts >= 2, { attrOpts });
 
   // Verify interactive Jinja helper guide explains what float & expand do before inserting
   await fbq(page, '.modal [data-act="ts-mode"][data-mode="custom"]').click();
   await fbq(page, '.modal [data-act="ts-help-pick"][data-key="expand"]').click();
-  const expandCard = await fbq(page, '.modal .tshicard').innerText();
+  const expandCard = await fbq(page, '.modal .tsleft .tshicard').innerText();
   await fbq(page, '.modal [data-act="ts-help-pick"][data-key="float"]').click();
-  const floatCard = await fbq(page, '.modal .tshicard').innerText();
+  const floatCard = await fbq(page, '.modal .tsleft .tshicard').innerText();
   check('0.15.0 Interactive helper cards explain what expand and float do and why you need them before inserting',
     /full state object/i.test(expandCard) && /decimal number/i.test(floatCard) && /always stores entity states as text/i.test(floatCard),
     { expandCard: expandCard.slice(0, 120), floatCard: floatCard.slice(0, 120) });

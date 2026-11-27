@@ -764,6 +764,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
 .tsdlg .tshrow b{font-weight:500}
 .tsdlg .tshrow code{font-family:var(--ha-font-family-code,monospace);font-size:11px;color:var(--secondary-text-color);white-space:nowrap}
 .tsdlg .tsmsgrow{display:grid;grid-template-columns:1fr 1fr auto;gap:6px;align-items:center}
+.tsdlg .tsrulerow{display:grid;grid-template-columns:minmax(110px,1.2fr) minmax(76px,.7fr) minmax(72px,.8fr) auto;gap:6px;align-items:center}
+.tsdlg .tsmaprow{display:grid;grid-template-columns:1fr auto 1fr auto;gap:6px;align-items:center}
 .tsdlg .tscle{font-weight:500}
 .tsdlg .tsclv{font-size:11.5px;padding:1px 6px;border-radius:6px;background:color-mix(in srgb,var(--fb-blue) 14%,transparent);color:var(--primary-text-color);white-space:nowrap}
 .tsdlg .tsclr{font-size:11px;color:var(--secondary-text-color);font-family:var(--ha-font-family-code,monospace);white-space:pre-wrap;word-break:break-word}

@@ -11,13 +11,15 @@ import { HHMM_RE } from './builders.js';
 export const TPL_RECIPE_KINDS = new Set([
   'tpl_count', 'tpl_any_all', 'tpl_list_names', 'tpl_duration', 'tpl_fallback',
   'tpl_low_battery', 'tpl_band', 'tpl_math', 'tpl_time_window', 'tpl_compare', 'tpl_message',
+  'tpl_sun_offset', 'tpl_countdown', 'tpl_attribute', 'tpl_scale', 'tpl_logic', 'tpl_map_state',
 ]);
 
-// Big-picture -> small-picture goal funnel so beginners pick what they want to capture in plain English first.
+// Big-picture -> small-picture goal funnel covering every major Home Assistant template use case.
 export const TPL_GOAL_TREE = [
-  { id: 'bool', icon: 'mdi:toggle-switch-outline', kinds: ['tpl_any_all', 'tpl_compare', 'tpl_time_window'] },
-  { id: 'number', icon: 'mdi:numeric', kinds: ['tpl_count', 'tpl_math', 'tpl_duration', 'tpl_low_battery'] },
-  { id: 'text', icon: 'mdi:card-text-outline', kinds: ['tpl_list_names', 'tpl_band', 'tpl_fallback', 'tpl_message'] },
+  { id: 'bool', icon: 'mdi:toggle-switch-outline', kinds: ['tpl_any_all', 'tpl_logic', 'tpl_compare', 'tpl_time_window', 'tpl_sun_offset'] },
+  { id: 'number', icon: 'mdi:numeric', kinds: ['tpl_count', 'tpl_scale', 'tpl_math', 'tpl_duration', 'tpl_low_battery'] },
+  { id: 'time', icon: 'mdi:clock-outline', kinds: ['tpl_sun_offset', 'tpl_countdown', 'tpl_duration', 'tpl_time_window'] },
+  { id: 'text', icon: 'mdi:card-text-outline', kinds: ['tpl_attribute', 'tpl_map_state', 'tpl_band', 'tpl_list_names', 'tpl_fallback', 'tpl_message'] },
 ];
 
 // Suggest likely Home Assistant state strings based on the domains of the chosen entities.
@@ -269,6 +271,96 @@ export const JINJA_GLOSSARY = {
     example: '(as_timestamp(now()) - as_timestamp(states.cover.garage.last_changed, 0)) / 60',
     snippet: () => 'as_timestamp(now())',
   },
+  as_datetime: {
+    cat: 'time',
+    plainName: 'Turn date/time text into a real date object',
+    syntax: "as_datetime(state_attr('sun.sun', 'next_setting'))",
+    title: 'Parse a date or ISO timestamp string',
+    what: 'Turns text like "2026-11-27T22:15:00+00:00" (from sun.sun, calendars, or input_datetime) into a real datetime you can add or subtract hours from.',
+    why: 'Home Assistant attributes store timestamps as text — you must convert them with as_datetime() before using timedelta() or strftime().',
+    example: "as_datetime(state_attr('sun.sun', 'next_setting'))",
+    snippet: () => "as_datetime(state_attr('sun.sun', 'next_setting'))",
+  },
+  as_local: {
+    cat: 'time',
+    plainName: 'Convert a UTC timestamp to your local timezone',
+    syntax: 'as_local(dt)',
+    title: 'Convert datetime to local timezone',
+    what: 'Shifts a UTC datetime (such as sun.sun next_setting or next_rising) into your Home Assistant local timezone.',
+    why: 'Sun attributes are stored in UTC — without as_local(), formatting with strftime() prints UTC hours instead of your local clock.',
+    example: "as_local(as_datetime(state_attr('sun.sun', 'next_setting')))",
+    snippet: () => "as_local(as_datetime(state_attr('sun.sun', 'next_setting')))",
+  },
+  timedelta: {
+    cat: 'time',
+    plainName: 'Add or subtract hours, minutes, or days from a time',
+    syntax: 'timedelta(hours=16)',
+    title: 'Time offset (days, hours, minutes, seconds)',
+    what: 'Represents an amount of time you can add (+) or subtract (-) from now(), today_at(), or as_datetime().',
+    why: 'Handles midnight wrap-around and month boundaries automatically — ideal for "16 hours before sunset" or "30 minutes after sunrise".',
+    example: "as_local(as_datetime(state_attr('sun.sun', 'next_setting'))) - timedelta(hours=16)",
+    snippet: () => 'timedelta(hours=1, minutes=0)',
+  },
+  strftime: {
+    cat: 'time',
+    plainName: 'Format a date/time into readable clock text',
+    syntax: ".strftime('%I:%M %p')",
+    title: 'Format datetime as custom text',
+    what: 'Turns a datetime into readable text: %I:%M %p gives "01:05 AM", %H:%M gives "01:05" (24h), and %a %b %d gives "Fri Nov 27".',
+    why: 'Without formatting, a raw datetime prints an ugly ISO string like 2026-11-28 01:05:12-05:00.',
+    example: "now().strftime('%I:%M %p')",
+    snippet: () => ".strftime('%I:%M %p')",
+  },
+  relative_time: {
+    cat: 'time',
+    plainName: 'Show a time as "12 minutes" or "2 hours"',
+    syntax: 'relative_time(dt)',
+    title: 'Human-readable elapsed time',
+    what: 'Turns a past datetime (like last_changed) into friendly text such as "12 minutes" or "3 hours".',
+    why: 'Instant readable durations for dashboards and notifications without manual division.',
+    example: 'relative_time(states.cover.garage_door.last_changed)',
+    snippet: () => 'relative_time(now() - timedelta(minutes=15))',
+  },
+  abs: {
+    cat: 'numbers',
+    plainName: 'Remove a minus sign (absolute value)',
+    syntax: '| abs',
+    title: 'Absolute value of a number',
+    what: 'Turns negative numbers positive (e.g. -4.5 becomes 4.5), leaving positive numbers unchanged.',
+    why: 'Useful when measuring the gap between two sensors regardless of which one is higher.',
+    example: "(states('sensor.in') | float(0) - states('sensor.out') | float(0)) | abs | round(1)",
+    snippet: () => '| abs',
+  },
+  average: {
+    cat: 'numbers',
+    plainName: 'Average a list of numbers',
+    syntax: '| average(0)',
+    title: 'Arithmetic mean of a list',
+    what: 'Computes the average of a list of numbers (with a safe default if the list is empty).',
+    why: 'Cleaner than writing (vals | sum) / (vals | count) and avoids divide-by-zero when all sensors are offline.',
+    example: "[18.5, 21.0, 22.5] | average(0) | round(1)",
+    snippet: () => '| average(0) | round(1)',
+  },
+  bool: {
+    cat: 'logic',
+    plainName: 'Convert a value into true / false',
+    syntax: '| bool(false)',
+    title: 'Convert text or number to boolean',
+    what: 'Turns "on", "yes", "true", or 1 into true, and "off", "no", "false", or 0 into false.',
+    why: 'Passing a default like bool(false) prevents errors if a sensor is unavailable.',
+    example: "states('input_boolean.guest_mode') | bool(false)",
+    snippet: () => '| bool(false)',
+  },
+  replace: {
+    cat: 'logic',
+    plainName: 'Replace text inside a state or name',
+    syntax: "| replace('_', ' ')",
+    title: 'Find and replace characters in text',
+    what: 'Swaps one piece of text for another — commonly used to turn underscores into spaces or strip prefixes.',
+    why: 'Turns ugly raw states like "armed_away" into clean dashboard text like "Armed away" when paired with | title.',
+    example: "states('alarm_control_panel.home') | replace('_', ' ') | title",
+    snippet: () => "| replace('_', ' ') | title",
+  },
 };
 
 // ---- Low-level Jinja string / paren aware helpers ----
@@ -356,6 +448,15 @@ export function detectConcepts(src) {
   has(/\bnow\s*\(/, 'now');
   has(/\btoday_at\s*\(/, 'today_at');
   has(/\bas_timestamp\s*\(/, 'as_timestamp');
+  has(/\bas_datetime\s*\(/, 'as_datetime');
+  has(/\bas_local\s*\(/, 'as_local');
+  has(/\btimedelta\s*\(/, 'timedelta');
+  has(/\.strftime\s*\(/, 'strftime');
+  has(/\brelative_time\s*\(/, 'relative_time');
+  has(/\|\s*abs\b/, 'abs');
+  has(/\|\s*average\b/, 'average');
+  has(/\|\s*bool\b/, 'bool');
+  has(/\|\s*replace\b/, 'replace');
   has(/\barea_entities\s*\(/, 'area_entities');
   has(/\blabel_entities\s*\(/, 'label_entities');
   has(/\bnamespace\s*\(/, 'namespace');
@@ -464,6 +565,9 @@ function describeFilter(part, nm) {
       return 'transform each item';
     }
     case 'as_timestamp': return 'convert to seconds';
+    case 'as_datetime': return 'parse as a date/time';
+    case 'as_local': return 'convert to your local timezone';
+    case 'replace': return `replace ${args[0] || "''"} with ${args[1] || "''"}`;
     default: return args.length ? `${fn}(${args.join(', ')})` : fn;
   }
 }
@@ -515,6 +619,11 @@ function describeBase(expr, nm) {
     .replace(/\bhas_value\s*\(\s*['"]([^'"]+)['"]\s*\)/g, (_, id) => `${nm(id)} is available`)
     .replace(/\bstates\s*\(\s*['"]([^'"]+)['"]\s*\)/g, (_, id) => `${nm(id)}`)
     .replace(/\bstate_attr\s*\(\s*['"]([^'"]+)['"]\s*,\s*['"]([^'"]+)['"]\s*\)/g, (_, id, a) => `${nm(id)}'s ${a}`)
+    .replace(/\bas_local\s*\(([^()]+)\)/g, (_, inner) => `local time of ${inner.trim()}`)
+    .replace(/\bas_datetime\s*\(([^()]+)\)/g, (_, inner) => `date/time of ${inner.trim()}`)
+    .replace(/\btimedelta\s*\(([^)]+)\)/g, (_, inner) => inner.replace(/=/g, ' ').replace(/,/g, ' '))
+    .replace(/\.strftime\s*\(\s*['"]([^'"]+)['"]\s*\)/g, (_, fmt) => ` formatted as "${fmt}"`)
+    .replace(/\.isoformat\s*\(\s*\)/g, ' as an ISO timestamp')
     .replace(/\btoday_at\s*\(\s*['"]([^'"]+)['"]\s*\)/g, (_, t) => t)
     .replace(/\bnow\(\)/g, 'current time');
 }
@@ -790,15 +899,16 @@ export const TPL_RECIPES = {
     kind: 'tpl_count',
     domain: 'sensor',
     icon: 'mdi:counter',
-    defaultSpec: () => ({ scope: 'entities', entities: [], domain: 'light', area: '', states: ['on'], format: 'number', phrase: '{n} on', ignoreUnavailable: true }),
+    defaultSpec: () => ({ scope: 'entities', entities: [], domain: 'light', area: '', label: '', states: ['on'], format: 'number', phrase: '{n} on', ignoreUnavailable: true }),
     clean(s) {
       const src = s && typeof s === 'object' ? s : {};
       const st = toList(src.states).map((x) => cleanStr(x, 64).trim()).filter(Boolean).slice(0, 10);
       return {
-        scope: ['entities', 'domain', 'area'].includes(src.scope) ? src.scope : 'entities',
+        scope: ['entities', 'domain', 'area', 'label'].includes(src.scope) ? src.scope : 'entities',
         entities: cleanEntList(src.entities),
         domain: /^[a-z_]{1,40}$/.test(String(src.domain || '')) ? String(src.domain) : 'light',
         area: cleanStr(src.area, 80).trim(),
+        label: cleanStr(src.label, 80).trim(),
         states: st.length ? st : ['on'],
         format: src.format === 'phrase' ? 'phrase' : 'number',
         phrase: cleanStr(src.phrase || '{n} on', 120),
@@ -808,6 +918,7 @@ export const TPL_RECIPES = {
     validate(s) {
       if (s.scope === 'entities' && !s.entities.length) return T('ts_need_entities');
       if (s.scope === 'area' && !s.area) return T('ts_need_area');
+      if (s.scope === 'label' && !s.label) return T('ts_need_label');
       if (!s.states.length) return T('ts_need_states');
       return null;
     },
@@ -815,7 +926,8 @@ export const TPL_RECIPES = {
       const s = this.clean(raw);
       const srcExpr = s.scope === 'domain' ? `states.${s.domain}`
         : s.scope === 'area' ? `expand(area_entities(${qStr(s.area)})) | selectattr('domain', 'eq', ${qStr(s.domain)})`
-          : `expand(${qList(s.entities)})`;
+          : s.scope === 'label' ? `expand(label_entities(${qStr(s.label)})) | selectattr('domain', 'eq', ${qStr(s.domain)})`
+            : `expand(${qList(s.entities)})`;
       const filt = s.ignoreUnavailable ? " | rejectattr('state', 'in', ['unavailable', 'unknown'])" : '';
       const stCheck = s.states.length === 1 ? `selectattr('state', 'eq', ${qStr(s.states[0])})` : `selectattr('state', 'in', ${qList(s.states)})`;
       const lines = [
@@ -1314,6 +1426,332 @@ export const TPL_RECIPES = {
         device_class: '',
         state_class: '',
         icon: 'mdi:text-box-outline',
+      };
+    },
+  },
+
+  // #13 Before / after sunrise or sunset (handles "16 hours before sunset", triggers, clock display, OR binary window!)
+  tpl_sun_offset: {
+    kind: 'tpl_sun_offset',
+    domain: 'sensor',
+    icon: 'mdi:weather-sunset',
+    defaultSpec: () => ({ event: 'next_setting', dir: 'before', hours: 16, minutes: 0, output: 'timestamp' }),
+    clean(s) {
+      const src = s && typeof s === 'object' ? s : {};
+      return {
+        event: ['next_setting', 'next_rising', 'next_noon', 'next_midnight'].includes(src.event) ? src.event : 'next_setting',
+        dir: src.dir === 'after' ? 'after' : 'before',
+        hours: Math.min(23, Math.max(0, Math.round(numVal(src.hours, 16, 0, 23)))),
+        minutes: Math.min(59, Math.max(0, Math.round(numVal(src.minutes, 0, 0, 59)))),
+        output: ['timestamp', 'clock12', 'clock24', 'binary'].includes(src.output) ? src.output : 'timestamp',
+      };
+    },
+    validate(s) {
+      if (s.hours === 0 && s.minutes === 0) return T('ts_need_offset');
+      return null;
+    },
+    generate(raw) {
+      const s = this.clean(raw);
+      const tdParts = [];
+      if (s.hours) tdParts.push(`hours=${s.hours}`);
+      if (s.minutes) tdParts.push(`minutes=${s.minutes}`);
+      const td = `timedelta(${tdParts.join(', ') || 'minutes=0'})`;
+      const avail = `{{ state_attr('sun.sun', ${qStr(s.event)}) is not none }}`;
+      const base = `{% set sun_dt = as_local(as_datetime(state_attr('sun.sun', ${qStr(s.event)}))) %}`;
+      if (s.dir === 'after') {
+        if (s.output === 'binary') {
+          return {
+            domain: 'binary_sensor',
+            state: [
+              `{% set prev_dt = as_local(as_datetime(state_attr('sun.sun', ${qStr(s.event)}))) - timedelta(days=1) %}`,
+              `{% set target = prev_dt + ${td} %}`,
+              '{{ prev_dt <= now() < target }}',
+            ].join('\n'),
+            availability: avail, unit: '', device_class: '', state_class: '', icon: 'mdi:weather-sunset',
+          };
+        }
+        if (s.output === 'clock12' || s.output === 'clock24') {
+          const fmt = s.output === 'clock12' ? '%I:%M %p' : '%H:%M';
+          return {
+            domain: 'sensor',
+            state: [base, `{% set target = sun_dt + ${td} %}`, `{{ target.strftime(${qStr(fmt)}) }}`].join('\n'),
+            availability: avail, unit: '', device_class: '', state_class: '', icon: 'mdi:weather-sunset',
+          };
+        }
+        return {
+          domain: 'sensor',
+          state: [
+            base,
+            `{% set prev_target = sun_dt - timedelta(days=1) + ${td} %}`,
+            `{% set target = prev_target if now() <= prev_target + timedelta(minutes=1) else sun_dt + ${td} %}`,
+            '{{ target.isoformat() }}',
+          ].join('\n'),
+          availability: avail, unit: '', device_class: 'timestamp', state_class: '', icon: 'mdi:weather-sunset',
+        };
+      }
+      const target = `{% set target = sun_dt - ${td} %}`;
+      if (s.output === 'binary') {
+        return { domain: 'binary_sensor', state: [base, target, '{{ now() >= target }}'].join('\n'), availability: avail, unit: '', device_class: '', state_class: '', icon: 'mdi:weather-sunset' };
+      }
+      if (s.output === 'clock12' || s.output === 'clock24') {
+        const fmt = s.output === 'clock12' ? '%I:%M %p' : '%H:%M';
+        return { domain: 'sensor', state: [base, target, `{{ target.strftime(${qStr(fmt)}) }}`].join('\n'), availability: avail, unit: '', device_class: '', state_class: '', icon: 'mdi:weather-sunset' };
+      }
+      return { domain: 'sensor', state: [base, target, '{{ target.isoformat() }}'].join('\n'), availability: avail, unit: '', device_class: 'timestamp', state_class: '', icon: 'mdi:weather-sunset' };
+    },
+  },
+
+  // #14 Countdown / time until or since a date, calendar, or input_datetime
+  tpl_countdown: {
+    kind: 'tpl_countdown',
+    domain: 'sensor',
+    icon: 'mdi:calendar-clock',
+    defaultSpec: () => ({ source: 'entity', entity: '', dateStr: '2027-01-01', dir: 'until', unit: 'days' }),
+    clean(s) {
+      const src = s && typeof s === 'object' ? s : {};
+      return {
+        source: src.source === 'fixed' ? 'fixed' : 'entity',
+        entity: EXACT_RE.test(String(src.entity || '')) ? String(src.entity) : '',
+        dateStr: /^\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2})?$/.test(String(src.dateStr || '').trim()) ? String(src.dateStr).trim() : '2027-01-01',
+        dir: src.dir === 'since' ? 'since' : 'until',
+        unit: ['days', 'hours', 'minutes', 'readable'].includes(src.unit) ? src.unit : 'days',
+      };
+    },
+    validate(s) {
+      if (s.source === 'entity' && !s.entity) return T('ts_need_entity');
+      return null;
+    },
+    generate(raw) {
+      const s = this.clean(raw);
+      const isCal = s.source === 'entity' && s.entity.startsWith('calendar.');
+      const dtExpr = s.source === 'fixed'
+        ? `as_local(as_datetime(${qStr(s.dateStr)}))`
+        : isCal ? `as_local(as_datetime(state_attr(${qStr(s.entity)}, 'start_time')))`
+          : `as_local(as_datetime(states(${qStr(s.entity)})))`;
+      const avail = s.source === 'fixed' ? ''
+        : isCal ? `{{ state_attr(${qStr(s.entity)}, 'start_time') is not none }}`
+          : `{{ has_value(${qStr(s.entity)}) }}`;
+      const diffLine = s.dir === 'since'
+        ? '{% set secs = (as_timestamp(now()) - as_timestamp(dt, as_timestamp(now()))) | int(0) %}'
+        : '{% set secs = (as_timestamp(dt, as_timestamp(now())) - as_timestamp(now())) | int(0) %}';
+      const lines = [`{% set dt = ${dtExpr} %}`, diffLine];
+      if (s.unit === 'days') lines.push('{{ (secs / 86400) | round(1) }}');
+      else if (s.unit === 'hours') lines.push('{{ (secs / 3600) | round(1) }}');
+      else if (s.unit === 'minutes') lines.push('{{ (secs / 60) | int(0) }}');
+      else {
+        lines.push(
+          '{% set a = secs | abs %}',
+          '{% set d = a // 86400 %}',
+          '{% set h = (a % 86400) // 3600 %}',
+          '{% set m = (a % 3600) // 60 %}',
+          "{{ (d ~ 'd ' ~ h ~ 'h') if d > 0 else ((h ~ 'h ' ~ m ~ 'm') if h > 0 else (m ~ ' min')) }}",
+        );
+      }
+      const unitMap = { days: 'd', hours: 'h', minutes: 'min', readable: '' };
+      return {
+        domain: 'sensor',
+        state: lines.join('\n'),
+        availability: avail,
+        unit: unitMap[s.unit],
+        device_class: s.unit === 'readable' ? '' : 'duration',
+        state_class: s.unit === 'readable' ? '' : 'measurement',
+        icon: 'mdi:calendar-clock',
+      };
+    },
+  },
+
+  // #15 Extract an entity attribute (brightness -> %, HVAC action, position, media title, etc.)
+  tpl_attribute: {
+    kind: 'tpl_attribute',
+    domain: 'sensor',
+    icon: 'mdi:tag-text-outline',
+    defaultSpec: () => ({ entity: '', attr: '', transform: 'raw', fallback: 'None', round: 1, unit: '' }),
+    clean(s) {
+      const src = s && typeof s === 'object' ? s : {};
+      return {
+        entity: EXACT_RE.test(String(src.entity || '')) ? String(src.entity) : '',
+        attr: cleanStr(src.attr, 80).trim(),
+        transform: ['raw', 'number', 'pct255', 'title'].includes(src.transform) ? src.transform : 'raw',
+        fallback: cleanStr(src.fallback == null ? 'None' : src.fallback, 64),
+        round: Math.min(4, Math.max(0, Math.round(numVal(src.round, 1, 0, 4)))),
+        unit: cleanStr(src.unit, 20).trim(),
+      };
+    },
+    validate(s) {
+      if (!s.entity) return T('ts_need_entity');
+      if (!s.attr) return T('ts_need_attr');
+      return null;
+    },
+    generate(raw) {
+      const s = this.clean(raw);
+      const lines = [`{% set val = state_attr(${qStr(s.entity)}, ${qStr(s.attr)}) %}`];
+      let outExpr = 'val';
+      if (s.transform === 'pct255') outExpr = '(val | float(0) / 255 * 100) | round(0)';
+      else if (s.transform === 'number') outExpr = `val | float(0) | round(${s.round})`;
+      else if (s.transform === 'title') outExpr = "val | string | replace('_', ' ') | title";
+      const fb = s.transform === 'pct255' || s.transform === 'number' ? '0' : qStr(s.fallback);
+      lines.push(`{{ ${outExpr} if val is not none else ${fb} }}`);
+      return {
+        domain: 'sensor',
+        state: lines.join('\n'),
+        availability: `{{ has_value(${qStr(s.entity)}) }}`,
+        unit: s.transform === 'pct255' ? '%' : s.unit,
+        device_class: '',
+        state_class: s.transform === 'pct255' || s.transform === 'number' ? 'measurement' : '',
+        icon: 'mdi:tag-text-outline',
+      };
+    },
+  },
+
+  // #16 Convert, scale, or calculate from a numeric sensor (W->kW, C->F, cost rate, calibration offset)
+  tpl_scale: {
+    kind: 'tpl_scale',
+    domain: 'sensor',
+    icon: 'mdi:tune-vertical',
+    defaultSpec: () => ({ entity: '', preset: 'w_to_kw', mult: 1, offset: 0, round: 2, unit: '' }),
+    clean(s) {
+      const src = s && typeof s === 'object' ? s : {};
+      const preset = ['w_to_kw', 'kw_to_w', 'c_to_f', 'f_to_c', 'rate', 'custom'].includes(src.preset) ? src.preset : 'w_to_kw';
+      return {
+        entity: EXACT_RE.test(String(src.entity || '')) ? String(src.entity) : '',
+        preset,
+        mult: numVal(src.mult, 1),
+        offset: numVal(src.offset, 0),
+        round: Math.min(4, Math.max(0, Math.round(numVal(src.round, 2, 0, 4)))),
+        unit: cleanStr(src.unit, 20).trim(),
+      };
+    },
+    validate(s) {
+      if (!s.entity) return T('ts_need_entity');
+      return null;
+    },
+    generate(raw) {
+      const s = this.clean(raw);
+      let expr, unit = s.unit, dc = '';
+      if (s.preset === 'w_to_kw') { expr = `(v / 1000) | round(${s.round})`; unit = unit || 'kW'; dc = 'power'; }
+      else if (s.preset === 'kw_to_w') { expr = `(v * 1000) | round(${s.round})`; unit = unit || 'W'; dc = 'power'; }
+      else if (s.preset === 'c_to_f') { expr = `((v * 9 / 5) + 32) | round(${s.round})`; unit = unit || '°F'; dc = 'temperature'; }
+      else if (s.preset === 'f_to_c') { expr = `((v - 32) * 5 / 9) | round(${s.round})`; unit = unit || '°C'; dc = 'temperature'; }
+      else if (s.preset === 'rate') { expr = `(v * ${s.mult}) | round(${s.round})`; unit = unit || '$'; }
+      else {
+        const off = s.offset === 0 ? '' : (s.offset > 0 ? ` + ${s.offset}` : ` - ${Math.abs(s.offset)}`);
+        expr = `(v * ${s.mult}${off}) | round(${s.round})`;
+      }
+      return {
+        domain: 'sensor',
+        state: [`{% set v = states(${qStr(s.entity)}) | float(0) %}`, `{{ ${expr} }}`].join('\n'),
+        availability: `{{ has_value(${qStr(s.entity)}) }}`,
+        unit,
+        device_class: dc,
+        state_class: 'measurement',
+        icon: 'mdi:tune-vertical',
+      };
+    },
+  },
+
+  // #17 Combine multiple different conditions with AND / OR
+  tpl_logic: {
+    kind: 'tpl_logic',
+    domain: 'binary_sensor',
+    icon: 'mdi:source-branch',
+    defaultSpec: () => ({
+      join: 'and',
+      rules: [{ entity: '', op: 'eq', value: 'on' }, { entity: '', op: 'eq', value: 'on' }],
+      asText: false,
+      trueText: 'Active',
+      falseText: 'Normal',
+    }),
+    clean(s) {
+      const src = s && typeof s === 'object' ? s : {};
+      const ops = ['eq', 'ne', 'gt', 'ge', 'lt', 'le', 'avail'];
+      const rules = (Array.isArray(src.rules) ? src.rules : []).slice(0, 8).map((r) => ({
+        entity: r && EXACT_RE.test(String(r.entity || '')) ? String(r.entity) : '',
+        op: r && ops.includes(r.op) ? r.op : 'eq',
+        value: cleanStr(r && r.value != null ? r.value : 'on', 64).trim(),
+      }));
+      while (rules.length < 2) rules.push({ entity: '', op: 'eq', value: 'on' });
+      return {
+        join: src.join === 'or' ? 'or' : 'and',
+        rules,
+        asText: !!src.asText,
+        trueText: cleanStr(src.trueText || 'Active', 64),
+        falseText: cleanStr(src.falseText || 'Normal', 64),
+      };
+    },
+    validate(s) {
+      const active = s.rules.filter((r) => r.entity);
+      if (active.length < 1) return T('ts_need_entities');
+      return null;
+    },
+    generate(raw) {
+      const s = this.clean(raw);
+      const active = s.rules.filter((r) => r.entity);
+      const exprOf = (r) => {
+        if (r.op === 'eq') return `is_state(${qStr(r.entity)}, ${qStr(r.value)})`;
+        if (r.op === 'ne') return `not is_state(${qStr(r.entity)}, ${qStr(r.value)})`;
+        if (r.op === 'avail') return `has_value(${qStr(r.entity)})`;
+        const sym = { gt: '>', ge: '>=', lt: '<', le: '<=' }[r.op] || '>';
+        return `states(${qStr(r.entity)}) | float(0) ${sym} ${numVal(r.value, 0)}`;
+      };
+      const lines = active.map((r, i) => `{% set c${i + 1} = ${exprOf(r)} %}`);
+      const joined = active.map((_, i) => `c${i + 1}`).join(` ${s.join} `);
+      lines.push(s.asText ? `{{ ${qStr(s.trueText)} if (${joined}) else ${qStr(s.falseText)} }}` : `{{ ${joined} }}`);
+      const ents = [...new Set(active.filter((r) => r.op !== 'avail').map((r) => r.entity))];
+      return {
+        domain: s.asText ? 'sensor' : 'binary_sensor',
+        state: lines.join('\n'),
+        availability: ents.length ? `{{ ${ents.map((e) => `has_value(${qStr(e)})`).join(' and ')} }}` : '',
+        unit: '',
+        device_class: '',
+        state_class: '',
+        icon: 'mdi:source-branch',
+      };
+    },
+  },
+
+  // #18 Translate raw entity states into friendly words
+  tpl_map_state: {
+    kind: 'tpl_map_state',
+    domain: 'sensor',
+    icon: 'mdi:translate',
+    defaultSpec: () => ({
+      entity: '',
+      rows: [{ from: 'on', to: 'Active' }, { from: 'off', to: 'Idle' }],
+      fallback: 'Unknown',
+    }),
+    clean(s) {
+      const src = s && typeof s === 'object' ? s : {};
+      const rows = (Array.isArray(src.rows) ? src.rows : []).slice(0, 12).map((r) => ({
+        from: cleanStr(r && r.from, 64).trim(),
+        to: cleanStr(r && r.to, 80).trim(),
+      }));
+      return {
+        entity: EXACT_RE.test(String(src.entity || '')) ? String(src.entity) : '',
+        rows: rows.length ? rows : [{ from: 'on', to: 'Active' }, { from: 'off', to: 'Idle' }],
+        fallback: cleanStr(src.fallback == null ? 'Unknown' : src.fallback, 80),
+      };
+    },
+    validate(s) {
+      if (!s.entity) return T('ts_need_entity');
+      if (!s.rows.some((r) => r.from && r.to)) return T('ts_need_states');
+      return null;
+    },
+    generate(raw) {
+      const s = this.clean(raw);
+      const valid = s.rows.filter((r) => r.from && r.to);
+      const pairs = valid.map((r) => `${qStr(r.from)}: ${qStr(r.to)}`).join(', ');
+      const lines = [
+        `{% set labels = {${pairs}} %}`,
+        `{{ labels.get(states(${qStr(s.entity)}), ${qStr(s.fallback)}) }}`,
+      ];
+      return {
+        domain: 'sensor',
+        state: lines.join('\n'),
+        availability: `{{ has_value(${qStr(s.entity)}) }}`,
+        unit: '',
+        device_class: '',
+        state_class: '',
+        icon: 'mdi:translate',
       };
     },
   },

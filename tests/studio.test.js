@@ -92,14 +92,17 @@ const {
     found.length === 3 && found.every((x) => x.place && x.template.includes('{{')), found);
 }
 
-// ---- 5. All 11 Template Helper Recipes (#2–#12), Big-to-Small Goal Tree, Smart States & Rich Glossary ----
+// ---- 5. All 17 Template Helper Recipes, Big-to-Small Goal Tree, Smart States & 32-Concept Glossary ----
 {
-  check('0.15.0 all 11 Template Helper recipes are registered and mapped in TPL_GOAL_TREE',
-    TPL_RECIPE_KINDS.size === 11
+  check('0.15.0 all 17 Template Helper recipes are registered and mapped across all 4 creator goals in TPL_GOAL_TREE',
+    TPL_RECIPE_KINDS.size === 17
+    && TPL_GOAL_TREE.length === 4
     && [...TPL_RECIPE_KINDS].every((k) => TPL_GOAL_TREE.some((g) => g.kinds.includes(k))), [...TPL_RECIPE_KINDS]);
 
-  check('0.15.0 every JINJA_GLOSSARY entry has plainName, what, why, example, and snippet()',
-    Object.values(JINJA_GLOSSARY).every((v) => v.plainName && v.what && v.why && v.example && typeof v.snippet === 'function' && v.snippet('sensor.temp').length > 0));
+  check('0.15.0 every JINJA_GLOSSARY entry (32 concepts) has plainName, what, why, example, and snippet()',
+    Object.keys(JINJA_GLOSSARY).length === 32
+    && ['as_datetime', 'as_local', 'timedelta', 'strftime', 'relative_time', 'abs', 'average', 'bool', 'replace'].every((k) => !!JINJA_GLOSSARY[k])
+    && Object.values(JINJA_GLOSSARY).every((v) => v.plainName && v.what && v.why && v.example && typeof v.snippet === 'function' && v.snippet('sensor.temp').length > 0));
 
   check('0.15.0 suggestStatesForEntities infers domain-appropriate states for covers, locks, people, and lights',
     suggestStatesForEntities(['cover.garage']).includes('open')
@@ -118,8 +121,10 @@ const {
     rMsg.domain === 'sensor' && rMsg.state.includes("Garage: {{ states('cover.garage') if has_value('cover.garage') else 'offline' }}"), rMsg);
 
   const rCount = generateTplRecipe('tpl_count', { scope: 'entities', entities: ['light.a', 'light.b'], states: ['on'], format: 'phrase', phrase: '{n} lights on' });
-  check('0.15.0 #2 Count recipe generates valid Jinja with unavailable filter and availability guard',
-    rCount.domain === 'sensor' && rCount.state.includes("rejectattr('state', 'in', ['unavailable', 'unknown'])") && rCount.state.includes("lights on") && rCount.availability.includes("has_value('light.a')"), rCount);
+  const rCountLbl = generateTplRecipe('tpl_count', { scope: 'label', label: 'garage', domain: 'light', states: ['on'] });
+  check('0.15.0 #2 Count recipe generates valid Jinja for entities and label scopes with unavailable filter',
+    rCount.domain === 'sensor' && rCount.state.includes("rejectattr('state', 'in', ['unavailable', 'unknown'])") && rCount.state.includes("lights on") && rCount.availability.includes("has_value('light.a')")
+    && rCountLbl.state.includes("label_entities('garage')"), { rCount, rCountLbl });
 
   const rAny = generateTplRecipe('tpl_any_all', { entities: ['binary_sensor.d1', 'binary_sensor.d2'], mode: 'any', states: ['on'] });
   const rAll = generateTplRecipe('tpl_any_all', { entities: ['binary_sensor.d1', 'binary_sensor.d2'], mode: 'all', states: ['off'], requireAllAvailable: true });
@@ -156,10 +161,59 @@ const {
   check('0.15.0 #10 Time window recipe handles overnight wrap and weekday filter',
     rWin.domain === 'binary_sensor' && rWin.state.includes("now() >= today_at('22:00') or now() < today_at('07:00')") && rWin.state.includes('now().weekday() in [0, 1, 2, 3, 4]'), rWin);
 
-  // Every generated template passes our own linter with zero errors and zero bare_num / states_dot warnings!
-  const samples = [rCount, rAny, rAll, rList, rDur, rFb, rBat, rBand, rMath, rDiff, rWin];
+  // #13 Sun offset (including "16 hours before sunset" as timestamp, 12h clock, after-sunset timestamp, and binary window)
+  const rSunTs = generateTplRecipe('tpl_sun_offset', { event: 'next_setting', dir: 'before', hours: 16, minutes: 0, output: 'timestamp' });
+  const rSun12 = generateTplRecipe('tpl_sun_offset', { event: 'next_setting', dir: 'before', hours: 16, minutes: 0, output: 'clock12' });
+  const rSunAfterTs = generateTplRecipe('tpl_sun_offset', { event: 'next_setting', dir: 'after', hours: 2, minutes: 0, output: 'timestamp' });
+  const rSunAfterBin = generateTplRecipe('tpl_sun_offset', { event: 'next_rising', dir: 'after', hours: 0, minutes: 30, output: 'binary' });
+  const sunExp = explainTemplate(rSun12.state);
+  check('0.15.0 #13 Sun offset handles 16h before sunset (timestamp/clock12) and after-event rollover without breaking time triggers',
+    rSunTs.domain === 'sensor' && rSunTs.device_class === 'timestamp' && rSunTs.state.includes('timedelta(hours=16)') && rSunTs.state.includes('target.isoformat()') && !rSunTs.state.includes('now()')
+    && rSun12.device_class === '' && rSun12.state.includes("strftime('%I:%M %p')")
+    && rSunAfterTs.device_class === 'timestamp' && rSunAfterTs.state.includes('timedelta(days=1)')
+    && rSunAfterBin.domain === 'binary_sensor' && rSunAfterBin.state.includes('prev_dt <= now() < target')
+    && ['as_local', 'as_datetime', 'timedelta', 'strftime'].every((k) => sunExp.concepts.some((c) => c.key === k)),
+    { rSunTs, rSun12, rSunAfterTs, rSunAfterBin, concepts: sunExp.concepts.map((c) => c.key) });
+
+  // #14 Countdown
+  const rCdCal = generateTplRecipe('tpl_countdown', { source: 'entity', entity: 'calendar.family', dir: 'until', unit: 'days' });
+  const rCdFix = generateTplRecipe('tpl_countdown', { source: 'fixed', dateStr: '2027-01-01', dir: 'until', unit: 'readable' });
+  check('0.15.0 #14 Countdown recipe handles calendar start_time and fixed dates in numeric and readable units',
+    rCdCal.unit === 'd' && rCdCal.device_class === 'duration' && rCdCal.state.includes("state_attr('calendar.family', 'start_time')")
+    && rCdFix.unit === '' && rCdFix.state.includes("as_datetime('2027-01-01')") && rCdFix.state.includes('secs | abs'), { rCdCal, rCdFix });
+
+  // #15 Attribute extraction
+  const rAttrPct = generateTplRecipe('tpl_attribute', { entity: 'light.kitchen', attr: 'brightness', transform: 'pct255' });
+  const rAttrTitle = generateTplRecipe('tpl_attribute', { entity: 'climate.home', attr: 'hvac_action', transform: 'title', fallback: 'Idle' });
+  check('0.15.0 #15 Attribute recipe converts 0-255 brightness to % and formats raw attributes with fallback',
+    rAttrPct.unit === '%' && rAttrPct.state.includes('/ 255 * 100') && rAttrPct.state_class === 'measurement'
+    && rAttrTitle.state.includes("replace('_', ' ') | title") && rAttrTitle.state.includes("'Idle'"), { rAttrPct, rAttrTitle });
+
+  // #16 Scale / convert
+  const rScaleKw = generateTplRecipe('tpl_scale', { entity: 'sensor.house_power', preset: 'w_to_kw', round: 2 });
+  const rScaleTemp = generateTplRecipe('tpl_scale', { entity: 'sensor.temp_c', preset: 'c_to_f', round: 1 });
+  const rScaleCustom = generateTplRecipe('tpl_scale', { entity: 'sensor.raw', preset: 'custom', mult: 1.5, offset: -2, round: 1, unit: 'pts' });
+  check('0.15.0 #16 Scale recipe converts W->kW, C->F, and custom formulas with matching unit & device_class',
+    rScaleKw.unit === 'kW' && rScaleKw.device_class === 'power' && rScaleKw.state.includes('(v / 1000)')
+    && rScaleTemp.unit === '°F' && rScaleTemp.device_class === 'temperature'
+    && rScaleCustom.unit === 'pts' && rScaleCustom.state.includes('(v * 1.5 - 2)'), { rScaleKw, rScaleTemp, rScaleCustom });
+
+  // #17 Multi-condition AND / OR logic
+  const rLogicBin = generateTplRecipe('tpl_logic', { join: 'and', rules: [{ entity: 'cover.garage', op: 'eq', value: 'open' }, { entity: 'sensor.temp', op: 'gt', value: '25' }], asText: false });
+  const rLogicTxt = generateTplRecipe('tpl_logic', { join: 'or', rules: [{ entity: 'cover.garage', op: 'eq', value: 'open' }, { entity: 'sensor.temp', op: 'avail', value: '' }], asText: true, trueText: 'Check', falseText: 'OK' });
+  check('0.15.0 #17 Logic recipe combines multi-entity rules with AND/OR as binary_sensor or custom text sensor',
+    rLogicBin.domain === 'binary_sensor' && rLogicBin.state.includes('c1 and c2') && rLogicBin.state.includes('float(0) > 25')
+    && rLogicTxt.domain === 'sensor' && rLogicTxt.state.includes("'Check' if (c1 or c2) else 'OK'") && rLogicTxt.state.includes("has_value('sensor.temp')"), { rLogicBin, rLogicTxt });
+
+  // #18 Map / rename states
+  const rMap = generateTplRecipe('tpl_map_state', { entity: 'alarm_control_panel.home', rows: [{ from: 'armed_away', to: 'Armed Away' }, { from: 'disarmed', to: 'Disarmed' }], fallback: 'Other' });
+  check('0.15.0 #18 Map-state recipe translates raw states via dict lookup with fallback and availability guard',
+    rMap.domain === 'sensor' && rMap.state.includes("'armed_away': 'Armed Away'") && rMap.state.includes("labels.get(states('alarm_control_panel.home'), 'Other')") && rMap.availability === "{{ has_value('alarm_control_panel.home') }}", rMap);
+
+  // Every generated template across all 17 recipes passes our own linter with zero errors and zero bare_num / states_dot warnings!
+  const samples = [rCount, rCountLbl, rAny, rAll, rList, rDur, rFb, rBat, rBand, rMath, rDiff, rWin, rCmpNum, rCmpEnt, rMsg, rSunTs, rSun12, rSunAfterTs, rSunAfterBin, rCdCal, rCdFix, rAttrPct, rAttrTitle, rScaleKw, rScaleTemp, rScaleCustom, rLogicBin, rLogicTxt, rMap];
   const badLint = samples.flatMap((r) => lintTemplate(r.state).filter((w) => w.sev === 'error' || w.id === 'bare_num' || w.id === 'states_dot'));
-  check('0.15.0 all 9 generated Template Helper recipes pass Template Studio linter cleanly', badLint.length === 0, badLint);
+  check('0.15.0 all 17 generated Template Helper recipes pass Template Studio linter cleanly', badLint.length === 0, badLint);
 
   // Reopen matcher: matches with whitespace differences, fails when hand-edited
   const spec = cleanTplRecipe('tpl_count', { scope: 'entities', entities: ['light.a'], states: ['on'] });
