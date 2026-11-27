@@ -2,9 +2,9 @@
 // live evaluation probe builder, config template extractor, all 9 Template Helper recipes, and both Automation recipes.
 const { check } = require('./lib/check');
 const {
-  TPL_RECIPES, TPL_RECIPE_KINDS, AUTO_RECIPE_KINDS,
+  TPL_RECIPES, TPL_RECIPE_KINDS, TPL_GOAL_TREE, AUTO_RECIPE_KINDS, JINJA_GLOSSARY,
   parseTemplate, splitPipes, explainTemplate, lintTemplate, buildExplainProbe,
-  extractTemplateEntities, extractTemplatesFromConfig,
+  extractTemplateEntities, extractTemplatesFromConfig, suggestStatesForEntities,
   cleanTplRecipe, generateTplRecipe, tplSame,
   cleanAutoRecipe, generateAutoRecipe, autoSame, cleanLayout,
 } = require('./lib/board-lib');
@@ -92,9 +92,30 @@ const {
     found.length === 3 && found.every((x) => x.place && x.template.includes('{{')), found);
 }
 
-// ---- 5. All 9 Template Helper Recipes (#2–#10) ----
+// ---- 5. All 11 Template Helper Recipes (#2–#12), Big-to-Small Goal Tree, Smart States & Rich Glossary ----
 {
-  check('0.15.0 all 9 Template Helper recipes are registered', TPL_RECIPE_KINDS.size === 9, [...TPL_RECIPE_KINDS]);
+  check('0.15.0 all 11 Template Helper recipes are registered and mapped in TPL_GOAL_TREE',
+    TPL_RECIPE_KINDS.size === 11
+    && [...TPL_RECIPE_KINDS].every((k) => TPL_GOAL_TREE.some((g) => g.kinds.includes(k))), [...TPL_RECIPE_KINDS]);
+
+  check('0.15.0 every JINJA_GLOSSARY entry has plainName, what, why, example, and snippet()',
+    Object.values(JINJA_GLOSSARY).every((v) => v.plainName && v.what && v.why && v.example && typeof v.snippet === 'function' && v.snippet('sensor.temp').length > 0));
+
+  check('0.15.0 suggestStatesForEntities infers domain-appropriate states for covers, locks, people, and lights',
+    suggestStatesForEntities(['cover.garage']).includes('open')
+    && suggestStatesForEntities(['lock.front']).includes('unlocked')
+    && suggestStatesForEntities(['person.sam']).includes('home')
+    && suggestStatesForEntities(['light.hall']).includes('on'));
+
+  const rCmpNum = generateTplRecipe('tpl_compare', { mode: 'threshold', entityA: 'sensor.temp', op: 'between', value: 18, valueMax: 24 });
+  const rCmpEnt = generateTplRecipe('tpl_compare', { mode: 'entities', entityA: 'sensor.in', op: 'gt', entityB: 'sensor.out' });
+  check('0.15.0 #11 Compare recipe handles numeric range and two-sensor comparison with float(0) & has_value()',
+    rCmpNum.domain === 'binary_sensor' && rCmpNum.state.includes('18 <= v <= 24') && rCmpNum.availability === "{{ has_value('sensor.temp') }}"
+    && rCmpEnt.state.includes('a > b') && rCmpEnt.availability.includes("has_value('sensor.out')"), { rCmpNum, rCmpEnt });
+
+  const rMsg = generateTplRecipe('tpl_message', { parts: [{ text: 'Garage: ', entity: 'cover.garage', fallback: 'offline' }, { text: ' · Inside: ', entity: 'sensor.temp', fallback: 'offline' }] });
+  check('0.15.0 #12 Custom text summary recipe builds readable sentence with has_value() guards',
+    rMsg.domain === 'sensor' && rMsg.state.includes("Garage: {{ states('cover.garage') if has_value('cover.garage') else 'offline' }}"), rMsg);
 
   const rCount = generateTplRecipe('tpl_count', { scope: 'entities', entities: ['light.a', 'light.b'], states: ['on'], format: 'phrase', phrase: '{n} lights on' });
   check('0.15.0 #2 Count recipe generates valid Jinja with unavailable filter and availability guard',

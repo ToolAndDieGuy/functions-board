@@ -2207,18 +2207,25 @@ export class FunctionsBoard extends HTMLElement {
         },
         // Template Studio (0.15.0)
         studio: {
-          'ts-open': (el, { need }) => { if (need() && !this._ver) this._tsOpen({ mode: 'custom' }); },
+          'ts-open': (el, { need }) => { if (need() && !this._ver) this._tsOpen({ mode: 'wizard' }); },
           'ts-inspect': () => { if (this._sel) this._tsInspect(this._sel); },
           'ts-mode': (el) => { this._tsSetMode(el.dataset.mode); },
+          'ts-goal': (el) => { this._tsPickGoal(el.dataset.goal); },
           'ts-pick-recipe': (el) => {
             if (this._stu && this._$.modal.querySelector('.tsdlg')) this._tsPickRecipe(el.dataset.kind);
             else this._tsOpen({ mode: 'recipe', kind: el.dataset.kind });
           },
           'ts-pick-src': (el) => { this._tsPickSrc(+el.dataset.i); },
           'ts-ent-toggle': (el) => { this._tsEntToggle(el.dataset.k); },
+          'ts-state-chip': (el) => { this._tsStateChip(el.dataset.st, !!el.dataset.single); },
           'ts-band-add': () => { this._tsBandEdit(true); },
           'ts-band-del': (el) => { this._tsBandEdit(false, +el.dataset.i); },
+          'ts-msg-add': () => { this._tsMsgEdit(true); },
+          'ts-msg-del': (el) => { this._tsMsgEdit(false, +el.dataset.i); },
           'ts-day': (el) => { this._tsToggleDay(+el.dataset.d); },
+          'ts-help-cat': (el) => { this._tsHelpCat(el.dataset.cat); },
+          'ts-help-pick': (el) => { this._tsHelpPick(el.dataset.key); },
+          'ts-concept': (el) => { this._tsConceptToggle(el.dataset.key); },
           'ts-snippet': (el) => { this._tsInsertSnippet(el.dataset.snip); },
           'ts-fix': (el) => { this._tsApplyFix(+el.dataset.i, false); },
           'ts-use-avail': (el) => { this._tsApplyFix(+el.dataset.i, true); },

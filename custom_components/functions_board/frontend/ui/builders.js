@@ -4,6 +4,7 @@ const galleryItems = () => [
   { cat: 'notify', act: 'nb-new', kind: 'notify', icon: 'mdi:bell-ring-outline', title: T('nb_button'), desc: T('rcp_d_notify'), badge: 'script' },
   { cat: 'template', act: 'ts-pick-recipe', kind: 'tpl_count', icon: 'mdi:counter', title: T('ts_r_count'), desc: T('ts_r_count_d'), badge: 'sensor' },
   { cat: 'template', act: 'ts-pick-recipe', kind: 'tpl_any_all', icon: 'mdi:checkbox-multiple-marked-outline', title: T('ts_r_any_all'), desc: T('ts_r_any_all_d'), badge: 'binary_sensor' },
+  { cat: 'template', act: 'ts-pick-recipe', kind: 'tpl_compare', icon: 'mdi:scale-balance', title: T('ts_r_compare'), desc: T('ts_r_compare_d'), badge: 'binary_sensor' },
   { cat: 'template', act: 'ts-pick-recipe', kind: 'tpl_list_names', icon: 'mdi:format-list-text', title: T('ts_r_list_names'), desc: T('ts_r_list_names_d'), badge: 'sensor' },
   { cat: 'template', act: 'ts-pick-recipe', kind: 'tpl_duration', icon: 'mdi:timer-sand', title: T('ts_r_duration'), desc: T('ts_r_duration_d'), badge: 'sensor' },
   { cat: 'template', act: 'ts-pick-recipe', kind: 'tpl_fallback', icon: 'mdi:backup-restore', title: T('ts_r_fallback'), desc: T('ts_r_fallback_d'), badge: 'sensor' },
@@ -11,6 +12,7 @@ const galleryItems = () => [
   { cat: 'template', act: 'ts-pick-recipe', kind: 'tpl_band', icon: 'mdi:gauge', title: T('ts_r_band'), desc: T('ts_r_band_d'), badge: 'sensor' },
   { cat: 'template', act: 'ts-pick-recipe', kind: 'tpl_math', icon: 'mdi:calculator-variant-outline', title: T('ts_r_math'), desc: T('ts_r_math_d'), badge: 'sensor' },
   { cat: 'template', act: 'ts-pick-recipe', kind: 'tpl_time_window', icon: 'mdi:clock-check-outline', title: T('ts_r_time_window'), desc: T('ts_r_time_window_d'), badge: 'binary_sensor' },
+  { cat: 'template', act: 'ts-pick-recipe', kind: 'tpl_message', icon: 'mdi:text-box-outline', title: T('ts_r_message'), desc: T('ts_r_message_d'), badge: 'sensor' },
   { cat: 'automation', act: 'ar-new', kind: 'auto_left_open', icon: 'mdi:door-open', title: T('ar_left_open'), desc: T('ar_left_open_d'), badge: 'automation' },
   { cat: 'automation', act: 'ar-new', kind: 'auto_motion_light', icon: 'mdi:motion-sensor', title: T('ar_motion_light'), desc: T('ar_motion_light_d'), badge: 'automation' },
 ];

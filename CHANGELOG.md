@@ -2,15 +2,17 @@
 
 ## 0.15.0 (2026-11-27)
 
-### Template Studio & 12 Guided Recipes
+### Template Studio & 14 Guided Recipes
 - **Full Template Studio (`Recipes → Template Studio…` or `Explain template` on any template helper / templated automation or script):**
-  - **Plain-English walkthrough with live values:** Breaks any existing or pasted Jinja template into readable clauses (variables, conditions, filter pipelines, entity lookups, fallbacks), evaluating both the final output and each sub-expression live against your Home Assistant in a single `render_template` call, with interactive Jinja concept learning cards.
+  - **Big-picture to small-picture Goal Wizard (`Guide me`):** Starts by asking what you are trying to capture in plain English (**Yes or No**, **A Number**, **Readable Text / Status Label**, or **Understand / Fix an Existing Template**), narrows down to matching goals with live output examples, infers domain-appropriate state chips (`open`/`closed`, `locked`/`unlocked`, `home`/`not_home`, `on`/`off`), and generates safe Jinja automatically.
+  - **Interactive Jinja Helper Guide & searchable dictionary:** Replaces cryptic helper chips with plain-English building blocks grouped by task (**Read sensors**, **Numbers & math**, **Lists & filtering**, **Logic & fallbacks**, **Time & dates**). Selecting any function or filter (like `float`, `expand`, `selectattr`, `has_value`) explains what it does, why you need it, shows an example, lets you pick one of your real entities, and inserts it cleanly. Clicking `? concept` pills on any walkthrough line opens its explanation inline.
+  - **Plain-English walkthrough with live values:** Breaks any existing or pasted Jinja template into readable clauses (variables, conditions, filter pipelines, entity lookups, fallbacks), evaluating both the final output and each sub-expression live against your Home Assistant in a single `render_template` call.
   - **Unavailable-trap linter & 1-click fixes:** Flags common Jinja pitfalls — bare `| float` / `| int` without defaults, `states.domain.entity.state` crashes, unguarded string comparisons, missing `has_value()` / `availability` guards, and unbalanced blocks — with one-click fixes.
-  - **Inline state & time simulator + full Sandbox testing:** Override any referenced entity state (`on`, `off`, `open`, `closed`, `unavailable`, `unknown`, custom values) or virtual clock right inside Template Studio using `sbxRewrite`, or click **Try in sandbox** to inject the unsaved virtual Template helper into the board Sandbox before creating it.
+  - **Inline state & time simulator + full Sandbox testing:** Override any referenced entity state or virtual clock right inside Template Studio using `sbxRewrite`, or click **Try in sandbox** to inject the unsaved virtual Template helper into the board Sandbox before creating it.
   - **Native Home Assistant Template helper creation:** Saves directly as an ordinary Home Assistant UI Template `sensor` or `binary_sensor` via Home Assistant's standard Template helper config flow (and updates via options flow), attaches the function's label, copies ready-to-paste `template:` YAML on demand, and reopens in its recipe while unchanged (falling back to Explain & Inspect if edited by hand).
   - **Backend `functions_board/sources` (`include_templates`):** Optionally exposes `state`, `availability`, `icon`, and `attributes` templates (including time-only template entities) for Template Studio inspection while keeping default `sources` responses unchanged.
-- **12 Guided Recipes Gallery (`Recipes → All 12 Recipes…`):**
-  - Categorized, searchable gallery covering **9 Template Helper recipes** (**Count matching**, **Any or all**, **List names**, **How long in state**, **Fallback value**, **Low batteries**, **Comfort / Numeric band**, **Combine & math**, **Time window**), **1 Notification recipe** (existing Notification Builder), and **2 Automation recipes** (**Left-open / Left-on alert**, **Motion-activated light**).
+- **14 Guided Recipes Gallery (`Recipes → All 14 Recipes…`):**
+  - Categorized, searchable gallery covering **11 Template Helper recipes** (**Count matching**, **Any or all**, **Number check / Compare sensors**, **List names**, **How long in state**, **Fallback value**, **Low batteries**, **Comfort / Numeric band**, **Combine & math**, **Time window**, **Custom text summary**), **1 Notification recipe** (existing Notification Builder), and **2 Automation recipes** (**Left-open / Left-on alert**, **Motion-activated light**).
 
 ## 0.14.0 (2026-11-27)
 

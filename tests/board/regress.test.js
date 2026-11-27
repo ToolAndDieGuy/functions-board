@@ -2419,27 +2419,48 @@ test('0.15.0 Template Studio, 12-Recipes Gallery, Template helper config flow, a
   const tplCards = await fbq(page, '.modal .rcpcard').count();
   await fbq(page, '.modal [data-act="rcp-cat"][data-cat="automation"]').click();
   const autoCards = await fbq(page, '.modal .rcpcard').count();
-  check('0.15.0 Recipes Gallery lists all 12 recipes (9 templates, 1 notification, 2 automations)',
-    totalCards === 12 && tplCards === 9 && autoCards === 2, { totalCards, tplCards, autoCards });
+  check('0.15.0 Recipes Gallery lists all 14 recipes (11 templates, 1 notification, 2 automations)',
+    totalCards === 14 && tplCards === 11 && autoCards === 2, { totalCards, tplCards, autoCards });
 
-  // Open Count matching template recipe from Gallery (in Organise only mode -> Save disabled)
-  await fbq(page, '.modal [data-act="rcp-cat"][data-cat="template"]').click();
-  await fbq(page, '.modal .rcpcard[data-kind="tpl_count"]').click();
-  await fbq(page, '.modal .tsdlg').waitFor({ timeout: 8000 });
+  // Open Template Studio via toolbar -> opens Big-Picture -> Small-Picture Goal Wizard first!
+  await fbq(page, '.modal [data-act="modal-cancel"]').click();
+  await fbq(page, '.tools [data-act="recipes"]').click();
+  await fbq(page, '.menu [data-act="ts-open"]').click();
+  await fbq(page, '.modal .tsdlg .tswiz').waitFor({ timeout: 8000 });
+  const goalCount = await fbq(page, '.modal .tsgoalcard').count();
+  await fbq(page, '.modal .tsgoalcard[data-goal="bool"]').click();
+  const narrowedCount = await fbq(page, '.modal .tsgoalcard').count();
+  await fbq(page, '.modal .tsgoalcard[data-kind="tpl_compare"]').click();
+  const hasStep3 = await fbq(page, '.modal select[name="ts_cmpmode"]').count();
+  check('0.15.0 Template Studio guides users Big Picture -> Narrow Down -> Setup without requiring Jinja knowledge',
+    goalCount === 4 && narrowedCount === 3 && hasStep3 === 1, { goalCount, narrowedCount, hasStep3 });
+
+  // Verify interactive Jinja helper guide explains what float & expand do before inserting
+  await fbq(page, '.modal [data-act="ts-mode"][data-mode="custom"]').click();
+  await fbq(page, '.modal [data-act="ts-help-pick"][data-key="expand"]').click();
+  const expandCard = await fbq(page, '.modal .tshicard').innerText();
+  await fbq(page, '.modal [data-act="ts-help-pick"][data-key="float"]').click();
+  const floatCard = await fbq(page, '.modal .tshicard').innerText();
+  check('0.15.0 Interactive helper cards explain what expand and float do and why you need them before inserting',
+    /full state object/i.test(expandCard) && /decimal number/i.test(floatCard) && /always stores entity states as text/i.test(floatCard),
+    { expandCard: expandCard.slice(0, 120), floatCard: floatCard.slice(0, 120) });
+
+  // Organise only mode -> Save disabled
   const disInOrg = await fbq(page, '.modal [data-act="ts-save"]').isDisabled();
   check('0.15.0 Template Studio disables Save Template helper in Organise only mode', disInOrg);
 
-  // Test linter + 1-click auto-fix in Custom Jinja mode
-  await fbq(page, '.modal [data-act="ts-mode"][data-mode="custom"]').click();
+  // Test linter + 1-click auto-fix + clickable concept learning pill in Custom Jinja mode
   await fbq(page, '.modal textarea[name="tstpl"]').fill("{{ states('sensor.room_temp') | float > 22 }}");
   await fbq(page, '.modal [data-act="ts-fix"]').first().waitFor({ timeout: 5000 });
   const warnBefore = await fbq(page, '.modal .tswarn').allInnerTexts();
   await fbq(page, '.modal [data-act="ts-fix"]').first().click();
   const fixedVal = await fbq(page, '.modal textarea[name="tstpl"]').inputValue();
   const clausesN = await fbq(page, '.modal .tscl').count();
-  check('0.15.0 Template Studio linter flags unavailable trap and 1-click auto-fixes | float to | float(0) with plain-English clauses',
-    warnBefore.some((w) => /Unavailable trap/i.test(w)) && fixedVal === "{{ states('sensor.room_temp') | float(0) > 22 }}" && clausesN >= 1,
-    { warnBefore, fixedVal, clausesN });
+  await fbq(page, '.modal .tsconcept[data-key="float"]').first().click();
+  const popTxt = await fbq(page, '.modal .tsconceptpop').innerText();
+  check('0.15.0 Template Studio linter flags unavailable trap, 1-click auto-fixes, and clause concept pill explains float',
+    warnBefore.some((w) => /Unavailable trap/i.test(w)) && fixedVal === "{{ states('sensor.room_temp') | float(0) > 22 }}" && clausesN >= 1 && /decimal number/i.test(popTxt),
+    { warnBefore, fixedVal, clausesN, popTxt: popTxt.slice(0, 120) });
   await fbq(page, '.modal [data-act="modal-cancel"]').click();
 
   // 2. Switch to Full manager mode and create a real Template helper via HA's config flow

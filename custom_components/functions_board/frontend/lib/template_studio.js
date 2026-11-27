@@ -10,148 +10,264 @@ import { HHMM_RE } from './builders.js';
 
 export const TPL_RECIPE_KINDS = new Set([
   'tpl_count', 'tpl_any_all', 'tpl_list_names', 'tpl_duration', 'tpl_fallback',
-  'tpl_low_battery', 'tpl_band', 'tpl_math', 'tpl_time_window',
+  'tpl_low_battery', 'tpl_band', 'tpl_math', 'tpl_time_window', 'tpl_compare', 'tpl_message',
 ]);
 
-// Interactive Jinja concept glossary: surfaced alongside explained clauses so users learn HA Jinja as they read/build.
+// Big-picture -> small-picture goal funnel so beginners pick what they want to capture in plain English first.
+export const TPL_GOAL_TREE = [
+  { id: 'bool', icon: 'mdi:toggle-switch-outline', kinds: ['tpl_any_all', 'tpl_compare', 'tpl_time_window'] },
+  { id: 'number', icon: 'mdi:numeric', kinds: ['tpl_count', 'tpl_math', 'tpl_duration', 'tpl_low_battery'] },
+  { id: 'text', icon: 'mdi:card-text-outline', kinds: ['tpl_list_names', 'tpl_band', 'tpl_fallback', 'tpl_message'] },
+];
+
+// Suggest likely Home Assistant state strings based on the domains of the chosen entities.
+export function suggestStatesForEntities(entities) {
+  const doms = new Set(toList(entities).map((e) => String(e).split('.')[0]).filter(Boolean));
+  const out = [];
+  const add = (...xs) => xs.forEach((x) => { if (!out.includes(x)) out.push(x); });
+  if (doms.has('cover') || doms.has('valve')) add('open', 'closed', 'opening', 'closing');
+  if (doms.has('lock')) add('unlocked', 'locked', 'jammed');
+  if (doms.has('person') || doms.has('device_tracker')) add('home', 'not_home');
+  if (doms.has('climate')) add('heat', 'cool', 'auto', 'off');
+  if (doms.has('media_player')) add('playing', 'paused', 'idle', 'off');
+  if (doms.has('vacuum')) add('cleaning', 'docked', 'returning', 'error');
+  if (doms.has('alarm_control_panel')) add('armed_away', 'armed_home', 'disarmed', 'triggered');
+  if (!out.length || [...doms].some((d) => /^(binary_sensor|light|switch|fan|input_boolean|automation|script)$/.test(d))) add('on', 'off');
+  return out.slice(0, 6);
+}
+
+// Rich interactive Jinja concept glossary: plain-English name, what it does, why you need it (common trap),
+// category, example, and smart snippet builder using a real entity from the user's home.
 export const JINJA_GLOSSARY = {
   states: {
+    cat: 'read', needsEntity: true,
+    plainName: 'Read a sensor or entity value',
     syntax: "states('domain.entity')",
     title: 'Read an entity state safely',
-    what: 'Returns the entity state as text (always a string, or "unknown" if missing). Safer than states.domain.entity.state, which errors if the entity does not exist yet.',
+    what: 'Gets the current state of an entity as text (for example "on", "open", or "72.4").',
+    why: 'Safer than writing states.sensor.x.state, which crashes with an error if the entity does not exist yet at startup.',
     example: "states('sensor.living_room_temp')",
+    snippet: (e) => `states('${e || 'sensor.example'}')`,
   },
   is_state: {
+    cat: 'read', needsEntity: true,
+    plainName: 'Check if an entity is in a state',
     syntax: "is_state('domain.entity', 'on')",
     title: 'Check if an entity has a state',
-    what: 'Returns true if the entity matches the state (or any state in a list), and false otherwise — never crashes when the entity is unavailable.',
+    what: 'Returns true if the entity matches that state (or any state in a list like [\'open\', \'opening\']), and false otherwise.',
+    why: 'Never crashes when the entity is unavailable or missing — much cleaner than writing states(...) == \'on\'.',
     example: "is_state('cover.garage_door', 'open')",
-  },
-  state_attr: {
-    syntax: "state_attr('domain.entity', 'attr')",
-    title: 'Read an entity attribute',
-    what: 'Reads a single attribute (such as brightness, temperature, or friendly_name), returning none if missing.',
-    example: "state_attr('climate.home', 'current_temperature')",
-  },
-  is_state_attr: {
-    syntax: "is_state_attr('domain.entity', 'attr', value)",
-    title: 'Check an entity attribute value',
-    what: 'Returns true when the attribute equals the given value, safely returning false if the entity or attribute is missing.',
-    example: "is_state_attr('cover.garage', 'current_position', 0)",
+    snippet: (e) => `is_state('${e || 'binary_sensor.example'}', '${e && e.startsWith('cover.') ? 'open' : e && e.startsWith('person.') ? 'home' : 'on'}')`,
   },
   has_value: {
+    cat: 'read', needsEntity: true,
+    plainName: 'Check if a sensor is online / valid',
     syntax: "has_value('domain.entity')",
     title: 'Guard against unavailable / unknown',
-    what: 'Returns true only when the entity exists and its state is neither "unavailable" nor "unknown". The cleanest way to avoid the unavailable trap.',
+    what: 'Returns true only when the entity exists and its state is NOT "unavailable" or "unknown".',
+    why: 'Prevents the #1 template bug ("the unavailable trap"): put this in your Availability template or an if-check before doing math.',
     example: "has_value('sensor.outdoor_temp')",
+    snippet: (e) => `has_value('${e || 'sensor.example'}')`,
   },
-  expand: {
-    syntax: "expand(['entity_a', 'entity_b'])",
-    title: 'Turn entity IDs or groups into full state objects',
-    what: 'Expands a list of entity IDs (or groups) into full state objects so you can filter by .state, .name, or .attributes.',
-    example: "expand(['light.kitchen', 'light.hall']) | selectattr('state', 'eq', 'on') | list",
+  state_attr: {
+    cat: 'read', needsEntity: true,
+    plainName: 'Read an extra detail (attribute)',
+    syntax: "state_attr('domain.entity', 'attr')",
+    title: 'Read an entity attribute',
+    what: 'Reads extra information stored on an entity — like a light\'s brightness, a thermostat\'s target temperature, or a cover\'s position.',
+    why: 'Safely returns none instead of crashing if the attribute is missing (for instance, brightness is absent when a light is off).',
+    example: "state_attr('climate.home', 'current_temperature')",
+    snippet: (e) => `state_attr('${e || 'climate.example'}', 'friendly_name')`,
   },
-  selectattr: {
-    syntax: "| selectattr('state', 'eq', 'on')",
-    title: 'Keep only matching items',
-    what: 'Filters a list of state objects, keeping only those where an attribute passes a test (eq, ne, in, lt, gt, defined).',
-    example: "selectattr('state', 'in', ['on', 'open'])",
-  },
-  rejectattr: {
-    syntax: "| rejectattr('state', 'in', ['unavailable', 'unknown'])",
-    title: 'Drop matching items',
-    what: 'The opposite of selectattr: removes items that match a test (commonly used to skip unavailable or unknown sensors).',
-    example: "rejectattr('state', 'in', ['unavailable', 'unknown'])",
-  },
-  map: {
-    syntax: "| map(attribute='name')",
-    title: 'Extract one field or apply a filter to each item',
-    what: 'Transforms every item in a list — e.g. pulling each entity friendly name or converting every state string to a number.',
-    example: "map(attribute='name') | list",
+  is_state_attr: {
+    cat: 'read', needsEntity: true,
+    plainName: 'Check an extra detail (attribute)',
+    syntax: "is_state_attr('domain.entity', 'attr', value)",
+    title: 'Check an entity attribute value',
+    what: 'Returns true when an entity\'s attribute equals the value you want, and false if it differs or is missing.',
+    why: 'Avoids errors when the attribute is not present yet.',
+    example: "is_state_attr('cover.garage', 'current_position', 0)",
+    snippet: (e) => `is_state_attr('${e || 'cover.example'}', 'current_position', 0)`,
   },
   float: {
+    cat: 'numbers',
+    plainName: 'Convert text to a decimal number',
     syntax: '| float(0)',
     title: 'Convert text to a decimal number',
-    what: 'Turns text like "21.5" into a number so you can compare or do math. Always pass a default like float(0) so "unavailable" does not crash the template.',
+    what: 'Turns text like "21.5" into a real decimal number so you can compare (> 20) or do math (+, -, *, /).',
+    why: 'Home Assistant ALWAYS stores entity states as text! Without | float(0), "9" > "10" compares alphabetically as text. Adding (0) gives a safe fallback instead of crashing if the sensor is unavailable.',
     example: "states('sensor.temp') | float(0) > 22",
+    snippet: () => '| float(0)',
   },
   int: {
+    cat: 'numbers',
+    plainName: 'Convert text to a whole number',
     syntax: '| int(0)',
     title: 'Convert text to a whole number',
-    what: 'Turns text into an integer. Always pass a default like int(0) so "unavailable" does not raise an error.',
+    what: 'Turns text like "15" or "15.8" into a whole integer (15).',
+    why: 'Always include a default like int(0) so an offline/unavailable sensor does not throw an error.',
     example: "states('counter.visits') | int(0)",
+    snippet: () => '| int(0)',
   },
   round: {
+    cat: 'numbers',
+    plainName: 'Round a number cleanly',
     syntax: '| round(1)',
     title: 'Round a number',
-    what: 'Rounds a numeric value to the chosen number of decimal places.',
+    what: 'Rounds a decimal number to the chosen number of decimal places (0 for whole numbers, 1 for tenths like 21.5).',
+    why: 'Keeps calculated averages and temperature differences tidy instead of showing 21.3333333337.',
     example: '(a + b) / 2 | round(1)',
+    snippet: () => '| round(1)',
+  },
+  expand: {
+    cat: 'lists', needsEntity: true,
+    plainName: 'Load full state info for a list of entities',
+    syntax: "expand(['entity_a', 'entity_b'])",
+    title: 'Turn entity IDs or groups into full state objects',
+    what: 'Takes a list of entity IDs (or a group/area) and fetches each entity\'s full state object — including its .state, friendly .name, and .attributes.',
+    why: 'A plain list like [\'light.kitchen\', \'light.hall\'] is just text names. You need expand(...) before you can filter by state (selectattr) or pull friendly names (map).',
+    example: "expand(['light.kitchen', 'light.hall']) | selectattr('state', 'eq', 'on') | list",
+    snippet: (e) => `expand(['${e || 'light.a'}']) | selectattr('state', 'eq', 'on') | list | count`,
+  },
+  selectattr: {
+    cat: 'lists',
+    plainName: 'Keep only matching entities in a list',
+    syntax: "| selectattr('state', 'eq', 'on')",
+    title: 'Keep only matching items',
+    what: 'Filters a list of expanded entities, keeping only the ones whose field matches a test (eq = equals, in = one of, ne = not equal, lt/gt = less/greater).',
+    why: 'Lets you count or list only the doors that are open or lights that are on — without writing a loop.',
+    example: "selectattr('state', 'in', ['on', 'open'])",
+    snippet: () => "| selectattr('state', 'eq', 'on')",
+  },
+  rejectattr: {
+    cat: 'lists',
+    plainName: 'Skip / ignore matching entities in a list',
+    syntax: "| rejectattr('state', 'in', ['unavailable', 'unknown'])",
+    title: 'Drop matching items',
+    what: 'The opposite of selectattr: removes items that match a test from a list.',
+    why: 'The standard way to skip offline/unavailable sensors before counting or averaging a group of entities.',
+    example: "rejectattr('state', 'in', ['unavailable', 'unknown'])",
+    snippet: () => "| rejectattr('state', 'in', ['unavailable', 'unknown'])",
+  },
+  map: {
+    cat: 'lists',
+    plainName: 'Pull one field (or convert) for every item',
+    syntax: "| map(attribute='name')",
+    title: 'Extract one field or apply a filter to each item',
+    what: 'Transforms every item in a list — e.g. extracting each entity\'s friendly name (attribute=\'name\') or converting every state to a number (map(\'float\', none)).',
+    why: 'Turns a list of complex entity objects into simple names or numbers you can join or average.',
+    example: "map(attribute='name') | list",
+    snippet: () => "| map(attribute='name') | list",
   },
   list: {
+    cat: 'lists',
+    plainName: 'Turn filtered results into a real list',
     syntax: '| list',
     title: 'Realize a lazy filter into a list',
-    what: 'Filters like selectattr and map produce a generator; piping into | list materializes it so you can count, sort, or join it.',
-    example: "selectattr('state', 'eq', 'on') | list | count",
+    what: 'Finalizes filters like selectattr or map into a real list.',
+    why: 'Jinja filters produce a lazy stream that cannot be counted directly — piping through | list lets you follow up with | count, | sort, or | join.',
+    example: "... | selectattr('state', 'eq', 'on') | list | count",
+    snippet: () => '| list',
   },
   count: {
+    cat: 'lists',
+    plainName: 'Count how many items matched',
     syntax: '| count',
     title: 'Count items in a list',
     what: 'Returns how many items are in a list (same as | length).',
+    why: 'Place after | list to turn a filtered set of entities into a number like 3.',
     example: '... | list | count',
+    snippet: () => '| list | count',
   },
   join: {
+    cat: 'lists',
+    plainName: 'Combine a list of names into one sentence',
     syntax: "| join(', ')",
     title: 'Combine a list into one string',
-    what: 'Glues list items together with a separator string.',
+    what: 'Glues every text item in a list together with a separator like ", ".',
+    why: 'Turns [\'Back door\', \'Garage window\'] into clean readable text: "Back door, Garage window".',
     example: "names | join(', ')",
-  },
-  default: {
-    syntax: "| default('None', true)",
-    title: 'Fallback when empty or undefined',
-    what: 'Substitutes a fallback value if the input is undefined (or empty/false when the second argument is true).',
-    example: "names | join(', ') | default('All closed', true)",
-  },
-  iif: {
-    syntax: "iif(condition, 'Yes', 'No')",
-    title: 'Inline if / else shorthand',
-    what: 'Returns the second value when the condition is true, or the third when false (optional fourth value for none/unknown).',
-    example: "iif(is_state('cover.garage', 'open'), 'Open', 'Closed')",
-  },
-  now: {
-    syntax: 'now()',
-    title: 'Current local date and time',
-    what: 'Returns Home Assistant local time as a datetime object. Templates using now() automatically refresh at the top of every minute.',
-    example: 'now().hour >= 22',
-  },
-  today_at: {
-    syntax: "today_at('22:00')",
-    title: 'A wall-clock time today',
-    what: 'Returns a timezone-aware datetime for the given HH:MM time today, making time-window comparisons with now() clean and DST-safe.',
-    example: "today_at('07:00') <= now() < today_at('22:00')",
-  },
-  as_timestamp: {
-    syntax: 'as_timestamp(dt, 0)',
-    title: 'Convert a date/time to seconds',
-    what: 'Converts a datetime or ISO timestamp into Unix seconds so you can subtract timestamps to measure elapsed time.',
-    example: '(as_timestamp(now()) - as_timestamp(states.cover.garage.last_changed, 0)) / 60',
+    snippet: () => "| join(', ')",
   },
   area_entities: {
+    cat: 'lists',
+    plainName: 'Get all entities in a room / area',
     syntax: "area_entities('kitchen')",
     title: 'All entities in an area',
-    what: 'Returns a list of entity IDs belonging to a Home Assistant area (by area ID or name).',
-    example: "expand(area_entities('kitchen'))",
+    what: 'Returns every entity ID assigned to a Home Assistant area (room).',
+    why: 'Automatically picks up new lights or sensors you add to that room later — wrap in expand(...) to inspect their states.',
+    example: "expand(area_entities('kitchen')) | selectattr('domain', 'eq', 'light') | list",
+    snippet: () => "expand(area_entities('kitchen')) | selectattr('state', 'eq', 'on') | list | count",
   },
   label_entities: {
+    cat: 'lists',
+    plainName: 'Get all entities carrying a label',
     syntax: "label_entities('garage')",
     title: 'All entities with a label',
-    what: 'Returns a list of entity IDs carrying a Home Assistant label.',
+    what: 'Returns every entity ID carrying a Home Assistant label (including any Function on this board!).',
+    why: 'Great for dynamically watching every sensor or light tagged with a Function without listing them one by one.',
     example: "expand(label_entities('garage'))",
+    snippet: () => "expand(label_entities('garage'))",
+  },
+  default: {
+    cat: 'logic',
+    plainName: 'Substitute a fallback if empty',
+    syntax: "| default('None', true)",
+    title: 'Fallback when empty or undefined',
+    what: 'Replaces an empty or missing result with your chosen fallback text or number.',
+    why: 'Passing true as the second argument catches empty strings "" too, not just undefined variables.',
+    example: "names | join(', ') | default('All closed', true)",
+    snippet: () => "| default('None', true)",
+  },
+  iif: {
+    cat: 'logic', needsEntity: true,
+    plainName: 'Choose between two answers (inline if/else)',
+    syntax: "iif(condition, 'Yes', 'No')",
+    title: 'Inline if / else shorthand',
+    what: 'One-line shortcut for if/else: returns the first answer when true, or the second when false.',
+    why: 'Much shorter than a 5-line {% if %}...{% else %}...{% endif %} block for simple two-way labels.',
+    example: "iif(is_state('cover.garage', 'open'), 'Open', 'Closed')",
+    snippet: (e) => `iif(is_state('${e || 'binary_sensor.example'}', 'on'), 'Active', 'Idle')`,
   },
   namespace: {
+    cat: 'logic',
+    plainName: 'Keep a running list or total inside a loop',
     syntax: 'namespace(items=[])',
     title: 'Mutable container inside a loop',
-    what: 'Jinja variables set inside a {% for %} loop do not escape the loop unless stored on a namespace object.',
+    what: 'Creates a small container whose fields you can update inside a {% for %} loop and still read after {% endfor %}.',
+    why: 'In Jinja, ordinary {% set total = ... %} inside a loop gets thrown away when the loop ends — namespace() solves that.',
     example: '{% set ns = namespace(low=[]) %}',
+    snippet: () => '{% set ns = namespace(items=[]) %}',
+  },
+  now: {
+    cat: 'time',
+    plainName: 'Current local date and time',
+    syntax: 'now()',
+    title: 'Current local date and time',
+    what: 'Returns your Home Assistant local time (you can check now().hour, now().weekday(), etc.).',
+    why: 'Home Assistant automatically refreshes any template using now() at the top of every minute.',
+    example: 'now().hour >= 22',
+    snippet: () => 'now()',
+  },
+  today_at: {
+    cat: 'time',
+    plainName: 'A clock time today (for schedules)',
+    syntax: "today_at('22:00')",
+    title: 'A wall-clock time today',
+    what: 'Builds a timezone-aware timestamp for a clock time today (like 10:00 PM) so you can compare it directly against now().',
+    why: 'Much cleaner and safer across Daylight Saving Time than comparing hour and minute numbers by hand.',
+    example: "today_at('07:00') <= now() < today_at('22:00')",
+    snippet: () => "today_at('07:00') <= now() < today_at('22:00')",
+  },
+  as_timestamp: {
+    cat: 'time',
+    plainName: 'Convert a date/time to seconds (for elapsed time)',
+    syntax: 'as_timestamp(dt, 0)',
+    title: 'Convert a date/time to seconds',
+    what: 'Converts a datetime into plain seconds so you can subtract two times and divide by 60 to get minutes elapsed.',
+    why: 'Always pass a fallback like as_timestamp(x, 0) so missing timestamps do not raise an error.',
+    example: '(as_timestamp(now()) - as_timestamp(states.cover.garage.last_changed, 0)) / 60',
+    snippet: () => 'as_timestamp(now())',
   },
 };
 
@@ -1101,6 +1217,103 @@ export const TPL_RECIPES = {
         device_class: '',
         state_class: '',
         icon: 'mdi:clock-check-outline',
+      };
+    },
+  },
+
+  // #11 Number check / Compare two sensors (binary_sensor)
+  tpl_compare: {
+    kind: 'tpl_compare',
+    domain: 'binary_sensor',
+    icon: 'mdi:scale-balance',
+    defaultSpec: () => ({ mode: 'threshold', entityA: '', op: 'gt', value: 25, valueMax: 30, entityB: '', device_class: '' }),
+    clean(s) {
+      const src = s && typeof s === 'object' ? s : {};
+      return {
+        mode: src.mode === 'entities' ? 'entities' : 'threshold',
+        entityA: EXACT_RE.test(String(src.entityA || '')) ? String(src.entityA) : '',
+        op: ['gt', 'ge', 'lt', 'le', 'between'].includes(src.op) ? src.op : 'gt',
+        value: numVal(src.value, 25),
+        valueMax: numVal(src.valueMax, 30),
+        entityB: EXACT_RE.test(String(src.entityB || '')) ? String(src.entityB) : '',
+        device_class: /^[a-z_]{0,40}$/.test(String(src.device_class || '')) ? String(src.device_class || '') : '',
+      };
+    },
+    validate(s) {
+      if (!s.entityA) return T('ts_need_entity');
+      if (s.mode === 'entities' && !s.entityB) return T('ts_need_two_entities');
+      return null;
+    },
+    generate(raw) {
+      const s = this.clean(raw);
+      const sym = { gt: '>', ge: '>=', lt: '<', le: '<=' }[s.op] || '>';
+      if (s.mode === 'entities') {
+        return {
+          domain: 'binary_sensor',
+          state: [
+            `{% set a = states(${qStr(s.entityA)}) | float(0) %}`,
+            `{% set b = states(${qStr(s.entityB)}) | float(0) %}`,
+            `{{ a ${sym} b }}`,
+          ].join('\n'),
+          availability: `{{ has_value(${qStr(s.entityA)}) and has_value(${qStr(s.entityB)}) }}`,
+          unit: '',
+          device_class: s.device_class,
+          state_class: '',
+          icon: 'mdi:scale-balance',
+        };
+      }
+      const lo = Math.min(s.value, s.valueMax), hi = Math.max(s.value, s.valueMax);
+      const expr = s.op === 'between' ? `{{ ${lo} <= v <= ${hi} }}` : `{{ v ${sym} ${s.value} }}`;
+      return {
+        domain: 'binary_sensor',
+        state: [`{% set v = states(${qStr(s.entityA)}) | float(0) %}`, expr].join('\n'),
+        availability: `{{ has_value(${qStr(s.entityA)}) }}`,
+        unit: '',
+        device_class: s.device_class,
+        state_class: '',
+        icon: 'mdi:scale-balance',
+      };
+    },
+  },
+
+  // #12 Custom text summary mixing plain words and live sensor values (sensor)
+  tpl_message: {
+    kind: 'tpl_message',
+    domain: 'sensor',
+    icon: 'mdi:text-box-outline',
+    defaultSpec: () => ({ parts: [{ text: 'Status: ', entity: '', fallback: 'offline' }] }),
+    clean(s) {
+      const src = s && typeof s === 'object' ? s : {};
+      const parts = (Array.isArray(src.parts) ? src.parts : []).slice(0, 8).map((p) => ({
+        text: cleanStr(p && p.text, 120),
+        entity: p && EXACT_RE.test(String(p.entity || '')) ? String(p.entity) : '',
+        fallback: cleanStr(p && p.fallback != null ? p.fallback : 'offline', 40),
+      }));
+      return { parts: parts.length ? parts : [{ text: 'Status: ', entity: '', fallback: 'offline' }] };
+    },
+    validate(s) {
+      if (!s.parts.some((p) => p.entity || p.text.trim())) return T('ts_need_tpl');
+      return null;
+    },
+    generate(raw) {
+      const s = this.clean(raw);
+      const ents = [];
+      const pieces = [];
+      s.parts.forEach((p) => {
+        if (p.text) pieces.push(p.text);
+        if (p.entity) {
+          ents.push(p.entity);
+          pieces.push(`{{ states(${qStr(p.entity)}) if has_value(${qStr(p.entity)}) else ${qStr(p.fallback || 'unknown')} }}`);
+        }
+      });
+      return {
+        domain: 'sensor',
+        state: pieces.join(''),
+        availability: ents.length ? `{{ ${[...new Set(ents)].map((e) => `has_value(${qStr(e)})`).join(' or ')} }}` : '',
+        unit: '',
+        device_class: '',
+        state_class: '',
+        icon: 'mdi:text-box-outline',
       };
     },
   },

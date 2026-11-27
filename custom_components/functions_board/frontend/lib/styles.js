@@ -730,6 +730,40 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
 .tsdlg .tscl.expr{border-left-color:var(--fb-green)}
 .tsdlg .tscl.error{border-left-color:var(--fb-red)}
 .tsdlg .tscltop{display:flex;align-items:baseline;justify-content:space-between;gap:8px;font-size:12.5px}
+.tsdlg .tsclbot{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.tsdlg .tsclpills{display:flex;gap:4px;flex-wrap:wrap}
+.tsdlg .tsconcept{font:inherit;font-size:10.5px;padding:1px 6px;border-radius:99px;border:1px solid color-mix(in srgb,var(--fb-blue) 45%,var(--divider-color));background:color-mix(in srgb,var(--fb-blue) 10%,transparent);color:var(--primary-text-color);cursor:pointer}
+.tsdlg .tsconcept:hover,.tsdlg .tsconcept.on{background:var(--fb-primary-fill);border-color:var(--fb-primary-fill);color:#fff}
+.tsdlg .tsconceptpop:empty{display:none}
+.tsdlg .tsstepbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--secondary-text-color);padding-bottom:6px;border-bottom:1px solid var(--divider-color)}
+.tsdlg .tsstep.on{color:var(--primary-text-color);font-weight:600}
+.tsdlg .tswizh{font-size:15px;font-weight:600;margin-top:2px}
+.tsdlg .tsgcards{display:flex;flex-direction:column;gap:8px}
+.tsdlg .tsgoalcard{display:flex;flex-direction:column;gap:4px;text-align:left;padding:11px 12px;border-radius:10px;border:1px solid var(--divider-color);background:var(--card-background-color);color:var(--primary-text-color);cursor:pointer}
+.tsdlg .tsgoalcard:hover{border-color:var(--primary-color);background:color-mix(in srgb,var(--primary-color) 8%,var(--card-background-color))}
+.tsdlg .tsgctop{display:flex;align-items:center;gap:8px;width:100%}
+.tsdlg .tsgctop ha-icon{--mdc-icon-size:20px;color:var(--primary-color);flex:none}
+.tsdlg .tsgctop b{flex:1;font-size:13.5px}
+.tsdlg .tsgoalcard>span{font-size:12.5px;line-height:1.4;color:var(--secondary-text-color)}
+.tsdlg .tsgoalcard>small{font-size:11.5px;color:var(--fb-blue-ink)}
+.tsdlg .tshicard{display:flex;flex-direction:column;gap:6px;padding:10px 12px;border-radius:10px;border:1px solid color-mix(in srgb,var(--primary-color) 45%,var(--divider-color));background:var(--card-background-color);font-size:12.5px}
+.tsdlg .tshicard.compact{margin-top:6px;padding:8px 10px}
+.tsdlg .tshictop{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.tsdlg .tshictop b{font-size:13px;flex:1}
+.tsdlg .tshictop code{font-family:var(--ha-font-family-code,monospace);font-size:11.5px;color:var(--fb-blue-ink);background:var(--secondary-background-color);padding:2px 6px;border-radius:6px}
+.tsdlg .tshicard p{margin:0;line-height:1.45;color:var(--primary-text-color)}
+.tsdlg .tshicard p.tshiwhy{color:var(--secondary-text-color)}
+.tsdlg .tshiex{font-size:11.5px}
+.tsdlg .tshiex code{font-family:var(--ha-font-family-code,monospace)}
+.tsdlg .tshiact{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:2px}
+.tsdlg .tshiprev{flex:1;min-width:140px;font-family:var(--ha-font-family-code,monospace);font-size:11.5px;padding:5px 8px;border-radius:6px;background:var(--secondary-background-color);word-break:break-all}
+.tsdlg .tshlist{display:flex;flex-direction:column;gap:4px;max-height:220px;overflow:auto}
+.tsdlg .tshrow{display:flex;align-items:center;justify-content:space-between;gap:8px;text-align:left;padding:7px 9px;border-radius:8px;border:1px solid var(--divider-color);background:var(--card-background-color);color:var(--primary-text-color);cursor:pointer;font-size:12px}
+.tsdlg .tshrow:hover{border-color:var(--primary-color)}
+.tsdlg .tshrow.on{border-color:var(--primary-color);background:color-mix(in srgb,var(--primary-color) 12%,var(--card-background-color))}
+.tsdlg .tshrow b{font-weight:500}
+.tsdlg .tshrow code{font-family:var(--ha-font-family-code,monospace);font-size:11px;color:var(--secondary-text-color);white-space:nowrap}
+.tsdlg .tsmsgrow{display:grid;grid-template-columns:1fr 1fr auto;gap:6px;align-items:center}
 .tsdlg .tscle{font-weight:500}
 .tsdlg .tsclv{font-size:11.5px;padding:1px 6px;border-radius:6px;background:color-mix(in srgb,var(--fb-blue) 14%,transparent);color:var(--primary-text-color);white-space:nowrap}
 .tsdlg .tsclr{font-size:11px;color:var(--secondary-text-color);font-family:var(--ha-font-family-code,monospace);white-space:pre-wrap;word-break:break-word}
