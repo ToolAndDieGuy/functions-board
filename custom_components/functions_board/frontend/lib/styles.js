@@ -769,10 +769,12 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
 .tsdlg .tscle{font-weight:500}
 .tsdlg .tsclv{font-size:11.5px;padding:1px 6px;border-radius:6px;background:color-mix(in srgb,var(--fb-blue) 14%,transparent);color:var(--primary-text-color);white-space:nowrap}
 .tsdlg .tsclr{font-size:11px;color:var(--secondary-text-color);font-family:var(--ha-font-family-code,monospace);white-space:pre-wrap;word-break:break-word}
-.tsdlg .tssim{display:flex;flex-direction:column;gap:6px;max-height:190px;overflow:auto}
-.tsdlg .tssimrow{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:12px}
-.tsdlg .tssimn{min-width:120px;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
-.tsdlg .tssimv{width:92px;padding:3px 6px;font-size:12px;border-radius:6px;border:1px solid var(--divider-color);background:var(--card-background-color);color:var(--primary-text-color)}
+.tsdlg .tssim{display:flex;flex-direction:column;gap:6px;max-height:220px;overflow:auto}
+.tsdlg .tssimrow{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:12px;padding:4px 6px;border-radius:8px}
+.tsdlg .tssimrow.on{background:color-mix(in srgb,var(--fb-amber) 12%,transparent)}
+.tsdlg .tssimlbl{display:flex;flex-direction:column;min-width:125px;max-width:185px}
+.tsdlg .tssimn{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
+.tsdlg .tssimv{width:104px;padding:3px 6px;font-size:12px;border-radius:6px;border:1px solid var(--divider-color);background:var(--card-background-color);color:var(--primary-text-color)}
 .tsdlg .tsgloss{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px;margin-top:8px}
 .tsdlg .tsgcard{display:flex;flex-direction:column;gap:3px;padding:8px;border-radius:8px;background:var(--card-background-color);border:1px solid var(--divider-color);font-size:12px}
 .tsdlg .tsgcard code{font-size:11.5px;color:var(--fb-blue-ink);font-family:var(--ha-font-family-code,monospace)}

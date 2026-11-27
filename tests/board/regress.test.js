@@ -2438,10 +2438,13 @@ test('0.15.0 Template Studio, 12-Recipes Gallery, Template helper config flow, a
   await fbq(page, '.modal select[name="ts_sun_out"]').selectOption('clock12');
   const sun12Tpl = await fbq(page, '.modal textarea[name="tstpl"]').inputValue();
   const sun12Dc = await fbq(page, '.modal select[name="tsdclass"]').inputValue();
-  check('0.15.0 Template Studio 5-goal wizard walks Time -> Before/after sunset (16h default, timestamp device_class, ? timedelta pill, clock12 toggle)',
+  const sunAttrSim = await fbq(page, '.modal .tssim [data-act="ts-sim-attr"][data-a="next_setting"]').count();
+  const sunClockInput = await fbq(page, '.modal .tssim input[name="tssimtime"]').count();
+  check('0.15.0 Template Studio 5-goal wizard walks Time -> Before/after sunset (16h default, timestamp device_class, ? timedelta pill, clock12 toggle, attribute simulator)',
     goalCount === 5 && timeCards === 4 && sunTpl.includes('timedelta(hours=16)') && sunTpl.includes('target.isoformat()') && sunDc === 'timestamp'
-    && /16 hours before sunset/i.test(tdPop) && sun12Tpl.includes("strftime('%I:%M %p')") && sun12Dc === '',
-    { goalCount, timeCards, sunDc, sun12Dc, tdPop: tdPop.slice(0, 120) });
+    && /16 hours before sunset/i.test(tdPop) && sun12Tpl.includes("strftime('%I:%M %p')") && sun12Dc === ''
+    && sunAttrSim >= 3 && sunClockInput === 0,
+    { goalCount, timeCards, sunDc, sun12Dc, sunAttrSim, sunClockInput, tdPop: tdPop.slice(0, 120) });
 
   // Verify live attribute picker on tpl_attribute reads real entity attributes
   await fbq(page, '.modal [data-act="ts-goal"][data-goal=""]').click();

@@ -4,7 +4,7 @@ const { check } = require('./lib/check');
 const {
   TPL_RECIPES, TPL_RECIPE_KINDS, TPL_GOAL_TREE, AUTO_RECIPE_KINDS, JINJA_GLOSSARY,
   parseTemplate, splitPipes, explainTemplate, lintTemplate, buildExplainProbe,
-  extractTemplateEntities, extractTemplatesFromConfig, suggestStatesForEntities,
+  extractTemplateEntities, extractTemplatesFromConfig, suggestStatesForEntities, analyzeSimInputs,
   cleanTplRecipe, generateTplRecipe, tplSame,
   cleanAutoRecipe, generateAutoRecipe, autoSame, cleanLayout,
 } = require('./lib/board-lib');
@@ -27,6 +27,13 @@ const {
   const ents = extractTemplateEntities(tpl);
   check('0.15.0 extractTemplateEntities finds both states() and states.domain.entity forms',
     ents.includes('sensor.room_temp') && ents.includes('sensor.backup'), ents);
+
+  const simSun = analyzeSimInputs(generateTplRecipe('tpl_sun_offset', { event: 'next_setting', dir: 'before', hours: 16, minutes: 0, output: 'timestamp' }).state);
+  const simWin = analyzeSimInputs(generateTplRecipe('tpl_time_window', { from: '22:00', to: '07:00', days: [0, 1, 2, 3, 4] }).state);
+  check('0.15.0 analyzeSimInputs detects state_attr-only entities, clock usage, and weekday usage',
+    simSun.attrs.length === 1 && simSun.attrs[0].entity === 'sun.sun' && simSun.attrs[0].attr === 'next_setting'
+    && simSun.stateEntities.length === 0 && !simSun.usesClock
+    && simWin.usesClock && simWin.usesWeekday, { simSun, simWin });
 }
 
 // ---- 2. Plain-English explainer & live clause probe ----

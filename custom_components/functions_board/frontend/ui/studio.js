@@ -1,4 +1,4 @@
-import { ENTITY_RE, EXACT_RE, JINJA_GLOSSARY, P, SBX_PRELUDE, SBX_RAW, T, TPL_GOAL_TREE, TPL_RECIPES, TPL_RECIPE_KINDS, buildExplainProbe, cleanTplRecipe, esc, explainTemplate, extractTemplatesFromConfig, generateTplRecipe, sbxRewrite, shorten, slugify, suggestStatesForEntities, toList, tplSame } from '../lib/index.js';
+import { ENTITY_RE, EXACT_RE, JINJA_GLOSSARY, P, SBX_PRELUDE, SBX_RAW, T, TPL_GOAL_TREE, TPL_RECIPES, TPL_RECIPE_KINDS, analyzeSimInputs, buildExplainProbe, cleanTplRecipe, esc, explainTemplate, extractTemplatesFromConfig, generateTplRecipe, sbxRewrite, shorten, slugify, suggestStatesForEntities, toList, tplSame } from '../lib/index.js';
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const BINARY_CLASSES = ['', 'door', 'window', 'opening', 'garage_door', 'motion', 'occupancy', 'presence', 'light', 'lock', 'moisture', 'problem', 'running', 'safety', 'smoke'];
@@ -85,7 +85,10 @@ export const studioPart = {
         helpQ: '',
         activeConcept: null,
         sim: {},
+        simAttr: {},
         simTime: '',
+        simDay: null,
+        simNoAsFn: false,
         evalSeq: 0,
         live: null,
       };
@@ -216,8 +219,8 @@ export const studioPart = {
               <div class="tsconceptpop">${this._tsConceptPopHtml()}</div>
             </div>
             <div class="tspane tssimbox">
-              <div class="tsphead"><span>${T('ts_sim_h')}</span>${Object.keys(g.sim).length || g.simTime ? `<button class="chip" data-act="ts-sim-clear">${T('ts_sim_reset')}</button>` : ''}</div>
-              <div class="tssim">${this._tsSimHtml(exp.entities)}</div>
+              <div class="tsphead">${this._tsSimHeadHtml()}</div>
+              <div class="tssim">${this._tsSimHtml(exp)}</div>
             </div>
           </div>
         </div>
@@ -233,7 +236,7 @@ export const studioPart = {
       </div>`;
     },
 
-    _tsRefreshRight() {
+    _tsRefreshRight(opts = {}) {
       const g = this._stu, m = this._$.modal;
       if (!g || !m.querySelector('.tsdlg')) return;
       const exp = explainTemplate(g.template, (id) => this._boxName(id));
@@ -243,7 +246,10 @@ export const studioPart = {
       set('.tslint', this._tsLintHtml(exp.warnings));
       set('.tsclauses', this._tsClausesHtml(exp));
       set('.tsconceptpop', this._tsConceptPopHtml());
-      set('.tssim', this._tsSimHtml(exp.entities));
+      set('.tssimbox .tsphead', this._tsSimHeadHtml());
+      const simEl = m.querySelector('.tssim');
+      const simFocused = simEl && simEl.contains(this.shadowRoot.activeElement);
+      if (opts.forceSim || !simFocused) set('.tssim', this._tsSimHtml(exp));
       const sum = m.querySelector('.tsright .tspane:nth-of-type(2) .tsphead .muted');
       if (sum) sum.textContent = exp.summary;
     },
@@ -314,9 +320,18 @@ export const studioPart = {
       return this._tsHelperBrowser(true);
     },
 
+    _tsHasSim() {
+      const g = this._stu;
+      return !!(g && (Object.keys(g.sim).length || Object.keys(g.simAttr).length || g.simTime || g.simDay != null));
+    },
+
+    _tsSimHeadHtml() {
+      return `<span>${T('ts_sim_h')}</span>${this._tsHasSim() ? `<button class="chip" data-act="ts-sim-clear">${T('ts_sim_reset')}</button>` : ''}`;
+    },
+
     _tsLiveHtml() {
       const g = this._stu, lv = g && g.live;
-      const simNote = Object.keys(g.sim).length || g.simTime ? `<span class="tsbadge sim">${T('ts_sim_active')}</span>` : '';
+      const simNote = this._tsHasSim() ? `<span class="tsbadge sim">${T('ts_sim_active')}</span>` : '';
       if (!g.template.trim()) return `<div class="tsres muted">${T('ts_empty_preview')}</div>`;
       if (!lv) return `<div class="tsres muted">${T('ts_evaluating')}</div>`;
       if (!lv.ok) return `<div class="tsres err"><ha-icon icon="mdi:alert-circle-outline"></ha-icon><span>${esc(lv.err)}</span>${simNote}</div>`;
@@ -345,15 +360,82 @@ export const studioPart = {
       return `<div class="tshicard compact"><div class="tshictop"><b>${esc(info.plainName)}</b><code>${esc(info.syntax)}</code><button type="button" class="ib" data-act="ts-concept" data-key="" title="${esc(T('close'))}"><ha-icon icon="mdi:close"></ha-icon></button></div><p>${esc(info.what)}</p><p class="tshiwhy"><b>${T('ts_hi_why')}</b> ${esc(info.why)}</p></div>`;
     },
 
-    _tsSimHtml(entities) {
+    _tsLocalHHMM(iso) {
+      if (!iso) return '';
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return '';
+      return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+    },
+
+    _tsHHMMToIso(hhmm) {
+      if (!/^\d{2}:\d{2}$/.test(hhmm)) return hhmm;
+      const [hh, mm] = hhmm.split(':').map(Number);
+      const d = new Date();
+      d.setHours(hh, mm, 0, 0);
+      return d.toISOString();
+    },
+
+    _tsSimHtml() {
       const g = this._stu;
-      const rows = entities.slice(0, 12).map((id) => {
-        const real = this._hass.states[id], cur = id in g.sim ? g.sim[id] : (real ? real.state : 'unknown');
-        const quick = suggestStatesForEntities([id]).slice(0, 2).concat(['unavailable']);
-        return `<div class="tssimrow"><span class="tssimn" title="${esc(id)}">${esc(this._boxName(id))}</span><input class="tssimv" data-simk="${esc(id)}" value="${esc(cur)}" aria-label="${esc(T('ts_sim_val_a11y', { name: this._boxName(id) }))}">${quick.map((q) => `<button class="chip${cur === q ? ' on' : ''}" data-act="ts-sim-preset" data-k="${esc(id)}" data-v="${esc(q)}">${esc(q)}</button>`).join('')}</div>`;
+      const meta = analyzeSimInputs(g.template + '\n' + (g.availability || ''));
+      const warn = g.simNoAsFn ? `<div class="tswarn warn"><ha-icon icon="mdi:alert-outline"></ha-icon><span>${T('ts_sim_no_asfn')}</span></div>` : '';
+
+      // 1. Simulated entity state rows (only entities whose state is actually read!)
+      const stateRows = meta.stateEntities.slice(0, 10).map((id) => {
+        const real = this._hass.states[id], realStr = real ? String(real.state) : 'unknown';
+        const isSim = id in g.sim, cur = isSim ? g.sim[id] : realStr;
+        const num = Number(realStr), isNum = realStr !== '' && Number.isFinite(num);
+        const unit = (real && real.attributes && real.attributes.unit_of_measurement) || '';
+        let chips;
+        if (isNum) {
+          const curNum = Number(cur), base = Number.isFinite(curNum) ? curNum : num;
+          chips = unit === '%'
+            ? [['10', '10%'], ['50', '50%'], ['100', '100%'], ['unavailable', 'unavailable']]
+            : [[String(Math.round((base - 10) * 10) / 10), '−10'], [String(Math.round((base + 10) * 10) / 10), '+10'], ['0', '0'], ['unavailable', 'unavailable']];
+        } else {
+          chips = suggestStatesForEntities([id]).slice(0, 2).concat(['unavailable']).map((q) => [q, q]);
+        }
+        return `<div class="tssimrow${isSim ? ' on' : ''}"><div class="tssimlbl"><span class="tssimn" title="${esc(id)}">${esc(this._boxName(id))}</span>${isSim ? `<small class="muted">${T('ts_sim_real', { v: esc(realStr) })}</small>` : ''}</div><input class="tssimv" data-simk="${esc(id)}" value="${esc(cur)}" aria-label="${esc(T('ts_sim_val_a11y', { name: this._boxName(id) }))}">${chips.map(([v, lbl]) => `<button type="button" class="chip${cur === v ? ' on' : ''}" data-act="ts-sim-preset" data-k="${esc(id)}" data-v="${esc(v)}">${esc(lbl)}</button>`).join('')}</div>`;
       }).join('');
-      const timeRow = `<div class="tssimrow"><span class="tssimn">${T('ts_sim_time')}</span><input type="time" name="tssimtime" value="${esc(g.simTime)}" aria-label="${esc(T('ts_sim_time'))}"><span class="hint">${T('ts_sim_time_h')}</span></div>`;
-      return (rows || `<div class="muted">${T('ts_sim_none')}</div>`) + timeRow;
+
+      // 2. Simulated attribute rows (e.g. sun.sun next_setting, light brightness, climate hvac_action, calendar start_time)
+      const attrRows = meta.attrs.slice(0, 8).map(({ entity, attr }) => {
+        const ak = `${entity}::${attr}`, real = this._hass.states[entity];
+        const realVal = real && real.attributes ? real.attributes[attr] : null;
+        const isSim = ak in g.simAttr;
+        const isTimeAttr = /^next_(setting|rising|noon|midnight|dawn|dusk)$|^start_time$|^end_time$/.test(attr) || (typeof realVal === 'string' && /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(realVal));
+        const realDisplay = realVal == null ? T('ts_sim_missing') : (isTimeAttr ? (this._tsLocalHHMM(realVal) || shorten(String(realVal), 16)) : shorten(String(realVal), 18));
+        const curVal = isSim ? g.simAttr[ak] : realVal;
+        const isNull = isSim && g.simAttr[ak] === null;
+        if (isTimeAttr) {
+          const hhmm = isNull ? '' : (isSim ? this._tsLocalHHMM(curVal) : this._tsLocalHHMM(realVal));
+          const presets = entity === 'sun.sun'
+            ? [['06:30', '6:30 AM'], ['17:30', '5:30 PM'], ['20:30', '8:30 PM']]
+            : [['09:00', '9:00 AM'], ['18:00', '6:00 PM']];
+          return `<div class="tssimrow${isSim ? ' on' : ''}"><div class="tssimlbl"><span class="tssimn" title="${esc(entity + '.' + attr)}">${esc(this._boxName(entity))} · ${esc(attr.replace(/_/g, ' '))}</span>${isSim ? `<small class="muted">${T('ts_sim_real', { v: esc(realDisplay) })}</small>` : ''}</div><input type="time" class="tssimv" data-simattr-t="${esc(ak)}" value="${esc(hhmm)}" aria-label="${esc(T('ts_sim_attr_a11y', { attr, name: this._boxName(entity) }))}">${presets.map(([v, lbl]) => `<button type="button" class="chip${!isNull && hhmm === v ? ' on' : ''}" data-act="ts-sim-attr" data-k="${esc(entity)}" data-a="${esc(attr)}" data-v="time:${v}">${esc(lbl)}</button>`).join('')}<button type="button" class="chip${isNull ? ' on' : ''}" data-act="ts-sim-attr" data-k="${esc(entity)}" data-a="${esc(attr)}" data-v="__null__">${T('ts_sim_missing')}</button></div>`;
+        }
+        const curText = isNull ? '' : (curVal == null ? '' : String(curVal));
+        const presets = attr === 'brightness' ? [['0', '0%'], ['128', '50%'], ['255', '100%']] : [];
+        return `<div class="tssimrow${isSim ? ' on' : ''}"><div class="tssimlbl"><span class="tssimn" title="${esc(entity + '.' + attr)}">${esc(this._boxName(entity))} · ${esc(attr.replace(/_/g, ' '))}</span>${isSim ? `<small class="muted">${T('ts_sim_real', { v: esc(realDisplay) })}</small>` : ''}</div><input class="tssimv" data-simattr="${esc(ak)}" value="${esc(curText)}" aria-label="${esc(T('ts_sim_attr_a11y', { attr, name: this._boxName(entity) }))}">${presets.map(([v, lbl]) => `<button type="button" class="chip${!isNull && curText === v ? ' on' : ''}" data-act="ts-sim-attr" data-k="${esc(entity)}" data-a="${esc(attr)}" data-v="${esc(v)}">${esc(lbl)}</button>`).join('')}<button type="button" class="chip${isNull ? ' on' : ''}" data-act="ts-sim-attr" data-k="${esc(entity)}" data-a="${esc(attr)}" data-v="__null__">${T('ts_sim_missing')}</button></div>`;
+      }).join('');
+
+      // 3. Simulated clock (only active when the template actually reads now() / today_at() / utcnow()!)
+      let clockHtml = '';
+      if (meta.usesClock) {
+        const tPresets = meta.usesLastChanged
+          ? [['+15m', '+15 min'], ['+60m', '+1 hr'], ['+180m', '+3 hr']]
+          : [['08:00', '8:00 AM'], ['14:00', '2:00 PM'], ['22:30', '10:30 PM'], ['02:00', '2:00 AM']];
+        clockHtml = `<div class="tssimrow${g.simTime ? ' on' : ''}"><div class="tssimlbl"><span class="tssimn">${T('ts_sim_time')}</span></div><input type="time" name="tssimtime" value="${esc(g.simTime)}" title="${esc(T('ts_sim_time_h'))}" aria-label="${esc(T('ts_sim_time'))}">${tPresets.map(([v, lbl]) => `<button type="button" class="chip${g.simTime === v ? ' on' : ''}" data-act="ts-sim-time" data-v="${v}">${esc(lbl)}</button>`).join('')}</div>`;
+        if (meta.usesWeekday) {
+          clockHtml += `<div class="tssimrow${g.simDay != null ? ' on' : ''}"><div class="tssimlbl"><span class="tssimn">${T('ts_sim_day')}</span></div>${WEEKDAYS.map((d, i) => `<button type="button" class="chip${g.simDay === i ? ' on' : ''}" data-act="ts-sim-day" data-d="${i}">${d}</button>`).join('')}</div>`;
+        }
+      } else if (stateRows || attrRows) {
+        clockHtml = `<div class="hint">${T('ts_sim_no_clock')}</div>`;
+      }
+
+      const body = stateRows + attrRows + clockHtml;
+      if (!body) return warn + `<div class="muted">${T('ts_sim_none')}</div>`;
+      return warn + `<div class="hint">${T('ts_sim_intro')}</div>` + body;
     },
 
     _tsExplainLeft(exp) {
@@ -571,8 +653,16 @@ export const studioPart = {
         return true;
       }
       if (t.name === 'ts_help_ent') { g.helpEnt = t.value; this._tsShow(); return true; }
-      if (t.name === 'tssimtime') { g.simTime = t.value || ''; this._tsEvalSoon(true); return true; }
-      if (t.dataset && t.dataset.simk) { g.sim[t.dataset.simk] = t.value; this._tsEvalSoon(true); return true; }
+      if (t.name === 'tssimtime') { g.simTime = t.value || ''; this._tsRefreshRight(); this._tsEvalSoon(true); return true; }
+      if (t.dataset && t.dataset.simk) { g.sim[t.dataset.simk] = t.value; this._tsRefreshRight(); this._tsEvalSoon(true); return true; }
+      if (t.dataset && t.dataset.simattr) { g.simAttr[t.dataset.simattr] = t.value; this._tsRefreshRight(); this._tsEvalSoon(true); return true; }
+      if (t.dataset && t.dataset.simattrT) {
+        if (t.value) g.simAttr[t.dataset.simattrT] = this._tsHHMMToIso(t.value);
+        else delete g.simAttr[t.dataset.simattrT];
+        this._tsRefreshRight();
+        this._tsEvalSoon(true);
+        return true;
+      }
       if (g.mode === 'recipe') {
         const s = g.spec;
         let redraw = false;
@@ -701,6 +791,8 @@ export const studioPart = {
         return true;
       }
       if (t.name === 'tsname' || t.name === 'tsunit') { this._tsReadMeta(m); return true; }
+      if (t.dataset && t.dataset.simk) { g.sim[t.dataset.simk] = t.value; this._tsEvalSoon(); return true; }
+      if (t.dataset && t.dataset.simattr) { g.simAttr[t.dataset.simattr] = t.value; this._tsEvalSoon(); return true; }
       return false;
     },
 
@@ -890,7 +982,40 @@ export const studioPart = {
       const g = this._stu;
       if (!g) return;
       g.sim[k] = v;
-      this._tsRefreshRight();
+      this._tsRefreshRight({ forceSim: true });
+      this._tsEvalSoon(true);
+    },
+
+    _tsSimAttrPreset(k, attr, v) {
+      const g = this._stu;
+      if (!g || !k || !attr) return;
+      const ak = `${k}::${attr}`;
+      if (v === '__null__') g.simAttr[ak] = null;
+      else if (String(v).startsWith('time:')) g.simAttr[ak] = this._tsHHMMToIso(String(v).slice(5));
+      else g.simAttr[ak] = v;
+      this._tsRefreshRight({ forceSim: true });
+      this._tsEvalSoon(true);
+    },
+
+    _tsSimTimePreset(v) {
+      const g = this._stu;
+      if (!g) return;
+      const m = /^\+(\d+)m$/.exec(String(v || ''));
+      if (m) {
+        const d = new Date(Date.now() + Number(m[1]) * 60000);
+        g.simTime = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+      } else {
+        g.simTime = v || '';
+      }
+      this._tsRefreshRight({ forceSim: true });
+      this._tsEvalSoon(true);
+    },
+
+    _tsSimDay(d) {
+      const g = this._stu;
+      if (!g) return;
+      g.simDay = g.simDay === d ? null : d;
+      this._tsRefreshRight({ forceSim: true });
       this._tsEvalSoon(true);
     },
 
@@ -898,8 +1023,10 @@ export const studioPart = {
       const g = this._stu;
       if (!g) return;
       g.sim = {};
+      g.simAttr = {};
       g.simTime = '';
-      this._tsShow();
+      g.simDay = null;
+      this._tsRefreshRight({ forceSim: true });
       this._tsEvalSoon(true);
     },
 
@@ -912,20 +1039,36 @@ export const studioPart = {
       if (!g || !g.template.trim()) { if (g) { g.live = null; this._tsRefreshRight(); } return; }
       const seq = ++g.evalSeq;
       const exp = g.lastExplain || explainTemplate(g.template, (id) => this._boxName(id));
-      const hasSim = Object.keys(g.sim).length > 0 || !!g.simTime;
+      const hasSim = this._tsHasSim();
       const renderOne = async (tpl, raw) => {
         if (!hasSim) return this._renderRaw(tpl, {});
         if (this._asFn == null) this._asFn = await this._renderRaw('{%- macro m(returns) -%}{%- do returns(1) -%}{%- endmacro -%}{{ (m | as_function)() }}', {}).then((v) => String(v) === '1', () => false);
-        if (!this._asFn) return this._renderRaw(tpl, {});
+        if (!this._asFn) { g.simNoAsFn = true; return this._renderRaw(tpl, {}); }
+        g.simNoAsFn = false;
         const rw = sbxRewrite(tpl), fb_s = {};
+        const attrOverrides = {};
+        Object.entries(g.simAttr || {}).forEach(([ak, v]) => {
+          const i = ak.indexOf('::');
+          if (i > 0) {
+            const ent = ak.slice(0, i), a = ak.slice(i + 2);
+            (attrOverrides[ent] = attrOverrides[ent] || {})[a] = v;
+          }
+        });
         const add = (id) => {
           const real = this._hass.states[id];
           const st = id in g.sim ? g.sim[id] : (real ? String(real.state) : 'unknown');
-          fb_s[id] = { state: String(st), attributes: (real && real.attributes) || {}, last_changed: (real && real.last_changed) || new Date().toISOString(), last_updated: new Date().toISOString() };
+          const attrs = Object.assign({}, (real && real.attributes) || {}, attrOverrides[id] || {});
+          fb_s[id] = { state: String(st), attributes: attrs, last_changed: (real && real.last_changed) || new Date().toISOString(), last_updated: new Date().toISOString() };
         };
         Object.keys(g.sim).forEach(add);
+        Object.keys(attrOverrides).forEach(add);
         for (const x of String(tpl).matchAll(ENTITY_RE)) add(x[0]);
         const simNow = new Date();
+        if (g.simDay != null) {
+          // Shift date to the chosen Python weekday (0=Mon .. 6=Sun)
+          const curPyDay = (simNow.getDay() + 6) % 7;
+          simNow.setDate(simNow.getDate() + (g.simDay - curPyDay));
+        }
         if (g.simTime && /^\d{2}:\d{2}$/.test(g.simTime)) {
           const [hh, mm] = g.simTime.split(':').map(Number);
           simNow.setHours(hh, mm, 0, 0);

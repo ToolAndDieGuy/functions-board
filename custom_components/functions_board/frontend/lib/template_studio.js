@@ -34,6 +34,7 @@ export function suggestStatesForEntities(entities) {
   if (doms.has('media_player')) add('playing', 'paused', 'idle', 'off');
   if (doms.has('vacuum')) add('cleaning', 'docked', 'returning', 'error');
   if (doms.has('alarm_control_panel')) add('armed_away', 'armed_home', 'disarmed', 'triggered');
+  if (doms.has('sun')) add('above_horizon', 'below_horizon');
   if (!out.length || [...doms].some((d) => /^(binary_sensor|light|switch|fan|input_boolean|automation|script)$/.test(d))) add('on', 'off');
   return out.slice(0, 6);
 }
@@ -422,6 +423,36 @@ export function extractTemplateEntities(src) {
   for (const m of s.matchAll(ENTITY_RE)) found.add(m[0]);
   for (const m of s.matchAll(/\bstates\.([a-z_]+)\.([a-z0-9_]+)\b/g)) found.add(m[1] + '.' + m[2]);
   return [...found];
+}
+
+// Inspect what inputs a template actually depends on so the inline simulator offers controls that truly affect it.
+export function analyzeSimInputs(src) {
+  const s = String(src || '');
+  const attrs = [];
+  const seenAttr = new Set();
+  const attrOnlyEnts = new Set();
+  for (const m of s.matchAll(/\b(?:is_)?state_attr\s*\(\s*['"]([a-z_]+\.[a-z0-9_]+)['"]\s*,\s*['"]([a-zA-Z0-9_]+)['"]/g)) {
+    const key = m[1] + '::' + m[2];
+    if (!seenAttr.has(key)) { seenAttr.add(key); attrs.push({ entity: m[1], attr: m[2] }); }
+    attrOnlyEnts.add(m[1]);
+  }
+  const stateEnts = new Set();
+  for (const m of s.matchAll(/\b(?:states|is_state|has_value)\s*\(\s*['"]([a-z_]+\.[a-z0-9_]+)['"]/g)) stateEnts.add(m[1]);
+  for (const m of s.matchAll(/\bstates\.([a-z_]+)\.([a-z0-9_]+)\b/g)) stateEnts.add(m[1] + '.' + m[2]);
+  for (const m of s.matchAll(/\bexpand\s*\(([^)]+)\)/g)) {
+    for (const e of m[1].matchAll(ENTITY_RE)) stateEnts.add(e[0]);
+  }
+  // Include any remaining referenced entities that aren't purely read via state_attr
+  for (const e of extractTemplateEntities(s)) {
+    if (!attrOnlyEnts.has(e)) stateEnts.add(e);
+  }
+  return {
+    stateEntities: [...stateEnts],
+    attrs,
+    usesClock: /\b(?:now|today_at|utcnow)\s*\(/.test(s),
+    usesWeekday: /\bweekday\s*\(/.test(s),
+    usesLastChanged: /\blast_changed\b/.test(s),
+  };
 }
 
 // Detect which glossary concepts appear in a Jinja snippet.
