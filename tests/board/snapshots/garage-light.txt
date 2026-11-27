@@ -40,7 +40,7 @@ div.board.light.m-panel.pc
       button.lbtn data-act="import" | Import manager
         ha-icon icon="mdi:import"
       div.ver
-        span | Functions board v<version> · prototype
+        span | Functions board v<version>
         button.ib data-act="about" title="About, and what the board changes"
           ha-icon icon="mdi:help-circle-outline"
   div.scrim data-act="togglelist"

@@ -13,7 +13,7 @@ const edit = (rel, fn) => {
 };
 edit('custom_components/functions_board/frontend/functions-board.js', (s) => s
   .replace(/const VERSION = '[^']+'/, `const VERSION = '${ver}'`)
-  .replace(/Functions board v[0-9][^ ]* \(prototype\)/, `Functions board v${ver} (prototype)`));
+  .replace(/Functions board v[0-9][^ ]*(?: \(prototype\))?/, `Functions board v${ver}`));
 edit('custom_components/functions_board/manifest.json', (s) => s.replace(/"version": "[^"]+"/, `"version": "${ver}"`));
 edit('README.md', (s) => s
   .replace(/functions-board\.js\?v=[0-9][^`)\s]*/g, `functions-board.js?v=${ver}`)
