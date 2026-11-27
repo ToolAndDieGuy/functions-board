@@ -491,6 +491,10 @@ svg path.e.prob{stroke:var(--error-color,#db4437);stroke-dasharray:5 4}
 .vrdlg .vplan{margin:6px 0 10px;padding-left:18px;font-size:13px}.vrdlg .vplan li{margin:3px 0}
 .vrdlg .vdevrow{margin:8px 0;display:flex;flex-direction:column;gap:4px;font-size:13px}
 .vrdlg .vdevpick select{width:100%}
+.vrdlg .vaddlist{display:flex;flex-direction:column;gap:6px;margin:6px 0 8px;max-height:220px;overflow:auto}
+.vrdlg .vaddrow{display:flex;align-items:center;gap:8px;font-size:13px}
+.vrdlg .vaddrow .vaddnm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vrdlg .vaddrow select{flex:0 0 auto;max-width:290px}
 .board.sbx .edges path.dim,.board.sbx .edges path.chev.dim{opacity:.22}
 .flowx{position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;pointer-events:none}
 .flowx path.fx{fill:none;stroke:var(--fb-amber);stroke-width:2;stroke-dasharray:6 4}

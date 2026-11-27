@@ -23,13 +23,13 @@ This folder documents the full audit triage, bug fixes, backend/security hardeni
 - **CI, Scripts & Docs:** `.github/workflows/validate.yml`, `.github/workflows/weekly.yml`, `scripts/bump.js`, `scripts/gen_sandbox_triggers.py`, `CHANGELOG.md`, `CLAUDE.md`, `docs/guide.md`, `docs/what-it-changes.md`, `docs/handoff/*`
 - **Test Suites, Snapshots & Mutants:**
   - `tests/lib/board-lib.js` (loads `frontend/lib/index.js` directly in Node)
-  - `tests/static.test.js` (walks all 24 ES modules, `PARTS` by filename, `mixParts` collision check, `CHECK_OPS` <-> `_chkStepText` rule, `WS_OK` for checks commands, `card-loader.js` size/network/admin/constructor checks, and 319/319 mutant anchor checks)
+  - `tests/static.test.js` (walks all 24 ES modules, `PARTS` by filename, `mixParts` collision check, `CHECK_OPS` <-> `_chkStepText` rule, `WS_OK` for checks commands, `card-loader.js` size/network/admin/constructor checks, and 320/320 mutant anchor checks)
   - `tests/sandbox.test.js`, `tests/wiring.test.js`, `tests/problems.test.js`, `tests/builder.test.js`
-  - `tests/board/fake-ha.js`, `tests/board/smoke.test.js` (`card-loader.js` lazy admin, preloaded admin, and non-admin isolation tests), `tests/board/regress.test.js` (`0.13.2` + `0.13.3` regression tests & jitter stabilization), `tests/board/snapshots.test.js`, `tests/board/snapshots/*.txt` (updated for `· prototype` removal; 0 diffs across Phase 3 split)
-  - `tests/e2e/apitest.py`, `tests/e2e/contract.test.js`, `tests/e2e/ha-api.js`, `tests/e2e/lib.js`, `tests/e2e/privacy.test.js`, `tests/e2e/regress.test.js`
-  - `tests/diff/corpus.js`, `tests/diff/random.js`
+  - `tests/board/fake-ha.js`, `tests/board/smoke.test.js` (`card-loader.js` lazy admin, preloaded admin, and non-admin isolation tests), `tests/board/regress.test.js` (`0.13.2` + `0.13.3` + `0.14.0` per-item version restore regression tests & jitter stabilization), `tests/board/snapshots.test.js`, `tests/board/snapshots/*.txt` (updated for `· prototype` removal and per-item restore styles)
+  - `tests/e2e/apitest.py`, `tests/e2e/contract.test.js`, `tests/e2e/ha-api.js`, `tests/e2e/lib.js`, `tests/e2e/privacy.test.js`, `tests/e2e/regress.test.js`, `tests/e2e/versions.test.js`
+  - `tests/diff/corpus.js`, `tests/diff/mqtt.js`, `tests/diff/random.js`
   - `tests/backend/test_zwave_values.py`, `tests/backend/test_websocket.py`, `tests/backend/test_mqtt_sources.py`, `tests/backend/test_privacy.py`, `tests/backend/test_setup.py`
-  - `tests/mutants.json` (remapped all 271 frontend mutants to ES modules, fixed 1 stale expectation, updated 1 check-edit anchor, added 17 new mutants -> **319 total**)
+  - `tests/mutants.json` (remapped all 271 frontend mutants to ES modules, fixed 1 stale expectation, updated 1 check-edit anchor, added 18 new mutants -> **320 total**)
 
 ---
 
@@ -38,8 +38,8 @@ This folder documents the full audit triage, bug fixes, backend/security hardeni
 | Suite / Check | Status | Notes |
 |---|---|---|
 | `node --check` across all 24 `frontend/**/*.js` modules | **PASS (24/24)** | Syntax clean across entire module graph |
-| All 9 Node suites (`static`, `wiring`, `import`, `problems`, `sandbox`, `builder`, `clock`, `link`, `store`) | **PASS (621/621)** | Includes `static.test.js` 61/61 and all 319 single-match mutant anchors |
-| All 7 Playwright fake-HA board suites (`smoke`, `a11y`, `layout`, `regress`, `snapshots`, `leak`, `draw`) | **PASS (68/68 tests)** | `board-smoke` 11/11, `board-regress` 381/381, `board-a11y` 26/26, `board-leak` 9/9, `board-snapshots` 47/47 (0 diffs) |
+| All 9 Node suites (`static`, `wiring`, `import`, `problems`, `sandbox`, `builder`, `clock`, `link`, `store`) | **PASS (621/621)** | Includes `static.test.js` 61/61 and all 320 single-match mutant anchors |
+| All 7 Playwright fake-HA board suites (`smoke`, `a11y`, `layout`, `regress`, `snapshots`, `leak`, `draw`) | **PASS (68/68 tests)** | `board-smoke` 11/11, `board-regress` 383/383, `board-a11y` 26/26, `board-leak` 9/9, `board-snapshots` 47/47 |
 | Jitter (`FB_JITTER=45672517445 FB_RETRIES=0`) on `board-regress` | **PASS** | Issue #72 `0.13.0` sandbox races + `0.11.3` Undo toast race fixed |
 | Differential JS sandbox (`tests/diff/sandbox.js --random 50 --seed 45672517445`) | **PASS (161 scenarios)** | Zero errors; `random.js` disjoint helper writes eliminate concurrent write races |
 | Mutants (Issue #72 + Phase 1 + Phase 2 + Phase 3 + `card-loader` JS/board/static mutants) | **PASS (all caught)** | Every newly added and remapped JS/board/static mutant verified caught |

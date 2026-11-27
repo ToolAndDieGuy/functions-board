@@ -371,12 +371,19 @@ export const versionsPart = {
       const addLogic = plan.added.filter(logic), addOther = plan.added.filter((k) => !logic(k));
       const doms = new Set(plan.write.concat(plan.recreate).map((k) => k.split('.')[0]));
       const devs = plan.missing.map((d) => { const o = snap.devices[d] || {}; return `<div class="vdevrow"><div>${T('ver_dev_gone', { name: esc(o.name || d), model: esc([o.manufacturer, o.model].filter(Boolean).join(' ')) })}</div><div class="vdevpick" data-old="${esc(d)}"></div></div>`; }).join('');
+      const addRows = addLogic.map((k) => {
+        const dom = k.split('.')[0], rawName = (snap.items[k] && snap.items[k].name) || this._boxName(k);
+        const opts = dom === 'automation'
+          ? `<option value="off" selected>${T('ver_added_off')}</option><option value="leave">${T('ver_added_leave')}</option><option value="delete">${T('ver_added_delete')}</option>`
+          : `<option value="leave" selected>${T('ver_added_leave_other')}</option><option value="delete">${T('ver_added_delete')}</option>`;
+        return `<div class="vaddrow"><span class="tag">${esc(this._tagOf(k))}</span><span class="vaddnm" title="${esc(rawName)}">${esc(rawName)}</span><select class="vextra" data-k="${esc(k)}" aria-label="${esc(T('ver_added_pick', { name: rawName }))}">${opts}</select></div>`;
+      }).join('');
       m.hidden = false;
       m.innerHTML = `<div class="dlg wide vrdlg"><h3>${T('ver_restore_h', { name: esc(v.name) })}</h3><p class="dtext">${T('ver_restore_lead', { fnName: esc(this._fnName(p.label)), when: esc(this._verWhen(v.at)) })}</p>`
         + `<ul class="vplan">${line(plan.write, P('ver_p_write', plan.write.length))}${line(plan.recreate, P('ver_p_recreate', plan.recreate.length))}${line(plan.rejoin, P('ver_p_rejoin', plan.rejoin.length))}${line(plan.same, P('ver_p_same', plan.same.length))}${line(plan.yaml, P('ver_p_yaml', plan.yaml.length))}${snap.layout ? `<li>${T('ver_p_layout')}</li>` : ''}</ul>`
         + ((plan.writeShared || []).length ? `<div class="dwarn vwshared"><ha-icon icon="mdi:alert-outline"></ha-icon><span>${T('ver_write_shared', { list: plan.writeShared.map((x) => nm(x.k) + ' (' + esc(x.why) + ')').join(', ') })}</span></div>` : '')
         + (plan.missing.length ? `<h4>${T('ver_dev_h')}</h4><div class="hint">${T('ver_dev_hint')}</div>${devs}` : '')
-        + (addLogic.length || addOther.length || plan.shared.length ? `<h4>${T('ver_added_h')}</h4>${plan.shared.length ? `<div class="hint">${T('ver_added_shared', { list: plan.shared.map((x) => nm(x.k) + ' (' + esc(x.why) + ')').join(', ') })}</div>` : ''}${addLogic.length ? `<div class="hint">${addLogic.map(nm).join(', ')}</div><label class="chk"><input type="radio" name="vextra" value="off" checked>${T('ver_added_off')}</label><label class="chk"><input type="radio" name="vextra" value="delete">${T('ver_added_delete')}</label>` : ''}${addOther.length ? `<div class="hint">${T('ver_added_other', { list: addOther.map(nm).join(', ') })}</div>` : ''}` : '')
+        + (addLogic.length || addOther.length || plan.shared.length ? `<h4>${T('ver_added_h')}</h4>${plan.shared.length ? `<div class="hint">${T('ver_added_shared', { list: plan.shared.map((x) => nm(x.k) + ' (' + esc(x.why) + ')').join(', ') })}</div>` : ''}${addLogic.length ? `<div class="vaddlist">${addRows}</div>` : ''}${addOther.length ? `<div class="hint">${T('ver_added_other', { list: addOther.map(nm).join(', ') })}</div>` : ''}` : '')
         // a backup of what's there now only when asked for: switching between saved versions shouldn't pile up copies
         // what's there now is kept: when it's already a saved version nothing needs saving; when it isn't, saving it
         // first is ticked (0.11.3: making another version active never loses what's there)
@@ -401,7 +408,8 @@ export const versionsPart = {
     async _verRestoreGo() {
       const p = this._verPending, m = this._$.modal, val = m.querySelector('.aval'), btn = m.querySelector('[data-act="ver-restore-go"]');
       if (!p) return;
-      const extra = (m.querySelector('input[name="vextra"]:checked') || { value: 'off' }).value, backup = !!(m.querySelector('input[name="vbackup"]') || {}).checked;
+      const choices = new Map([...m.querySelectorAll('select.vextra[data-k]')].map((s) => [s.dataset.k, s.value]));
+      const backup = !!(m.querySelector('input[name="vbackup"]') || {}).checked;
       const { label, v, plan } = p, snap = v.snapshot, map = Object.fromEntries(Object.entries(p.devmap).filter(([, x]) => x)), errs = [], name = (k) => (snap.items[k] && snap.items[k].name) || this._boxName(k);
       btn.disabled = true;
       val.textContent = T('ver_restoring');
@@ -440,20 +448,35 @@ export const versionsPart = {
       for (const x of plan.shared || []) {
         try { await this._label(x.k, label, false, false); } catch (e) { errs.push(this._boxName(x.k) + ': ' + ((e && (e.message || e.body || e.code)) || e)); }
       }
-      // what was added since: turned off or deleted, as chosen; anything else is taken out of the function
+      // what was added since: per-item choice (turn off, remove from function leaving on/as is, or delete)
       for (const k of plan.added) {
         const dom = k.split('.')[0];
+        const act = choices.get(k) || (dom === 'automation' ? 'off' : 'leave');
         try {
           if (dom === 'automation') {
-            const r = await this._ws({ type: 'automation/config', entity_id: k }, { optional: 'an automation or script without an id has no stored config', fallback: null }), aid = r && r.config && r.config.id;
-            if (extra === 'delete' && aid) await this._api('DELETE', `config/automation/config/${encodeURIComponent(aid)}`);
-            else await this._svc('automation', 'turn_off', { entity_id: k });
+            if (act === 'leave') {
+              await this._label(k, label, false, false);
+            } else if (act === 'delete') {
+              const r = await this._ws({ type: 'automation/config', entity_id: k }, { optional: 'an automation or script without an id has no stored config', fallback: null }), aid = r && r.config && r.config.id;
+              if (aid) await this._api('DELETE', `config/automation/config/${encodeURIComponent(aid)}`);
+              else await this._svc('automation', 'turn_off', { entity_id: k });
+            } else {
+              await this._svc('automation', 'turn_off', { entity_id: k });
+            }
           } else if (dom === 'script') {
-            const e = this._entMap.get(k), sid = (e && e.unique_id) || k.slice(7);
-            if (extra === 'delete') await this._api('DELETE', `config/script/config/${encodeURIComponent(sid)}`);
+            if (act === 'delete') {
+              const e = this._entMap.get(k), sid = (e && e.unique_id) || k.slice(7);
+              await this._api('DELETE', `config/script/config/${encodeURIComponent(sid)}`);
+            } else {
+              await this._label(k, label, false, false);
+            }
           } else if (VER_HELPERS.has(dom)) {
-            const e = this._entMap.get(k);
-            if (extra === 'delete' && e && e.unique_id) await this._ws({ type: dom + '/delete', [dom + '_id']: e.unique_id });
+            if (act === 'delete') {
+              const e = this._entMap.get(k);
+              if (e && e.unique_id) await this._ws({ type: dom + '/delete', [dom + '_id']: e.unique_id });
+            } else {
+              await this._label(k, label, false, false);
+            }
           } else await this._label(k, label, false, false);
         } catch (e) { errs.push(this._boxName(k) + ': ' + ((e && (e.message || e.body || e.code)) || e)); }
       }

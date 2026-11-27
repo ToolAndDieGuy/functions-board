@@ -993,9 +993,9 @@ test('0.11.3 versions: a version is made active, never overwritten but by Save; 
 });
 
 // an automation or script added to the fake Home Assistant, as its editor would make it
-async function addPiece(page, fake, id, config) {
+async function addPiece(page, fake, id, config, labels = []) {
   const [dom, oid] = id.split('.'), uid = 'fb' + oid;
-  fake.entities.set(id, { entity_id: id, id: 'fbid' + oid, platform: dom, unique_id: dom === 'automation' ? uid : oid, labels: [], area_id: null, device_id: null, disabled_by: null, hidden_by: null, name: null, original_name: config.alias, icon: null, categories: {}, config_entry_id: null, has_entity_name: false, entity_category: null, options: {} });
+  fake.entities.set(id, { entity_id: id, id: 'fbid' + oid, platform: dom, unique_id: dom === 'automation' ? uid : oid, labels: labels.slice(), area_id: null, device_id: null, disabled_by: null, hidden_by: null, name: null, original_name: config.alias, icon: null, categories: {}, config_entry_id: null, has_entity_name: false, entity_category: null, options: {} });
   if (dom === 'automation') { fake.autos[uid] = Object.assign({ id: uid }, config); await fake.setState(id, 'on', { friendly_name: config.alias, id: uid, last_triggered: null, mode: 'single', current: 0 }); }
   else { fake.scripts[oid] = config; await fake.setState(id, 'off', { friendly_name: config.alias, last_triggered: null, mode: 'single', current: 0 }); }
   await el(page, (b) => b._store.changed('reg'));
@@ -1197,12 +1197,12 @@ test('0.11.0 restoring a version never turns off or deletes what was added since
   check('0.11.0 restore: what\'s shared is listed apart, only taken out of the function, with why', /only taken out of this function \(never turned off or deleted\)/.test(text)
     && /Garage and morning light \(stays: it's also in Morning\)/.test(text) && /Garage chime \(stays: used outside this function by Chime at noon\)/.test(text), text);
   const sharedLine = (text.match(/Shared with another function[^\n]*/) || [''])[0];
-  check('0.11.0 restore: what\'s only the function\'s is offered to turn off or delete, not listed as shared', !/Garage only check/.test(sharedLine) && /Garage only check[\s\S]*Turn them off/.test(text), text);
+  check('0.11.0 restore: what\'s only the function\'s is offered per-item actions, not listed as shared', !/Garage only check/.test(sharedLine) && /Garage only check/.test(text) && (await fbq(page, `.modal select.vextra[data-k="${OWN}"]`).count()) === 1, text);
   const warn = (await fbq(page, '.modal .vwshared').count()) ? await fbq(page, '.modal .vwshared').innerText() : '';
   check('0.11.0 restore warns that what it writes back changes in the other function too', /making this version active changes them there too/.test(warn) && /Garage: left open \(also in Morning\)/.test(warn), warn);
   check('0.11.0 ... and where something outside uses it', /Close garage \(used outside this function by Close at night\)/.test(warn), warn);
   check('0.11.0 ... but not for what only this function has (written back all the same)', !/stop timer/.test(warn) && /stop timer/.test(text), { warn, text });
-  await fbq(page, '.modal input[name="vextra"][value="delete"]').check();
+  await fbq(page, `.modal select.vextra[data-k="${OWN}"]`).selectOption('delete');
   await fbq(page, '.modal [data-act="ver-restore-go"]').click();
   await until(() => el(page, (b) => b._$.modal.hidden || null), 20000);
   await fake.idle(500);
@@ -2356,6 +2356,51 @@ test('0.13.2 audit fixes: durations, drawer back/focus, check steps, s_missing, 
   });
   check('0.13.3 deleting a function removes its decoupled checks and Undo restores them',
     delUndoChecks.afterDelLen === 0 && delUndoChecks.afterUndoLen === 1 && delUndoChecks.id === 'sep1', delUndoChecks);
+
+  // 0.14.0: per-item restore choices for items added since the saved version (turn off / leave on & unlabel / delete)
+  const garageNow = await el(page, (b) => b._data.ui.current);
+  const baseSnap = await el(page, (b, l) => b._verSnapshot(l), garageNow);
+  const baseVer = await ws(page, { type: 'functions_board/version_save', label: garageNow, name: 'Before per-item additions', desc: '', snapshot: baseSnap });
+  const A_OFF = 'automation.fb_peritem_off', A_LEAVE = 'automation.fb_peritem_leave', A_DEL = 'automation.fb_peritem_del', S_LEAVE = 'script.fb_peritem_leave';
+  await addPiece(page, fake, A_OFF, { alias: 'Added: turn off', triggers: [{ trigger: 'time', at: '01:00:00' }], conditions: [], actions: [] }, [garageNow]);
+  await addPiece(page, fake, A_LEAVE, { alias: 'Added: leave on', triggers: [{ trigger: 'time', at: '02:00:00' }], conditions: [], actions: [] }, [garageNow]);
+  await addPiece(page, fake, A_DEL, { alias: 'Added: delete me', triggers: [{ trigger: 'time', at: '03:00:00' }], conditions: [], actions: [] }, [garageNow]);
+  await addPiece(page, fake, S_LEAVE, { alias: 'Added script: leave', sequence: [] }, [garageNow]);
+  await el(page, (b) => { b._fbMode = 'full'; b._store.changed('reg'); b._store.changed('cfg:'); });
+  await fake.idle(400);
+  await el(page, (b, id) => b._verRestore(id), baseVer.id);
+  await fbq(page, '.modal .vrdlg').waitFor({ timeout: 15000 });
+  const optCheck = await el(page, (b, [aOff, aLeave, aDel, sLeave]) => {
+    const vals = (k) => { const s = b._$.modal.querySelector(`select.vextra[data-k="${k}"]`); return s ? [...s.options].map((o) => o.value) : null; };
+    return { aOff: vals(aOff), aLeave: vals(aLeave), aDel: vals(aDel), sLeave: vals(sLeave) };
+  }, [A_OFF, A_LEAVE, A_DEL, S_LEAVE]);
+  check('0.14.0 version restore offers per-item selectors with off/leave/delete for automations and leave/delete for scripts',
+    JSON.stringify(optCheck.aOff) === '["off","leave","delete"]'
+    && JSON.stringify(optCheck.aLeave) === '["off","leave","delete"]'
+    && JSON.stringify(optCheck.aDel) === '["off","leave","delete"]'
+    && JSON.stringify(optCheck.sLeave) === '["leave","delete"]', optCheck);
+  await fbq(page, `.modal select.vextra[data-k="${A_OFF}"]`).selectOption('off');
+  await fbq(page, `.modal select.vextra[data-k="${A_LEAVE}"]`).selectOption('leave');
+  await fbq(page, `.modal select.vextra[data-k="${A_DEL}"]`).selectOption('delete');
+  await fbq(page, `.modal select.vextra[data-k="${S_LEAVE}"]`).selectOption('leave');
+  await fbq(page, '.modal input[name="vbackup"]').uncheck();
+  await fbq(page, '.modal [data-act="ver-restore-go"]').click();
+  await until(() => el(page, (b) => b._$.modal.hidden || null), 20000);
+  await fake.idle(500);
+  const stOf = (id) => page.evaluate((k) => { const s = document.querySelector('home-assistant').hass.states[k]; return s ? s.state : null; }, id);
+  const perRes = {
+    offState: await stOf(A_OFF),
+    leaveState: await stOf(A_LEAVE),
+    leaveLabeled: await hasLabel(page, A_LEAVE, garageNow),
+    delState: await stOf(A_DEL),
+    scriptState: await stOf(S_LEAVE),
+    scriptLabeled: await hasLabel(page, S_LEAVE, garageNow),
+  };
+  check('0.14.0 version restore applies per-item choices: off turns off, leave removes from function while leaving on, delete deletes',
+    perRes.offState === 'off'
+    && perRes.leaveState === 'on' && !perRes.leaveLabeled
+    && perRes.delState === null
+    && perRes.scriptState !== null && !perRes.scriptLabeled, perRes);
 
   check('0.13.2 audit fixes: no errors', page.logs.length === 0, page.logs);
   await ctx.close();

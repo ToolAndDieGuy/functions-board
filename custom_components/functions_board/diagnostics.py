@@ -228,7 +228,8 @@ class Anonymiser:
         if isinstance(v, list):
             if key in ("functions", "labels"):
                 return [self._stand_in(x, "label") if isinstance(x, str) and x else self.value(x, key) for x in v]
-            return [self.value(x, key) for x in v]
+            child_key = None if key in ("layouts", "revs", "versions", "checks") else key
+            return [self.value(x, child_key) for x in v]
         if isinstance(v, str):
             if key in ("function", "label", "label_id") and v:
                 return self._stand_in(v, "label")

@@ -2661,5 +2661,14 @@
   "suite": "board-smoke",
   "only": "card-loader mounts the panel",
   "expect": "card-loader \\(lazy\\)"
+ },
+ {
+  "name": "versions: per-item leave option turns automation off instead of removing from function",
+  "file": "custom_components/functions_board/frontend/ui/versions.js",
+  "find": "          if (dom === 'automation') {\n            if (act === 'leave') {\n              await this._label(k, label, false, false);",
+  "replace": "          if (dom === 'automation') {\n            if (false && act === 'leave') {\n              await this._label(k, label, false, false);",
+  "suite": "board-regress",
+  "only": "0.13.2",
+  "expect": "0.14.0 version restore applies per-item choices"
  }
 ]
