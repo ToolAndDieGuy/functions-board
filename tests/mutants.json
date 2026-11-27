@@ -368,8 +368,8 @@
  {
   "name": "rules: a quick node suite left out of CI",
   "file": ".github/workflows/validate.yml",
-  "find": "--only 'selftest|static|wiring|import|problems|sandbox|builder|clock|link|store'",
-  "replace": "--only 'selftest|static|wiring|problems|sandbox|builder|clock|link|store'",
+  "find": "--only 'selftest|static|wiring|import|problems|sandbox|builder|studio|clock|link|store'",
+  "replace": "--only 'selftest|static|wiring|problems|sandbox|builder|studio|clock|link|store'",
   "suite": "static",
   "expect": "every quick node suite runs in CI"
  },
@@ -2164,7 +2164,7 @@
  {
   "name": "builder: Edit on its box opens Home Assistant's editor",
   "file": "custom_components/functions_board/frontend/board-core.js",
-  "find": "if (!ha && n.domain === 'script' && this._bldHas(n.key)) { this._bldEdit(n); return; }",
+  "find": "if (!ha && (n.domain === 'script' || n.domain === 'automation' || n.domain === 'sensor' || n.domain === 'binary_sensor') && this._bldHas(n.key)) { this._bldEdit(n); return; }",
   "replace": "",
   "suite": "board-regress",
   "only": "notification builder",
@@ -2173,8 +2173,8 @@
  {
   "name": "builder: Save in Organise only mode",
   "file": "custom_components/functions_board/frontend/ui/builders.js",
-  "find": "${full ? '' : ` disabled title=\"${esc(T('full_manager_only_switch_it'))}\"`}>${T('save')}</button></div></div>`;",
-  "replace": ">${T('save')}</button></div></div>`;",
+  "find": "<button class=\"primary\" data-act=\"nb-save\"${full ? '' : ` disabled title=\"${esc(T('full_manager_only_switch_it'))}\"`}>${T('save')}</button></div></div>`;",
+  "replace": "<button class=\"primary\" data-act=\"nb-save\">${T('save')}</button></div></div>`;",
   "suite": "board-regress",
   "only": "notification builder",
   "expect": "can't save"
@@ -2670,5 +2670,46 @@
   "suite": "board-regress",
   "only": "0.13.2",
   "expect": "0.14.0 version restore applies per-item choices"
+ },
+ {
+  "name": "studio: linter misses bare | float without default (unavailable trap)",
+  "file": "custom_components/functions_board/frontend/lib/template_studio.js",
+  "find": "  if (/\\|\\s*(?:float|int)(?!\\s*\\()/.test(codeOnly)) {",
+  "replace": "  if (false && /\\|\\s*(?:float|int)(?!\\s*\\()/.test(codeOnly)) {",
+  "suite": "studio",
+  "expect": "linter catches bare \\| float"
+ },
+ {
+  "name": "studio: splitPipes splits inside quoted string literals",
+  "file": "custom_components/functions_board/frontend/lib/template_studio.js",
+  "find": "    if (c === \"'\" || c === '\"') { i = skipQuoted(expr, i); continue; }",
+  "replace": "    if (false && (c === \"'\" || c === '\"')) { i = skipQuoted(expr, i); continue; }",
+  "suite": "studio",
+  "expect": "splitPipes ignores pipes inside quoted"
+ },
+ {
+  "name": "studio: Low batteries recipe omits float(100) unavailable guard",
+  "file": "custom_components/functions_board/frontend/lib/template_studio.js",
+  "find": "`  {% if e.state | float(100) < ${s.threshold} %}`",
+  "replace": "`  {% if e.state | float < ${s.threshold} %}`",
+  "suite": "studio",
+  "expect": "Low batteries recipe scans battery"
+ },
+ {
+  "name": "studio: tplSame accepts hand-edited template as still recipe-owned",
+  "file": "custom_components/functions_board/frontend/lib/template_studio.js",
+  "find": "return !!gen && !!liveStateTpl && normTpl(liveStateTpl) === normTpl(gen.state);",
+  "replace": "return !!gen && !!liveStateTpl;",
+  "suite": "studio",
+  "expect": "tplSame matches generated template"
+ },
+ {
+  "name": "studio: Template Studio saves helper in Organise only mode",
+  "file": "custom_components/functions_board/frontend/ui/studio.js",
+  "find": "const canSaveHelper = full && (!g.entityId || !!g.entryId);",
+  "replace": "const canSaveHelper = true;",
+  "suite": "board-regress",
+  "only": "0.15.0 Template Studio",
+  "expect": "Organise only"
  }
 ]

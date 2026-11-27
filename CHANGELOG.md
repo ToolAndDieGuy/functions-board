@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Template Studio & 12 Guided Recipes
+- **Full Template Studio (`Recipes → Template Studio…` or `Explain template` on any template helper / templated automation or script):**
+  - **Plain-English walkthrough with live values:** Breaks any existing or pasted Jinja template into readable clauses (variables, conditions, filter pipelines, entity lookups, fallbacks), evaluating both the final output and each sub-expression live against your Home Assistant in a single `render_template` call, with interactive Jinja concept learning cards.
+  - **Unavailable-trap linter & 1-click fixes:** Flags common Jinja pitfalls — bare `| float` / `| int` without defaults, `states.domain.entity.state` crashes, unguarded string comparisons, missing `has_value()` / `availability` guards, and unbalanced blocks — with one-click fixes.
+  - **Inline state & time simulator + full Sandbox testing:** Override any referenced entity state (`on`, `off`, `open`, `closed`, `unavailable`, `unknown`, custom values) or virtual clock right inside Template Studio using `sbxRewrite`, or click **Try in sandbox** to inject the unsaved virtual Template helper into the board Sandbox before creating it.
+  - **Native Home Assistant Template helper creation:** Saves directly as an ordinary Home Assistant UI Template `sensor` or `binary_sensor` via Home Assistant's standard Template helper config flow (and updates via options flow), attaches the function's label, copies ready-to-paste `template:` YAML on demand, and reopens in its recipe while unchanged (falling back to Explain & Inspect if edited by hand).
+  - **Backend `functions_board/sources` (`include_templates`):** Optionally exposes `state`, `availability`, `icon`, and `attributes` templates (including time-only template entities) for Template Studio inspection while keeping default `sources` responses unchanged.
+- **12 Guided Recipes Gallery (`Recipes → All 12 Recipes…`):**
+  - Categorized, searchable gallery covering **9 Template Helper recipes** (**Count matching**, **Any or all**, **List names**, **How long in state**, **Fallback value**, **Low batteries**, **Comfort / Numeric band**, **Combine & math**, **Time window**), **1 Notification recipe** (existing Notification Builder), and **2 Automation recipes** (**Left-open / Left-on alert**, **Motion-activated light**).
+
 ## 0.14.0 (2026-11-27)
 
 Functions Board **v0.14.0** brings a native zero-build ES module frontend, faster and lighter storage for saved versions and checks, security hardening from the HACS review, Home Assistant 2026.11 `target.exclude` support, and a full round of bug fixes across the sandbox, wiring analyzer, debugger, versions, and notification builder.

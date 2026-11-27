@@ -1,4 +1,4 @@
-style {66141 chars, #ec8a9b8a}
+style {73789 chars, #7b3f33ec}
 div.board.compact.m-panel.nolist.pc
   aside.list
     div.lhead

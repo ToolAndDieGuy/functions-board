@@ -50,7 +50,7 @@ export class FunctionsBoard extends HTMLElement {
       // developer tools (Phase 9): simulated states, trigger watches, check results, monitors, the debugger
       this._sim = new Map(); this._simAt = new Map(); this._tw = new Map(); this._cond = new Map(); this._liveE = new Map();
       this._monSubs = new Map(); this._monData = new Map(); this._monCount = new Map();
-      this._testLog = []; this._testOk = false; this._bld = null; this._dbg = null; this._dbgSeq = 0; this._lit = null;
+      this._testLog = []; this._testOk = false; this._bld = null; this._stu = null; this._dbg = null; this._dbgSeq = 0; this._lit = null;
     }
     // the user picked another language (4.9): stop what runs, save what is pending, and build the page again
     // as on a fresh visit. What Home Assistant set and Undo's steps stay; everything else starts over.
@@ -1710,6 +1710,7 @@ export class FunctionsBoard extends HTMLElement {
       // developer tools (Phase 9)
       const tools = [];
       if (this._canTest(n)) tools.push(['test', 'mdi:flask-outline', T('test_2'), this._full() ? null : FULL_ONLY_TEST]);
+      if (this._canExplainTemplate(n)) tools.push(['ts-inspect', 'mdi:code-braces-box', T('ts_explain_btn')]);
       if (n.domain === 'automation' && st) tools.push(this._watching(n.key) ? ['watch', 'mdi:eye-off-outline', T('stop_watching')] : ['watch', 'mdi:eye-outline', T('watch_triggers')]);
       if (/^(event|nact):/.test(n.key) || (n.key.startsWith('mqtt:') && (this._hass.config.components || []).includes('mqtt'))) tools.push(['monitor', 'mdi:monitor-eye', T('monitor')]);
       if (n.key.startsWith('svc:notify.') || (n.domain === 'notify' && st)) tools.push(['messages', 'mdi:message-text-clock-outline', T('messages')]);
@@ -2188,15 +2189,46 @@ export class FunctionsBoard extends HTMLElement {
           'mk-more': () => { this._helperMoreMenu(); },
           'mk-back': () => { this._helperMenu(this._menuAnchor); },
         },
-        // the builders (0.11.3)
+        // the builders & 12-Recipes Gallery (0.11.3 / 0.15.0)
         builders: {
           'recipes': (el, { need }) => { if (need()) { if (this._menuEl && this._menuAnchor === el) this._closeMenu(); else this._bldMenu(el); } },
+          'rcp-gallery': (el, { need }) => { if (need() && !this._ver) this._rcpGallery(); },
+          'rcp-cat': (el) => { if (this._bld && this._bld.mode === 'gallery') { this._bld.cat = el.dataset.cat; this._rcpGalleryShow(); } },
           'nb-new': (el, { need }) => { if (need() && !this._ver) this._bldNew(); },
           'nb-add-btn': () => { this._bldButton(true); },
           'nb-del-btn': (el) => { this._bldButton(false, +el.dataset.i); },
           'nb-save': () => { this._bldSave(); },
           'nb-try': () => { this._bldTry(); },
           'nb-ha': () => { this._bldHA(); },
+          'ar-new': (el, { need }) => { if (need() && !this._ver) this._arNew(el.dataset.kind); },
+          'ar-save': () => { this._arSave(); },
+          'ar-try': () => { this._arTry(); },
+          'ar-ha': () => { this._arHA(); },
+        },
+        // Template Studio (0.15.0)
+        studio: {
+          'ts-open': (el, { need }) => { if (need() && !this._ver) this._tsOpen({ mode: 'custom' }); },
+          'ts-inspect': () => { if (this._sel) this._tsInspect(this._sel); },
+          'ts-mode': (el) => { this._tsSetMode(el.dataset.mode); },
+          'ts-pick-recipe': (el) => {
+            if (this._stu && this._$.modal.querySelector('.tsdlg')) this._tsPickRecipe(el.dataset.kind);
+            else this._tsOpen({ mode: 'recipe', kind: el.dataset.kind });
+          },
+          'ts-pick-src': (el) => { this._tsPickSrc(+el.dataset.i); },
+          'ts-ent-toggle': (el) => { this._tsEntToggle(el.dataset.k); },
+          'ts-band-add': () => { this._tsBandEdit(true); },
+          'ts-band-del': (el) => { this._tsBandEdit(false, +el.dataset.i); },
+          'ts-day': (el) => { this._tsToggleDay(+el.dataset.d); },
+          'ts-snippet': (el) => { this._tsInsertSnippet(el.dataset.snip); },
+          'ts-fix': (el) => { this._tsApplyFix(+el.dataset.i, false); },
+          'ts-use-avail': (el) => { this._tsApplyFix(+el.dataset.i, true); },
+          'ts-eval': () => { this._tsEvalNow(); },
+          'ts-sim-preset': (el) => { this._tsSimPreset(el.dataset.k, el.dataset.v); },
+          'ts-sim-clear': () => { this._tsSimClear(); },
+          'ts-copy-yaml': () => { this._tsCopyYaml(); },
+          'ts-try-sbx': () => { this._tsTrySandbox(); },
+          'ts-save': () => { this._tsSave(); },
+          'ts-ha': () => { this._tsHA(); },
         },
         // the import manager
         manager: {
@@ -2466,12 +2498,12 @@ export class FunctionsBoard extends HTMLElement {
     // a field changed: each part looks at it in turn, and the first that knows it handles it
     _onChange(e) {
       const t = e.target;
-      if (this._diagChange(t) || this._bldChange(t) || this._sbxChange(t) || this._nrChange(t) || this._testChange(t) || this._arwChange(t) || this._togChange(t) || this._fnChange(t) || this._mgrChange(t)) return;
+      if (this._diagChange(t) || this._stuChange(t) || this._bldChange(t) || this._sbxChange(t) || this._nrChange(t) || this._testChange(t) || this._arwChange(t) || this._togChange(t) || this._fnChange(t) || this._mgrChange(t)) return;
     }
     // typed into: the same, for what each part reads as it's typed
     _onInput(e) {
       const t = e.target;
-      if (this._testChange(t) || this._arwInput(t) || this._mgrInput(t) || this._findInput(t) || this._fnInput(t) || this._noteInput(t)) return;
+      if (this._stuInput(t) || this._bldInput(t) || this._testChange(t) || this._arwInput(t) || this._mgrInput(t) || this._findInput(t) || this._fnInput(t) || this._noteInput(t)) return;
     }
     // the Arrows menu's and the Key's switches (core: what the board shows)
     _togChange(t) {
@@ -2580,10 +2612,23 @@ export class FunctionsBoard extends HTMLElement {
       if (r && r.unique_id) return r.unique_id;
       return n.domain === 'script' ? n.key.slice(7) : null;
     }
-    // ha: Home Assistant's own editor, also for a script a builder made (which otherwise opens in its builder)
+    // Whether a selected box has a Jinja template that Template Studio can explain (template helpers, or cached automations/scripts with Jinja)
+    _canExplainTemplate(n) {
+      if (!n || n.key.includes(':')) return false;
+      const reg = this._entMap.get(n.key);
+      if (reg && reg.platform === 'template') return true;
+      const src = this._src && this._src.get(n.key);
+      if (src && (src.how === 'template' || src.how === 'triggers' || (src.rule && src.rule.kind === 'template'))) return true;
+      if (n.domain === 'automation' || n.domain === 'script') {
+        const cfg = this._store.get('cfg:' + n.key);
+        if (cfg && TPL_RE.test(JSON.stringify(cfg))) return true;
+      }
+      return false;
+    }
+    // ha: Home Assistant's own editor, also for an item a recipe made (which otherwise opens in its recipe)
     _openItem(n, ha) {
       if (n.kind === 'nodered') { this._openNodeRed(n.nr.sub, T('node_red_2', { tabLabel: n.nr.tabLabel })); return; }
-      if (!ha && n.domain === 'script' && this._bldHas(n.key)) { this._bldEdit(n); return; }
+      if (!ha && (n.domain === 'script' || n.domain === 'automation' || n.domain === 'sensor' || n.domain === 'binary_sensor') && this._bldHas(n.key)) { this._bldEdit(n); return; }
       if (n.domain === 'automation' || n.domain === 'script') {
         const id = this._itemId(n);
         if (id) { this._openDrawer(`/config/${n.domain}/edit/${encodeURIComponent(id)}`, n.name); return; }
@@ -2613,6 +2658,7 @@ export class FunctionsBoard extends HTMLElement {
       return this._entMap.has(n.key) ? { view: 'settings' } : { off: T('set_up_in_yaml_without_a') };
     }
     _editItem(n) {
+      if (this._bldHas(n.key)) { this._bldEdit(n); return; }
       const ed = this._editOf(n);
       if (!ed || ed.off) return;
       if (ed.url) this._openDrawer(ed.url, n.name);

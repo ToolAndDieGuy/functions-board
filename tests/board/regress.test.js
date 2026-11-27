@@ -2405,3 +2405,97 @@ test('0.13.2 audit fixes: durations, drawer back/focus, check steps, s_missing, 
   check('0.13.2 audit fixes: no errors', page.logs.length === 0, page.logs);
   await ctx.close();
 });
+
+test('0.15.0 Template Studio, 12-Recipes Gallery, Template helper config flow, and Automation recipes', async ({ browser, fake }) => {
+  const { ctx, page } = await imported(browser);
+  const garage = await openFn(page, /garage/i);
+
+  // 1. Organise only mode: Recipes Gallery lists all 12 recipes, Template Studio Save is disabled
+  await fbq(page, '.tools [data-act="recipes"]').click();
+  await fbq(page, '.menu [data-act="rcp-gallery"]').click();
+  await fbq(page, '.modal .rcpdlg').waitFor({ timeout: 8000 });
+  const totalCards = await fbq(page, '.modal .rcpcard').count();
+  await fbq(page, '.modal [data-act="rcp-cat"][data-cat="template"]').click();
+  const tplCards = await fbq(page, '.modal .rcpcard').count();
+  await fbq(page, '.modal [data-act="rcp-cat"][data-cat="automation"]').click();
+  const autoCards = await fbq(page, '.modal .rcpcard').count();
+  check('0.15.0 Recipes Gallery lists all 12 recipes (9 templates, 1 notification, 2 automations)',
+    totalCards === 12 && tplCards === 9 && autoCards === 2, { totalCards, tplCards, autoCards });
+
+  // Open Count matching template recipe from Gallery (in Organise only mode -> Save disabled)
+  await fbq(page, '.modal [data-act="rcp-cat"][data-cat="template"]').click();
+  await fbq(page, '.modal .rcpcard[data-kind="tpl_count"]').click();
+  await fbq(page, '.modal .tsdlg').waitFor({ timeout: 8000 });
+  const disInOrg = await fbq(page, '.modal [data-act="ts-save"]').isDisabled();
+  check('0.15.0 Template Studio disables Save Template helper in Organise only mode', disInOrg);
+
+  // Test linter + 1-click auto-fix in Custom Jinja mode
+  await fbq(page, '.modal [data-act="ts-mode"][data-mode="custom"]').click();
+  await fbq(page, '.modal textarea[name="tstpl"]').fill("{{ states('sensor.room_temp') | float > 22 }}");
+  await fbq(page, '.modal [data-act="ts-fix"]').first().waitFor({ timeout: 5000 });
+  const warnBefore = await fbq(page, '.modal .tswarn').allInnerTexts();
+  await fbq(page, '.modal [data-act="ts-fix"]').first().click();
+  const fixedVal = await fbq(page, '.modal textarea[name="tstpl"]').inputValue();
+  const clausesN = await fbq(page, '.modal .tscl').count();
+  check('0.15.0 Template Studio linter flags unavailable trap and 1-click auto-fixes | float to | float(0) with plain-English clauses',
+    warnBefore.some((w) => /Unavailable trap/i.test(w)) && fixedVal === "{{ states('sensor.room_temp') | float(0) > 22 }}" && clausesN >= 1,
+    { warnBefore, fixedVal, clausesN });
+  await fbq(page, '.modal [data-act="modal-cancel"]').click();
+
+  // 2. Switch to Full manager mode and create a real Template helper via HA's config flow
+  fake.store.mode = 'full';
+  await fake.notifyStore({ what: 'mode', mode: 'full', client: '' });
+  await until(() => el(page, (b) => b._fbMode === 'full' || null), 5000);
+
+  await fbq(page, '.tools [data-act="recipes"]').click();
+  await fbq(page, '.menu [data-act="rcp-gallery"]').click();
+  await fbq(page, '.modal .rcpcard[data-kind="tpl_any_all"]').click();
+  await fbq(page, '.modal .tsdlg').waitFor({ timeout: 8000 });
+  await fbq(page, '.modal input[name="tsname"]').fill('Garage anything open');
+  await fbq(page, '.modal .tsep [data-act="ts-ent-toggle"][data-k="cover.garage_door"]').click();
+  const genJinja = await fbq(page, '.modal textarea[name="tstpl"]').inputValue();
+  const genAvail = await fbq(page, '.modal textarea[name="tsavail"]').inputValue();
+  check('0.15.0 Guided Template recipe generates live Jinja and has_value() availability guard',
+    genJinja.includes("expand(['cover.garage_door'])") && genAvail.includes("has_value('cover.garage_door')"), { genJinja, genAvail });
+
+  await fbq(page, '.modal [data-act="ts-save"]').click();
+  await until(() => el(page, (b) => b._$.modal.hidden || null), 15000);
+  const createdId = 'binary_sensor.garage_anything_open';
+  await until(() => el(page, (b, k) => (b._model && b._model.nodes.has(k)) || null, createdId), 15000);
+  const savedSpec = await el(page, (b, [l, k]) => (b._data.layouts[l].builders || {})[k], [garage, createdId]);
+  check('0.15.0 Saving Template helper creates standard HA template entity, labels it into function, and records recipe spec',
+    !!savedSpec && savedSpec.kind === 'tpl_any_all' && fake.entities.has(createdId), savedSpec);
+
+  // Clicking Edit on the recipe-built Template helper reopens directly in its Recipe
+  await el(page, (b, k) => b._openItem(b._model.nodes.get(k)), createdId);
+  await fbq(page, '.modal .tsdlg').waitFor({ timeout: 8000 });
+  const reopenedMode = await el(page, (b) => b._stu && { mode: b._stu.mode, kind: b._stu.kind, entryId: b._stu.entryId });
+  check('0.15.0 Unchanged recipe Template helper reopens in Guided Recipe mode with entryId for updates',
+    !!reopenedMode && reopenedMode.mode === 'recipe' && reopenedMode.kind === 'tpl_any_all' && !!reopenedMode.entryId, reopenedMode);
+  await fbq(page, '.modal [data-act="modal-cancel"]').click();
+
+  // Hand-edit the template in HA -> reopening falls back to Explain & Inspect mode (not overwriting user edits)
+  fake.sources[createdId].templates.state = "{{ is_state('cover.garage_door', 'open') }}";
+  fake.sources[createdId].rule.state = "{{ is_state('cover.garage_door', 'open') }}";
+  await el(page, (b, k) => b._openItem(b._model.nodes.get(k)), createdId);
+  await fbq(page, '.modal .tsdlg').waitFor({ timeout: 8000 });
+  const handMode = await el(page, (b) => b._stu && { mode: b._stu.mode, tpl: b._stu.template });
+  check('0.15.0 Hand-edited Template helper opens in Explain & Inspect mode instead of overwriting user Jinja',
+    !!handMode && handMode.mode === 'explain' && handMode.tpl.includes("is_state('cover.garage_door'"), handMode);
+  await fbq(page, '.modal [data-act="modal-cancel"]').click();
+
+  // 3. Automation Recipe (#12 Motion-activated light): creates real HA automation and labels into function
+  await fbq(page, '.tools [data-act="recipes"]').click();
+  await fbq(page, '.menu [data-act="ar-new"][data-kind="auto_motion_light"]').click();
+  await fbq(page, '.modal .ardlg').waitFor({ timeout: 8000 });
+  await fbq(page, '.modal input[name="arname"]').fill('Garage motion light');
+  await fbq(page, '.modal input[name="ar_sens"]').first().check();
+  await fbq(page, '.modal input[name="ar_lights"]').first().check();
+  await fbq(page, '.modal [data-act="ar-save"]').click();
+  await until(() => el(page, (b) => b._$.modal.hidden || null), 15000);
+  const madeAuto = await until(() => el(page, (b, l) => Object.keys(b._data.layouts[l].builders || {}).find((k) => k.startsWith('automation.')) || null, garage), 10000);
+  check('0.15.0 Automation Recipe creates standard HA automation and records builder spec', !!madeAuto, madeAuto);
+
+  check('0.15.0 Template Studio & Recipes: no errors', page.logs.length === 0, page.logs);
+  await ctx.close();
+});

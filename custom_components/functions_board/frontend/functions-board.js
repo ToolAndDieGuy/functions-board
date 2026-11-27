@@ -23,6 +23,7 @@ import { debugPart } from './ui/debug.js';
 import { arrowsPart } from './ui/arrows.js';
 import { sandboxPart } from './ui/sandbox.js';
 import { buildersPart } from './ui/builders.js';
+import { studioPart } from './ui/studio.js';
 import { versionsPart } from './ui/versions.js';
 import { noderedPart } from './ui/nodered.js';
 import { diagnosticsPart } from './ui/diagnostics.js';
@@ -44,6 +45,7 @@ if (loaded && !loaded.__fbLoader) {
     ['arrows', arrowsPart],
     ['sandbox', sandboxPart],
     ['builders', buildersPart],
+    ['studio', studioPart],
     ['versions', versionsPart],
     ['nodered', noderedPart],
     ['diagnostics', diagnosticsPart],
