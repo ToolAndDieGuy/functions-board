@@ -85,6 +85,20 @@ const MQTT = [
     derived: { 'binary_sensor.any': { kind: 'group', entities: ['binary_sensor.a'], all: false } },
     automations: { a: { triggers: [S('binary_sensor.a', { to: 'on' }), S('binary_sensor.any', { to: 'on' })], actions: [tog('input_boolean.x'), publish('h/other', 'ON')] } },
     steps: [{ set: 'binary_sensor.a', to: 'on' }, { set: 'binary_sensor.a', to: 'off' }, { set: 'binary_sensor.a', to: 'on' }] },
+  // 0.13.2: MQTT cover position with JSON 0, non-zero closed offset, and inverted open/closed range
+  { name: 'MQTT cover positions: JSON zero, non-zero offset, and inverted range',
+    mqtt: Object.assign(
+      mq('cover.std', { position_topic: 'h/cov/std' }),
+      mq('cover.off', { position_topic: 'h/cov/off', position_closed: 10, position_open: 90 }),
+      mq('cover.inv', { position_topic: 'h/cov/inv', position_closed: 100, position_open: 0 }),
+    ),
+    states: mqSt(Object.assign(
+      mq('cover.std', { position_topic: 'h/cov/std' }),
+      mq('cover.off', { position_topic: 'h/cov/off', position_closed: 10, position_open: 90 }),
+      mq('cover.inv', { position_topic: 'h/cov/inv', position_closed: 100, position_open: 0 }),
+    )),
+    automations: { a: { triggers: [S('cover.std', { to: 'closed' }), S('cover.inv', { to: 'closed' })], actions: [inc('counter.c')] } },
+    steps: [pub('h/cov/std', '{"position": 50}'), pub('h/cov/std', '{"position": 0}'), pub('h/cov/off', '10'), pub('h/cov/off', '50'), pub('h/cov/inv', '25'), pub('h/cov/inv', '100')] },
 ];
 
 module.exports = [

@@ -321,13 +321,32 @@
     const st = info.states || {}, svcs = new Set(Object.keys(info.services || {}).filter((k) => NB_SVC_RE.test(k)));
     const ents = info.entities || [], devs = info.devices || [];
     const phones = [], bySvc = new Map(), byDev = new Map();
-    devs.forEach((d) => {
-      if (!(d.identifiers || []).some((i) => i && i[0] === 'mobile_app')) return;
-      const svc = 'mobile_app_' + slugify(d.name);
-      if (svcs.size && !svcs.has(svc)) return;
+    const mobDevs = devs.filter((d) => (d.identifiers || []).some((i) => i && i[0] === 'mobile_app'));
+    const addPhone = (d, svc) => {
       const p = { svc, os: /apple/i.test(d.manufacturer || '') ? 'ios' : 'android', name: d.name_by_user || d.name || svc };
       phones.push(p); bySvc.set(svc, p); byDev.set(d.id, p);
+    };
+    mobDevs.forEach((d) => {
+      const cands = [d.name, d.name_by_user].filter(Boolean).map((n) => 'mobile_app_' + slugify(n));
+      const svc = svcs.size ? cands.find((c) => svcs.has(c)) : cands[0];
+      if (!svc || bySvc.has(svc)) return;
+      addPhone(d, svc);
     });
+    // match remaining mobile_app_* services against unmatched mobile_app devices via their entity slugs (renamed phones)
+    const unmatched = mobDevs.filter((d) => !byDev.has(d.id));
+    if (unmatched.length) {
+      const entByDev = new Map();
+      ents.forEach((e) => { if (e.device_id) (entByDev.get(e.device_id) || entByDev.set(e.device_id, []).get(e.device_id)).push(e.entity_id); });
+      svcs.forEach((svc) => {
+        if (bySvc.has(svc)) return;
+        const slug = svc.slice(11);
+        const d = unmatched.find((x) => !byDev.has(x.id) && (entByDev.get(x.id) || []).some((id) => {
+          const obj = id.split('.')[1] || '';
+          return obj === slug || obj.startsWith(slug + '_');
+        }));
+        if (d) addPhone(d, svc);
+      });
+    }
     // a notify action of the mobile app without a device of its own (renamed in the app): still a phone
     svcs.forEach((svc) => { if (!bySvc.has(svc)) { const p = { svc, os: 'android', name: svc.slice(11).replace(/_/g, ' ') }; phones.push(p); bySvc.set(svc, p); } });
     const devOf = new Map(ents.map((e) => [e.entity_id, e.device_id]));
@@ -992,10 +1011,10 @@
     // for the developer tools (Phase 9): the condition a reference sits in (tested as a whole) and its place among
     // the top-level conditions, the template it was found in, the trigger it belongs to and its place, the action
     let cond = null, cidx = -1, tpl = null, trig = null, tidx = -1, act = null;
-    const add = (ref, role, svc) => refs.push({ ref, role, svc: svc || '', tf: role === 'trigger' ? tf : null, kind: role === 'trigger' || role === 'condition' ? kind : null, sdom: role === 'action' || role === 'call' ? sdom : null,
-      cond: role === 'condition' ? cond : null, cidx: role === 'condition' && cond != null ? cidx : -1, tpl, trig: role === 'trigger' ? trig : null, tidx: role === 'trigger' ? tidx : -1, act: role === 'action' || role === 'call' ? act : null });
-    const targets = (obj, role, svc) => Object.entries(TARGET_KEYS).forEach(([k, pre]) => toList(obj && obj[k]).forEach((x) => {
-      if (typeof x === 'string' && x && !TPL_RE.test(x)) add(pre + ':' + x, role, svc);
+    const add = (ref, role, svc, ex) => refs.push({ ref, role, svc: svc || '', tf: role === 'trigger' ? tf : null, kind: role === 'trigger' || role === 'condition' ? kind : null, sdom: role === 'action' || role === 'call' ? sdom : null,
+      ex: ex || null, cond: role === 'condition' ? cond : null, cidx: role === 'condition' && cond != null ? cidx : -1, tpl, trig: role === 'trigger' ? trig : null, tidx: role === 'trigger' ? tidx : -1, act: role === 'action' || role === 'call' ? act : null });
+    const targets = (obj, role, svc, ex) => Object.entries(TARGET_KEYS).forEach(([k, pre]) => toList(obj && obj[k]).forEach((x) => {
+      if (typeof x === 'string' && x && !TPL_RE.test(x)) add(pre + ':' + x, role, svc, ex);
     }));
     const readRole = (mode) => (mode === 'trigger' ? 'trigger' : 'condition');
     const scan = (s, role) => { const t0 = tpl; tpl = s; for (const m of s.matchAll(ENTITY_RE)) { const e = known(m[0]); if (e) add(e, role); } tpl = t0; };
@@ -1025,36 +1044,57 @@
       // a condition object, or a condition step among actions: what a test of it right now checks. Only a real
       // condition type: service data can carry a "condition" key of its own (a weather condition, say)
       if ((mode === 'condition' || mode === 'action') && typeof node.condition === 'string' && cond == null && (COND_TYPES.has(node.condition) || EXACT_RE.test(node.condition))) cond = node;
-      if (mode === 'trigger') {
-        const p = node.trigger || node.platform;
-        if (typeof p === 'string') { tf = triggerFilter(node, p); kind = p; if (trig == null) trig = node; }
+      if (mode === 'trigger' || mode === 'wait') {
+        const p = node.trigger || node.platform, rr = mode === 'trigger' ? 'trigger' : 'condition';
+        if (typeof p === 'string') { if (mode === 'trigger') { tf = triggerFilter(node, p); if (trig == null) trig = node; } kind = p; }
         const btn = p === 'event' && typeof node.event_type === 'string' && NOTIFY_EVENTS[node.event_type] && node.event_data ? node.event_data[NOTIFY_EVENTS[node.event_type]] : null;
-        if (p === 'mqtt' && typeof node.topic === 'string') add('mqtt:' + node.topic, 'trigger');
-        else if (typeof btn === 'string' && !TPL_RE.test(btn)) add('nact:' + btn, 'trigger');  // answers one notification button (9.5)
-        else if (p === 'event' && node.event_type) toList(node.event_type).forEach((t) => typeof t === 'string' && add('event:' + t, 'trigger'));
-        if (p === 'time' || p === 'time_pattern') badges.add('time');
-        else if (p === 'sun') badges.add('sun');
-        else if (p === 'homeassistant') badges.add('start');
-        else if (p === 'webhook') badges.add('webhook');
-        else if (p === 'tag') badges.add('tag');
-        else if (p === 'conversation') badges.add('voice');
-        else if (p === 'calendar') badges.add('calendar');
+        if (p === 'mqtt' && typeof node.topic === 'string' && !TPL_RE.test(node.topic)) add('mqtt:' + node.topic, rr);
+        else if (typeof btn === 'string' && !TPL_RE.test(btn)) add('nact:' + btn, rr);  // answers one notification button (9.5)
+        else if (p === 'event' && node.event_type) toList(node.event_type).forEach((t) => typeof t === 'string' && !TPL_RE.test(t) && add('event:' + t, rr));
+        if (mode === 'trigger') {
+          if (p === 'time' || p === 'time_pattern') badges.add('time');
+          else if (p === 'sun') badges.add('sun');
+          else if (p === 'homeassistant') badges.add('start');
+          else if (p === 'webhook') badges.add('webhook');
+          else if (p === 'tag') badges.add('tag');
+          else if (p === 'conversation') badges.add('voice');
+          else if (p === 'calendar') badges.add('calendar');
+        }
       }
       if (mode === 'action') {
         const svc = typeof node.action === 'string' ? node.action : typeof node.service === 'string' ? node.service : null;
+        if (svc && TPL_RE.test(svc)) {
+          const t = node.target || {}, data = node.data || {}, ex = t && typeof t.exclude === 'object' ? t.exclude : null;
+          const outerDom = sdom, outerAct = act;
+          sdom = null; act = node;
+          scan(svc, 'condition');
+          [t.entity_id, node.entity_id, data.entity_id, data.media_player_entity_id].forEach((v) => {
+            if (v != null && v !== 'all' && v !== 'none') ids(v, 'action');
+          });
+          [t.device_id, node.device_id, data.device_id].forEach((v) => toList(v).forEach((x) => {
+            if (typeof x === 'string' && !TPL_RE.test(x)) add('device:' + x, 'action');
+          }));
+          [t, node, data].forEach((o) => targets(o, 'action', '', o === t ? ex : null));
+          Object.entries(data).forEach(([k, v]) => {
+            if (!['entity_id', 'device_id', 'media_player_entity_id', 'area_id', 'floor_id', 'label_id'].includes(k)) walk(v, 'condition');
+          });
+          sdom = outerDom; act = outerAct;
+          tf = outerTf; kind = outerKind; cond = outerCond; trig = outerTrig;
+          return;
+        }
         if (svc && svc.includes('.') && !TPL_RE.test(svc)) {
           const i = svc.indexOf('.'), d = svc.slice(0, i), s = svc.slice(i + 1);
-          const t = node.target || {}, data = node.data || {}, role = d === 'script' ? 'call' : 'action';
+          const t = node.target || {}, data = node.data || {}, role = d === 'script' ? 'call' : 'action', ex = t && typeof t.exclude === 'object' ? t.exclude : null;
           const outerDom = sdom, outerAct = act;
           sdom = d; act = node;
           let hit = false;
           [t.entity_id, node.entity_id, data.entity_id, data.media_player_entity_id].forEach((v) => {
-            if (v != null && v !== 'all' && v !== 'none') { ids(v, role, s); hit = true; }
+            if (v != null && v !== 'all' && v !== 'none') { const n0 = refs.length; ids(v, role, s); if (refs.slice(n0).some((r) => r.role === role)) hit = true; }
           });
           [t.device_id, node.device_id, data.device_id].forEach((v) => toList(v).forEach((x) => {
-            if (typeof x === 'string') { add('device:' + x, 'action', s); hit = true; }
+            if (typeof x === 'string' && !TPL_RE.test(x)) { add('device:' + x, 'action', s); hit = true; }
           }));
-          [t, node, data].forEach((o) => { const n0 = refs.length; targets(o, role, s); if (refs.length > n0) hit = true; });
+          [t, node, data].forEach((o) => { const n0 = refs.length; targets(o, role, s, o === t ? ex : null); if (refs.length > n0) hit = true; });
           if (d === 'script' && !['turn_on', 'turn_off', 'toggle', 'reload'].includes(s)) { add('script.' + s, 'call', 'run'); hit = true; }
           // a message published to a topic goes to that topic's box, as a fired event goes to the event's (0.11.3)
           if (svc === 'mqtt.publish' && typeof data.topic === 'string' && data.topic && !TPL_RE.test(data.topic)) { add('mqtt:' + data.topic, 'action', s); hit = true; }
@@ -1079,17 +1119,20 @@
           return;
         }
       }
+      const exHere = node && typeof node.exclude === 'object' ? node.exclude : null;
       for (const [k, v] of Object.entries(node)) {
-        if (k === 'entity_id') { ids(v, mode === 'action' ? 'condition' : mode); continue; }
-        if (TARGET_KEYS[k] && mode !== 'action') { targets({ [k]: v }, mode === 'trigger' ? 'trigger' : 'condition'); continue; }
+        if (k === 'exclude') continue;
+        if (k === 'entity_id') { ids(v, mode === 'action' ? 'condition' : readRole(mode)); continue; }
+        if (TARGET_KEYS[k] && mode !== 'action') { targets({ [k]: v }, mode === 'trigger' ? 'trigger' : 'condition', '', exHere); continue; }
         if (k === 'device_id') {
-          toList(v).forEach((x) => typeof x === 'string' && add('device:' + x, mode === 'action' ? 'condition' : mode));
+          toList(v).forEach((x) => typeof x === 'string' && add('device:' + x, mode === 'action' ? 'condition' : readRole(mode)));
           continue;
         }
         if (SKIP_KEYS.has(k) && typeof v === 'string') continue;
         let m = mode;
-        if (mode !== 'trigger' && COND_KEYS.has(k)) m = 'condition';
-        if (mode !== 'trigger' && (ACTION_KEYS.has(k) || (k === 'action' && typeof v !== 'string'))) m = 'action';
+        if (k === 'wait_for_trigger') m = 'wait';
+        else if (mode !== 'trigger' && mode !== 'wait' && COND_KEYS.has(k)) m = 'condition';
+        if (mode !== 'trigger' && mode !== 'wait' && (ACTION_KEYS.has(k) || (k === 'action' && typeof v !== 'string'))) m = 'action';
         walk(v, m, m === 'condition' && CLIST_KEYS.has(k));
       }
       tf = outerTf; kind = outerKind; cond = outerCond; trig = outerTrig;
@@ -1139,9 +1182,18 @@
   // of it is gone
   function markProblems(nodes, edges, problems) {
     const worst = new Map(), mark = (k, sev) => { if (worst.get(k) !== 'error') worst.set(k, sev); };
-    problems.forEach((pr) => { mark(pr.ref, pr.sev); pr.by.forEach((b) => mark(b, pr.sev)); });
+    problems.forEach((pr) => {
+      mark(pr.ref, pr.sev);
+      if (pr.kind === 's_missing' && nodes.has('svc:' + pr.ref)) mark('svc:' + pr.ref, pr.sev);
+      pr.by.forEach((b) => mark(b, pr.sev));
+    });
     nodes.forEach((n, k) => { n.prob = worst.get(k) || null; });
-    const gone = new Set(problems.filter((pr) => pr.sev === 'error' && !/^(m_|s_)/.test(pr.kind)).map((pr) => pr.ref));
+    const gone = new Set();
+    problems.forEach((pr) => {
+      if (pr.sev !== 'error') return;
+      if (!/^(m_|s_)/.test(pr.kind)) gone.add(pr.ref);
+      else if (pr.kind === 's_missing' && nodes.has('svc:' + pr.ref)) gone.add('svc:' + pr.ref);
+    });
     edges.forEach((e) => { e.prob = gone.has(e.from) || gone.has(e.to); });
   }
   // an automation's state triggers that start both ways (0.11.1): From lists two or more states and there's no To (nor
@@ -1530,6 +1582,7 @@
     return trig.tfs.some((f) => [...svcs].some((s) => {
       if (f.ev) return f.ev.some((ev) => !(dom === 'timer' && TIMER_EVENTS[ev]) || TIMER_EVENTS[ev].includes(s));
       if (f.svc) return f.svc.includes(s);
+      if (s === 'turn_on' && (dom === 'climate' || dom === 'water_heater' || dom === 'media_player')) return true;
       if (!RESULT[s]) return true;
       return RESULT[s].some((x) => (!f.to || f.to.includes(x)) && (!f.notTo || !f.notTo.includes(x)));
     }));
@@ -1930,9 +1983,11 @@
         if (n.type === 'function') add(read, scan(n.func).concat(scan(n.initialize), scan(n.finalize)));
         if (n.type === 'api-call-service') {
           const svc = n.action || (n.domain && n.service ? n.domain + '.' + n.service : '');
-          add(change, ids(n.entityId).concat(ids(n.entity_id), scan(typeof n.data === 'string' ? n.data : '')));
+          const nt = n.target && typeof n.target === 'object' ? n.target : {};
+          const entIds = ids(n.entityId).concat(ids(n.entity_id), ids(nt.entityId), ids(nt.entity_id));
+          add(change, entIds.concat(scan(typeof n.data === 'string' ? n.data : '')));
           if (/^script\.[a-z0-9_]+$/.test(svc) && !['script.turn_on', 'script.turn_off', 'script.toggle', 'script.reload'].includes(svc)) add(calls, [svc]);
-          if (svc === 'script.turn_on') ids(n.entityId).forEach((x) => { const e = known(x); if (e) { calls.add(e); change.delete(e); } });
+          if (svc === 'script.turn_on') entIds.forEach((x) => { const e = known(x); if (e) { calls.add(e); change.delete(e); } });
         }
       });
       if (!trig.size && !read.size && !change.size && !calls.size && !events.size) return;
@@ -3715,6 +3770,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       nb_need_message: 'Write the message.',
       nb_need_to: 'Pick who gets it: a person, a phone, or speakers with text-to-speech.',
       nb_need_phone: 'Buttons need a phone to be on.',
+      nb_need_btn_title: 'Give each button a label, or remove the blank one.',
       nb_not_saved: 'Not saved: {e}',
       nb_step_new: 'make the notification "{name}"',
       nb_step_edit: 'change the notification "{name}"',
@@ -4150,6 +4206,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       chk_s_set: 'Set {name} to {state}',
       chk_s_attr: 'Set {name}: {what}',
       chk_s_press: 'Press {what}',
+      chk_s_zwave: 'Z-Wave {dev}: {what} → {val}',
+      chk_s_behave: '{name} answers: {how}',
       chk_save: 'Save as a check',
       chk_save_b: 'Save check',
       chk_save_h: 'Keep this run as a check',
@@ -4435,6 +4493,12 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     const s = Math.round(ms / 1000), h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
     return h ? `${h}:${String(m).padStart(2, '0')}:${String(x).padStart(2, '0')}` : `${m}:${String(x).padStart(2, '0')}`;
   };
+  const fmtDurLong = (ms) => {
+    const s = Math.max(0, Math.round(ms / 1000)), d = Math.floor(s / 86400);
+    if (!d) return fmtDur(s * 1000);
+    const h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
+    return `${d}d ${h}:${String(m).padStart(2, '0')}:${String(x).padStart(2, '0')}`;
+  };
   // a template's result as a condition reads it (Home Assistant's result_as_boolean)
   function asBool(v) {
     if (typeof v === 'boolean') return v;
@@ -4651,10 +4715,11 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       case 'lock.lock': return ['locked', {}];
       case 'lock.unlock': return ['unlocked', {}];
       case 'lock.open': return ['open', {}];
-      case 'input_number.set_value': case 'number.set_value': { const v = num(d.value); return v == null ? null : [fmtN(clamp(v)), {}]; }
+      case 'input_number.set_value': { const v = num(d.value); return v == null ? null : [pyFloat(clamp(v)), {}]; }
+      case 'number.set_value': { const v = num(d.value); return v == null ? null : [fmtN(clamp(v)), {}]; }
       case 'input_number.increment': case 'input_number.decrement': {
         const v = num(st), s = num(A.step) || 1;
-        return v == null ? null : [fmtN(clamp(v + (svc === 'increment' ? s : -s))), {}];
+        return v == null ? null : [pyFloat(clamp(v + (svc === 'increment' ? s : -s))), {}];
       }
       case 'counter.increment': case 'counter.decrement': {
         const v = num(st) || 0, s = num(A.step) || 1, n = v + (svc === 'increment' ? s : -s);
@@ -5690,8 +5755,10 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           let pos = v.value;
           try { const o = JSON.parse(pos); if (o && typeof o === 'object' && !Array.isArray(o)) { if (!('position' in o)) continue; pos = o.position; } } catch (e) { /* a number */ }
           const n = pyNumber(pos);
-          if (!pos || n == null) continue;
-          const lo = r.position.closed + 1, hi = r.position.open, pct = Math.min(100, Math.max(0, Math.floor((n * 100) / (hi - lo + 1))));
+          if (pos === '' || pos == null || n == null) continue;
+          const closed = r.position.closed, open = r.position.open;
+          if (open === closed) continue;
+          const pct = Math.min(100, Math.max(0, Math.round(((n - closed) * 100) / (open - closed))));
           m.attrs = Object.assign({}, m.attrs, { current_position: pct });
           if (!r.position.state) m.st = pct === 0 ? 'closed' : 'open';
           want(id, f);
@@ -5797,12 +5864,19 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     // every followed helper worked out from scratch and set as it is, with nothing told (a home set up from nothing:
     // the differential test)
     async followAll() {
-      for (const [id, f] of this.follow) {
-        f.mem = {};
-        const out = await this._followed(id, f, null);
-        if (!out) continue;
-        const old = this.get(id), A = Object.assign({}, old ? old.attributes : {}, out[1]);
-        this.changed.set(id, { state: out[0], attributes: A, last_changed: this.iso(), last_updated: this.iso() });
+      for (const [, f] of this.follow) f.mem = {};
+      const limit = this.follow.size + 1;
+      for (let pass = 0; pass < limit; pass++) {
+        let moved = false;
+        for (const [id, f] of this.follow) {
+          const out = await this._followed(id, f, null);
+          if (!out) continue;
+          const old = this.get(id), A = Object.assign({}, old ? old.attributes : {}, out[1]);
+          if (old && old.state === out[0] && canon(A) === canon(old.attributes || {})) continue;
+          this.changed.set(id, { state: out[0], attributes: A, last_changed: this.iso(), last_updated: this.iso() });
+          moved = true;
+        }
+        if (!moved) break;
       }
     }
     // the waits listening now; later, those of them still waiting
@@ -5871,12 +5945,22 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     }
     // ---- Home Assistant's per-entity triggers, by the rules of its trigger classes
     _espec(p) { return typeof p === 'string' ? SBX_ETRIG_OWN[p] || SBX_ETRIG[p] || null : null; }
+    _excludeSet(ex) {
+      const drop = new Set();
+      if (!ex || typeof ex !== 'object') return drop;
+      toList(ex.entity_id).forEach((x) => { if (typeof x === 'string') x.split(',').map((s) => s.trim()).filter((s) => EXACT_RE.test(s)).forEach((s) => drop.add(s)); });
+      ['area_id', 'floor_id', 'label_id', 'device_id'].forEach((k) => toList(ex[k]).forEach((x) => {
+        if (typeof x === 'string' && this.o.resolve) this.o.resolve((k === 'device_id' ? 'device' : k.slice(0, -3)) + ':' + x).forEach((e) => drop.add(e));
+      }));
+      return drop;
+    }
     _etargets(t, spec) {
       const tg = t.target || {}, out = new Set(), direct = new Set();
       toList(tg.entity_id).forEach((x) => { if (typeof x === 'string' && EXACT_RE.test(x)) { out.add(x); direct.add(x); } });
       ['area_id', 'floor_id', 'label_id', 'device_id'].forEach((k) => toList(tg[k]).forEach((x) => {
         if (typeof x === 'string' && this.o.resolve) this.o.resolve((k === 'device_id' ? 'device' : k.slice(0, -3)) + ':' + x).forEach((e) => out.add(e));
       }));
+      this._excludeSet(tg.exclude).forEach((e) => out.delete(e));
       return [...out].filter((id) => {
         const ds = spec.d[id.split('.')[0]];
         if (!ds) return false;
@@ -6049,13 +6133,19 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       let { hours: h, minutes: mi, seconds: s } = t;
       if (mi == null && h != null) mi = 0;
       if (s == null && mi != null) s = 0;
-      const H = f(h, '*'), M = f(mi, '*'), S = f(s, '*'), off = tzOffset(from, this.tz);
-      let w = Math.floor((from + off) / 1000) * 1000 + 1000;
+      const H = f(h, '*'), M = f(mi, '*'), S = f(s, '*'), off0 = tzOffset(from, this.tz);
+      let w = Math.floor((from + off0) / 1000) * 1000 + 1000;
       for (let i = 0; i < 200000; i++, w += 1000) {
         const d = new Date(w);
         if (!H(d.getUTCHours())) { w += (3599 - d.getUTCMinutes() * 60 - d.getUTCSeconds()) * 1000; continue; }
         if (!M(d.getUTCMinutes())) { w += (59 - d.getUTCSeconds()) * 1000; continue; }
-        if (S(d.getUTCSeconds())) return w - off;
+        if (!S(d.getUTCSeconds())) continue;
+        // convert local wall-clock w back to UTC, recalculating tzOffset across DST boundaries
+        let cand = w - tzOffset(w - off0, this.tz);
+        cand = w - tzOffset(cand, this.tz);
+        if (cand <= from) continue;
+        const p = tzParts(cand, this.tz);
+        if (p.h === d.getUTCHours() && p.mi === d.getUTCMinutes() && p.s === d.getUTCSeconds()) return cand;
       }
       return null;
     }
@@ -6476,6 +6566,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         if (typeof x !== 'string' || !this.o.resolve) return;
         this.o.resolve((k === 'device_id' ? 'device' : k.slice(0, -3)) + ':' + x).forEach((e) => out.add(e));
       })));
+      this._excludeSet(t.exclude).forEach((e) => out.delete(e));
       return [...out];
     }
     async _call(svc, a, run) {
@@ -6493,6 +6584,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         if (s === 'turn_off') { ents.forEach((e) => this._active(e).forEach((r) => this._cancel(r))); return; }
         const ids = ['turn_on', 'toggle'].includes(s) ? ents : ['script.' + s];
         for (const id of ids) {
+          if (s === 'toggle' && this._active(id).length > 0) { this._active(id).forEach((r) => this._cancel(r)); continue; }
           let it = this.items.get(id);
           if (!it && this.o.fetch) { this.add(id, await this.o.fetch(id)); it = this.items.get(id); }
           if (!it) { entry.unknown = true; continue; }
@@ -6823,46 +6915,102 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     '{%- set fb_today_at = _fb_today_at | as_function -%}',
   ].join('');
   const SBX_FNS = ['states', 'is_state', 'state_attr', 'is_state_attr', 'has_value', 'expand', 'now', 'utcnow', 'today_at'];
-  // the template with its state functions renamed; leftovers: what in it still reads Home Assistant directly
+  // the template with its state functions renamed; leftovers: what in it still reads Home Assistant directly.
+  // Only Jinja expression/statement tags ({{ ... }}, {% ... %}) are rewritten; plain text, comments ({# ... #}),
+  // and quoted string literals inside Jinja are left untouched.
   function sbxRewrite(t) {
-    let s = String(t);
+    const raw = String(t), left = new Set();
     const E = '([a-z_]+\\.[a-z0-9_]+)';
-    // tests: x is is_state('on') → x is apply(fb_is_state, 'on')
-    s = s.replace(/\bis\s+(not\s+)?(is_state|is_state_attr|has_value)\s*\(\s*\)/g, (m, n, f) => `is ${n || ''}apply(fb_${f})`);
-    s = s.replace(/\bis\s+(not\s+)?(is_state|is_state_attr|has_value)\s*\(/g, (m, n, f) => `is ${n || ''}apply(fb_${f}, `);
-    s = s.replace(/\bis\s+(not\s+)?has_value\b(?!\s*\()/g, (m, n) => `is ${n || ''}apply(fb_has_value)`);
-    // filters: 'x' | states → 'x' | apply(fb_states)
-    s = s.replace(/\|\s*(states|expand|has_value|state_attr)\s*\(\s*\)/g, (m, f) => `| apply(fb_${f})`);
-    s = s.replace(/\|\s*(states|expand|has_value|state_attr)\s*\(/g, (m, f) => `| apply(fb_${f}, `);
-    s = s.replace(/\|\s*(states|expand|has_value)\b(?!\s*\()/g, (m, f) => `| apply(fb_${f})`);
-    // states.light.kitchen, states['light.kitchen'] → fb_obj('light.kitchen'); states.light, states['light'] → fb_domain('light')
-    s = s.replace(new RegExp('(?<![\\w.])states\\.' + E.replace('\\.', '\\.'), 'g'), (m, id) => `fb_obj('${id}')`);
-    s = s.replace(new RegExp("(?<![\\w.])states\\s*\\[\\s*(['\"])" + E + '\\1\\s*\\]', 'g'), (m, q, id) => `fb_obj('${id}')`);
-    s = s.replace(/(?<![\w.])states\.([a-z_]+)(?![\w.(])/g, (m, d) => `fb_domain('${d}')`);
-    s = s.replace(/(?<![\w.])states\s*\[\s*(['"])([a-z_]+)\1\s*\]/g, (m, q, d) => `fb_domain('${d}')`);
-    // calls: is_state( → fb_is_state(
-    s = s.replace(new RegExp('(?<![\\w.])(' + SBX_FNS.join('|') + ')\\s*\\(', 'g'), (m, f) => `fb_${f}(`);
-    // states[anything] → fb_index(anything): an entity or a domain, looked up when it renders
-    const sub = /(?<![\w.'"])states\s*\[/g;
-    let out = '', from = 0, m0;
-    while ((m0 = sub.exec(s))) {
-      let depth = 1, j = sub.lastIndex, q = null;
-      for (; j < s.length && depth; j++) {
-        const c = s[j];
-        if (q) { if (c === q) q = null; } else if (c === '"' || c === "'") q = c; else if (c === '[') depth++; else if (c === ']') depth--;
+    const rewriteCode = (code) => {
+      const lits = [];
+      let s = '', i = 0;
+      while (i < code.length) {
+        const c = code[i];
+        if (c === "'" || c === '"') {
+          let j = i + 1;
+          while (j < code.length) {
+            if (code[j] === '\\') { j += 2; continue; }
+            if (code[j] === c) { j++; break; }
+            j++;
+          }
+          const idx = lits.length;
+          lits.push({ q: c, raw: code.slice(i, j), val: code.slice(i + 1, j - 1) });
+          s += `\x01Q${idx}\x02`;
+          i = j;
+        } else { s += c; i++; }
       }
-      if (depth) break;
-      out += s.slice(from, m0.index) + 'fb_index(' + s.slice(sub.lastIndex, j - 1) + ')';
-      from = j; sub.lastIndex = j;
+      // tests: x is is_state('on') → x is apply(fb_is_state, 'on')
+      s = s.replace(/\bis\s+(not\s+)?(is_state|is_state_attr|has_value)\s*\(\s*\)/g, (m, n, f) => `is ${n || ''}apply(fb_${f})`);
+      s = s.replace(/\bis\s+(not\s+)?(is_state|is_state_attr|has_value)\s*\(/g, (m, n, f) => `is ${n || ''}apply(fb_${f}, `);
+      s = s.replace(/\bis\s+(not\s+)?has_value\b(?!\s*\()/g, (m, n) => `is ${n || ''}apply(fb_has_value)`);
+      // filters: 'x' | states → 'x' | apply(fb_states)
+      s = s.replace(/\|\s*(states|expand|has_value|state_attr)\s*\(\s*\)/g, (m, f) => `| apply(fb_${f})`);
+      s = s.replace(/\|\s*(states|expand|has_value|state_attr)\s*\(/g, (m, f) => `| apply(fb_${f}, `);
+      s = s.replace(/\|\s*(states|expand|has_value)\b(?!\s*\()/g, (m, f) => `| apply(fb_${f})`);
+      // states.light.kitchen, states['light.kitchen'] → fb_obj('light.kitchen'); states.light, states['light'] → fb_domain('light')
+      s = s.replace(new RegExp('(?<![\\w.])states\\.' + E.replace('\\.', '\\.'), 'g'), (m, id) => `fb_obj('${id}')`);
+      s = s.replace(/(?<![\w.])states\s*\[\s*\x01Q(\d+)\x02\s*\]/g, (m, idx) => {
+        const v = lits[+idx].val;
+        if (/^[a-z_]+\.[a-z0-9_]+$/.test(v)) return `fb_obj('${v}')`;
+        if (/^[a-z_]+$/.test(v)) return `fb_domain('${v}')`;
+        return m;
+      });
+      s = s.replace(/(?<![\w.])states\.([a-z_]+)(?![\w.(])/g, (m, d) => `fb_domain('${d}')`);
+      // calls: is_state( → fb_is_state(
+      s = s.replace(new RegExp('(?<![\\w.])(' + SBX_FNS.join('|') + ')\\s*\\(', 'g'), (m, f) => `fb_${f}(`);
+      // states[anything] → fb_index(anything): an entity or a domain, looked up when it renders
+      const sub = /(?<![\w.'"])states\s*\[/g;
+      let out = '', from = 0, m0;
+      while ((m0 = sub.exec(s))) {
+        let depth = 1, j = sub.lastIndex;
+        for (; j < s.length && depth; j++) {
+          const ch = s[j];
+          if (ch === '[') depth++; else if (ch === ']') depth--;
+        }
+        if (depth) break;
+        out += s.slice(from, m0.index) + 'fb_index(' + s.slice(sub.lastIndex, j - 1) + ')';
+        from = j; sub.lastIndex = j;
+      }
+      s = out + s.slice(from);
+      // every state at once: states | ..., for x in states
+      s = s.replace(/(?<![\w.'"])states(?![\w(.[])/g, 'fb_all()');
+      if (/(?<![\w.'"])states(?![\w(])/.test(s)) left.add('states');
+      ['closest', 'distance', 'state_translated', 'device_attr', 'is_device_attr'].forEach((f) => { if (new RegExp('(?<![\\w.])' + f + '\\b').test(s)) left.add(f); });
+      if (/\|\s*(closest|state_translated)\b/.test(s)) left.add('filter');
+      return s.replace(/\x01Q(\d+)\x02/g, (m, idx) => lits[+idx].raw);
+    };
+    // tokenize Jinja blocks: {# comment #}, {{ expr }}, {% stmt %}; plain text stays untouched
+    let res = '', pos = 0;
+    while (pos < raw.length) {
+      const next = raw.indexOf('{', pos);
+      if (next < 0 || next + 1 >= raw.length) { res += raw.slice(pos); break; }
+      const ch = raw[next + 1];
+      if (ch !== '{' && ch !== '%' && ch !== '#') { res += raw.slice(pos, next + 1); pos = next + 1; continue; }
+      res += raw.slice(pos, next);
+      if (ch === '#') {
+        const end = raw.indexOf('#}', next + 2);
+        if (end < 0) { res += raw.slice(next); break; }
+        res += raw.slice(next, end + 2);
+        pos = end + 2;
+        continue;
+      }
+      const close = ch === '{' ? '}}' : '%}';
+      let j = next + 2, q = null, end = -1;
+      while (j < raw.length) {
+        const c = raw[j];
+        if (q) { if (c === '\\') { j += 2; continue; } if (c === q) q = null; j++; continue; }
+        if (c === "'" || c === '"') { q = c; j++; continue; }
+        if (c === close[0] && raw[j + 1] === close[1]) { end = j; break; }
+        j++;
+      }
+      if (end < 0) { res += raw.slice(next); break; }
+      let openEnd = next + 2, closeStart = end;
+      if (raw[openEnd] === '-' || raw[openEnd] === '+') openEnd++;
+      if (closeStart > openEnd && (raw[closeStart - 1] === '-' || raw[closeStart - 1] === '+')) closeStart--;
+      res += raw.slice(next, openEnd) + rewriteCode(raw.slice(openEnd, closeStart)) + raw.slice(closeStart, end + 2);
+      pos = end + 2;
     }
-    s = out + s.slice(from);
-    // every state at once: states | ..., for x in states
-    s = s.replace(/(?<![\w.'"])states(?![\w(.[])/g, 'fb_all()');
-    const left = new Set();
-    if (/(?<![\w.'"])states(?![\w(])/.test(s)) left.add('states');
-    ['closest', 'distance', 'state_translated', 'device_attr', 'is_device_attr'].forEach((f) => { if (new RegExp('(?<![\\w.])' + f + '\\b').test(s)) left.add(f); });
-    if (/\|\s*(closest|state_translated)\b/.test(s)) left.add('filter');
-    return { text: s, leftovers: [...left] };
+    return { text: res, leftovers: [...left] };
   }
 
   /* ---------- saved checks (0.9.0): a run in the sandbox kept with what should come of it, replayed on the
@@ -8244,8 +8392,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         sug.sort((x, y) => y.n - x.n);
         sug = sug.slice(0, 20);
       }
-      // area, floor and label targets, resolved by Home Assistant itself (2.2)
-      await this._resolveTargets(an.concat(sug.map((x) => x.a)).flatMap((a) => (a ? a.refs.map((r) => r.ref).filter((r) => TGT_RE.test(r)) : [])));
+      // area, floor and label targets (including any target.exclude refs), resolved by Home Assistant itself (2.2)
+      const exKeys = (r) => (r.ex && typeof r.ex === 'object' ? Object.entries(TARGET_KEYS).flatMap(([k, pre]) => toList(r.ex[k]).filter((x) => typeof x === 'string' && x && !TPL_RE.test(x)).map((x) => pre + ':' + x)) : []);
+      await this._resolveTargets(an.concat(sug.map((x) => x.a)).flatMap((a) => (a ? a.refs.flatMap((r) => (TGT_RE.test(r.ref) ? [r.ref] : []).concat(exKeys(r))) : [])));
       logic.forEach((e, i) => { if (an[i]) this._wire(e, an[i], nodes, edges, false, tgts); });
       sug.forEach(({ e, a }) => {
         const existing = nodes.get(e);
@@ -8318,7 +8467,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         if (!cfgs[i]) return;
         analyze(cfgs[i], e.startsWith('script.'), known).refs.forEach((r) => { if (r.ref !== e) { set.add(r.ref); if (TGT_RE.test(r.ref)) tg.push(r); } });
       });
-      await this._resolveTargets(tg.map((r) => r.ref));
+      await this._resolveTargets(tg.flatMap((r) => [r.ref].concat(r.ex && typeof r.ex === 'object' ? Object.entries(TARGET_KEYS).flatMap(([k, pre]) => toList(r.ex[k]).filter((x) => typeof x === 'string' && x && !TPL_RE.test(x)).map((x) => pre + ':' + x)) : [])));
       tg.forEach((r) => this._targetEntities(r.ref, r).forEach((id) => set.add(id)));
       // a device counts as used when an automation names it or one of its entities
       this._ents.forEach((e) => { if (e.device_id && set.has(e.entity_id)) set.add('device:' + e.device_id); });
@@ -8425,6 +8574,16 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           const dom = r.kind.split('.')[0];
           if (ids.some((id) => id.startsWith(dom + '.'))) ids = ids.filter((id) => id.startsWith(dom + '.'));
         }
+      }
+      if (r.ex && typeof r.ex === 'object') {
+        const drop = new Set();
+        toList(r.ex.entity_id).forEach((x) => { if (typeof x === 'string') x.split(',').map((s) => s.trim()).filter((s) => EXACT_RE.test(s)).forEach((s) => drop.add(s)); });
+        toList(r.ex.device_id).forEach((d) => { if (typeof d === 'string') this._ents.forEach((e) => { if (e.device_id === d) drop.add(e.entity_id); }); });
+        Object.entries(TARGET_KEYS).forEach(([k, pre]) => toList(r.ex[k]).forEach((x) => {
+          const et = typeof x === 'string' && this._tgt.get(pre + ':' + x);
+          if (et) et.entities.forEach((id) => drop.add(id));
+        }));
+        if (drop.size) ids = ids.filter((id) => !drop.has(id));
       }
       return ids;
     }
@@ -10079,6 +10238,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const d = this._$.drawer, was = this._drawer;
       d.hidden = true; this._put(d, '');
       this._drawer = null;
+      this._drawerBack = null;
       this._endCapture();
       this._hover(null);
       if (was && was.mode === 'frame') this._configChanged();  // whatever was saved in the editor shows at once
@@ -12055,6 +12215,11 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (s.op === 'set' && s.attrs && s.state == null) return T('chk_s_attr', { name: nm(s.id), what: esc(Object.entries(s.attrs).map(([k, v]) => `${k} ${v}`).join(', ')) });
       if (s.op === 'set') return T('chk_s_set', { name: nm(s.id), state: esc(s.attrs && s.attrs.event_type ? s.attrs.event_type : s.state) });
       if (s.op === 'press') return T('chk_s_press', { what: esc(((() => { try { const o = JSON.parse(s.key); return [o.type, o.subtype].filter(Boolean).join(' · '); } catch (e) { return ''; } })()) || '') });
+      if (s.op === 'zwave') {
+        const z = this._sbx && this._sbx.eng && this._sbx.eng.zw.get(s.dev), v = z && z.byId.get(s.id);
+        return T('chk_s_zwave', { dev: nm('device:' + s.dev), what: esc((v && (v.label || v.property_name || v.property)) || s.id), val: esc(v ? sbxZwLabel(v, s.value) : String(s.value)) });
+      }
+      if (s.op === 'behave') return T('chk_s_behave', { name: nm(s.id), how: esc(s.how === 'slow' && s.ms ? `${s.how} (${fmtDurLong(s.ms)})` : s.how) });
       if (s.op === 'ha') return s.event === 'shutdown' ? T('sbx_ha_stops') : T('sbx_ha_starts');
       if (s.op === 'webhook') return T('sbx_webhook_called', { id: esc(s.id) });
       if (s.op === 'tag') return T('sbx_tag_scanned', { tag: esc(s.tag) });
@@ -12063,7 +12228,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (s.op === 'event') return T('chk_s_event', { type: esc(s.type) });
       if (s.op === 'mqtt') return T('chk_s_mqtt', { topic: esc(s.topic), payload: esc(shorten(s.payload, 40)) });
       if (s.op === 'run') return T('chk_s_run', { name: nm(s.id) });
-      if (s.op === 'advance') return T('chk_s_advance', { dur: esc(clockShort(s.ms)) });
+      if (s.op === 'advance') return T('chk_s_advance', { dur: esc(fmtDurLong(s.ms)) });
       return T('chk_s_next');
     }
     // what the run in the sandbox suggests checking: states that changed, and how each automation and script ended
@@ -12464,9 +12629,11 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const d = this._$.drawer, ps = (dismissed ? this._model.dismissed : this._model.problems) || [], ds = this._model.dismissed || [];
       d.hidden = false;
       const nm = (k) => esc(this._model.nodes.has(k) ? this._model.nodes.get(k).name : this._nameOf(k));
-      const row = (p) => `<div class="prow p-${p.sev}"><ha-icon icon="${p.sev === 'error' ? 'mdi:alert-circle' : 'mdi:alert'}"></ha-icon><div class="pbody"><div class="ptxt">${this._probText(p)}</div>`
+      const row = (p) => {
+        const showKey = this._model.nodes.has(p.ref) ? p.ref : (p.kind === 's_missing' && this._model.nodes.has('svc:' + p.ref) ? 'svc:' + p.ref : null);
+        return `<div class="prow p-${p.sev}"><ha-icon icon="${p.sev === 'error' ? 'mdi:alert-circle' : 'mdi:alert'}"></ha-icon><div class="pbody"><div class="ptxt">${this._probText(p)}</div>`
         + (p.by.length ? `<div class="pby">${T('prob_in')} ${p.by.map((b) => `<button class="lnk" data-act="prob-go" data-key="${esc(b)}">${nm(b)}</button>`).join(', ')}</div>` : '')
-        + `<div class="pact">${this._model.nodes.has(p.ref) ? `<button data-act="prob-go" data-key="${esc(p.ref)}"><ha-icon icon="mdi:crosshairs-gps"></ha-icon>${T('prob_show')}</button>` : ''}`
+        + `<div class="pact">${showKey ? `<button data-act="prob-go" data-key="${esc(showKey)}"><ha-icon icon="mdi:crosshairs-gps"></ha-icon>${T('prob_show')}</button>` : ''}`
         + p.by.filter((b) => /^(automation|script)\./.test(b)).map((b) => `<button data-act="prob-open" data-key="${esc(b)}"><ha-icon icon="mdi:pencil-outline"></ha-icon>${T('prob_edit', { name: nm(b) })}</button>`).join('')
         + (/^c_/.test(p.kind) ? `<button data-act="chk-replay" data-id="${esc(p.ref.slice(6))}"><ha-icon icon="mdi:flask-outline"></ha-icon>${T('chk_replay')}</button>` : '')
         + (!p.by.length && /^(automation|script)\./.test(p.ref) ? `<button data-act="prob-open" data-key="${esc(p.ref)}"><ha-icon icon="mdi:pencil-outline"></ha-icon>${T('prob_edit', { name: nm(p.ref) })}</button>` : '')
@@ -12475,6 +12642,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           : `<button data-act="pdis" data-k="${esc(probKey(p))}" title="${T('prob_dismiss_t')}" aria-label="${esc(T('prob_dismiss_a', { what: this._probText(p).replace(/<[^>]+>/g, '') }))}"><ha-icon icon="mdi:eye-off-outline"></ha-icon>${T('prob_dismiss')}</button>`)
         + (this._ver ? '' : `<button data-act="pdis-ever" data-k="${esc(probKey(p))}" title="${T('prob_ignore_t')}" aria-label="${esc(T('prob_ignore_a', { what: this._probText(p).replace(/<[^>]+>/g, '') }))}"><ha-icon icon="mdi:cancel"></ha-icon>${T('prob_ignore')}</button>`)
         + `</div></div></div>`;
+      };
       const nev = this._ver ? 0 : (this._layout(label).dismissed || []).filter((x) => x.ever).length;
       const other = (dismissed ? `<button class="lnk" data-act="problems">${T('prob_back')}</button>`
         : ds.length ? `<button class="lnk" data-act="pdis-list">${P('prob_dismissed_n', ds.length)}</button>` : '')
@@ -13007,7 +13175,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         if (open && !this._drawerOpen) {
           this._drawerOpen = true;
           const a = this.shadowRoot.activeElement;
-          this._drawerBack = a && !d.contains(a) ? a : null;
+          this._drawerFocusBack = a && !d.contains(a) ? a : null;
           this._clock.after('drawer-focus', 0, () => {
             if (d.hidden || !this._$.modal.hidden || d.contains(this.shadowRoot.activeElement)) return;
             const h = d.querySelector('.dtitle');
@@ -13015,8 +13183,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           });
         } else if (!open && this._drawerOpen) {
           this._drawerOpen = false;
-          const back = this._drawerBack && this._drawerBack.isConnected ? this._drawerBack : null, box = this._roveKey && this._els && this._els.get(this._roveKey);
-          this._drawerBack = null;
+          const back = this._drawerFocusBack && this._drawerFocusBack.isConnected ? this._drawerFocusBack : null, box = this._roveKey && this._els && this._els.get(this._roveKey);
+          this._drawerFocusBack = null;
           const a = this.shadowRoot.activeElement;
           if (!a || a === d || d.contains(a) || a === this.shadowRoot.host) { if (back) back.focus({ preventScroll: true }); else if (box) box.focus({ preventScroll: true }); }
         }
@@ -13265,17 +13433,24 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     }
     // an action call that touches the function: one of its entities, devices or areas, one of its scripts or
     // action boxes, or a call made by one of its automations or scripts
-    _dbgCall(r) {
+    _dbgCall(r, live) {
       const g = this._dbg, m = this._model;
       if (!g || !m || !r || !r.domain || DBG_QUIET.has(r.domain)) return;
       const sd = r.service_data || {}, ents = toList(sd.entity_id).filter((x) => typeof x === 'string');
       const by = r.context_entity_id && m.nodes.get(r.context_entity_id);
       const svcKey = 'svc:' + r.domain + '.' + r.service, scKey = r.domain === 'script' ? 'script.' + r.service : null;
       const mine = (by && by.kind === 'member') || ents.some((x) => g.ents.has(x)) || toList(sd.device_id).some((x) => m.nodes.has('device:' + x))
-        || toList(sd.area_id).some((x) => m.nodes.has('area:' + x)) || (scKey && m.nodes.has(scKey)) || m.nodes.has(svcKey);
+        || toList(sd.area_id).some((x) => m.nodes.has('area:' + x)) || toList(sd.floor_id).some((x) => m.nodes.has('floor:' + x))
+        || toList(sd.label_id).some((x) => m.nodes.has('label:' + x)) || (scKey && m.nodes.has(scKey)) || m.nodes.has(svcKey);
       if (!mine) return;
       const t = Math.round((+r.when || 0) * 1000);
-      this._dbgAdd({ id: 'call:' + (r.context_id || '') + ':' + r.domain + '.' + r.service + ':' + ents.join(',') + ':' + Math.round(t / 1000), kind: 'call', t,
+      let id = 'call:' + (r.context_id || '') + ':' + r.domain + '.' + r.service + ':' + ents.join(',') + ':' + Math.round(t / 1000);
+      if (live && g.byId.has(id) && g.byId.get(id)._live) {
+        let n = 2;
+        while (g.byId.has(id + '#' + n)) n++;
+        id = id + '#' + n;
+      }
+      this._dbgAdd({ id, kind: 'call', t, _live: !!live,
         key: ents.find((x) => m.nodes.has(x)) || (scKey && m.nodes.has(scKey) ? scKey : m.nodes.has(svcKey) ? svcKey : null),
         svc: r.domain + '.' + r.service, ents, ctx: r.context_id, by: this._dbgCause(r) });
     }
@@ -13286,7 +13461,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (run) Object.assign(r, { context_event_type: run.run.domain === 'script' ? 'script_started' : 'automation_triggered', context_entity_id: run.key, context_name: this._nameOf(run.key) });
       // made from within a run the logbook hasn't listed yet: its run fills in the name when it arrives (_dbgOwn)
       else if (cx.parent_id && !cx.user_id) Object.assign(r, { context_event_type: 'automation_triggered', context_name: T('an_automation_or_script') });
-      this._dbgCall(r);
+      this._dbgCall(r, true);
     }
     _dbgRunByCtx(id) {
       const g = this._dbg;
@@ -13704,7 +13879,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
        (PARTS): only its own methods use them; the other parts ask its methods.
        ====================================================================================================== */
 
-    _sbxOn() { return !!(this._sbx && this._drawer && this._drawer.mode === 'sandbox'); }
+    _sbxOn() { return !!(this._sbx && this._sbx.eng && this._drawer && this._drawer.mode === 'sandbox'); }
     // every time it opens: what the sandbox is for, and everything it can't do, to click through
     _sbxIntro() {
       const m = this._$.modal, li = (xs) => xs.map((x) => `<li>${x}</li>`).join(''), open = this._sbxOn();
@@ -13760,7 +13935,6 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (extra && !states[extra.id]) states[extra.id] = { entity_id: extra.id, state: 'off', attributes: { friendly_name: extra.cfg.alias || extra.id, mode: extra.cfg.mode || 'single' }, last_changed: new Date(now).toISOString(), last_updated: new Date(now).toISOString(), context: {} };
       if (check) Object.entries(check.start).forEach(([k, v]) => { states[k] = Object.assign({}, states[k] || {}, { state: v.state, attributes: Object.keys(v.attributes || {}).length ? v.attributes : (states[k] || {}).attributes || {} }); });
       g.rec = { at: now, start: this._checkStart(states), items: ids.slice(), steps: [], answers: [] };
-      this._sbx = g;
       const resolve = (ref) => {
         if (ref.startsWith('device:')) return this._ents.filter((e) => e.device_id === ref.slice(7)).map((e) => e.entity_id);
         const t = this._tgt.get(ref);
@@ -13774,6 +13948,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       g.devPress = dt.press;
       // and the values of its Z-Wave devices (0.13.0)
       const zw = await this._zwFor(this._zwDevIds(cfgs, this._sbxDevIds(cfgs)));
+      if (!this._drawer || this._drawer.mode !== 'sandbox') return;
       const wholeNote = outside.size ? [P('sbx_whole_n', outside.size, { list: [...outside].map((k) => this._boxName(k)).join(', ') })] : [];
       g.opts = {
         states, items: ids.map((id, i) => ({ id, cfg: cfgs[i], outside: outside.has(id) })), now, tz: this._hass.config && this._hass.config.time_zone, notes: wholeNote,
@@ -13785,6 +13960,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       };
       g.eng = new Sandbox(g.opts);
       g.tab = 'tl';
+      this._sbx = g;
       await g.eng.start();
     }
     // an action in a few words, for step-through and coverage
@@ -13822,8 +13998,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       g.ended = true;
       g.asks.forEach((a) => a.res(false));
       g.asks = [];
-      g.eng.stopAll();
-      g.eng.resumeAll();
+      if (g.eng) { g.eng.stopAll(); g.eng.resumeAll(); }
       g.speed = 0; g.exStop = true;
       this._clock.cancel('sbxplay');
       this._sbx = null;
@@ -14050,7 +14225,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const g2 = this._sbx;
       if (!g2) return;
       this._renderSbxCtl();
-      await this._sbxDo(async (e) => { for (const st of h.steps) { this._sbxRec(st); await sbxDoStep(e, st); } });
+      await this._sbxDo(async (e) => { for (const st of h.steps) { this._sbxRec(st); await sbxDoStep(e, st); } }, true);
       if (this._sbx !== g2) return;
       g2.hist = { kind, from, to, n: h.n, cut: h.cut, inputs: inputs.length, cmp: sbxCompare(h, g2.eng.log) };
       g2.tab = 'tl';
@@ -14318,7 +14493,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         [['after', c.after], ['before', c.before]].forEach(([w, v]) => { if (v != null && !EXACT_RE.test(String(v))) put(eng._timeAt(v, eng.now), T('sbx_time_edge', { name: this._boxName(it.id), w: w === 'after' ? T('sbx_after') : T('sbx_before'), t: String(v) })); });
       }));
       put(localAt(eng.now + 86400000, [0, 0, 0], eng.tz), T('sbx_midnight'));
-      const opts = [...out].sort((a, b) => a[0] - b[0]).slice(0, 30).map(([at, l]) => ({ v: String(at), l: T('sbx_jump_l', { t: this._sbxWhen(at), what: l, d: clockShort(at - eng.now) }) }));
+      const opts = [...out].sort((a, b) => a[0] - b[0]).slice(0, 30).map(([at, l]) => ({ v: String(at), l: T('sbx_jump_l', { t: this._sbxWhen(at), what: l, d: fmtDurLong(at - eng.now) }) }));
       const sel = this._$.drawer.querySelector('.sbjump-sel'), inp = this._$.drawer.querySelector('input.sbjump');
       this._sbxOpts('sbjump', opts, sel.value !== SBX_OTHER || (inp && inp.value) ? true : 'pick');
     }
@@ -14454,9 +14629,10 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       }
       return false;
     }
-    async _sbxDo(fn) {
+    async _sbxDo(fn, keepHist) {
       const g = this._sbx;
       if (!g || g.busy) return;
+      if (!keepHist) g.hist = null;
       g.busy = true;
       this._renderSbx();
       const from = g.eng.seq, step0 = g.rec.steps.length;
@@ -14954,7 +15130,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (ck) {
         const off = eng.now - g.rec.at, sun = eng.get('sun.sun');
         ck.textContent = this._sbxWhen(eng.now, true);
-        ck.title = T('sbx_clock_t', { d: off > 999 ? clockShort(off) : '0 s', tz: eng.tz || '' }) + (sun ? ' · ' + (sun.state === 'above_horizon' ? T('sbx_sun_up') : T('sbx_sun_down')) : '');
+        ck.title = T('sbx_clock_t', { d: off > 999 ? fmtDurLong(off) : '0 s', tz: eng.tz || '' }) + (sun ? ' · ' + (sun.state === 'above_horizon' ? T('sbx_sun_up') : T('sbx_sun_down')) : '');
       }
       const nx = d.querySelector('.sbnext'), due = eng.pending();
       if (nx) {
@@ -15245,7 +15421,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       g.eng.stopAll(); g.eng.resumeAll();
       this._clearLit(true);
       this._renderSbx();
-      g.pre = answers; g.rec.steps = []; g.rec.answers = []; g.acts = []; g.lastAdv = null; g.sel = null;
+      g.pre = answers; g.rec.steps = []; g.rec.answers = []; g.acts = []; g.lastAdv = null; g.sel = null; g.hist = null;
       const eng = g.eng = new Sandbox(g.opts);
       eng.breaks = breaks;
       await eng.start();
@@ -15425,9 +15601,10 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (add && ins.length) ins[ins.length - 1].focus();
     }
     // what's wrong with it as picked, in words (null: it can be saved)
-    _bldWhy(spec, name) {
+    _bldWhy(spec, name, raw) {
       if (!name) return T('nb_need_name');
       if (!spec.message.trim()) return T('nb_need_message');
+      if (raw && Array.isArray(raw.buttons) && raw.buttons.some((b) => !String((b && b.title) || '').trim())) return T('nb_need_btn_title');
       if (!notifyPhones(spec).length && !(spec.tts && spec.speakers.length)) return T('nb_need_to');
       if (spec.buttons.length && !notifyPhones(spec).length) return T('nb_need_phone');
       return null;
@@ -15436,7 +15613,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     _bldNewId(name) {
       const base = slugify(name) || 'notification';
       let id = base, n = 2;
-      while (this._hass.states['script.' + id]) id = base + '_' + n++;
+      while (this._hass.states['script.' + id] || this._entMap.has('script.' + id)) id = base + '_' + n++;
       return id;
     }
     // Save: the script is written (Full manager only), its spec kept in the function's layout, and a new one put in
@@ -15445,7 +15622,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (!this._full()) return;
       this._bldRead();
       const b = this._bld, m = this._$.modal, val = m.querySelector('.aval'), btn = m.querySelector('[data-act="nb-save"]');
-      const spec = cleanNotify(b.spec), why = this._bldWhy(spec, b.name);
+      const spec = cleanNotify(b.spec), why = this._bldWhy(spec, b.name, b.spec);
       if (why) { val.textContent = why; return; }
       const label = b.label, oid = b.oid || this._bldNewId(b.name), key = 'script.' + oid;
       const cfg = notifyScript(spec, { alias: b.name, icon: b.icon, description: b.desc });
@@ -15486,7 +15663,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     // Try in sandbox: the script as picked, saved or not, run once in the sandbox; its buttons can be pressed there
     async _bldTry() {
       this._bldRead();
-      const b = this._bld, spec = cleanNotify(b.spec), why = this._bldWhy(spec, b.name || T('nb_default_name'));
+      const b = this._bld, spec = cleanNotify(b.spec), why = this._bldWhy(spec, b.name || T('nb_default_name'), b.spec);
       if (why) { this._$.modal.querySelector('.aval').textContent = why; return; }
       const key = 'script.' + (b.oid || this._bldNewId(b.name || T('nb_default_name')));
       const cfg = notifyScript(spec, { alias: b.name || T('nb_default_name'), icon: b.icon, description: b.desc });
@@ -15574,7 +15751,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         if (dom === 'automation' || dom === 'script') {
           const r = await this._ws({ type: dom + '/config', entity_id: k }, { optional: 'an automation or script without an id has no stored config', fallback: null }), cfg = r && r.config;
           if (!cfg) continue;
-          const id = dom === 'automation' ? cfg.id || null : k.slice(7);
+          const reg = this._entMap.get(k);
+          const id = dom === 'automation' ? cfg.id || null : (reg && reg.unique_id) || k.slice(7);
           // only what's in automations.yaml or scripts.yaml can be written back: Home Assistant's editors say the same
           const own = id ? !!(await this._api('GET', `config/${dom}/config/${encodeURIComponent(id)}`, undefined, { optional: 'one set up in YAML has no stored config to read', fallback: null })) : false;
           items[k] = { dom, id, name, cfg, yaml: !own };
@@ -15927,7 +16105,11 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const reg = await this._ws({ type: 'config/entity_registry/list' }, { fallback: [] });
       const findNew = (k) => { const it = snap.items[k], uid = it.newId || it.id; const e = reg.find((x) => x.platform === it.dom && x.unique_id === uid); return e ? e.entity_id : null; };
       for (const k of plan.rejoin.concat(plan.recreate)) {
-        const id = plan.recreate.includes(k) ? findNew(k) : k;
+        let id = plan.recreate.includes(k) ? findNew(k) : k;
+        if (id && plan.recreate.includes(k) && id !== k) {
+          const renamed = await this._ws({ type: 'config/entity_registry/update', entity_id: id, new_entity_id: k }, { optional: 'Home Assistant refuses an entity id already taken', fallback: false });
+          if (renamed !== false) id = k;
+        }
         if (id) { try { await this._label(id, label, true, false); } catch (e) { errs.push(name(k) + ': ' + ((e && e.message) || e)); } }
       }
       // what was added since and is shared only leaves the function (0.11.0)
@@ -15943,7 +16125,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
             if (extra === 'delete' && aid) await this._api('DELETE', `config/automation/config/${encodeURIComponent(aid)}`);
             else await this._svc('automation', 'turn_off', { entity_id: k });
           } else if (dom === 'script') {
-            if (extra === 'delete') await this._api('DELETE', `config/script/config/${encodeURIComponent(k.slice(7))}`);
+            const e = this._entMap.get(k), sid = (e && e.unique_id) || k.slice(7);
+            if (extra === 'delete') await this._api('DELETE', `config/script/config/${encodeURIComponent(sid)}`);
           } else if (VER_HELPERS.has(dom)) {
             const e = this._entMap.get(k);
             if (extra === 'delete' && e && e.unique_id) await this._ws({ type: dom + '/delete', [dom + '_id']: e.unique_id });

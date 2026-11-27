@@ -2228,7 +2228,7 @@
   "replace": "        ? row(active, true, copy)",
   "suite": "board-regress",
   "only": "0.11.3 versions",
-  "expect": "only the layout changed"
+  "expect": "with Save and Save as copy on it"
  },
  {
   "name": "toolbar: no Recipes menu",
@@ -2519,5 +2519,96 @@
   "suite": "board-regress",
   "only": "0.13.1",
   "expect": "the headers still work while a run is busy"
+ },
+ {
+  "name": "sandbox: _chkStepText uses clockShort on advance durations again",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "if (s.op === 'advance') return T('chk_s_advance', { dur: esc(fmtDurLong(s.ms)) });",
+  "replace": "if (s.op === 'advance') return T('chk_s_advance', { dur: esc(clockShort(s.ms)) });",
+  "suite": "board-regress",
+  "only": "0.13.2",
+  "expect": "durations render as M:SS"
+ },
+ {
+  "name": "sandbox: sbxRewrite rewrites plain text outside Jinja blocks",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "res += raw.slice(pos, next);",
+  "replace": "res += rewriteCode(raw.slice(pos, next));",
+  "suite": "sandbox",
+  "expect": "sbxRewrite leaves plain text and Jinja comments untouched"
+ },
+ {
+  "name": "board: _watchDrawer reuses _drawerBack for focus restoration",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "this._drawerFocusBack = a && !d.contains(a) ? a : null;",
+  "replace": "this._drawerBack = a && !d.contains(a) ? a : null;",
+  "suite": "board-regress",
+  "only": "0.13.2",
+  "expect": "Trace opened from Debug sets _drawerBack"
+ },
+ {
+  "name": "sandbox: MQTT cover position drops JSON zero again",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "if (pos === '' || pos == null || n == null) continue;",
+  "replace": "if (!pos || n == null) continue;",
+  "suite": "sandbox",
+  "expect": "MQTT cover position handles JSON 0"
+ },
+ {
+  "name": "problems: missing targetless service box is not marked",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "if (pr.kind === 's_missing' && nodes.has('svc:' + pr.ref)) mark('svc:' + pr.ref, pr.sev);",
+  "replace": "",
+  "suite": "problems",
+  "expect": "markProblems marks missing targetless service box"
+ },
+ {
+  "name": "wiring: analyze walks into target.exclude again",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "if (k === 'exclude') continue;",
+  "replace": "",
+  "suite": "wiring",
+  "expect": "analyze skips target.exclude"
+ },
+ {
+  "name": "sandbox: target.exclude ignored in action targets",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "this._excludeSet(t.exclude).forEach((e) => out.delete(e));",
+  "replace": "",
+  "suite": "sandbox",
+  "expect": "Sandbox respects target.exclude"
+ },
+ {
+  "name": "sandbox: script.toggle starts instead of cancelling an active script",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "if (s === 'toggle' && this._active(id).length > 0) { this._active(id).forEach((r) => this._cancel(r)); continue; }",
+  "replace": "",
+  "suite": "sandbox",
+  "expect": "script.toggle starts when idle and cancels when running"
+ },
+ {
+  "name": "sandbox: _sbxOn ignores whether eng is initialized",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "_sbxOn() { return !!(this._sbx && this._sbx.eng && this._drawer && this._drawer.mode === 'sandbox'); }",
+  "replace": "_sbxOn() { return !!(this._sbx && this._drawer && this._drawer.mode === 'sandbox'); }",
+  "suite": "board-regress",
+  "only": "0.13.2",
+  "expect": "_sbxOn is false until sandbox engine is initialized"
+ },
+ {
+  "name": "zwave: multi-endpoint child devices ignored again",
+  "file": "custom_components/functions_board/zwave.py",
+  "find": "if endpoint is not None and (v.endpoint or 0) != endpoint:",
+  "replace": "if False:",
+  "suite": "backend",
+  "expect": "test_zwave_values_multi_endpoint_child"
+ },
+ {
+  "name": "versions: deleting last version leaves empty label key",
+  "file": "custom_components/functions_board/versions.py",
+  "find": "            if keep:\n                self.by_label[label] = keep\n            else:\n                del self.by_label[label]",
+  "replace": "            self.by_label[label] = keep",
+  "suite": "backend",
+  "expect": "test_versions_remove_last_cleans_label_key"
  }
 ]

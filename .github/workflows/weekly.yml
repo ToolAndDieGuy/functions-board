@@ -122,6 +122,7 @@ jobs:
         with:
           name: mutants
           path: tests/.results/
+          include-hidden-files: true
       - name: Open an issue, or add to the open one
         if: failure() && github.event_name == 'schedule'
         env:
@@ -160,6 +161,7 @@ jobs:
         with:
           name: strict
           path: tests/.results/
+          include-hidden-files: true
       - name: Open an issue, or add to the open one
         if: failure() && github.event_name == 'schedule'
         env:
@@ -194,6 +196,7 @@ jobs:
         with:
           name: jitter
           path: tests/.results/
+          include-hidden-files: true
       - name: Open an issue, or add to the open one
         if: failure() && github.event_name == 'schedule'
         env:
@@ -231,6 +234,7 @@ jobs:
         with:
           name: diff
           path: tests/.results/
+          include-hidden-files: true
       - name: Open an issue, or add to the open one
         if: failure() && github.event_name == 'schedule'
         env:
@@ -293,6 +297,7 @@ jobs:
           path: |
             tests/.results/
             ha/hass.log
+          include-hidden-files: true
       - name: Open an issue, or add to the open one
         if: failure() && github.event_name == 'schedule'
         env:

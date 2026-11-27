@@ -347,3 +347,12 @@ check('A4 MQTT: the board listens; a message is published only by the person\'s 
   const misnamed = named.filter((x) => x.got !== x.want);
   check('every browser suite is named after its test file', named.length >= 15 && misnamed.length === 0, misnamed);
 }
+
+// 0.13.2: every op in CHECK_OPS (other than 'next', the default) has an explicit branch in _chkStepText()
+{
+  const { CHECK_OPS } = require('./lib/board-lib');
+  const start = src.indexOf('    _chkStepText(s) {');
+  const body = balanced(src, src.indexOf('{', start));
+  const missingOps = [...CHECK_OPS].filter((op) => op !== 'next' && !body.includes(`s.op === '${op}'`));
+  check('every saved-check step op in CHECK_OPS is handled in _chkStepText', CHECK_OPS.size >= 10 && missingOps.length === 0, missingOps);
+}

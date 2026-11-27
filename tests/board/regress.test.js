@@ -1890,6 +1890,7 @@ test('0.11.3 the notification builder: a script made from what\'s picked, opened
   check('0.11.3 a change saved writes over the same script', Object.keys(fake.scripts).filter((k) => k.startsWith('garage_left_open_2')).length === 1);
   await fbq(page, '.toast:not([hidden]) [data-act="toast-act"]').click();
   await until(() => (fake.scripts[OID].sequence[1].data.message === 'The garage is still open') || null, 10000);
+  await until(() => el(page, (b) => (!b._undoBusy && b._redoStack.length > 0) || null), 10000);
   check('0.11.3 ... and Undo puts the script back as it was', fake.scripts[OID].sequence[1].data.message === 'The garage is still open');
   // edited by hand: Home Assistant's editor, with a word why
   fake.scripts[OID] = Object.assign({}, fake.scripts[OID], { sequence: fake.scripts[OID].sequence.concat([{ delay: 5 }]) });
@@ -2127,5 +2128,145 @@ test('0.13.1 the sandbox\'s controls in sections under headers, each folded away
   s = await secs();
   check('0.13.1 ... and opens again', !s.find((x) => x.k === 'run').hidden && (await el(page, (b) => b._data.ui.sbxShut)) === undefined, s);
   check('0.13.1 sandbox sections: no errors', page.logs.length === 0, page.logs);
+  await ctx.close();
+});
+
+test('0.13.2 audit fixes: durations, drawer back/focus, check steps, s_missing, renamed scripts/helpers, history banner, debugger, builder', async ({ browser, fake }) => {
+  const { ctx, page } = await imported(browser);
+  const garage = await openFn(page, /garage/i);
+
+  // 1 & 4 & 11 & Issue #72: durations, zwave/behave step text, history banner clearing, _sbxOn guard
+  await fbq(page, '.tools [data-act="sandbox"]').click();
+  await fbq(page, '.modal [data-act="sbx-start"]').click({ timeout: 3000 }).catch(() => {});
+  await fbq(page, '.drawer .sbctl .sbent').waitFor({ timeout: 10000 });
+  await until(() => el(page, (b) => (b._sbx && b._sbx.eng && !b._sbx.busy) || null), 15000);
+  const sbxRes = await el(page, (b) => {
+    const advTxt = b._chkStepText({ op: 'advance', ms: 900000 });
+    const zwTxt = b._chkStepText({ op: 'zwave', dev: 'd1', id: '2-98-0-currentMode', value: 255 });
+    const behTxt = b._chkStepText({ op: 'behave', id: 'light.porch_light', how: 'slow', ms: 5000 });
+    b._sbx.eng.now += 900000;
+    b._renderSbx();
+    const clkTitle = b._$.drawer.querySelector('.sbclock').title;
+    const jumpLabels = [...b._$.drawer.querySelectorAll('.sbjump-sel option')].map((o) => o.textContent);
+    // Issue #72 jitter guard: _sbxOn() must be false when eng is not ready yet
+    const realEng = b._sbx.eng;
+    b._sbx.eng = null;
+    const onWithoutEng = b._sbxOn();
+    b._sbx.eng = realEng;
+    // history banner cleared on manual step
+    b._sbx.hist = { kind: 'h6', from: 0, to: 1, n: 0, cut: false, inputs: 0, cmp: [] };
+    return { advTxt, zwTxt, behTxt, clkTitle, jumpLabels, onWithoutEng };
+  });
+  check('0.13.2 durations render as M:SS (not wall-clock AM/PM) in check steps, clock tooltip, and Jump to',
+    /15:00/.test(sbxRes.advTxt) && !/\b(?:AM|PM)\b/i.test(sbxRes.advTxt)
+    && /15:00/.test(sbxRes.clkTitle) && !/\b(?:AM|PM)\b/i.test(sbxRes.clkTitle)
+    && sbxRes.jumpLabels.some((l) => /\bin (?:\d+d )?\d+:\d\d(?::\d\d)?\b/.test(l)) && !sbxRes.jumpLabels.some((l) => /\b(?:AM|PM)\b/i.test(l)), sbxRes);
+  check('0.13.2 _chkStepText handles zwave and behave steps instead of falling through',
+    /Z-Wave/.test(sbxRes.zwTxt) && !/due/.test(sbxRes.zwTxt)
+    && /slow/.test(sbxRes.behTxt) && !/due/.test(sbxRes.behTxt), sbxRes);
+  check('0.13.2 _sbxOn is false until sandbox engine is initialized', sbxRes.onWithoutEng === false);
+  await el(page, (b) => b._sbxDo(async () => {}));
+  check('0.13.2 manual sandbox step clears stale history replay banner', await el(page, (b) => b._sbx.hist === null));
+  await el(page, (b) => { b._sbx.hist = { kind: 'h6', from: 0, to: 1, n: 0, cut: false, inputs: 0, cmp: [] }; return b._sbxRewind(0); });
+  check('0.13.2 sandbox rewind clears stale history replay banner', await el(page, (b) => b._sbx.hist === null));
+  await fbq(page, '.drawer [data-act="close"]').click();
+
+  // 3: _drawerBack vs _drawerFocusBack collision (Trace Back button & focus restoration)
+  const dbgBtn = fbq(page, '.tools [data-act="debug"]');
+  await dbgBtn.focus();
+  await dbgBtn.click();
+  await fbq(page, '.drawer .dbg').waitFor({ timeout: 10000 });
+  await el(page, (b) => {
+    b._litRun = { e: { key: 'automation.garage_auto_close', run: { domain: 'automation', item_id: 'garage_auto_close', run_id: 'r1' } }, tr: null };
+    b._openLitTrace();
+  });
+  check('0.13.2 Trace opened from Debug sets _drawerBack to debug while keeping _drawerFocusBack as DOM element',
+    await el(page, (b) => b._drawerBack === 'debug' && b._drawerFocusBack instanceof Element));
+  await fbq(page, '.drawer [data-act="back"]').click();
+  check('0.13.2 Trace Back button returns to Debug drawer', await el(page, (b) => b._drawer && b._drawer.mode === 'debug'));
+  await fbq(page, '.drawer [data-act="close"]').click();
+  check('0.13.2 closing drawer restores focus to the button that opened it',
+    await el(page, (b) => b.shadowRoot.activeElement && b.shadowRoot.activeElement.dataset && b.shadowRoot.activeElement.dataset.act === 'debug'));
+
+  // 11: _dbgCall accepts floor_id/label_id and keeps rapid same-second live repeat calls
+  await dbgBtn.click();
+  await fbq(page, '.drawer .dbg').waitFor({ timeout: 10000 });
+  const dbgCount = await el(page, (b) => {
+    b._model.nodes.set('floor:first', { key: 'floor:first', kind: 'outside', name: 'First' });
+    b._model.nodes.set('label:night', { key: 'label:night', kind: 'outside', name: 'Night' });
+    const now = Date.now() / 1000;
+    const targetEnt = [...b._dbg.ents][0];
+    b._dbgCall({ domain: 'light', service: 'turn_on', service_data: { floor_id: 'first' }, context_id: 'c_fl', when: now }, true);
+    b._dbgCall({ domain: 'light', service: 'turn_on', service_data: { label_id: 'night' }, context_id: 'c_lb', when: now }, true);
+    b._dbgCall({ domain: 'cover', service: 'toggle', service_data: { entity_id: targetEnt }, context_id: 'c_rep', when: now }, true);
+    b._dbgCall({ domain: 'cover', service: 'toggle', service_data: { entity_id: targetEnt }, context_id: 'c_rep', when: now }, true);
+    return {
+      fl: b._dbg.entries.some((e) => e.ctx === 'c_fl'),
+      lb: b._dbg.entries.some((e) => e.ctx === 'c_lb'),
+      rep: b._dbg.entries.filter((e) => e.ctx === 'c_rep').length,
+    };
+  });
+  check('0.13.2 debugger captures floor_id/label_id calls and both rapid same-second live repeat calls',
+    dbgCount.fl && dbgCount.lb && dbgCount.rep === 2, dbgCount);
+  await fbq(page, '.drawer [data-act="close"]').click();
+
+  // 6: missing targetless service (s_missing) shows Show button in Problems drawer and marks box + arrow
+  await addPiece(page, fake, 'automation.fb_missing_svc', {
+    alias: 'Garage: broken notify', mode: 'single',
+    triggers: [{ trigger: 'state', entity_id: 'cover.garage_door', to: 'open' }],
+    conditions: [],
+    actions: [{ action: 'notify.mobile_app_gone_phone', data: { message: 'hi' } }],
+  });
+  await ws(page, { type: 'config/entity_registry/update', entity_id: 'automation.fb_missing_svc', labels: [garage] });
+  await fake.idle(400);
+  await until(() => el(page, (b) => (b._model && b._model.nodes.has('svc:notify.mobile_app_gone_phone')) || null), 10000);
+  const svcMarked = await el(page, (b) => {
+    const n = b._model.nodes.get('svc:notify.mobile_app_gone_phone');
+    const e = b._model.edges.find((x) => x.to === 'svc:notify.mobile_app_gone_phone');
+    return { nodeProb: n && n.prob, edgeProb: e && e.prob };
+  });
+  check('0.13.2 missing targetless service marks svc box and arrow on the board', svcMarked.nodeProb === 'error' && svcMarked.edgeProb === true, svcMarked);
+  await fbq(page, '.pchip').click();
+  await fbq(page, '.drawer .probs .prow').first().waitFor({ timeout: 10000 });
+  const hasShow = await el(page, (b) => !!b._$.drawer.querySelector('.probs [data-act="prob-go"][data-key="svc:notify.mobile_app_gone_phone"]'));
+  check('0.13.2 Problems drawer has Show button targeting svc: box for s_missing', hasShow);
+  await fbq(page, '.drawer [data-act="close"]').click();
+
+  // 12: Notification Builder skips disabled script IDs in _entMap and rejects blank button titles
+  const bldCheck = await el(page, (b) => {
+    b._entMap.set('script.garage_alert', { entity_id: 'script.garage_alert', disabled_by: 'user' });
+    const nextId = b._bldNewId('Garage Alert');
+    b._entMap.delete('script.garage_alert');
+    const whyBlank = b._bldWhy(
+      { message: 'Open', phones: [{ svc: 'mobile_app_p', os: 'ios', name: 'P' }], people: [], speakers: [], tts: null, buttons: [] },
+      'Alert',
+      { buttons: [{ title: '   ', then: [] }] },
+    );
+    return { nextId, whyBlank };
+  });
+  check('0.13.2 builder skips disabled script IDs and validates blank button titles',
+    bldCheck.nextId === 'garage_alert_2' && /label|blank/i.test(bldCheck.whyBlank || ''), bldCheck);
+
+  // 7: _verSnapshot uses reg.unique_id for renamed scripts
+  const renamedSnap = await el(page, async (b) => {
+    const k = 'script.renamed_alias';
+    b._ents.push({ entity_id: k, unique_id: 'orig_script_uid', platform: 'script', labels: [b._data.ui.current] });
+    b._entMap.set(k, b._ents[b._ents.length - 1]);
+    const origWs = b._ws.bind(b), origApi = b._api.bind(b);
+    let apiPath = null;
+    b._ws = async (msg, o) => (msg.type === 'script/config' && msg.entity_id === k ? { config: { alias: 'Renamed', sequence: [] } } : origWs(msg, o));
+    b._api = async (m, p, body, o) => { if (p.startsWith('config/script/config/')) { apiPath = p; return { alias: 'Renamed', sequence: [] }; } return origApi(m, p, body, o); };
+    try {
+      const snap = await b._verSnapshot(b._data.ui.current);
+      return { id: snap.items[k] && snap.items[k].id, yaml: snap.items[k] && snap.items[k].yaml, apiPath };
+    } finally {
+      b._ws = origWs; b._api = origApi;
+      b._ents.pop(); b._entMap.delete(k);
+    }
+  });
+  check('0.13.2 _verSnapshot resolves renamed script via registry unique_id',
+    renamedSnap.id === 'orig_script_uid' && renamedSnap.yaml === false && renamedSnap.apiPath === 'config/script/config/orig_script_uid', renamedSnap);
+
+  check('0.13.2 audit fixes: no errors', page.logs.length === 0, page.logs);
   await ctx.close();
 });

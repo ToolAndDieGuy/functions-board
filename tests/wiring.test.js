@@ -406,3 +406,61 @@ for (const [name, cfgs, want] of phase2) { const got = loops(cfgs); check(name, 
   setLang('en');
 }
 
+// ---- 0.13.2 analyzer, target.exclude, loop detection, and Node-RED target fixes ----
+{
+  // target.exclude is not walked as included arrows and is preserved on the target ref
+  const exCfg = {
+    triggers: [{ trigger: 'light.turned_on', target: { floor_id: 'first', exclude: { area_id: 'closet', entity_id: 'light.nightlight' } } }],
+    actions: [{ action: 'light.turn_off', target: { floor_id: 'first', exclude: { area_id: 'hall', device_id: 'dev_keep', entity_id: 'light.porch' } } }],
+  };
+  const exRefs = analyze(exCfg, false, (x) => x).refs;
+  const exNames = exRefs.map((r) => r.ref);
+  check('0.13.2 analyze skips target.exclude items and keeps ex on the target ref',
+    exNames.includes('floor:first') && !exNames.includes('area:closet') && !exNames.includes('area:hall')
+    && !exNames.includes('light.nightlight') && !exNames.includes('light.porch') && !exNames.includes('device:dev_keep')
+    && exRefs.every((r) => r.ref !== 'floor:first' || (r.ex && typeof r.ex === 'object')), exRefs);
+
+  // wait_for_trigger draws condition arrows for event_type and mqtt topic (not automation entry triggers)
+  const waitCfg = {
+    triggers: [{ trigger: 'state', entity_id: 'binary_sensor.door', to: 'on' }],
+    actions: [
+      { wait_for_trigger: [{ trigger: 'event', event_type: 'mobile_app_notification_action', event_data: { action: 'CLOSE_DOOR' } }, { trigger: 'event', event_type: 'custom_done' }, { trigger: 'mqtt', topic: 'garage/ack' }] },
+    ],
+  };
+  const wRefs = analyze(waitCfg, false, (x) => x).refs;
+  check('0.13.2 wait_for_trigger records event, button and MQTT arrows as conditions',
+    wRefs.some((r) => r.ref === 'nact:CLOSE_DOOR' && r.role === 'condition')
+    && wRefs.some((r) => r.ref === 'event:custom_done' && r.role === 'condition')
+    && wRefs.some((r) => r.ref === 'mqtt:garage/ack' && r.role === 'condition')
+    && !wRefs.some((r) => r.ref === 'mqtt:garage/ack' && r.role === 'trigger'), wRefs);
+
+  // templated action keeps 'action' role on targets; templated target.entity_id does not suppress svc: box
+  const tplAct = analyze({
+    triggers: [],
+    actions: [
+      { action: 'light.turn_{{ mode }}', target: { entity_id: 'light.kitchen' } },
+      { action: 'light.turn_on', target: { entity_id: '{{ target_light }}' } },
+    ],
+  }, false, (x) => x).refs;
+  check('0.13.2 templated action keeps action role; templated target keeps svc box',
+    tplAct.some((r) => r.ref === 'light.kitchen' && r.role === 'action')
+    && tplAct.some((r) => r.ref === 'svc:light.turn_on' && r.role === 'action'), tplAct);
+
+  // climate.turn_on can satisfy a trigger watching to: 'heat' (loop detected)
+  const climLoop = loopEdges(['automation.a', 'climate.main'], [
+    { id: '1', from: 'climate.main', to: 'automation.a', role: 'trigger', svcs: new Set(), tfs: [{ to: ['heat'] }], anyTrig: false },
+    { id: '2', from: 'automation.a', to: 'climate.main', role: 'action', svcs: new Set(['turn_on']), tfs: [], anyTrig: false },
+  ]);
+  check('0.13.2 climate.turn_on is treated as any HVAC mode for loop detection', climLoop.has('1') && climLoop.has('2'), [...climLoop]);
+
+  // newer Node-RED api-call-service n.target.entityId (including script.turn_on)
+  const nr = nrGroups([
+    { id: 't1', type: 'tab', label: 'Modern' },
+    { id: 'n1', z: 't1', type: 'server-state-changed', entityId: 'binary_sensor.door', wires: [['n2', 'n3']] },
+    { id: 'n2', z: 't1', type: 'api-call-service', action: 'light.turn_on', target: { entityId: ['light.hall'] }, wires: [] },
+    { id: 'n3', z: 't1', type: 'api-call-service', action: 'script.turn_on', target: { entityId: ['script.alert'] }, wires: [] },
+  ], (x) => x);
+  check('0.13.2 nrGroups reads newer Node-RED api-call-service n.target',
+    nr.length === 1 && nr[0].change.includes('light.hall') && nr[0].calls.includes('script.alert'), nr);
+}
+

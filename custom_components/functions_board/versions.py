@@ -146,7 +146,10 @@ class Versions:
             keep = [v for v in vs if v["id"] != vid]
             if len(keep) == len(vs):
                 return False
-            self.by_label[label] = keep
+            if keep:
+                self.by_label[label] = keep
+            else:
+                del self.by_label[label]
             if (self.active.get(label) or {}).get("id") == vid:
                 self.active.pop(label, None)
         self._save()

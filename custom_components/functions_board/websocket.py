@@ -128,9 +128,22 @@ def ws_set(
     if len(json_bytes(data)) > MAX_DATA_BYTES:
         connection.send_error(msg["id"], "too_large", "Board data is larger than 2 MB")
         return
+    raw_layouts = data.get("layouts")
+    if raw_layouts is not None:
+        if not isinstance(raw_layouts, dict):
+            connection.send_error(msg["id"], "invalid_format", "Layouts must be an object")
+            return
+        for label, layout in raw_layouts.items():
+            if not isinstance(label, str) or not label or len(label) > MAX_LABEL_LEN or not isinstance(layout, dict):
+                connection.send_error(msg["id"], "invalid_format", "Layout not stored: bad layout entry")
+                return
+            if problem := _layout_problem(layout):
+                code = "too_large" if problem == "too_large" else "invalid_format"
+                connection.send_error(msg["id"], code, f"Layout not stored: {problem}")
+                return
     board = _board(hass)
     board.data = data
-    layouts = data.get("layouts") if isinstance(data.get("layouts"), dict) else {}
+    layouts = raw_layouts if isinstance(raw_layouts, dict) else {}
     board.revs = {label: board.revs.get(label, 0) + 1 for label in layouts}
     board.save()
     board.notify(hass, {"what": "all", "client": msg.get("client", "")})

@@ -15,8 +15,9 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 
-# a node's device identifier is "<home id>-<node id>" (an endpoint's child device adds "-<endpoint>" and more)
+# a node's device identifier is "<home id>-<node id>" (an endpoint's child device is "<home id>-<node id>-<endpoint>")
 NODE_IDENT = re.compile(r"^(\d+)-(\d+)$")
+ENDPOINT_IDENT = re.compile(r"^(\d+)-(\d+)-(\d+)$")
 # what no automation listens for: who made it, its name and location, its firmware versions
 SKIP_CC = {114, 119, 134}
 # a device's settings (Configuration): listed after every other value, so a device with hundreds of them still lists
@@ -44,6 +45,11 @@ def zwave_values(hass: HomeAssistant, device_id: str) -> dict[str, Any] | None:
     if dev is None:
         return None
     node_id = next((int(m.group(2)) for dom, ident in dev.identifiers if dom == "zwave_js" and (m := NODE_IDENT.match(str(ident)))), None)
+    endpoint: int | None = None
+    if node_id is None:
+        match = next((m for dom, ident in dev.identifiers if dom == "zwave_js" and (m := ENDPOINT_IDENT.match(str(ident)))), None)
+        if match is not None:
+            node_id, endpoint = int(match.group(2)), int(match.group(3))
     if node_id is None:
         return None
     try:
@@ -67,6 +73,8 @@ def zwave_values(hass: HomeAssistant, device_id: str) -> dict[str, Any] | None:
             values = []
             for v in sorted(node.values.values(), key=lambda v: v.command_class == CONFIG_CC):
                 if v.command_class in SKIP_CC:
+                    continue
+                if endpoint is not None and (v.endpoint or 0) != endpoint:
                     continue
                 md = v.metadata
                 spec = getattr(md, "cc_specific", None) or {}

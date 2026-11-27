@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased
+
+### Sandbox & Checks
+- Durations in saved-check steps, the sandbox clock tooltip, and **Jump to** now format as durations (`M:SS` / `H:MM:SS` / `Nd H:MM:SS`) instead of local wall-clock times, fixing AM/PM timestamps outside UTC.
+- Template rewriting in the sandbox now tokenizes Jinja comments, tags, and quoted string literals so plain text words like `states`, `closest`, or `distance` are never rewritten or misreported as location reads.
+- Saved-check step descriptions now handle Z-Wave value reports (`zwave`) and device behaviors (`behave`) explicitly instead of falling back to "Clock to what's due".
+- MQTT cover positions now handle JSON `0`, non-zero `position_closed` offsets, and inverted covers (`position_closed > position_open`).
+- Derived helpers in the sandbox now converge across multi-hop helper chains, `script.toggle` cancels an already running script, `time_pattern` scheduling handles DST transitions without skipping or repeating an hour, and manual steps or rewinds clear a previous history-replay banner.
+- Fixed a race on slow connections where sandbox rendering could run before the sandbox engine finished initializing.
+
+### Wiring, Debugger, Problems, Versions & Notification Builder
+- Added support for Home Assistant 2026.11 `target.exclude` across the wiring analyzer, board model, and sandbox target resolution.
+- Missing targetless services (`s_missing`) now mark the service box and incoming arrow on the board, and their **Show** button in the Problems drawer targets the service box.
+- Fixed a property collision between Trace **Back** navigation and drawer focus restoration so returning from a trace goes back to the Debug or Runs drawer and closing the drawer restores focus cleanly.
+- Fixed Z-Wave JS value discovery for multi-endpoint devices whose registry identifier uses the `home-node-endpoint` tuple format.
+- Fixed wiring analysis edge cases for `wait_for_trigger` (`wait` mode), templated action targets, `climate`/`water_heater`/`media_player` `turn_on` actions, Node-RED `target` blocks, and `input_number` float formatting (`pyFloat`).
+- Live debugger now captures calls targeting `floor_id` or `label_id` and preserves rapid same-second repeated calls.
+- Version snapshots and restores now resolve renamed scripts via their registry `unique_id` and restore customized entity IDs when recreating deleted helpers.
+- Notification Builder now matches `mobile_app` devices renamed via `name_by_user` (or unmatched devices via entity slugs), skips disabled script IDs when choosing a new script ID, and rejects blank button titles.
+
+### Backend & CI
+- Version deletion now removes empty label buckets from storage, MQTT switch discovery checks explicit `None` for falsy payloads, and `functions_board/set` validates layouts via `_layout_problem`.
+- Stabilized weekly differential and mutation suites and added `include-hidden-files: true` to CI artifact uploads for dot-directories.
+
 ## 0.13.1 (2026-11-23)
 
 The sandbox's controls are in sections now, each under a header: **Change something**, **Send an event**, **Run and

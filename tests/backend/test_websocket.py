@@ -260,3 +260,28 @@ async def test_a_version_that_cant_be_kept_takes_nothing_with_it(hass: HomeAssis
     # one that fits once the oldest automatic one has gone is kept, and that one goes
     v, problem = store.add("f", "Before restoring", "", "", {"pad": "y" * 100}, auto=True)
     assert problem is None and [x["name"] for x in store.list("f")] == ["v1", "v2", "Before restoring"]
+
+
+async def test_versions_remove_last_cleans_label_key(hass: HomeAssistant) -> None:
+    """Deleting the last saved version of a function removes its empty key from by_label (0.13.2)."""
+    from custom_components.functions_board import versions as vmod
+
+    store = vmod.Versions(hass)
+    v, problem = store.add("only_one", "v1", "", "", {"items": {}})
+    assert v is not None and problem is None
+    assert store.counts()["functions"] == 1
+    assert store.remove("only_one", v["id"]) is True
+    assert "only_one" not in store.by_label
+    assert store.counts()["functions"] == 0
+
+
+async def test_ws_set_validates_layouts(hass: HomeAssistant, hass_ws_client) -> None:
+    """functions_board/set rejects invalid layout shapes consistently with set_layout (0.13.2)."""
+    await _ready(hass)
+    ws = await hass_ws_client(hass)
+    await ws.send_json_auto_id({
+        "type": "functions_board/set",
+        "data": {"functions": ["garage"], "layouts": {"garage": {"nodes": {"light.a": {"x": "bad", "y": 0}}}}},
+    })
+    msg = await ws.receive_json()
+    assert not msg["success"] and msg["error"]["code"] == "invalid_format", msg
