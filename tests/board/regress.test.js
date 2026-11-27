@@ -1710,7 +1710,7 @@ test('0.11.2 saved checks: edit one (name, step order and values, what it expect
   // typed last, so only saving reads it
   await fbq(page, '.modal .ckdlg input[name="ckname"]').fill('Door open, timer on');
   await fbq(page, '.modal [data-act="chk-edit-go"]').click();
-  const c = await D((b, label) => JSON.parse(JSON.stringify(b._layout(label).checks[0])), garage);
+  const c = await D((b, label) => JSON.parse(JSON.stringify(b._checksOf(label)[0])), garage);
   check('0.11.2 editing keeps the check (same id) with the new name, step order and values, and expectations', c.id === 'fbck1' && c.name === 'Door open, timer on'
     && c.steps[0].op === 'set' && c.steps[0].state === 'opening' && c.steps[1].op === 'advance' && c.steps[1].ms === 120000
     && c.expect.length === 2 && c.expect[0].k === 'state' && c.expect[0].id === 'timer.garage_open' && c.expect[1].id === 'cover.garage_door' && c.expect[1].state === 'opening', c);
@@ -1728,7 +1728,7 @@ test('0.11.2 saved checks: edit one (name, step order and values, what it expect
   check('0.11.2 Import refuses text that isn\'t a shared check', /isn't a check copied with Share/.test(bad), bad);
   await fbq(page, '.modal textarea.ckjson').fill(text.replace('Door open, timer on', 'From a friend'));
   await fbq(page, '.modal [data-act="chk-import-go"]').click();
-  const list = await D((b, label) => b._layout(label).checks.map((x) => ({ id: x.id, name: x.name, steps: x.steps.length })), garage);
+  const list = await D((b, label) => b._checksOf(label).map((x) => ({ id: x.id, name: x.name, steps: x.steps.length })), garage);
   check('0.11.2 ... and adds a shared one as a new check with its own id', list.length === 2 && list[1].name === 'From a friend' && list[1].id !== 'fbck1' && list[1].steps === 2, list);
   const rows = await fbq(page, '.drawer .sbchk').innerText();
   check('0.11.2 ... listed with the others', /From a friend/.test(rows) && /Door open, timer on/.test(rows), rows);
@@ -2266,6 +2266,62 @@ test('0.13.2 audit fixes: durations, drawer back/focus, check steps, s_missing, 
   });
   check('0.13.2 _verSnapshot resolves renamed script via registry unique_id',
     renamedSnap.id === 'orig_script_uid' && renamedSnap.yaml === false && renamedSnap.apiPath === 'config/script/config/orig_script_uid', renamedSnap);
+
+  // Phase 2 (Frenck hardening): version diff, plan, and restore enforce VER_DOMAINS / VER_HELPERS allowlist
+  const allowRes = await el(page, async (b) => {
+    const label = b._data.ui.current;
+    const rogueSnap = {
+      fmt: 1,
+      members: ['cloud.evil', 'config/auth.evil'],
+      items: {
+        'cloud.evil': { dom: 'cloud', id: '1', name: 'Evil cloud', cfg: { x: 1 } },
+        'config/auth.evil': { dom: 'config/auth', id: '2', name: 'Evil auth', cfg: { y: 2 } },
+      },
+      devices: {},
+      layout: null,
+    };
+    const sent = [];
+    const origWs = b._ws.bind(b);
+    b._ws = async (msg, o) => {
+      if (msg && /^(cloud|config\/auth)\//.test(msg.type || '')) { sent.push(msg.type); return null; }
+      if (msg && msg.type === 'functions_board/version_active' && msg.version_id === '0'.repeat(32)) return null;
+      return origWs(msg, o);
+    };
+    try {
+      const diff = await b._verDiff(label, rogueSnap);
+      const plan = await b._verPlan(label, rogueSnap);
+      // Even if a caller bypasses _verPlan and passes a rogue item directly to _verRestoreGo, it must never send WS
+      b._verPending = { label, v: { id: '0'.repeat(32), name: 'Rogue', snapshot: rogueSnap }, plan: { write: ['cloud.evil'], recreate: ['config/auth.evil'], rejoin: [], shared: [], added: [] }, devmap: {}, savedAs: null };
+      b._$.modal.innerHTML = '<div class="dlg"><div class="aval"></div><button data-act="ver-restore-go">Go</button></div>';
+      await b._verRestoreGo();
+      return { sent, planWrite: plan.write.length, planRecreate: plan.recreate.length, diffChanged: diff.changed.size };
+    } finally {
+      b._ws = origWs;
+      b._verPending = null;
+    }
+  });
+  check('0.13.3 version restore domain allowlist blocks non-allowlisted WS commands in diff, plan, and restore',
+    allowRes.sent.length === 0 && allowRes.planWrite === 0 && allowRes.planRecreate === 0 && allowRes.diffChanged === 0, allowRes);
+
+  // Phase 2: saved checks are persisted via functions_board/set_checks, never inside functions_board/set_layout
+  const chkSep = await el(page, async (b) => {
+    const label = b._data.ui.current;
+    b._setChecks(label, [{ id: 'sep1', name: 'Separate check', at: Date.now(), start: {}, items: [], steps: [{ op: 'advance', ms: 1000 }], answers: [], expect: [{ k: 'ran', id: 'automation.garage_left_open' }] }]);
+    b._save();
+    await b._flushSave();
+    await b._saveChain;
+    // Move a box and save layout: layout write must NOT contain checks
+    b._layout(label).nodes['cover.garage_door'] = { x: 123, y: 456 };
+    b._save();
+    await b._flushSave();
+    await b._saveChain;
+    return { sepChecks: b._sepChecks, hasInChecks: b._checksOf(label).length === 1, hasInLayout: 'checks' in b._layout(label) };
+  });
+  const fakeChk = fake.checks[garage] || [];
+  const fakeLay = (fake.store.data.layouts || {})[garage] || {};
+  check('0.13.3 saved checks are stored via functions_board/set_checks and excluded from set_layout payloads',
+    chkSep.sepChecks && chkSep.hasInChecks && !chkSep.hasInLayout && fakeChk.length === 1 && fakeChk[0].id === 'sep1' && !('checks' in fakeLay),
+    { chkSep, fakeChk, hasLayChecks: 'checks' in fakeLay });
 
   check('0.13.2 audit fixes: no errors', page.logs.length === 0, page.logs);
   await ctx.close();

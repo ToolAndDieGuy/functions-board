@@ -20,7 +20,12 @@
 - Version snapshots and restores now resolve renamed scripts via their registry `unique_id` and restore customized entity IDs when recreating deleted helpers.
 - Notification Builder now matches `mobile_app` devices renamed via `name_by_user` (or unmatched devices via entity slugs), skips disabled script IDs when choosing a new script ID, and rejects blank button titles.
 
-### Backend & CI
+### Backend, Security, Performance & CI
+- Enforced an explicit allowlist of Home Assistant domains (`automation`, `script`, and UI helper domains) when saving, diffing, planning, and restoring saved versions on both backend and frontend.
+- Offloaded diagnostics anonymisation off Home Assistant's asyncio event loop, made known-name redaction case-insensitive, and prevented short or structural-word label IDs (e.g. `mode`, `on`) from corrupting structural keys/values while still anonymising them in label positions.
+- Split saved version metadata (`.storage/functions_board.versions`) from per-function snapshot blobs loaded on demand, migrating existing single-file stores transparently so renames and active-pointer updates stay lightweight.
+- Moved saved sandbox checks out of the 200 KB layout store into their own `.storage/functions_board.checks` store (`functions_board/checks`, `functions_board/set_checks`) with automatic migration from existing layouts, keeping box drags lightweight and freeing the layout size budget.
+- Added a tiny (~2 KB) lazy dashboard card loader (`card-loader.js`) for the dashboard card option so non-admin users and dashboards without the card no longer download or parse the full board script.
 - Version deletion now removes empty label buckets from storage, MQTT switch discovery checks explicit `None` for falsy payloads, and `functions_board/set` validates layouts via `_layout_problem`.
 - Stabilized weekly differential and mutation suites and added `include-hidden-files: true` to CI artifact uploads for dot-directories.
 

@@ -1892,6 +1892,7 @@
   // the event type after it for an event entity (0.11.1)
   const SBX_PRESS = '\u0001press:';
   const VER_HELPERS = new Set(['input_boolean', 'input_number', 'input_text', 'input_select', 'input_datetime', 'input_button', 'counter', 'timer', 'schedule']);
+  const VER_DOMAINS = new Set(['automation', 'script', ...VER_HELPERS]);
   // what may be clicked on a saved version's board: looking, the sandbox, and the versions themselves
   const VER_OK_ACTS = /^(zoomin|zoomout|fit|togglelist|legend|hl|hl-.+|sandbox|sbx-.+|flow-.+|lit-.+|edge|close|back|newtab|modal-.+|ver-.+|vtab.*|versions|about|diag|diag-.+|problems|prob-.+|chk-run|chk-replay|hint-x|find-x|nr-open)$/;
   // a short fingerprint of a snapshot's items and members: equal when the function is the same as that version
@@ -1907,7 +1908,7 @@
   // what's there; not where it's scrolled to or which problems were dismissed
   const verLayoutKey = (L, keys) => {
     const c = Object.assign({}, L || {});
-    delete c.view; delete c.dismissed;
+    delete c.view; delete c.dismissed; delete c.checks;
     c.nodes = Object.fromEntries(Object.entries(c.nodes || {}).filter(([k]) => keys.has(k) || k.startsWith('tool:')));
     c.builders = Object.fromEntries(Object.entries(c.builders || {}).filter(([k]) => keys.has(k)));
     if (!c.dir) c.dir = 'right';
@@ -7811,6 +7812,15 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._revs = Object.assign({}, r.revs || {});
       this._fbMode = r.mode === 'full' ? 'full' : 'organise';
       let shared = (r && r.data) || {};
+      const chRes = await this._ws({ type: 'functions_board/checks' }, { optional: 'older integrations keep saved checks inside each layout', fallback: null });
+      this._sepChecks = !!(chRes && chRes.checks && typeof chRes.checks === 'object');
+      const checks = {};
+      if (this._sepChecks) {
+        Object.entries(chRes.checks).forEach(([k, v]) => {
+          const list = (Array.isArray(v) ? v : []).slice(0, 50).map(cleanCheck).filter(Boolean);
+          if (list.length) checks[k] = list;
+        });
+      }
       const uiData = await this._ws({ type: 'frontend/get_user_data', key: STORE + '_ui' }, { fallback: null });
       if (!Array.isArray(shared.functions) && (Array.isArray(legacy.functions) || legacy.layouts)) {
         shared = { v: 1, functions: legacy.functions || [], layouts: legacy.layouts || {} };
@@ -7819,7 +7829,18 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         Object.keys(shared.layouts || {}).forEach((k) => { this._revs[k] = 1; });
         this._migrated = true;
       }
-      return { functions: shared.functions || [], layouts: shared.layouts || {}, ui: (uiData && uiData.value && uiData.value.ui) || legacy.ui || {} };
+      if (this._sepChecks && shared.layouts && typeof shared.layouts === 'object') {
+        Object.entries(shared.layouts).forEach(([k, L]) => {
+          if (L && Array.isArray(L.checks)) {
+            if (!checks[k] && L.checks.length) {
+              const list = L.checks.slice(0, 50).map(cleanCheck).filter(Boolean);
+              if (list.length) checks[k] = list;
+            }
+            delete L.checks;
+          }
+        });
+      }
+      return { functions: shared.functions || [], layouts: shared.layouts || {}, checks, ui: (uiData && uiData.value && uiData.value.ui) || legacy.ui || {} };
     }
     _client() { if (!this._cid) this._cid = uid() + uid(); return this._cid; }
     _full() { return this._fbMode === 'full'; }
@@ -7831,6 +7852,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         this._lastShared = this._sharedJson();
         this._lastFns = JSON.stringify(this._data.functions);
         this._lastLayouts = new Map(Object.entries(this._data.layouts).map(([k, L]) => [k, JSON.stringify(L)]));
+        this._lastChecks = new Map(Object.entries(this._data.checks || {}).map(([k, list]) => [k, JSON.stringify(list)]));
       }
       if (!part || part === 'ui') this._lastUi = this._uiJson();
       if (!part) this._lastUser = JSON.stringify(this._data);
@@ -7854,6 +7876,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._saveChain = (this._saveChain || Promise.resolve()).then(() => this._writeNow()).catch((e) => {
         this._lastShared = this._lastUi = this._lastUser = this._lastFns = null;
         this._lastLayouts = new Map();  // retry everything on the next save
+        this._lastChecks = new Map();
         this._toast(T('could_not_save_the_layout', { message: e.message || e.code }));
       });
       return this._saveChain;
@@ -7869,7 +7892,15 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           if (fj !== this._lastFns) { this._lastFns = fj; jobs.push(this._ws({ type: 'functions_board/set_functions', functions: d.functions, client: this._client() })); }
           const labels = new Set([...Object.keys(d.layouts), ...this._lastLayouts.keys()]);
           labels.forEach((label) => {
-            const L = d.layouts[label], j = L ? JSON.stringify(L) : null;
+            const L = d.layouts[label];
+            let j = null;
+            if (L) {
+              if (this._sepChecks && 'checks' in L) {
+                const copy = Object.assign({}, L);
+                delete copy.checks;
+                j = JSON.stringify(copy);
+              } else j = JSON.stringify(L);
+            }
             const was = this._lastLayouts.has(label) ? this._lastLayouts.get(label) : null;
             if (j !== was) jobs.push(this._writeLayout(label, j, was));
           });
@@ -7877,11 +7908,30 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           const sj = this._sharedJson();
           if (sj !== this._lastShared) { this._lastShared = sj; jobs.push(this._ws({ type: 'functions_board/set', data: JSON.parse(sj), client: this._client() })); }
         }
+        if (this._sepChecks) {
+          const curChecks = d.checks || {};
+          const chLabels = new Set([...Object.keys(curChecks), ...(this._lastChecks ? this._lastChecks.keys() : [])]);
+          chLabels.forEach((label) => {
+            const list = curChecks[label], j = list && list.length ? JSON.stringify(list) : null;
+            const was = this._lastChecks && this._lastChecks.has(label) ? this._lastChecks.get(label) : null;
+            if (j !== was) jobs.push(this._writeChecks(label, j, was));
+          });
+        }
       } else {
         const all = JSON.stringify(d);
         if (all !== this._lastUser) { this._lastUser = all; jobs.push(this._ws({ type: 'frontend/set_user_data', key: STORE, value: d })); }
       }
       await Promise.all(jobs);
+    }
+    async _writeChecks(label, j, was) {
+      this._lastChecks = this._lastChecks || new Map();
+      if (j == null) this._lastChecks.delete(label); else this._lastChecks.set(label, j);
+      try {
+        await this._ws({ type: 'functions_board/set_checks', label, checks: j == null ? [] : JSON.parse(j), client: this._client() });
+      } catch (e) {
+        if (was == null) this._lastChecks.delete(label); else this._lastChecks.set(label, was);
+        throw e;
+      }
     }
     async _writeLayout(label, j, was) {
       if (j == null) this._lastLayouts.delete(label); else this._lastLayouts.set(label, j);
@@ -7914,6 +7964,23 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (d.what === 'versions') { if (this._drawer && this._drawer.mode === 'versions' && d.label === this._data.ui.current) this._renderVersions(); return; }
       if (d.what === 'nodered') {
         this._nrTheirs();
+        return;
+      }
+      if (d.what === 'checks' && this._sepChecks && d.label) {
+        try {
+          const cur = (this._data.checks || {})[d.label];
+          const mine = cur && cur.length ? JSON.stringify(cur) : null;
+          const synced = this._lastChecks && this._lastChecks.has(d.label) ? this._lastChecks.get(d.label) : null;
+          if (mine !== synced) return;
+          const chRes = await this._ws({ type: 'functions_board/checks', label: d.label }, { optional: 'older integrations keep saved checks inside each layout', fallback: null });
+          if (!chRes || !Array.isArray(chRes.checks)) return;
+          const list = chRes.checks.slice(0, 50).map(cleanCheck).filter(Boolean);
+          this._data.checks = this._data.checks || {};
+          this._lastChecks = this._lastChecks || new Map();
+          if (list.length) { this._data.checks[d.label] = list; this._lastChecks.set(d.label, JSON.stringify(list)); }
+          else { delete this._data.checks[d.label]; this._lastChecks.delete(d.label); }
+          if (d.label === this._data.ui.current) { this._renderChecks(); this._checksSoon(d.label); }
+        } catch (e) { /* keep current checks */ }
         return;
       }
       const act = this.shadowRoot.activeElement;
@@ -7960,6 +8027,30 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const L = all[label];
       L.nodes = L.nodes || {}; L.frames = L.frames || []; L.notes = L.notes || [];
       return L;
+    }
+    _checksOf(label) {
+      if (!label || (this._ver && this._ver.label === label)) return [];
+      if (this._sepChecks) {
+        this._data.checks = this._data.checks || {};
+        const L = this._data.layouts && this._data.layouts[label];
+        if (L && Array.isArray(L.checks)) {
+          if (!(this._data.checks[label] && this._data.checks[label].length) && L.checks.length) this._data.checks[label] = L.checks;
+          delete L.checks;
+        }
+        return this._data.checks[label] || [];
+      }
+      return this._layout(label).checks || [];
+    }
+    _setChecks(label, list) {
+      if (!label) return;
+      if (this._sepChecks) {
+        this._data.checks = this._data.checks || {};
+        if (list && list.length) this._data.checks[label] = list;
+        else delete this._data.checks[label];
+        if (this._data.layouts && this._data.layouts[label] && 'checks' in this._data.layouts[label]) delete this._data.layouts[label].checks;
+      } else {
+        this._layout(label).checks = list;
+      }
     }
     _known(x) {
       if (this._hass.states[x] || this._entMap.has(x)) return x;
@@ -8093,6 +8184,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           v: 1,
           functions: Array.isArray(d.functions) ? d.functions.filter((f) => typeof f === 'string') : [],
           layouts: this._cleanLayouts(d.layouts),
+          checks: d.checks && typeof d.checks === 'object' ? d.checks : {},
           ui: Object.assign({ current: null, list: true, outside: true, suggest: true, legend: true }, d.ui || {}),
         };
         this._markSaved();
@@ -10897,7 +10989,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         if (p.how === 'config') {
           await this._api('POST', `config/${p.dom}/config/${encodeURIComponent(p.cid)}`, p.cfg);
           e = await this._waitEntity((x) => x.platform === p.dom && x.unique_id === p.cid);
-        } else if (p.how === 'collection') {
+        } else if (p.how === 'collection' && VER_HELPERS.has(p.dom)) {
           const settings = Object.assign({}, p.item);
           delete settings.id;
           const made = await this._ws(Object.assign({ type: p.dom + '/create' }, settings));
@@ -12246,7 +12338,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     _renderChecks(soft) {
       const box = this._$.drawer.querySelector('.sbchk'), g = this._sbx;
       if (!box || !g) return;
-      const label = g.label, list = this._ver ? [] : this._layout(label).checks || [], have = this._checkRes.get(label) || {}, res = have.res || new Map();
+      const label = g.label, list = this._ver ? [] : this._checksOf(label), have = this._checkRes.get(label) || {}, res = have.res || new Map();
       const can = !this._ver && !!g.rec && g.rec.steps.length > 0, sig = [list.length, can, have.at || 0].join('|');
       if (soft && box.dataset.sig === sig) return;
       box.dataset.sig = sig;
@@ -12274,8 +12366,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (!expect.length) { m.querySelector('.dval').textContent = T('chk_pick_one'); return; }
       const c = cleanCheck({ id: uid(), name: m.querySelector('input[name="ckname"]').value.trim() || T('chk_default'), at: g.rec.at, start: g.rec.start, items: g.rec.items, steps: g.rec.steps, answers: g.rec.answers, expect });
       if (!c) { m.querySelector('.dval').textContent = T('chk_cant'); return; }
-      const label = g.label, L = this._layout(label);
-      L.checks = (L.checks || []).concat([c]);
+      const label = g.label;
+      this._setChecks(label, this._checksOf(label).concat([c]));
       this._save();
       this._closeModal();
       this._toast(T('chk_saved', { name: c.name }));
@@ -12283,9 +12375,9 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._runChecks(label, [c.id], true);
     }
     _checkDel(id) {
-      const label = this._data.ui.current, L = this._layout(label), c = (L.checks || []).find((x) => x.id === id);
+      const label = this._data.ui.current, cur = this._checksOf(label), c = cur.find((x) => x.id === id);
       if (!c) return;
-      L.checks = L.checks.filter((x) => x.id !== id);
+      this._setChecks(label, cur.filter((x) => x.id !== id));
       const r = this._checkRes.get(label); if (r) r.res.delete(id);
       this._save();
       this._renderChecks();
@@ -12296,7 +12388,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     // ---- editing a saved check (0.11.2): its name, its steps (order, values, taking one out) and what it expects
     // (each one's state, taking one out, adding one); saved through cleanCheck as a new one is
     _checkEditDlg(id) {
-      const L = this._layout(this._data.ui.current), c = (L.checks || []).find((x) => x.id === id);
+      const c = this._checksOf(this._data.ui.current).find((x) => x.id === id);
       if (!c || this._ver) return;
       this._chkEdit = { id, c: JSON.parse(JSON.stringify(c)) };
       this._checkEditDraw();
@@ -12373,8 +12465,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       this._checkEditRead();
       const c = cleanCheck(Object.assign({}, d.c, { name: (d.c.name || '').trim() || T('chk_default') }));
       if (!c) { m.querySelector('.dval').textContent = T('chk_cant'); return; }
-      const label = this._data.ui.current, L = this._layout(label);
-      L.checks = (L.checks || []).map((x) => (x.id === d.id ? c : x));
+      const label = this._data.ui.current;
+      this._setChecks(label, this._checksOf(label).map((x) => (x.id === d.id ? c : x)));
       const r = this._checkRes.get(label); if (r) r.res.delete(d.id);
       this._chkEdit = null;
       this._save();
@@ -12385,7 +12477,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     }
     // ---- sharing one (0.11.2): as text to copy, and back in from text (cleanCheck takes what's safe of it)
     _checkExport(id) {
-      const L = this._layout(this._data.ui.current), c = (L.checks || []).find((x) => x.id === id);
+      const c = this._checksOf(this._data.ui.current).find((x) => x.id === id);
       if (!c) return;
       const out = Object.assign({ functions_board_check: 1 }, c);
       delete out.id;
@@ -12419,8 +12511,8 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (!o || typeof o !== 'object' || o.functions_board_check !== 1) { say(T('chk_import_bad')); return; }
       const c = cleanCheck(Object.assign({}, o, { id: uid() }));
       if (!c) { say(T('chk_cant')); return; }
-      const label = this._data.ui.current, L = this._layout(label);
-      L.checks = (L.checks || []).concat([c]);
+      const label = this._data.ui.current;
+      this._setChecks(label, this._checksOf(label).concat([c]));
       this._save();
       this._closeModal();
       this._toast(T('chk_imported', { name: c.name }));
@@ -12430,7 +12522,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     // replay checks on the function's current configs; results kept until the configs change. given: the configs
     // the scan already read (another function's)
     async _runChecks(label, ids, force, given) {
-      const L = this._layout(label), list = (L.checks || []).filter((c) => !ids || ids.includes(c.id));
+      const list = this._checksOf(label).filter((c) => !ids || ids.includes(c.id));
       if (!list.length || this._ver) return;
       const gen = this._cfgGen || 0, have = this._checkRes.get(label);
       if (!force && have && have.gen === gen && list.every((c) => have.res.has(c.id))) return;
@@ -12464,7 +12556,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     _checkProblems(label) {
       const r = this._checkRes.get(label), out = [];
       if (!r) return out;
-      (this._layout(label).checks || []).forEach((c) => {
+      this._checksOf(label).forEach((c) => {
         const x = r.res.get(c.id);
         if (!x || x.ok) return;
         if (x.unsure) { out.push({ sev: 'warn', kind: 'c_unsure', ref: 'check:' + c.id, by: [], name: c.name, detail: x.unsure }); return; }
@@ -12487,7 +12579,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     }
     // a check played in the sandbox, step by step on the board: its states, its clock, its steps, its answers
     async _checkReplay(id) {
-      const label = this._data.ui.current, c = (this._layout(label).checks || []).find((x) => x.id === id);
+      const label = this._data.ui.current, c = this._checksOf(label).find((x) => x.id === id);
       if (!c || !this._model) return;
       if (this._sbxOn()) this._closeDrawer();
       await this._openSandbox({ check: c });
@@ -12573,7 +12665,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
           if (this._model && this._model.label === label && !this._ver) { this._noteProblems(label, this._model.problems || []); continue; }
           const items = logic.map((e, i) => ({ key: e, refs: cfgs[i] ? analyze(cfgs[i], e.startsWith('script.'), known).refs : [], both: bothWays(cfgs[i]) }));
           const base = findProblems(items, members.concat(devs), this._probCtx(label));
-          if ((this._layout(label).checks || []).length) await this._runChecks(label, null, false, logic.map((e, i) => ({ id: e, cfg: cfgs[i] })).filter((x) => x.cfg));
+          if (this._checksOf(label).length) await this._runChecks(label, null, false, logic.map((e, i) => ({ id: e, cfg: cfgs[i] })).filter((x) => x.cfg));
           this._noteProblems(label, this._splitProbs(label, base.concat(this._checkProblems(label)), (k) => !k.startsWith('c_') || this._checkRes.has(label)).shown);
           // (a turn for the page between functions; a board taken off the page stops counting)
           if (!(await this._clock.sleep(0))) return;
@@ -15277,7 +15369,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       if (!g) return;
       g.cov = { running: true };
       this._renderSbx();
-      const checks = (this._layout(label).checks || []);
+      const checks = this._checksOf(label);
       const items = g.opts.items, engs = [];
       for (const c of checks) {
         try { const r = await runCheck(c, Object.assign({}, g.opts, { items, onLog: null, onPause: null })); if (r.eng) engs.push(r.eng); } catch (e) { /* a check that can't run shows in Problems */ }
@@ -15300,7 +15392,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
     _sbxCovPane() {
       const g = this._sbx, box = this._$.drawer.querySelector('.sbcov');
       if (!g || !box) return;
-      const nChecks = (this._layout(this._data.ui.current).checks || []).length;
+      const nChecks = this._checksOf(this._data.ui.current).length;
       const head = `<div class="sbsf"><button class="chip" data-act="sbx-cov-run"><ha-icon icon="mdi:refresh"></ha-icon>${T('sbx_cov_go')}</button><label class="sbcb"><input type="checkbox" class="sbcovmine"${g.covMine ? ' checked' : ''}>${T('sbx_cov_mine')}</label></div>`;
       if (!g.cov) { this._put(box, head + `<p class="muted pad">${esc(nChecks ? P('sbx_cov_about', nChecks) : T('sbx_cov_none'))}</p>`); return; }
       if (g.cov.running) { this._put(box, head + `<p class="muted pad">${T('sbx_cov_running')}</p>`); return; }
@@ -15979,7 +16071,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         if (!it || !it.cfg) continue;
         let now = null;
         if (it.dom === 'automation' || it.dom === 'script') { const r = await this._ws({ type: it.dom + '/config', entity_id: k }, { optional: 'an automation or script without an id has no stored config', fallback: null }); now = r && r.config; }
-        else {
+        else if (VER_HELPERS.has(it.dom)) {
           if (!lists.has(it.dom)) lists.set(it.dom, await this._ws({ type: it.dom + '/list' }, { optional: 'a helper domain not set up has no list of helpers', fallback: null }));
           const x = (lists.get(it.dom) || []).find((y) => y.id === it.id);
           if (x) { now = Object.assign({}, x); delete now.id; }
@@ -16025,6 +16117,7 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
       const diff = await this._verDiff(label, snap), cur = new Set(this._verMembers(label));
       const plan = { write: [], recreate: [], same: [], yaml: [], rejoin: [], added: [], missing: [] };
       Object.entries(snap.items).forEach(([k, it]) => {
+        if (!it || !VER_DOMAINS.has(it.dom)) return;
         if (it.yaml || !it.cfg || !it.id && (it.dom === 'automation' || it.dom === 'script')) { plan.yaml.push(k); return; }
         const there = !!(this._hass.states[k] || this._entMap.has(k));
         if (!there) plan.recreate.push(k); else if (diff.changed.has(k)) plan.write.push(k); else plan.same.push(k);
@@ -16096,8 +16189,10 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
         const it = snap.items[k], cfg = swapDevs(it.cfg, map);
         try {
           if (it.dom === 'automation' || it.dom === 'script') await this._saveCfg(it.dom, it.id, cfg);
-          else if (exists(k)) await this._ws(Object.assign({}, cfg, { type: it.dom + '/update', [it.dom + '_id']: it.id }));
-          else { const made = await this._ws(Object.assign({}, cfg, { type: it.dom + '/create' })); it.newId = made && made.id; }
+          else if (VER_HELPERS.has(it.dom)) {
+            if (exists(k)) await this._ws(Object.assign({}, cfg, { type: it.dom + '/update', [it.dom + '_id']: it.id }));
+            else { const made = await this._ws(Object.assign({}, cfg, { type: it.dom + '/create' })); it.newId = made && made.id; }
+          } else throw new Error('unsupported domain: ' + it.dom);
         } catch (e) { errs.push(name(k) + ': ' + ((e && (e.message || e.body || e.code)) || e)); }
       }
       // what came back, and what had left the function, wear its label again
@@ -16343,10 +16438,17 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
   // the words, so a translation can be tried from the browser console: add a table, e.g.
   // customElements.get('functions-board').STR.de = { ... }, and the page switches at its next update
   FunctionsBoard.STR = STR;
-  customElements.define('functions-board', FunctionsBoard);
+  if (!customElements.get('functions-board')) {
+    customElements.define('functions-board', FunctionsBoard);
+  } else if (customElements.get('functions-board').__fbLoader) {
+    if (!customElements.get('functions-board-app')) customElements.define('functions-board-app', FunctionsBoard);
+    customElements.get('functions-board').__fbReady(FunctionsBoard);
+  }
   // the card picker can list the card before any board has seen hass: take the language from the page
   try { setLang(document.querySelector('home-assistant').hass.language); } catch (e) { /* stays English */ }
   window.customCards = window.customCards || [];
+  const existingCardIdx = window.customCards.findIndex((c) => c && c.type === 'functions-board');
+  if (existingCardIdx >= 0) window.customCards.splice(existingCardIdx, 1);
   window.customCards.push({
     type: 'functions-board',
     get name() { return T('functions_board'); },

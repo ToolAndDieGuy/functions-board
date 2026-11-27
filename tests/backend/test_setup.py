@@ -63,7 +63,8 @@ async def test_options_set_mode_and_card_in_place(hass: HomeAssistant) -> None:
     assert result["type"] is FlowResultType.CREATE_ENTRY
     await hass.async_block_till_done()
     assert board.mode == "full"
-    assert board.extra_js == board.module_url
+    assert board.extra_js == board.card_loader_url
+    assert board.card_loader_url is not None and board.card_loader_url.startswith("/functions_board_static/card-loader.js?v=")
     assert entry.state is ConfigEntryState.LOADED
     result = await hass.config_entries.options.async_init(entry.entry_id)
     await hass.config_entries.options.async_configure(result["flow_id"], {"mode": "organise", "card": False})
@@ -82,3 +83,10 @@ async def test_static_file_served(hass: HomeAssistant, hass_client) -> None:
     assert "javascript" in resp.headers["Content-Type"]
     assert "max-age" in resp.headers.get("Cache-Control", "")
     assert "customElements.define" in await resp.text()
+    from custom_components.functions_board import DATA_KEY  # noqa: PLC0415
+
+    loader_resp = await client.get(hass.data[DATA_KEY].card_loader_url)
+    assert loader_resp.status == 200
+    assert "javascript" in loader_resp.headers["Content-Type"]
+    loader_text = await loader_resp.text()
+    assert len(loader_text.encode("utf-8")) < 4096 and "is_admin" in loader_text

@@ -31,10 +31,12 @@ from homeassistant.loader import async_get_integration
 from homeassistant.util.hass_dict import HassKey
 
 from . import websocket
+from .checks import Checks
 from .nodered import NodeRedKept
 from .versions import Versions
 from .const import (
     BOARD_FILE,
+    CARD_LOADER_FILE,
     CONF_CARD,
     CONF_MODE,
     DOMAIN,
@@ -87,9 +89,11 @@ class BoardData:
     mode: str = MODE_ORGANISE
     static: bool = False
     module_url: str | None = None
+    card_loader_url: str | None = None
     extra_js: str | None = None
     nodered: NodeRedKept | None = None
     versions: Versions | None = None
+    checks: Checks | None = None
 
     def stored(self) -> dict[str, Any]:
         """The store's contents."""
@@ -129,13 +133,17 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     await kept.async_load()
     hass.data[DATA_KEY].versions = versions = Versions(hass)
     await versions.async_load()
+    hass.data[DATA_KEY].checks = checks = Checks(hass)
+    await checks.async_load()
+    if checks.migrate_from_layouts(hass.data[DATA_KEY].data.get("layouts")):
+        hass.data[DATA_KEY].save()
     websocket.async_register(hass)
     return True
 
 
-def _file_hash() -> str:
-    """First 8 hex digits of the board file's SHA-256: the page URL changes when the file does."""
-    return hashlib.sha256((FRONTEND_DIR / BOARD_FILE).read_bytes()).hexdigest()[:8]
+def _file_hash(filename: str = BOARD_FILE) -> str:
+    """First 8 hex digits of a frontend file's SHA-256: its URL changes when the file does."""
+    return hashlib.sha256((FRONTEND_DIR / filename).read_bytes()).hexdigest()[:8]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -149,8 +157,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
         board.static = True
     version = str((await async_get_integration(hass, DOMAIN)).version)
-    digest = await hass.async_add_executor_job(_file_hash)
+    digest = await hass.async_add_executor_job(_file_hash, BOARD_FILE)
+    loader_digest = await hass.async_add_executor_job(_file_hash, CARD_LOADER_FILE)
     board.module_url = f"{STATIC_URL}/{BOARD_FILE}?v={digest}"
+    board.card_loader_url = f"{STATIC_URL}/{CARD_LOADER_FILE}?v={loader_digest}&m={digest}"
     await panel_custom.async_register_panel(
         hass,
         frontend_url_path=PANEL_URL,
@@ -167,10 +177,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 def _apply_card(hass: HomeAssistant, board: BoardData, on: bool) -> None:
-    """Load the board on dashboard pages (custom:functions-board) without a manual resource, or stop."""
-    if on and not board.extra_js and board.module_url:
-        frontend.add_extra_js_url(hass, board.module_url)
-        board.extra_js = board.module_url
+    """Load the tiny lazy card loader on dashboards (custom:functions-board) without loading the full board for non-admins."""
+    if on and not board.extra_js and board.card_loader_url:
+        frontend.add_extra_js_url(hass, board.card_loader_url)
+        board.extra_js = board.card_loader_url
     elif not on and board.extra_js:
         frontend.remove_extra_js_url(hass, board.extra_js)
         board.extra_js = None

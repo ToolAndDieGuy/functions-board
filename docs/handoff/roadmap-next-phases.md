@@ -1,18 +1,6 @@
-# Remaining Audit Roadmap (Phases 2–4 & Open Items)
+# Remaining Audit Roadmap (Phases 3–4 & Open Items)
 
-This document summarizes what was **not** included in Phase 1 (`fix/v0.13.2-audit`) so Opus can pick up cleanly after Phase 1 is verified locally and released.
-
----
-
-## Phase 2 — Backend Hardening (Suggested `v0.13.3` or folded into `0.13.x`)
-
-1. **Non-blocking storage & atomic writes (`__init__.py`, `versions.py`):**
-   - Review synchronous `os.replace` / file writes and ensure large board or version saves cannot stall the Home Assistant event loop.
-   - Audit `BoardData` / `Versions` load/save concurrency under rapid `set_layout` / `version_save` bursts.
-2. **Frontend static card/panel registration & cache-busting (`__init__.py`):**
-   - Verify cache query string (`?v=VERSION`) and static path registration follow current HA `async_register_static_paths` best practices with zero deprecation warnings.
-3. **Diagnostics & error-boundary hardening (`diagnostics.py`, `sources.py`, `nodered.py`):**
-   - Ensure malformed config entries, unloaded integrations, or unusual MQTT/Node-RED schemas return partial results gracefully rather than failing the whole request.
+Phases 1 and 2 (plus Issue #72 triage and Frenck's version restore domain allowlist hardening) are implemented on `fix/v0.13.2-audit`. This document summarizes the remaining roadmap so Opus can pick up cleanly once Phases 1–2 are verified locally and released.
 
 ---
 

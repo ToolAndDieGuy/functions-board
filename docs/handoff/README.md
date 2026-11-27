@@ -10,22 +10,24 @@ This folder documents the full audit triage, bug fixes, test apparatus hardening
 
 1. [`issue-72-triage.md`](./issue-72-triage.md) — Root-cause analysis and fixes for all three failing weekly CI jobs in Issue #72 (`mutants`, `jitter`, `diff`) plus the `actions/upload-artifact@v4` dot-directory fix.
 2. [`phase-1-audit-fixes.md`](./phase-1-audit-fixes.md) — Complete itemized breakdown of all Phase 1 (Batches 1A, 1B, 1C) bug fixes, affected files, regression tests, static invariants, and mutants.
-3. [`roadmap-next-phases.md`](./roadmap-next-phases.md) — Deferred work for Phase 2 (backend hardening), Phase 3 (native zero-build ES module split), Phase 4 (Recipes & features), and Issue #73 (`readme-pictures`).
+3. [`phase-2-hardening.md`](./phase-2-hardening.md) — Phase 2 backend hardening & Frenck's version restore domain allowlist (allowlist, diagnostics executor offload & case-insensitive/structural redaction, split version metadata/blobs, decoupled saved checks store, lazy dashboard card loader).
+4. [`roadmap-next-phases.md`](./roadmap-next-phases.md) — Remaining roadmap for Phase 3 (native zero-build ES module split), Phase 4 (Recipes & features), and Issue #73 (`readme-pictures`).
 
 ---
 
 ## Files Modified on This Branch
 
-- **Frontend:** `custom_components/functions_board/frontend/functions-board.js`
-- **Backend:** `custom_components/functions_board/zwave.py`, `versions.py`, `sources.py`, `websocket.py`
+- **Frontend:** `custom_components/functions_board/frontend/functions-board.js`, `custom_components/functions_board/frontend/card-loader.js` (new)
+- **Backend:** `custom_components/functions_board/__init__.py`, `const.py`, `checks.py` (new), `diagnostics.py`, `sources.py`, `versions.py`, `websocket.py`, `zwave.py`
 - **CI & Docs:** `.github/workflows/validate.yml`, `.github/workflows/weekly.yml`, `CHANGELOG.md`, `CLAUDE.md`, `docs/handoff/*`
 - **Test Suites & Mutants:**
-  - `tests/static.test.js` (added `CHECK_OPS` <-> `_chkStepText` exhaustiveness rule)
+  - `tests/static.test.js` (`CHECK_OPS` <-> `_chkStepText` rule, `WS_OK` for checks commands, `card-loader.js` security/size checks)
   - `tests/sandbox.test.js`, `tests/wiring.test.js`, `tests/problems.test.js`, `tests/builder.test.js`
-  - `tests/board/regress.test.js` (new `0.13.2` test block + jitter stabilization on `0.11.3` Undo wait)
+  - `tests/board/fake-ha.js`, `tests/board/regress.test.js` (new `0.13.2` + `0.13.3` Phase 2 tests & jitter stabilization)
+  - `tests/e2e/contract.test.js`, `tests/e2e/ha-api.js`, `tests/e2e/regress.test.js`
   - `tests/diff/corpus.js`, `tests/diff/random.js`
-  - `tests/backend/test_zwave_values.py`, `tests/backend/test_websocket.py`, `tests/backend/test_mqtt_sources.py`
-  - `tests/mutants.json` (fixed 1 stale expectation + added 11 new mutants -> 313 total)
+  - `tests/backend/test_zwave_values.py`, `tests/backend/test_websocket.py`, `tests/backend/test_mqtt_sources.py`, `tests/backend/test_privacy.py`, `tests/backend/test_setup.py`
+  - `tests/mutants.json` (fixed 1 stale expectation, updated 1 check-edit anchor, added 16 new mutants -> 318 total)
 
 ---
 

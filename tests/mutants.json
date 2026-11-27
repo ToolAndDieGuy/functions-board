@@ -1813,8 +1813,8 @@
  {
   "name": "checks: an edit is saved as another check",
   "file": "custom_components/functions_board/frontend/functions-board.js",
-  "find": "      L.checks = (L.checks || []).map((x) => (x.id === d.id ? c : x));",
-  "replace": "      L.checks = (L.checks || []).concat([c]);",
+  "find": "      this._setChecks(label, this._checksOf(label).map((x) => (x.id === d.id ? c : x)));",
+  "replace": "      this._setChecks(label, this._checksOf(label).concat([c]));",
   "suite": "board-regress",
   "expect": "editing keeps the check",
   "only": "0.11.2 saved checks: edit one"
@@ -2610,5 +2610,47 @@
   "replace": "            self.by_label[label] = keep",
   "suite": "backend",
   "expect": "test_versions_remove_last_cleans_label_key"
+ },
+ {
+  "name": "versions: restore sends WS commands for non-allowlisted domains",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "          else if (VER_HELPERS.has(it.dom)) {\n            if (exists(k)) await this._ws(Object.assign({}, cfg, { type: it.dom + '/update', [it.dom + '_id']: it.id }));",
+  "replace": "          else if (true) {\n            if (exists(k)) await this._ws(Object.assign({}, cfg, { type: it.dom + '/update', [it.dom + '_id']: it.id }));",
+  "suite": "board-regress",
+  "only": "0.13.2",
+  "expect": "version restore domain allowlist blocks"
+ },
+ {
+  "name": "versions: backend accepts non-allowlisted domain in snapshot",
+  "file": "custom_components/functions_board/versions.py",
+  "find": "        if snapshot_problem(snapshot):\n            return None, \"invalid_format\"\n        size = len(json_bytes(snapshot))\n        if size > MAX_VERSION_BYTES:\n            return None, \"too_large\"\n        vs = list",
+  "replace": "        size = len(json_bytes(snapshot))\n        if size > MAX_VERSION_BYTES:\n            return None, \"too_large\"\n        vs = list",
+  "suite": "backend",
+  "expect": "test_versions_domain_allowlist"
+ },
+ {
+  "name": "diagnostics: known-name regex is case-sensitive again",
+  "file": "custom_components/functions_board/diagnostics.py",
+  "find": "r\")(?![\\w])\", re.IGNORECASE)",
+  "replace": "r\")(?![\\w])\")",
+  "suite": "backend",
+  "expect": "test_anonymiser_case_insensitive_and_structural_label_safe"
+ },
+ {
+  "name": "checks: frontend puts saved checks back inside layout payloads",
+  "file": "custom_components/functions_board/frontend/functions-board.js",
+  "find": "this._sepChecks = !!(chRes && chRes.checks && typeof chRes.checks === 'object');",
+  "replace": "this._sepChecks = false;",
+  "suite": "board-regress",
+  "only": "0.13.2",
+  "expect": "saved checks are stored via functions_board/set_checks"
+ },
+ {
+  "name": "card-loader: drops admin check before importing full board",
+  "file": "custom_components/functions_board/frontend/card-loader.js",
+  "find": "if (!h.user.is_admin) {",
+  "replace": "if (false) {",
+  "suite": "static",
+  "expect": "card-loader.js is tiny"
  }
 ]

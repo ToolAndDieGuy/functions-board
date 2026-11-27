@@ -96,7 +96,9 @@ class Anonymiser:
         """Learn the names and IDs this Home Assistant has, so they can be found wherever they appear."""
         self._map: dict[str, str] = {}
         self._count: dict[str, int] = {}
-        self._known: dict[str, str] = {}  # text as it appears → kind of stand-in
+        self._known_ci: dict[str, tuple[str, str]] = {}  # lowercase text → (canonical text, kind of stand-in)
+        self._known_re: re.Pattern[str] | None = None
+        self._re_built: bool = False
         # every domain an entity ID or service can start with, whether or not this home has it loaded right now
         self._domains: set[str] = (
             set(hass.services.async_services())
@@ -141,26 +143,35 @@ class Anonymiser:
             self._learn(f.floor_id, "floor")
             self._learn_name(f.name)
         for lab in lr.async_get(hass).async_list_labels():
-            self._learn(lab.label_id, "label")
+            self._learn_label(lab.label_id)
             self._learn_name(lab.name)
-        # what the board keeps is keyed by label, including labels deleted since
+        # what the board keeps is keyed by label, including labels deleted since; structural/short labels are
+        # still anonymised in structural label positions (layouts, revs, versions, checks, functions, label:…)
         for lab_id in labels or ():
-            if isinstance(lab_id, str) and lab_id:
-                self._known[lab_id] = "label"
+            self._learn_label(lab_id)
         for u in users or []:
             self._learn(u.id, "user")
             self._learn_name(u.name)
-        # whole words only, longest first, so "Kitchen light" is found before "Kitchen" (labels at any length)
-        keys = sorted((k for k, kind in self._known.items() if len(k) >= 3 or kind == "label"), key=len, reverse=True)
-        self._known_re = re.compile(r"(?<![\w])(?:" + "|".join(re.escape(k) for k in keys) + r")(?![\w])") if keys else None
+
+    def _ensure_re(self) -> None:
+        if self._re_built:
+            return
+        self._re_built = True
+        # whole words only, longest first, case-insensitive, skipping structural words
+        keys = sorted((k for k in self._known_ci if len(k) >= 3 and k not in STRUCTURE), key=len, reverse=True)
+        self._known_re = re.compile(r"(?<![\w])(?:" + "|".join(re.escape(k) for k in keys) + r")(?![\w])", re.IGNORECASE) if keys else None
 
     def _learn(self, text: str | None, kind: str) -> None:
-        if text and isinstance(text, str):
-            self._known.setdefault(text, kind)
+        if text and isinstance(text, str) and len(text) >= 3 and text.lower() not in STRUCTURE:
+            self._known_ci.setdefault(text.lower(), (text, kind))
+
+    def _learn_label(self, text: str | None) -> None:
+        if text and isinstance(text, str) and len(text) >= 3 and text.lower() not in STRUCTURE:
+            self._known_ci[text.lower()] = (text, "label")
 
     def _learn_name(self, text: str | None) -> None:
         if text and isinstance(text, str) and len(text.strip()) >= 3 and text.strip().lower() not in STRUCTURE:
-            self._known.setdefault(text, "name")
+            self._known_ci.setdefault(text.lower(), (text, "name"))
 
     def _stand_in(self, text: str, kind: str) -> str:
         if (found := self._map.get(text)) is not None:
@@ -180,6 +191,7 @@ class Anonymiser:
 
     def text(self, s: str) -> str:
         """Every personal piece of a string replaced (templates and keys included)."""
+        self._ensure_re()
         s = URL.sub("[url]", s)
         s = EMAIL.sub("[email]", s)
         s = MAC.sub("[mac]", s)
@@ -196,7 +208,7 @@ class Anonymiser:
         s = TOKEN.sub(token, s)
         s = REF.sub(lambda m: f"{m.group(1)}:{self._stand_in(m.group(2), m.group(1))}", s)
         if self._known_re is not None:
-            s = self._known_re.sub(lambda m: self._stand_in(m.group(0), self._known[m.group(0)]), s)
+            s = self._known_re.sub(lambda m: self._stand_in(*self._known_ci[m.group(0).lower()]), s)
         return SECRET.sub(lambda m: self._stand_in(m.group(0), "id"), s)
 
     def topic(self, t: str) -> str:
@@ -210,10 +222,16 @@ class Anonymiser:
     def value(self, v: Any, key: str | None = None) -> Any:
         """A value with everything personal in it replaced; its shape stays."""
         if isinstance(v, dict):
+            if key in ("layouts", "revs", "versions", "checks"):
+                return {self._stand_in(k, "label") if isinstance(k, str) and k else k: self.value(x, None) for k, x in v.items()}
             return {self.key(k) if isinstance(k, str) else k: self.value(x, k if isinstance(k, str) else None) for k, x in v.items()}
         if isinstance(v, list):
+            if key in ("functions", "labels"):
+                return [self._stand_in(x, "label") if isinstance(x, str) and x else self.value(x, key) for x in v]
             return [self.value(x, key) for x in v]
         if isinstance(v, str):
+            if key in ("function", "label", "label_id") and v:
+                return self._stand_in(v, "label")
             if key == "topic" or v.startswith("mqtt:"):
                 return self.key(v) if v.startswith("mqtt:") else self.topic(v)
             if key in FREE_TEXT_KEYS and v:
@@ -221,9 +239,14 @@ class Anonymiser:
             if key in ID_KEYS and v:
                 return self._stand_in(v, ID_KEYS[key])
             if key in NAME_KEYS and v:
-                return self._stand_in(v, "name") if v not in self._known else self.text(v)
+                return self._stand_in(v, "name") if v.lower() not in self._known_ci else self.text(v)
             return self.text(v)
         return v
+
+    def anonymise(self, v: Any) -> Any:
+        """Compile regex and anonymise a diagnostics tree (safe to run in an executor thread)."""
+        self._ensure_re()
+        return self.value(v)
 
 
 async def async_build(
@@ -240,6 +263,7 @@ async def async_build(
 
     board = hass.data[DATA_KEY]
     versions = board.versions
+    checks = board.checks
     out: dict[str, Any] = {
         "about": {
             "integration": str((await async_get_integration(hass, DOMAIN)).version),
@@ -253,6 +277,8 @@ async def async_build(
         # the boards' own store: functions, layouts, notes, frames, tests (as the boards save them)
         # (the same shape before anything is saved: an empty list and no layouts)
         "board": {"functions": [], "layouts": {}, **(board.stored() or {})},
+        # saved sandbox checks per function (checks.py)
+        "checks": dict(checks.by_label) if checks else {},
         # the list of saved versions of every function, without their snapshots
         "versions": {lab: versions.list(lab) for lab in versions.by_label} if versions else {},
         "nodered": board.nodered.kept if board.nodered else None,
@@ -262,7 +288,11 @@ async def async_build(
         if snapshot is not None:
             out["snapshot_now"] = snapshot
         if version_ids and versions:
-            out["version_snapshots"] = {vid: v for vid in version_ids if (v := versions.get(label, vid)) is not None}
+            snaps: dict[str, Any] = {}
+            for vid in version_ids:
+                if (v := await versions.async_get(label, vid)) is not None:
+                    snaps[vid] = v
+            out["version_snapshots"] = snaps
     if how == "home_assistant":
         out["about"]["note"] = (
             "Home Assistant's own download is always anonymised. For real names, or to add a snapshot of a "
@@ -272,9 +302,10 @@ async def async_build(
         about = out.pop("about")
         data = board.data
         # (whatever the store holds: functions_board/set takes any data, so only strings are labels)
-        found: list[Any] = [*(data.get("layouts") or {}), *(data.get("functions") or []), *board.revs, *(versions.by_label if versions else ()), label]
+        found: list[Any] = [*(data.get("layouts") or {}), *(data.get("functions") or []), *board.revs, *(versions.by_label if versions else ()), *(checks.by_label if checks else ()), label]
         labels = {x for x in found if isinstance(x, str) and x}
-        out = Anonymiser(hass, await hass.auth.async_get_users(), labels).value(out)
+        anonymiser = Anonymiser(hass, await hass.auth.async_get_users(), labels)
+        out = await hass.async_add_executor_job(anonymiser.anonymise, out)
         out = {"about": about, **out}
     return out
 

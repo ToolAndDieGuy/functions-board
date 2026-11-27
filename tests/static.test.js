@@ -180,8 +180,8 @@ const WS_OK = new Set(('automation/config blueprint/substitute config/area_regis
   + 'config/device_registry/update config/entity_registry/get config/entity_registry/list config/entity_registry/update '
   + 'config/floor_registry/list config/label_registry/create config/label_registry/delete config/label_registry/list '
   + 'config/label_registry/update config_entries/get device_automation/trigger/capabilities device_automation/trigger/list extract_from_target fire_event frontend/get_translations frontend/get_user_data '
-  + 'frontend/set_user_data functions_board/diagnostics functions_board/get functions_board/nodered functions_board/nodered_keep '
-  + 'functions_board/set functions_board/set_functions functions_board/set_layout functions_board/sources functions_board/subscribe '
+  + 'frontend/set_user_data functions_board/checks functions_board/diagnostics functions_board/get functions_board/nodered functions_board/nodered_keep '
+  + 'functions_board/set functions_board/set_checks functions_board/set_functions functions_board/set_layout functions_board/sources functions_board/subscribe '
   + 'functions_board/version_active functions_board/version_delete functions_board/version_edit functions_board/version_get functions_board/version_overwrite functions_board/version_save '
   + 'functions_board/versions functions_board/zwave_values history/history_during_period logbook/event_stream logbook/get_action_calls manifest/list mqtt/device/debug_info mqtt/subscribe render_template '
   + 'subscribe_events subscribe_trigger supervisor/api test_condition trace/get trace/list validate_config').split(' '));
@@ -355,4 +355,22 @@ check('A4 MQTT: the board listens; a message is published only by the person\'s 
   const body = balanced(src, src.indexOf('{', start));
   const missingOps = [...CHECK_OPS].filter((op) => op !== 'next' && !body.includes(`s.op === '${op}'`));
   check('every saved-check step op in CHECK_OPS is handled in _chkStepText', CHECK_OPS.size >= 10 && missingOps.length === 0, missingOps);
+}
+
+// Phase 2: lazy dashboard card loader (card-loader.js) stays tiny, local-only, and admin-gated
+{
+  const loaderPath = path.join(__dirname, '..', 'custom_components', 'functions_board', 'frontend', 'card-loader.js');
+  const loader = fs.readFileSync(loaderPath, 'utf8');
+  const loaderCode = loader.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`\\])\/\/[^\n]*/g, '$1');
+  const loaderUrls = loaderCode.match(/\b(?:https?|wss?|ftp):\/\/[^\s'"`<>)]+/g) || [];
+  const loaderNet = loaderCode.match(/\b(fetch|XMLHttpRequest|WebSocket|EventSource|sendBeacon|Worker)\b/g) || [];
+  const loaderImports = loaderCode.match(/\bimport\s*\([^)]*\)/g) || [];
+  check('card-loader.js is tiny (< 4 KB), has no outside URLs or network APIs, and only imports BOARD_URL',
+    Buffer.byteLength(loader, 'utf8') < 4096
+    && loaderUrls.length === 0
+    && loaderNet.length === 0
+    && loaderImports.length === 1 && loaderImports[0] === 'import(BOARD_URL)'
+    && /const BOARD_URL = .*\.\/functions-board\.js/.test(loaderCode)
+    && /if \(!h\.user\.is_admin\)/.test(loaderCode),
+    { bytes: Buffer.byteLength(loader, 'utf8'), loaderUrls, loaderNet, loaderImports });
 }

@@ -31,6 +31,7 @@ from .zwave import zwave_values
 
 if TYPE_CHECKING:
     from . import BoardData
+    from .checks import Checks
     from .versions import Versions
 
 ITEM_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -50,6 +51,8 @@ def async_register(hass: HomeAssistant) -> None:
         ws_zwave_values,
         ws_nodered,
         ws_nodered_keep,
+        ws_checks,
+        ws_set_checks,
         ws_versions,
         ws_version_get,
         ws_version_save,
@@ -142,6 +145,8 @@ def ws_set(
                 connection.send_error(msg["id"], code, f"Layout not stored: {problem}")
                 return
     board = _board(hass)
+    if board.checks is not None and isinstance(raw_layouts, dict):
+        board.checks.migrate_from_layouts(raw_layouts)
     board.data = data
     layouts = raw_layouts if isinstance(raw_layouts, dict) else {}
     board.revs = {label: board.revs.get(label, 0) + 1 for label in layouts}
@@ -328,6 +333,58 @@ def ws_nodered_keep(
     connection.send_result(msg["id"])
 
 
+# ---- saved sandbox checks (checks.py): kept out of the 200 KB layout store
+def _checks_or_error(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg_id: int) -> Checks | None:
+    board = _board(hass)
+    if board.checks is None:
+        connection.send_error(msg_id, "not_ready", "Checks aren't loaded")
+    return board.checks
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "functions_board/checks",
+        vol.Optional("label"): LABEL,
+    }
+)
+@websocket_api.require_admin
+@callback
+def ws_checks(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Saved sandbox checks: one function's list (with label) or every function's map."""
+    if (ch := _checks_or_error(hass, connection, msg["id"])) is None:
+        return
+    if "label" in msg:
+        connection.send_result(msg["id"], {"checks": ch.get(msg["label"])})
+    else:
+        connection.send_result(msg["id"], {"checks": dict(ch.by_label)})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "functions_board/set_checks",
+        vol.Required("label"): LABEL,
+        vol.Required("checks"): list,
+        vol.Optional("client"): CLIENT,
+    }
+)
+@websocket_api.require_admin
+@callback
+def ws_set_checks(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Replace one function's saved sandbox checks."""
+    if (ch := _checks_or_error(hass, connection, msg["id"])) is None:
+        return
+    if problem := ch.set(msg["label"], msg["checks"]):
+        text = {
+            "invalid_format": "Checks not stored: malformed check entry",
+            "too_large": "A function's saved checks can be at most 1 MB",
+            "full": "Saved checks can take at most 10 MB in all",
+        }
+        connection.send_error(msg["id"], problem, text.get(problem, "Checks not stored"))
+        return
+    _board(hass).notify(hass, {"what": "checks", "label": msg["label"], "client": msg.get("client", "")})
+    connection.send_result(msg["id"])
+
+
 # ---- saved versions of a function (versions.py). The board makes the snapshot from Home Assistant's own APIs and
 # restores through them; these commands only keep, list and hand back what it saved.
 VTEXT = vol.All(str, vol.Length(max=MAX_VERSION_TEXT))
@@ -358,12 +415,12 @@ def ws_versions(hass: HomeAssistant, connection: websocket_api.ActiveConnection,
 
 @websocket_api.websocket_command({vol.Required("type"): "functions_board/version_get", vol.Required("label"): LABEL, vol.Required("version_id"): VID})
 @websocket_api.require_admin
-@callback
-def ws_version_get(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
-    """One saved version, with its snapshot."""
+@websocket_api.async_response
+async def ws_version_get(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """One saved version, with its snapshot (loaded on demand from its function's blob store)."""
     if (vs := _versions_or_error(hass, connection, msg["id"])) is None:
         return
-    if (v := vs.get(msg["label"], msg["version_id"])) is None:
+    if (v := await vs.async_get(msg["label"], msg["version_id"])) is None:
         connection.send_error(msg["id"], "not_found", "No such version")
         return
     connection.send_result(msg["id"], v)
@@ -382,14 +439,20 @@ def ws_version_get(hass: HomeAssistant, connection: websocket_api.ActiveConnecti
     }
 )
 @websocket_api.require_admin
-@callback
-def ws_version_save(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+@websocket_api.async_response
+async def ws_version_save(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     """Keep a snapshot the board made as a new version."""
     if (vs := _versions_or_error(hass, connection, msg["id"])) is None:
         return
+    await vs.async_ensure_blobs(msg["label"])
     version, problem = vs.add(msg["label"], msg["name"], msg["desc"], _user_name(connection), msg["snapshot"], msg["auto"], msg["print"])
     if problem or version is None:
-        text = {"too_large": "A snapshot can be at most 1 MB", "too_many": "A function can keep at most 50 versions", "full": "Versions can take at most 20 MB in all"}
+        text = {
+            "invalid_format": "Unsupported item domain in snapshot",
+            "too_large": "A snapshot can be at most 1 MB",
+            "too_many": "A function can keep at most 50 versions",
+            "full": "Versions can take at most 20 MB in all",
+        }
         connection.send_error(msg["id"], problem or "failed", text.get(problem or "", "Not saved"))
         return
     # a version saved from what's there now is what the function is made from now (not a backup taken on the way)
@@ -436,14 +499,20 @@ PRINT = vol.All(str, vol.Length(max=64))
     }
 )
 @websocket_api.require_admin
-@callback
-def ws_version_overwrite(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+@websocket_api.async_response
+async def ws_version_overwrite(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     """Save over a version on purpose (Save, 0.11.3): its snapshot replaced, its name kept; it's then the active one."""
     if (vs := _versions_or_error(hass, connection, msg["id"])) is None:
         return
+    await vs.async_ensure_blobs(msg["label"])
     v, problem = vs.overwrite(msg["label"], msg["version_id"], _user_name(connection), msg["snapshot"], msg["print"])
     if problem or v is None:
-        text = {"not_found": "No such version", "too_large": "A snapshot can be at most 1 MB", "full": "Versions can take at most 20 MB in all"}
+        text = {
+            "invalid_format": "Unsupported item domain in snapshot",
+            "not_found": "No such version",
+            "too_large": "A snapshot can be at most 1 MB",
+            "full": "Versions can take at most 20 MB in all",
+        }
         connection.send_error(msg["id"], problem or "failed", text.get(problem or "", "Not saved"))
         return
     vs.set_active(msg["label"], msg["version_id"], msg["print"])
@@ -482,11 +551,12 @@ def ws_version_active(hass: HomeAssistant, connection: websocket_api.ActiveConne
     }
 )
 @websocket_api.require_admin
-@callback
-def ws_version_delete(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+@websocket_api.async_response
+async def ws_version_delete(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
     """Delete one saved version, or (no version_id) every version of a function."""
     if (vs := _versions_or_error(hass, connection, msg["id"])) is None:
         return
+    await vs.async_ensure_blobs(msg["label"])
     if not vs.remove(msg["label"], msg.get("version_id")) and msg.get("version_id"):
         connection.send_error(msg["id"], "not_found", "No such version")
         return

@@ -165,8 +165,43 @@ async def test_anonymised_diagnostics_keep_shape_not_names(hass: HomeAssistant, 
     dis = layout["dismissed"]
     assert [x["k"].split("|")[0] for x in dis] == ["e_unavail", "s_missing", "t_missing"] and dis[0]["k"] == f"e_unavail|{door}" and dis[2]["gone"] == 4 and dis[2]["k"].startswith("t_missing|area:area_"), dis
     # an MQTT topic keeps its shape and protocol words, not the names in it
-    step = d["board"]["layouts"]["label_1"]["checks"][0]["steps"][0]
+    step = d["checks"]["label_1"][0]["steps"][0] if "label_1" in (d.get("checks") or {}) else d["board"]["layouts"]["label_1"]["checks"][0]["steps"][0]
     assert step["topic"] == "home/topic_1/door" or step["topic"].split("/")[1].startswith("topic_"), step
+
+
+async def test_anonymiser_case_insensitive_and_structural_label_safe(hass: HomeAssistant, hass_ws_client) -> None:
+    """Phase 2: mixed-case names are redacted case-insensitively, and structural label IDs ('mode', 'on') don't corrupt keys."""
+    home = await _home(hass)
+    ws = await hass_ws_client(hass)
+    # Create a label with a structural-word ID ("mode") and a mixed-case device ("Bramblewood Heater")
+    other = MockConfigEntry(domain="demo", title="Heater hub")
+    other.add_to_hass(hass)
+    dr.async_get(hass).async_get_or_create(config_entry_id=other.entry_id, identifiers={("demo", "heater-1")}, name="Bramblewood Heater")
+    await ws.send_json_auto_id({"type": "functions_board/set_functions", "functions": ["mode", home["label"]]})
+    assert (await ws.receive_json())["success"]
+    await ws.send_json_auto_id({"type": "functions_board/set_layout", "label": "mode", "layout": {"nodes": {"light.bramblewood_lamp": {"x": 1, "y": 2}}}})
+    assert (await ws.receive_json())["success"]
+    await ws.send_json_auto_id({
+        "type": "functions_board/set_checks",
+        "label": "mode",
+        "checks": [{"id": "c1", "name": "Heater check", "at": 0, "steps": [{"op": "mqtt", "topic": "home/bramblewood/heater"}], "expect": []}],
+    })
+    assert (await ws.receive_json())["success"]
+    snap = _snapshot(home)
+    snap["items"]["automation.bramblewood_left_open"]["cfg"]["conditions"].append(
+        {"condition": "template", "value_template": "{{ 'bramblewood heater' in state_attr('light.bramblewood_lamp', 'note') }}"}
+    )
+    await ws.send_json_auto_id({"type": "functions_board/diagnostics", "anonymise": True, "label": "mode", "snapshot": snap})
+    res = await ws.receive_json()
+    assert res["success"], res
+    d = res["result"]
+    dump = json.dumps(d)
+    assert "bramblewood" not in dump.lower(), dump
+    assert "mode" not in d["board"]["functions"] and "mode" not in d["board"]["layouts"] and "mode" not in d["checks"]
+    assert d["function"].startswith("label_")
+    # Structural keys/values ("mode": "single") must NOT be corrupted by a label named "mode"
+    cfg = next(iter(d["snapshot_now"]["items"].values()))["cfg"]
+    assert cfg["mode"] == "single"
 
 
 async def test_home_assistants_own_download_is_anonymised(hass: HomeAssistant, hass_ws_client) -> None:

@@ -42,6 +42,7 @@ class FakeHA {
     this.entries = clone(s.entries);
     this.store = { data: clone((opts.store && opts.store.data) || {}), revs: clone((opts.store && opts.store.revs) || {}), mode: opts.mode || s.mode || 'organise' };
     this.versions = {};
+    this.checks = {};
     this.nodered = null;
     this.sources = {};  // what a derived helper reads (functions_board/sources), as a test sets it: id → { entities }
     this.devTrig = clone(s.devTrig || {});
@@ -324,10 +325,27 @@ class FakeHA {
       case 'functions_board/zwave_values': this._admin(); return clone(this.zwave[m.device_id] || null);
       case 'functions_board/nodered': this._admin(); return { kept: clone(this.nodered) };
       case 'functions_board/nodered_keep': this._admin(); this.nodered = { at: this._now(), slug: m.slug, groups: clone(m.groups) }; await this.notifyStore({ what: 'nodered', client: m.client || '' }); return null;
+      case 'functions_board/checks': this._admin(); return { checks: m.label != null ? clone(this.checks[m.label] || []) : clone(this.checks) };
+      case 'functions_board/set_checks': {
+        this._admin();
+        if (!Array.isArray(m.checks) || m.checks.length > 50) throw new HAError('invalid_format', 'Checks not stored: malformed check entry');
+        if (m.checks.length) this.checks[m.label] = clone(m.checks);
+        else delete this.checks[m.label];
+        await this.notifyStore({ what: 'checks', label: m.label, client: m.client || '' });
+        return null;
+      }
       case 'functions_board/versions': this._admin(); return { versions: (this.versions[m.label] || []).map(meta), active: (this.vactive || {})[m.label] || null };
       case 'functions_board/version_get': { this._admin(); const v = (this.versions[m.label] || []).find((x) => x.id === m.version_id); if (!v) throw new HAError('not_found', 'No such version'); return clone(v); }
       case 'functions_board/version_save': {
         this._admin();
+        const VDOMS = new Set(['automation', 'script', 'input_boolean', 'input_number', 'input_text', 'input_select', 'input_datetime', 'input_button', 'counter', 'timer', 'schedule']);
+        if (m.snapshot && m.snapshot.items && typeof m.snapshot.items === 'object') {
+          for (const [k, it] of Object.entries(m.snapshot.items)) {
+            if (!it || typeof it !== 'object' || (it.dom != null && (!VDOMS.has(it.dom) || (k.includes('.') && k.split('.')[0] !== it.dom)))) {
+              throw new HAError('invalid_format', 'Unsupported item domain in snapshot');
+            }
+          }
+        }
         const vs = (this.versions[m.label] = this.versions[m.label] || []);
         const size = Buffer.byteLength(JSON.stringify(m.snapshot));
         if (size > 1000000) throw new HAError('too_large', 'A snapshot can be at most 1 MB');
@@ -342,6 +360,14 @@ class FakeHA {
       // 0.11.3: Save over a version on purpose; which version the function was last made from
       case 'functions_board/version_overwrite': {
         this._admin();
+        const VDOMS = new Set(['automation', 'script', 'input_boolean', 'input_number', 'input_text', 'input_select', 'input_datetime', 'input_button', 'counter', 'timer', 'schedule']);
+        if (m.snapshot && m.snapshot.items && typeof m.snapshot.items === 'object') {
+          for (const [k, it] of Object.entries(m.snapshot.items)) {
+            if (!it || typeof it !== 'object' || (it.dom != null && (!VDOMS.has(it.dom) || (k.includes('.') && k.split('.')[0] !== it.dom)))) {
+              throw new HAError('invalid_format', 'Unsupported item domain in snapshot');
+            }
+          }
+        }
         const v = (this.versions[m.label] || []).find((x) => x.id === m.version_id);
         if (!v) throw new HAError('not_found', 'No such version');
         Object.assign(v, { snapshot: clone(m.snapshot), print: m.print, size: Buffer.byteLength(JSON.stringify(m.snapshot)), at: this._now(), by: this.owner().name, auto: false });
