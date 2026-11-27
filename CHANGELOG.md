@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.15.0 (2026-11-27)
 
 ### Template Studio & 12 Guided Recipes
 - **Full Template Studio (`Recipes → Template Studio…` or `Explain template` on any template helper / templated automation or script):**

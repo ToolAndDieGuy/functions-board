@@ -1,4 +1,4 @@
-export const VERSION = '0.14.0';
+export const VERSION = '0.15.0';
 export const REPO_URL = 'https://github.com/ToolAndDieGuy/functions-board';
 
 /* ---------- the board's words (4.9) ---------- */
