@@ -1,6 +1,6 @@
-# Phase 1 Codebase Audit Fixes (Targeting `v0.13.2`)
+# Phase 1 Codebase Audit Fixes (Shipped in `v0.14.0`)
 
-All fixes below were audited against baseline `v0.13.1` (`1797f688`), verified against the codebase, implemented on branch `fix/v0.13.2-audit` (initially in `functions-board.js`, now split cleanly across `frontend/lib/*`, `frontend/ui/*`, and `frontend/board-core.js` in Phase 3), and paired with regression tests and mutation anchors. `manifest.json` / `VERSION` remain at `0.13.1` until local Home Assistant testing is complete and a release is requested.
+All fixes below were audited against baseline `v0.13.1` (`1797f688`), verified against the codebase, implemented and split cleanly across `frontend/lib/*`, `frontend/ui/*`, and `frontend/board-core.js` in Phase 3, and paired with regression tests and mutation anchors.
 
 ---
 

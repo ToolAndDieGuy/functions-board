@@ -1,8 +1,8 @@
-# Audit & Fix Handoff (`fix/v0.13.2-audit`)
+# Audit, Hardening & v0.14.0 Release Handoff (`release-0.14.0`)
 
-This folder documents the full audit triage, bug fixes, backend/security hardening, ES module architecture refactor, test apparatus updates, post-session code review fixes, and UI/UX roadmap completed on branch `fix/v0.13.2-audit` (branched from `main` at `1797f688` / `v0.13.1`).
+This folder documents the full audit triage, bug fixes, backend/security hardening, ES module architecture refactor, test apparatus updates, post-session code review fixes, and UI/UX roadmap prepared for **v0.14.0** (branched from `main` at `1797f688` / `v0.13.1`).
 
-> **Release status:** `manifest.json`, `VERSION`, and `README.md` intentionally remain at `0.13.1`. Changes are summarized under `## Unreleased` in `CHANGELOG.md` so local Home Assistant testing and CI verification complete before any version bump or GitHub release.
+> **Release status:** Version bumped to `0.14.0` via `node scripts/bump.js 0.14.0` with full release notes in `CHANGELOG.md`. Merging to `main` after GitHub Actions `Validate` passes will trigger `.github/workflows/release.yml` to tag and publish `v0.14.0`.
 
 ---
 
@@ -10,7 +10,7 @@ This folder documents the full audit triage, bug fixes, backend/security hardeni
 
 1. [`issue-72-triage.md`](./issue-72-triage.md) — Root-cause analysis and fixes for all three failing weekly CI jobs in Issue #72 (`mutants`, `jitter`, `diff`) plus the `actions/upload-artifact@v4` dot-directory fix.
 2. [`phase-1-audit-fixes.md`](./phase-1-audit-fixes.md) — Complete itemized breakdown of all Phase 1 (Batches 1A, 1B, 1C) bug fixes, current ES module locations, regression tests, static invariants, and mutants.
-3. [`phase-2-hardening.md`](./phase-2-hardening.md) — Phase 2 backend hardening & Frenck's version restore domain allowlist (allowlist, diagnostics executor offload & case-insensitive/structural redaction, split version metadata/blobs, decoupled saved checks store + delete/undo/sync lifecycle, spec-compliant lazy dashboard `card-loader.js`).
+3. [`phase-2-hardening.md`](./phase-2-hardening.md) — Phase 2 backend hardening & HACS review version restore domain allowlist (allowlist, diagnostics executor offload & case-insensitive/structural redaction, split version metadata/blobs, decoupled saved checks store + delete/undo/sync lifecycle, spec-compliant lazy dashboard `card-loader.js`).
 4. [`phase-3-es-modules.md`](./phase-3-es-modules.md) — Phase 3 native zero-build ES module refactor (24 ES modules under `frontend/lib/` + `frontend/ui/` + `board-core.js`, disjoint atomic `/functions_board_static_v/<digest>/` cache busting, `mixParts()`, and updated static/test/mutant harness).
 5. [`roadmap-next-phases.md`](./roadmap-next-phases.md) — Visual UI/UX review findings & improvement recommendations, Phase 4 roadmap (Recipes & features), and Issue #73 (`readme-pictures`).
 

@@ -1,10 +1,10 @@
 # Phase 2: Backend Hardening & Version Restore Domain Allowlist
 
-Completed on branch `fix/v0.13.2-audit` alongside Phase 1 & Issue #72 fixes. All items preserve zero runtime Python dependencies, zero outside network calls, and full backward compatibility with existing `.storage/` files.
+Completed for **v0.14.0** alongside Phase 1 & Issue #72 fixes. All items preserve zero runtime Python dependencies, zero outside network calls, and automatic migration of existing `.storage/` files (note: splitting version blobs and decoupling checks is a one-way storage upgrade relative to `v0.13.1`).
 
 ---
 
-## 1. Version Snapshot / Restore Domain Allowlist (Frenck's Security Hardening)
+## 1. Version Snapshot / Restore Domain Allowlist (HACS Review Security Hardening)
 
 - **Concern:** Restoring a saved version sent WebSocket commands (`<dom>/list`, `<dom>/update`, `<dom>/create`) whose domain came directly from the stored snapshot without validating against an allowlist.
 - **Allowlist (`VERSION_DOMAINS` / `VER_DOMAINS` / `VER_HELPERS`):**

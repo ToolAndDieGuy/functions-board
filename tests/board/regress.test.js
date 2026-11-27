@@ -2267,7 +2267,7 @@ test('0.13.2 audit fixes: durations, drawer back/focus, check steps, s_missing, 
   check('0.13.2 _verSnapshot resolves renamed script via registry unique_id',
     renamedSnap.id === 'orig_script_uid' && renamedSnap.yaml === false && renamedSnap.apiPath === 'config/script/config/orig_script_uid', renamedSnap);
 
-  // Phase 2 (Frenck hardening): version diff, plan, and restore enforce VER_DOMAINS / VER_HELPERS allowlist
+  // Phase 2 (HACS review hardening): version diff, plan, and restore enforce VER_DOMAINS / VER_HELPERS allowlist
   const allowRes = await el(page, async (b) => {
     const label = b._data.ui.current;
     const rogueSnap = {

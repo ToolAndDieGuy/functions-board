@@ -290,7 +290,7 @@ async def test_ws_set_validates_layouts(hass: HomeAssistant, hass_ws_client) -> 
 
 
 async def test_versions_domain_allowlist(hass: HomeAssistant, hass_ws_client) -> None:
-    """Phase 2 (Frenck hardening): version_save and version_overwrite reject non-allowlisted domains."""
+    """Phase 2 (HACS review hardening): version_save and version_overwrite reject non-allowlisted domains."""
     await _ready(hass)
     ws = await hass_ws_client(hass)
     bad_snaps = [

@@ -1,6 +1,6 @@
 # UI/UX Review & Remaining Roadmap (Phase 4+)
 
-Phases 1, 2, and 3 (plus Issue #72 triage, Frenck's version restore domain allowlist hardening, removing the `prototype` UI tag, and the post-session review fixes) are implemented on `fix/v0.13.2-audit`. This document records the visual UI/UX audit findings and remaining feature roadmap so Opus and future sessions can pick up cleanly.
+Phases 1, 2, and 3 (plus Issue #72 triage, HACS review version restore domain allowlist hardening, removing the `prototype` UI tag, and the post-session review fixes) are packaged in **v0.14.0** (`release-0.14.0`). This document records the visual UI/UX audit findings and remaining feature roadmap so Opus and future sessions can pick up cleanly.
 
 > **Note on UI changes & snapshots:** `tests/board/snapshots.test.js` locks DOM structure and `<style>` hashes across 47 view snapshots (`FB_SNAP_UPDATE=1` refreshes them intentionally), and `tests/shots.sh` compares README screenshots. Any intentional visual/DOM polish below should be shipped in its own dedicated UI PR with deliberate snapshot updates.
 
