@@ -36,6 +36,11 @@ from homeassistant.loader import async_get_integration
 from .const import DOMAIN
 
 # values under these keys are someone's words: anonymised, only their length is kept
+# a recipe's spec (0.16.1): the keys whose strings are a choice the recipe offers, an entity or a state, not words
+RECIPE_KEEP = frozenset({"kind", "scope", "domain", "area", "format", "mode", "device_class", "state_class", "output", "op", "event", "dir",
+                         "source", "transform", "preset", "join", "unit", "attr", "states", "state", "value", "targetState", "conditionState"})
+ENTITY_RE = re.compile(r"^[a-z_]+\.[a-z0-9_]+$")
+TIMEISH_RE = re.compile(r"^(\d{1,2}:\d{2}(:\d{2})?|\d{4}-\d{2}-\d{2}|-?\d+(\.\d+)?)$")
 FREE_TEXT_KEYS = frozenset({"message", "title", "text", "desc", "description", "note", "notes", "body", "content", "comment", "subtitle", "caption", "tts", "speech", "payload", "say", "tag"})
 # values under these keys name something: a stand-in, the same one wherever that name appears
 # "svc": a phone's mobile app action, kept by the notification builder (0.11.3: named after the phone)
@@ -219,8 +224,26 @@ class Anonymiser:
         """A dict key: a board key for an MQTT topic (mqtt:…) is a topic; anything else is text."""
         return "mqtt:" + self.topic(k[5:]) if k.startswith("mqtt:") else self.text(k)
 
+    def recipe(self, v: Any, key: str | None = None) -> Any:
+        """A recipe's spec (Template Studio's and the automation recipes', 0.16.1): what someone wrote is under keys of
+        the recipe's own (a label, a fallback, a map's `to`) that mean other things elsewhere, so here every string is
+        their words, but an entity, a choice the recipe offers, a state, a clock time, a date or a number."""
+        if isinstance(v, dict):
+            return {k: self.recipe(x, k if isinstance(k, str) else None) for k, x in v.items()}
+        if isinstance(v, list):
+            return [self.recipe(x, key) for x in v]
+        if isinstance(v, str) and v:
+            if ENTITY_RE.match(v) or key in RECIPE_KEEP or TIMEISH_RE.match(v):
+                return self.text(v)
+            return f"[text, {len(v)} characters]"
+        return v
+
     def value(self, v: Any, key: str | None = None) -> Any:
         """A value with everything personal in it replaced; its shape stays."""
+        if isinstance(v, dict) and key == "builders":
+            return {self.key(k) if isinstance(k, str) else k: (
+                {"kind": b.get("kind"), "spec": self.recipe(b.get("spec"))} if isinstance(b, dict) and b.get("kind") != "notify" else self.value(b, None)
+            ) for k, b in v.items()}
         if isinstance(v, dict):
             if key in ("layouts", "revs", "versions", "checks"):
                 return {self._stand_in(k, "label") if isinstance(k, str) and k else k: self.value(x, None) for k, x in v.items()}

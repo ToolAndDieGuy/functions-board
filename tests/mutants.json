@@ -2751,5 +2751,13 @@
   "replace": "if (h.now && this.dispatching) {",
   "suite": "sandbox",
   "expect": "0.16.1 a run an outside event started changes something"
+ },
+ {
+  "name": "diagnostics: a recipe's words go through by their keys again",
+  "file": "custom_components/functions_board/diagnostics.py",
+  "find": "        if isinstance(v, dict) and key == \"builders\":",
+  "replace": "        if False:",
+  "suite": "backend",
+  "expect": "test_anonymised_diagnostics_keep_shape_not_names"
  }
 ]
