@@ -432,8 +432,68 @@ class FakeHA {
       if (method === 'POST') { this.scripts[oid] = clone(body); await this._scriptSaved(oid); return { result: 'ok' }; }
       if (method === 'DELETE') { if (!this.scripts[oid]) throw new HAError('not_found', 'Resource not found'); delete this.scripts[oid]; this.states.delete('script.' + oid); this.entities.delete('script.' + oid); await this.push(); await this.emit('call_service', { domain: 'script', service: 'reload', service_data: {} }); return { result: 'ok' }; }
     }
-    if ((m = p.match(/^config\/config_entries\/entry\/(.+)$/)) && method === 'DELETE') { this.entries = this.entries.filter((e) => e.entry_id !== m[1]); this.helperEntries = (this.helperEntries || []).filter((e) => e.entry_id !== m[1]); return { require_restart: false }; }
-    if (p === 'config/config_entries/options/flow' && method === 'POST') return { flow_id: 'fakeflow', type: 'form', step_id: 'init' };
+    if ((m = p.match(/^config\/config_entries\/entry\/(.+)$/)) && method === 'DELETE') {
+      const eid = m[1];
+      this.entries = this.entries.filter((e) => e.entry_id !== eid);
+      this.helperEntries = (this.helperEntries || []).filter((e) => e.entry_id !== eid);
+      [...this.entities.values()].filter((e) => e.config_entry_id === eid).forEach((e) => { this.entities.delete(e.entity_id); this.states.delete(e.entity_id); delete this.sources[e.entity_id]; });
+      await this.push();
+      return { require_restart: false };
+    }
+    if (p === 'config/config_entries/flow' && method === 'POST' && body && body.handler === 'template') {
+      this._tplFlows = this._tplFlows || {};
+      const fid = 'tplflow_' + crypto.randomBytes(4).toString('hex');
+      this._tplFlows[fid] = { step: 'menu', domain: 'sensor' };
+      return { flow_id: fid, type: 'menu', step_id: 'user', menu_options: ['binary_sensor', 'sensor'] };
+    }
+    if ((m = p.match(/^config\/config_entries\/flow\/(tplflow_[a-f0-9]+)$/)) && method === 'POST') {
+      const fl = (this._tplFlows || {})[m[1]];
+      if (!fl) throw new HAError('unknown_flow', 'Flow not found');
+      if (fl.step === 'menu' && body && body.next_step_id) {
+        fl.step = 'form'; fl.domain = body.next_step_id;
+        const schema = [{ name: 'name' }, { name: 'state' }, { name: 'availability' }, { name: 'device_class' }]
+          .concat(fl.domain === 'sensor' ? [{ name: 'unit_of_measurement' }, { name: 'state_class' }] : []);
+        return { flow_id: m[1], type: 'form', step_id: fl.domain, data_schema: schema };
+      }
+      const dom = fl.domain, name = (body && body.name) || 'Template helper';
+      let oid = slug(name) || 'template_helper', n = 2;
+      while (this.states.has(dom + '.' + oid) || this.entities.has(dom + '.' + oid)) oid = (slug(name) || 'template_helper') + '_' + n++;
+      const entId = dom + '.' + oid, entryId = 'tplentry_' + crypto.randomBytes(6).toString('hex');
+      const entry = { entry_id: entryId, domain: 'template', title: name, options: Object.assign({ template_type: dom }, clone(body || {})) };
+      this.helperEntries = (this.helperEntries || []).concat([entry]);
+      this.entities.set(entId, { entity_id: entId, unique_id: entryId, platform: 'template', name: null, original_name: name, labels: [], categories: {}, area_id: null, device_id: null, disabled_by: null, hidden_by: null, entity_category: null, icon: null, id: crypto.randomBytes(16).toString('hex'), has_entity_name: false, options: {}, config_entry_id: entryId, translation_key: null, created_at: this._now() / 1000, modified_at: this._now() / 1000 });
+      const tplState = (body && body.state) || '', tplAvail = (body && body.availability) || '';
+      const tpls = Object.assign({ state: tplState, ui: true, entry_id: entryId }, tplAvail ? { availability: tplAvail } : {});
+      this.sources[entId] = { entities: [], domains: [], all: false, how: 'template', rule: Object.assign({ kind: 'template', state: tplState }, tplAvail ? { availability: tplAvail } : {}), templates: tpls };
+      await this.setState(entId, dom === 'binary_sensor' ? 'off' : '0', Object.assign({ friendly_name: name }, body && body.unit_of_measurement ? { unit_of_measurement: body.unit_of_measurement } : {}, body && body.device_class ? { device_class: body.device_class } : {}));
+      await this.emit('entity_registry_updated', { action: 'create', entity_id: entId });
+      delete this._tplFlows[m[1]];
+      return { type: 'create_entry', result: { entry_id: entryId, title: name } };
+    }
+    if (p === 'config/config_entries/options/flow' && method === 'POST') {
+      const h = body && body.handler;
+      const tplEntry = (this.helperEntries || []).find((e) => e.entry_id === h && e.domain === 'template');
+      if (tplEntry) {
+        this._tplOptFlows = this._tplOptFlows || {};
+        const fid = 'tplopt_' + crypto.randomBytes(4).toString('hex');
+        this._tplOptFlows[fid] = tplEntry;
+        return { flow_id: fid, type: 'form', step_id: 'init', data_schema: [{ name: 'state' }, { name: 'availability' }, { name: 'unit_of_measurement' }, { name: 'device_class' }, { name: 'state_class' }] };
+      }
+      return { flow_id: 'fakeflow', type: 'form', step_id: 'init' };
+    }
+    if ((m = p.match(/^config\/config_entries\/options\/flow\/(tplopt_[a-f0-9]+)$/)) && method === 'POST') {
+      const entry = (this._tplOptFlows || {})[m[1]];
+      if (!entry) throw new HAError('unknown_flow', 'Flow not found');
+      Object.assign(entry.options, clone(body || {}));
+      const ent = [...this.entities.values()].find((e) => e.config_entry_id === entry.entry_id);
+      if (ent && this.sources[ent.entity_id]) {
+        const s = this.sources[ent.entity_id];
+        if (body && body.state != null) { s.rule.state = body.state; s.templates.state = body.state; }
+        if (body && body.availability != null) { s.rule.availability = body.availability; s.templates.availability = body.availability; }
+      }
+      delete this._tplOptFlows[m[1]];
+      return { type: 'create_entry' };
+    }
     // new options apply in place and open boards are told the mode (__init__.py, the options update listener)
     if (p === 'config/config_entries/options/flow/fakeflow' && method === 'POST') { if (body && body.mode) { this.store.mode = body.mode; await this.notifyStore({ what: 'mode', mode: this.store.mode, client: '' }); } return { type: 'create_entry' }; }
     return this._unknown(`${method} ${p}`);

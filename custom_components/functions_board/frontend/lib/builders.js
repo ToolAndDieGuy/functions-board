@@ -160,3 +160,124 @@ export function notifyTargets(info) {
     tts: Object.keys(st).filter((k) => k.startsWith('tts.')).map((id) => ({ id, name: named(id) })).sort(byName),
   };
 }
+
+/* ---------- Automation Recipes (0.15.0): standard Home Assistant automations (#11 Left-open alert, #12 Motion light) ---------- */
+export const AUTO_RECIPE_KINDS = new Set(['auto_left_open', 'auto_motion_light']);
+
+export function cleanLeftOpen(s) {
+  const src = s && typeof s === 'object' && !Array.isArray(s) ? s : {};
+  const str = (v, n) => String(v == null ? '' : v).slice(0, n);
+  const ent = (v) => (typeof v === 'string' && EXACT_RE.test(v) ? v : '');
+  const acts = (a) => (Array.isArray(a) ? a : []).filter((x) => x && typeof x === 'object' && !Array.isArray(x)).slice(0, 50);
+  return {
+    entity: ent(src.entity),
+    state: str(src.state || 'open', 64).trim() || 'open',
+    minutes: Math.min(1440, Math.max(1, Math.round(+src.minutes) || 10)),
+    repeat: Math.min(1440, Math.max(0, Math.round(+src.repeat) || 0)),
+    conditionEntity: ent(src.conditionEntity),
+    conditionState: str(src.conditionState || 'on', 64).trim() || 'on',
+    then: acts(src.then),
+    cleared: acts(src.cleared),
+  };
+}
+
+export function leftOpenAutomation(spec, meta) {
+  const s = cleanLeftOpen(spec), M = meta || {};
+  const triggers = [{ trigger: 'state', entity_id: s.entity, to: s.state, for: { minutes: s.minutes } }];
+  const conditions = s.conditionEntity ? [{ condition: 'state', entity_id: s.conditionEntity, state: s.conditionState }] : [];
+  const actions = [];
+  if (s.repeat > 0) {
+    actions.push({
+      repeat: {
+        while: [{ condition: 'state', entity_id: s.entity, state: s.state }],
+        sequence: s.then.concat([{ delay: { minutes: s.repeat } }]),
+      },
+    });
+  } else {
+    actions.push(...s.then);
+  }
+  if (s.cleared.length) {
+    actions.push({ wait_for_trigger: [{ trigger: 'state', entity_id: s.entity, from: s.state }] });
+    actions.push(...s.cleared);
+  }
+  const desc = String(M.description || '').trim();
+  return {
+    alias: String(M.alias || ''),
+    description: desc ? desc + '\n\n' + T('rcp_auto_mark') : T('rcp_auto_mark'),
+    mode: 'restart',
+    triggers,
+    conditions,
+    actions,
+  };
+}
+
+export function cleanMotionLight(s) {
+  const src = s && typeof s === 'object' && !Array.isArray(s) ? s : {};
+  const ent = (v) => (typeof v === 'string' && EXACT_RE.test(v) ? v : '');
+  const list = (v, re) => [...new Set(toList(v).map(String).filter((x) => EXACT_RE.test(x) && (!re || re.test(x))))].slice(0, 20);
+  return {
+    sensors: list(src.sensors),
+    lights: list(src.lights, /^(light|switch)\./),
+    timeout: Math.min(240, Math.max(1, Math.round(+src.timeout) || 5)),
+    onlyDark: !!src.onlyDark,
+    luxEntity: ent(src.luxEntity),
+    luxBelow: Math.min(100000, Math.max(0, Math.round(+src.luxBelow) || 50)),
+    brightness: Math.min(100, Math.max(0, Math.round(+src.brightness) || 0)),
+    overrideEntity: ent(src.overrideEntity),
+  };
+}
+
+export function motionLightAutomation(spec, meta) {
+  const s = cleanMotionLight(spec), M = meta || {};
+  const triggers = [
+    { trigger: 'state', entity_id: s.sensors.length === 1 ? s.sensors[0] : s.sensors, to: 'on', id: 'motion' },
+    { trigger: 'state', entity_id: s.sensors.length === 1 ? s.sensors[0] : s.sensors, to: 'off', for: { minutes: s.timeout }, id: 'clear' },
+  ];
+  const conditions = [];
+  if (s.overrideEntity) conditions.push({ condition: 'state', entity_id: s.overrideEntity, state: 'off' });
+  const onConds = [{ condition: 'trigger', id: 'motion' }];
+  if (s.onlyDark) onConds.push({ condition: 'sun', after: 'sunset', before: 'sunrise' });
+  if (s.luxEntity) onConds.push({ condition: 'numeric_state', entity_id: s.luxEntity, below: s.luxBelow });
+  const target = { entity_id: s.lights.length === 1 ? s.lights[0] : s.lights };
+  const allLights = s.lights.every((x) => x.startsWith('light.'));
+  const onAct = allLights
+    ? Object.assign({ action: 'light.turn_on', target }, s.brightness > 0 ? { data: { brightness_pct: s.brightness } } : {})
+    : { action: 'homeassistant.turn_on', target };
+  const offAct = allLights ? { action: 'light.turn_off', target } : { action: 'homeassistant.turn_off', target };
+  const actions = [{
+    choose: [
+      { conditions: onConds, sequence: [onAct] },
+      { conditions: [{ condition: 'trigger', id: 'clear' }], sequence: [offAct] },
+    ],
+  }];
+  const desc = String(M.description || '').trim();
+  return {
+    alias: String(M.alias || ''),
+    description: desc ? desc + '\n\n' + T('rcp_auto_mark') : T('rcp_auto_mark'),
+    mode: 'restart',
+    triggers,
+    conditions,
+    actions,
+  };
+}
+
+export function cleanAutoRecipe(kind, spec) {
+  if (kind === 'auto_left_open') return cleanLeftOpen(spec);
+  if (kind === 'auto_motion_light') return cleanMotionLight(spec);
+  return null;
+}
+
+export function generateAutoRecipe(kind, spec, meta) {
+  if (kind === 'auto_left_open') return leftOpenAutomation(spec, meta);
+  if (kind === 'auto_motion_light') return motionLightAutomation(spec, meta);
+  return null;
+}
+
+export function autoSame(cfg, kind, spec) {
+  const gen = generateAutoRecipe(kind, spec, {});
+  if (!cfg || !gen) return false;
+  const strip = (c) => Object.fromEntries(Object.entries(c || {}).filter(([k]) => !['alias', 'icon', 'description', 'id'].includes(k)));
+  return canonJSON(strip(cfg)) === canonJSON(strip(gen));
+}
+
+export const autoDesc = (d) => String(d || '').replace(T('rcp_auto_mark'), '').trim();

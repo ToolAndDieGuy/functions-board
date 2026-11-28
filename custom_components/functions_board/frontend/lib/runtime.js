@@ -354,6 +354,7 @@ export const PARTS = {
   arrows: { owns: ['_arw', '_tt'], table: 'arrows' },
   sandbox: { owns: [], table: 'sandbox' },
   builders: { owns: ['_bld'], table: 'builders' },
+  studio: { owns: ['_stu'], table: 'studio' },
   versions: { owns: ['_verPending', '_verUrlDone', '_verSnaps', '_verDelPlan'], table: 'versions' },
   nodered: { owns: ['_nrCache', '_nrWait'] },
   diagnostics: { owns: [] },

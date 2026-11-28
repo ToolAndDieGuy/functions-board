@@ -263,6 +263,7 @@ def ws_subscribe(
         vol.Required("entity_ids"): vol.All(
             cv.ensure_list, [cv.entity_id], vol.Length(max=MAX_SOURCES)
         ),
+        vol.Optional("include_templates", default=False): bool,
     }
 )
 @websocket_api.require_admin
@@ -274,7 +275,12 @@ async def ws_sources(
 ) -> None:
     """What each derived helper reads: template entities and helpers set up in the UI."""
     connection.send_result(
-        msg["id"], {"sources": await async_sources(hass, msg["entity_ids"])}
+        msg["id"],
+        {
+            "sources": await async_sources(
+                hass, msg["entity_ids"], include_templates=bool(msg.get("include_templates"))
+            )
+        },
     )
 
 

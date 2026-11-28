@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_component import DATA_INSTANCES
 from homeassistant.setup import async_setup_component
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -110,3 +111,57 @@ async def test_diagnostics_with_odd_stored_data(hass: HomeAssistant, hass_ws_cli
     res = await ws.receive_json()
     assert res["success"], res
     assert "garage" not in json.dumps(res["result"]["board"])
+
+
+async def test_template_sources_with_availability_and_time_only(hass: HomeAssistant, hass_ws_client) -> None:
+    """0.15.0: include_templates exposes state, availability, attributes, and time-only templates for Template Studio."""
+    hass.states.async_set("sensor.temp_in", "21.5")
+    assert await async_setup_component(
+        hass,
+        "template",
+        {
+            "template": {
+                "sensor": [
+                    {
+                        "name": "Guarded Temp",
+                        "state": "{{ states('sensor.temp_in') | float(0) }}",
+                        "availability": "{{ has_value('sensor.temp_in') }}",
+                        "attributes": {"label": "{{ 'warm' if states('sensor.temp_in') | float(0) > 20 else 'cool' }}"},
+                    }
+                ],
+                "binary_sensor": [
+                    {
+                        "name": "Night Window",
+                        "state": "{{ now().hour >= 22 or now().hour < 7 }}",
+                    }
+                ],
+            }
+        },
+    )
+    assert await async_setup_component(hass, "http", {})
+    assert await async_setup_component(hass, "functions_board", {})
+    await hass.async_block_till_done()
+    try:
+        ws = await hass_ws_client(hass)
+        await ws.send_json_auto_id(
+            {
+                "type": "functions_board/sources",
+                "entity_ids": ["sensor.guarded_temp", "binary_sensor.night_window"],
+                "include_templates": True,
+            }
+        )
+        res = (await ws.receive_json())["result"]["sources"]
+        assert res["sensor.guarded_temp"]["templates"]["state"] == "{{ states('sensor.temp_in') | float(0) }}"
+        assert res["sensor.guarded_temp"]["templates"]["availability"] == "{{ has_value('sensor.temp_in') }}"
+        assert "label" in res["sensor.guarded_temp"]["templates"]["attributes"]
+        assert res["sensor.guarded_temp"]["rule"]["availability"] == "{{ has_value('sensor.temp_in') }}"
+        assert res["binary_sensor.night_window"]["templates"]["state"] == "{{ now().hour >= 22 or now().hour < 7 }}"
+        assert res["binary_sensor.night_window"]["rule"]["state"] == "{{ now().hour >= 22 or now().hour < 7 }}"
+    finally:
+        # now() templates register a minute-tick TrackTemplateResultInfo timer; remove them so teardown has no lingering timer.
+        comps = hass.data.get(DATA_INSTANCES, {})
+        for eid in ("sensor.guarded_temp", "binary_sensor.night_window"):
+            comp = comps.get(eid.split(".", 1)[0])
+            if comp is not None and (ent := comp.get_entity(eid)) is not None:
+                await ent.async_remove()
+        await hass.async_block_till_done()

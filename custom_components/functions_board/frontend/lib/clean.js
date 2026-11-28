@@ -1,7 +1,8 @@
 import { EXACT_RE, SAFE_ID, cleanTest } from './constants.js';
 import { T } from './i18n.js';
 import { cleanCheck } from './sandbox.js';
-import { cleanNotify } from './builders.js';
+import { AUTO_RECIPE_KINDS, cleanAutoRecipe, cleanNotify } from './builders.js';
+import { TPL_RECIPE_KINDS, cleanTplRecipe } from './template_studio.js';
 
 // drawn to numbers, short strings and safe ids, and leave keys this version doesn't know alone
 export function cleanLayout(L) {
@@ -48,11 +49,14 @@ export function cleanLayout(L) {
       out.tools.push(o);
     });
   }
-  // builders (0.11.3): the spec each script made by a builder was made from, by its entity id
+  // builders (0.11.3 / 0.15.0): the spec each recipe item (notification script, template helper, automation recipe) was made from
   if (src.builders != null) {
     out.builders = {};
     Object.entries(src.builders && typeof src.builders === 'object' && !Array.isArray(src.builders) ? src.builders : {}).slice(0, 200).forEach(([k, b]) => {
-      if (k.startsWith('script.') && EXACT_RE.test(k) && b && b.kind === 'notify') out.builders[k] = { kind: 'notify', spec: cleanNotify(b.spec) };
+      if (!EXACT_RE.test(k) || !b || typeof b !== 'object') return;
+      if (k.startsWith('script.') && b.kind === 'notify') out.builders[k] = { kind: 'notify', spec: cleanNotify(b.spec) };
+      else if (/^(sensor|binary_sensor)\./.test(k) && TPL_RECIPE_KINDS.has(b.kind)) out.builders[k] = { kind: b.kind, spec: cleanTplRecipe(b.kind, b.spec) };
+      else if (k.startsWith('automation.') && AUTO_RECIPE_KINDS.has(b.kind)) out.builders[k] = { kind: b.kind, spec: cleanAutoRecipe(b.kind, b.spec) };
     });
   }
   return out;

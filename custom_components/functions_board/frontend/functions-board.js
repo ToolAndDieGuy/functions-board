@@ -1,5 +1,5 @@
 /*!
- * Functions board v0.14.0 for Home Assistant
+ * Functions board v0.15.0 for Home Assistant
  *
  * One page per "function": every automation, script, helper and device that makes one job work,
  * grouped by a Home Assistant label and wired together from their own configs.
@@ -23,6 +23,7 @@ import { debugPart } from './ui/debug.js';
 import { arrowsPart } from './ui/arrows.js';
 import { sandboxPart } from './ui/sandbox.js';
 import { buildersPart } from './ui/builders.js';
+import { studioPart } from './ui/studio.js';
 import { versionsPart } from './ui/versions.js';
 import { noderedPart } from './ui/nodered.js';
 import { diagnosticsPart } from './ui/diagnostics.js';
@@ -44,6 +45,7 @@ if (loaded && !loaded.__fbLoader) {
     ['arrows', arrowsPart],
     ['sandbox', sandboxPart],
     ['builders', buildersPart],
+    ['studio', studioPart],
     ['versions', versionsPart],
     ['nodered', noderedPart],
     ['diagnostics', diagnosticsPart],

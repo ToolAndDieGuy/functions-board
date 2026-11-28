@@ -33,7 +33,12 @@ from homeassistant.helpers.entity_component import DATA_INSTANCES
 from homeassistant.loader import async_get_integrations
 
 
-async def async_sources(hass: HomeAssistant, entity_ids: Iterable[str]) -> dict[str, Any]:
+async def async_sources(
+    hass: HomeAssistant,
+    entity_ids: Iterable[str],
+    *,
+    include_templates: bool = False,
+) -> dict[str, Any]:
     """Map each entity to what it reads; entities with nothing found are left out."""
     reg = er.async_get(hass)
     comps = hass.data.get(DATA_INSTANCES, {})
@@ -55,11 +60,63 @@ async def async_sources(hass: HomeAssistant, entity_ids: Iterable[str]) -> dict[
             found = _trigger_template(hass, reg, comps, entity_id)
         if found is None and entity_id in entries and entries[entity_id].domain in helper_domains:
             found = _options_entities(hass, reg, entity_id, entries[entity_id].options)
-        if found and (found["entities"] or found["domains"] or found["all"]):
-            if rule := _rule(comps, entity_id):
+        tpls = _template_sources(comps, entity_id, entries.get(entity_id)) if include_templates else None
+        rule = _rule(comps, entity_id) if (found is not None or tpls is not None) else None
+        if found and (found["entities"] or found["domains"] or found["all"] or (rule and rule.get("kind") == "template") or tpls):
+            if rule:
                 found["rule"] = rule
+            if tpls:
+                found["templates"] = tpls
             out[entity_id] = found
+        elif tpls:
+            item: dict[str, Any] = {"entities": [], "domains": [], "all": False, "how": "template", "templates": tpls}
+            if rule:
+                item["rule"] = rule
+            out[entity_id] = item
     return out
+
+
+def _template_sources(
+    comps: dict[str, Any], entity_id: str, config_entry: Any | None = None
+) -> dict[str, Any] | None:
+    """Source Jinja templates on a template entity (for Template Studio inspection), read defensively."""
+    domain = split_entity_id(entity_id)[0]
+    comp = comps.get(domain)
+    if comp is None:
+        return None
+    try:
+        entity = comp.get_entity(entity_id)
+        if entity is None:
+            return None
+        module = type(entity).__module__
+        if not module.startswith("homeassistant.components.template."):
+            return None
+        option = getattr(entity, "_state_option", None)
+        config = getattr(entity, "_config", None)
+        if not isinstance(config, dict):
+            return None
+        tpls: dict[str, Any] = {}
+        if option and (st_tpl := _tpl(config.get(option))):
+            tpls["state"] = st_tpl
+        if avail_tpl := _tpl(config.get("availability")):
+            tpls["availability"] = avail_tpl
+        if icon_tpl := _tpl(config.get("icon")):
+            tpls["icon"] = icon_tpl
+        attrs_raw = config.get("attributes")
+        if isinstance(attrs_raw, dict):
+            attrs = {str(k): t for k, v in attrs_raw.items() if (t := _tpl(v))}
+            if attrs:
+                tpls["attributes"] = attrs
+        if not tpls:
+            return None
+        if getattr(entity, "coordinator", None) is not None:
+            tpls["triggered"] = True
+        if config_entry is not None and getattr(config_entry, "domain", None) == "template":
+            tpls["ui"] = True
+            tpls["entry_id"] = config_entry.entry_id
+        return tpls
+    except Exception:  # noqa: BLE001 - private attributes: empty beats a failed request
+        return None
 
 
 def _rule(comps: dict[str, Any], entity_id: str) -> dict[str, Any] | None:
@@ -80,6 +137,8 @@ def _rule(comps: dict[str, Any], entity_id: str) -> dict[str, Any] | None:
             template = getattr(config.get(option), "template", None)
             if isinstance(template, str) and domain in ("sensor", "binary_sensor"):
                 rule: dict[str, Any] = {"kind": "template", "state": template}
+                if avail := _tpl(config.get("availability")):
+                    rule["availability"] = avail
                 if any(config.get(k) for k in ("delay_on", "delay_off", "auto_off")):
                     rule["partly"] = True
                 return rule

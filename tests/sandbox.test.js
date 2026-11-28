@@ -1157,6 +1157,28 @@ const st = (sb, id) => (sb.get(id) || {}).state;
     const next3Local = new Intl.DateTimeFormat('en-GB', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(next3));
     check('0.13.2 _patternNext lands on exact local wall time across DST spring-forward',
       next3 === Date.parse('2026-03-08T07:00:00Z') && next3Local === '03:00', { next3: new Date(next3).toISOString(), next3Local });
+
+    // 0.15.0 time trigger using a timestamp sensor sets src to that sensor for both clock fires and manual "as if trigger" runs
+    const t0 = at('01:00'), fireAt = at('02:00');
+    const tsSb = make({
+      'sensor.sunset_offset': S(new Date(fireAt).toISOString(), { device_class: 'timestamp' }),
+      'switch.lamp': S('off'),
+    }, {
+      'automation.lamp_on': {
+        triggers: [{ trigger: 'time', at: 'sensor.sunset_offset' }],
+        actions: [{ action: 'switch.turn_on', target: { entity_id: 'switch.lamp' } }],
+      },
+    }, { now: t0 });
+    await tsSb.start();
+    await tsSb.advance(90 * 60000);
+    const trigClock = tsSb.log.find((e) => e.kind === 'trigger' && e.key === 'automation.lamp_on');
+    await tsSb.userRun('automation.lamp_on', true, 0);
+    const trigManual = tsSb.log.filter((e) => e.kind === 'trigger' && e.key === 'automation.lamp_on')[1];
+    check('0.15.0 time trigger with at: timestamp sensor records sensor as trigger src (clock fire + manual as-if run)',
+      st(tsSb, 'switch.lamp') === 'on'
+      && !!trigClock && trigClock.src === 'sensor.sunset_offset'
+      && !!trigManual && trigManual.src === 'sensor.sunset_offset',
+      { trigClock, trigManual });
   }
 
 })().catch((e) => check('the sandbox tests ran to the end', false, String(e && e.stack || e)));

@@ -49,7 +49,7 @@ export const sandboxPart = {
       const m = this._model;
       const ids = [...m.nodes.keys()].filter((k) => /^(automation|script)\./.test(k));
       const cfgs = await Promise.all(ids.map((k) => this._fetchConfig(k)));
-      if (extra) { const i = ids.indexOf(extra.id); if (i < 0) { ids.push(extra.id); cfgs.push(extra.cfg); } else cfgs[i] = extra.cfg; }
+      if (extra && extra.cfg) { const i = ids.indexOf(extra.id); if (i < 0) { ids.push(extra.id); cfgs.push(extra.cfg); } else cfgs[i] = extra.cfg; }
       // whole home: the automations outside the function that its changes reach run too (a check that had some
       // replays them as well)
       const outside = new Set(check ? (check.items || []).filter((k) => k.startsWith('automation.') && !ids.includes(k)) : []);
@@ -59,7 +59,8 @@ export const sandboxPart = {
       const g = { label, asks: [], tplN: 0, pre: check ? check.answers.slice() : [], outside, extra: extra || null };
       // what you do from here, so the run can be kept as a check: the states it starts from, the clock, the steps
       const now = check ? check.at : Date.now(), states = Object.assign({}, this._hass.states);
-      if (extra && !states[extra.id]) states[extra.id] = { entity_id: extra.id, state: 'off', attributes: { friendly_name: extra.cfg.alias || extra.id, mode: extra.cfg.mode || 'single' }, last_changed: new Date(now).toISOString(), last_updated: new Date(now).toISOString(), context: {} };
+      if (extra && extra.cfg && !states[extra.id]) states[extra.id] = { entity_id: extra.id, state: 'off', attributes: { friendly_name: extra.cfg.alias || extra.id, mode: extra.cfg.mode || 'single' }, last_changed: new Date(now).toISOString(), last_updated: new Date(now).toISOString(), context: {} };
+      if (extra && extra.state) states[extra.id] = extra.state;
       if (check) Object.entries(check.start).forEach(([k, v]) => { states[k] = Object.assign({}, states[k] || {}, { state: v.state, attributes: Object.keys(v.attributes || {}).length ? v.attributes : (states[k] || {}).attributes || {} }); });
       g.rec = { at: now, start: this._checkStart(states), items: ids.slice(), steps: [], answers: [] };
       const resolve = (ref) => {
@@ -70,6 +71,7 @@ export const sandboxPart = {
       // the engine's settings, kept: rewinding makes a new one from the same start, and so does the explorer (0.11.2)
       // the helpers that follow what they read: their rules, asked now if the board let go of them (a config changed)
       const derived = this._model ? await this._followRules(this._model.nodes, states) : {};
+      if (extra && extra.derived) derived[extra.id] = extra.derived;
       // the triggers of the function's devices (0.13.0): every one the Press row can offer, and MQTT ones' topics
       const dt = await this._devTrigs(this._sbxDevIds(cfgs));
       g.devPress = dt.press;
