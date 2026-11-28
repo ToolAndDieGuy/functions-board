@@ -311,4 +311,21 @@ module.exports = [
     automations: { a: { triggers: [S('binary_sensor.doors', { to: 'on' })], conditions: [{ condition: 'state', entity_id: 'binary_sensor.both', state: 'off' }], actions: [inc('counter.c')] } },
     steps: [{ set: 'binary_sensor.d1', to: 'on' }, { set: 'binary_sensor.d2', to: 'on' }, { set: 'binary_sensor.d1', to: 'off' }, { set: 'binary_sensor.d2', to: 'unknown' }, { set: 'binary_sensor.d1', to: 'unavailable' }, { set: 'binary_sensor.d2', to: 'unavailable' }, { set: 'binary_sensor.d1', to: 'on' }] },
   ...MQTT,
+  // ---- 0.16.1: a change made while an outside event is handed out is handed out at once (the weekly random homes
+  // found it): the automation it starts runs in the middle of the run that made it, which then goes on
+  { name: 'a change made by a run an outside event started is handed out at once', states: st(),
+    automations: { c: { triggers: [{ trigger: 'event', event_type: 'go' }], actions: [on('input_boolean.x'), off('input_boolean.z')] }, a: { triggers: [S('input_boolean.x', { to: 'on' })], actions: [on('input_boolean.z')] } },
+    steps: [{ event: 'go' }] },
+  { name: '... made inside a choose, or nested deeper', states: st(),
+    automations: { c: { triggers: [{ trigger: 'event', event_type: 'go' }], actions: [{ choose: [{ conditions: [], sequence: [{ choose: [{ conditions: [], sequence: [on('input_boolean.x')] }] }] }] }, off('input_boolean.z')] }, a: { triggers: [S('input_boolean.x', { to: 'on' })], actions: [on('input_boolean.z')] } },
+    steps: [{ event: 'go' }] },
+  { name: '... but a run a change started holds what it changes until the change is handed out', states: st({ 'binary_sensor.a': ['off'] }),
+    automations: { c: { triggers: [S('binary_sensor.a', { to: 'on' })], actions: [on('input_boolean.x'), off('input_boolean.z')] }, a: { triggers: [S('input_boolean.x', { to: 'on' })], actions: [on('input_boolean.z')] } },
+    steps: [{ set: 'binary_sensor.a', to: 'on' }] },
+  { name: '... and an event a run fires while a change is handed out waits for it', states: st({ 'binary_sensor.a': ['off'] }),
+    automations: { c: { triggers: [S('binary_sensor.a', { to: 'on' })], actions: [{ event: 'go' }, off('input_boolean.z')] }, a: { triggers: [{ trigger: 'event', event_type: 'go' }], actions: [on('input_boolean.z')] } },
+    steps: [{ set: 'binary_sensor.a', to: 'on' }] },
+  { name: '... after a delay, outside any handing out, at once', states: st(),
+    automations: { c: { triggers: [{ trigger: 'event', event_type: 'go' }], actions: [{ delay: 1 }, on('input_boolean.x'), off('input_boolean.z')] }, a: { triggers: [S('input_boolean.x', { to: 'on' })], actions: [on('input_boolean.z')] } },
+    steps: [{ event: 'go' }, { wait: 2 }] },
 ];

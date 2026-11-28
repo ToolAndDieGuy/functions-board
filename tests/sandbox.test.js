@@ -1181,4 +1181,16 @@ const st = (sb, id) => (sb.get(id) || {}).state;
       { trigClock, trigManual });
   }
 
+  // ---- 0.16.1 a change made while an outside event is handed out is handed out at once, as Home Assistant does
+  {
+    const items = {
+      'automation.c': { triggers: [{ trigger: 'event', event_type: 'go' }], actions: [{ choose: [{ conditions: [], sequence: [{ action: 'input_boolean.turn_on', target: { entity_id: 'input_boolean.x' } }] }] }, { action: 'input_boolean.turn_off', target: { entity_id: 'input_boolean.z' } }] },
+      'automation.a': { triggers: [{ trigger: 'state', entity_id: 'input_boolean.x', to: 'on' }], actions: [{ action: 'input_boolean.turn_on', target: { entity_id: 'input_boolean.z' } }] },
+    };
+    const sb = make({ 'input_boolean.x': S('off'), 'input_boolean.z': S('off') }, items);
+    await sb.start();
+    await sb.userEvent('go');
+    check('0.16.1 a run an outside event started changes something: what that starts runs at once, and the first run then goes on (z off last)', st(sb, 'input_boolean.z') === 'off', sb.log.filter((e) => e.kind === 'state').map((e) => `${e.key} ${e.to}`));
+  }
+
 })().catch((e) => check('the sandbox tests ran to the end', false, String(e && e.stack || e)));

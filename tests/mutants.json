@@ -2743,5 +2743,13 @@
   "replace": "",
   "suite": "backend",
   "expect": "test_old_check_repairs_cleared_on_start"
+ },
+ {
+  "name": "sandbox: a change made while an outside event is handed out waits, as one made while a change is",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "if ((h.now || this.evOut) && this.dispatching) {",
+  "replace": "if (h.now && this.dispatching) {",
+  "suite": "sandbox",
+  "expect": "0.16.1 a run an outside event started changes something"
  }
 ]
