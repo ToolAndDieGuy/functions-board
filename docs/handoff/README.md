@@ -1,18 +1,22 @@
-# Audit, Hardening & v0.14.0 Release Handoff (`release-0.14.0`)
+# Handoff Index (`v0.14.0` → `v0.16.0`)
 
-This folder documents the full audit triage, bug fixes, backend/security hardening, ES module architecture refactor, test apparatus updates, post-session code review fixes, and UI/UX roadmap prepared for **v0.14.0** (branched from `main` at `1797f688` / `v0.13.1`).
+This folder documents the audit, hardening, ES module refactor (`v0.14.0`), and the subsequent **Template Studio & 20 Guided Recipes** (`v0.15.0`, PR #75) and **Board Intelligence & Safety Net** (`v0.16.0`, PR #76) releases.
 
-> **Release status:** Version bumped to `0.14.0` via `node scripts/bump.js 0.14.0` with full release notes in `CHANGELOG.md`. Merging to `main` after GitHub Actions `Validate` passes will trigger `.github/workflows/release.yml` to tag and publish `v0.14.0`.
+> **Current status:**
+> - **`v0.14.0`** — Merged to `main` (PR #74).
+> - **`v0.15.0`** — Merged to `main` (PR #75, **7/7 CI checks green**).
+> - **`v0.16.0`** — Merged to `main` (PR #76, **7/7 CI checks green**).
 
 ---
 
 ## Contents
 
-1. [`issue-72-triage.md`](./issue-72-triage.md) — Root-cause analysis and fixes for all three failing weekly CI jobs in Issue #72 (`mutants`, `jitter`, `diff`) plus the `actions/upload-artifact@v4` dot-directory fix.
-2. [`phase-1-audit-fixes.md`](./phase-1-audit-fixes.md) — Complete itemized breakdown of all Phase 1 (Batches 1A, 1B, 1C) bug fixes, current ES module locations, regression tests, static invariants, and mutants.
-3. [`phase-2-hardening.md`](./phase-2-hardening.md) — Phase 2 backend hardening & HACS review version restore domain allowlist (allowlist, diagnostics executor offload & case-insensitive/structural redaction, split version metadata/blobs, decoupled saved checks store + delete/undo/sync lifecycle, spec-compliant lazy dashboard `card-loader.js`).
-4. [`phase-3-es-modules.md`](./phase-3-es-modules.md) — Phase 3 native zero-build ES module refactor (24 ES modules under `frontend/lib/` + `frontend/ui/` + `board-core.js`, disjoint atomic `/functions_board_static_v/<digest>/` cache busting, `mixParts()`, and updated static/test/mutant harness).
-5. [`roadmap-next-phases.md`](./roadmap-next-phases.md) — Visual UI/UX review findings & improvement recommendations, Phase 4 roadmap (Recipes & features), and Issue #73 (`readme-pictures`).
+1. [`v0.15-v0.16-handoff.md`](./v0.15-v0.16-handoff.md) — **Latest handoff:** Template Studio, 20 Guided Recipes Gallery, Sandbox `time`-at-entity fix (`v0.15.0`), plus Quiet Automations, Impact Inspector, Plain-English Version Diffs, Share-a-Function Anonymized YAML Package Export, and Self-Running Checks + HA Repairs (`v0.16.0`).
+2. [`issue-72-triage.md`](./issue-72-triage.md) — Root-cause analysis and fixes for all three failing weekly CI jobs in Issue #72 (`mutants`, `jitter`, `diff`) plus the `actions/upload-artifact@v4` dot-directory fix.
+3. [`phase-1-audit-fixes.md`](./phase-1-audit-fixes.md) — Complete itemized breakdown of all Phase 1 (Batches 1A, 1B, 1C) bug fixes, current ES module locations, regression tests, static invariants, and mutants.
+4. [`phase-2-hardening.md`](./phase-2-hardening.md) — Phase 2 backend hardening & HACS review version restore domain allowlist.
+5. [`phase-3-es-modules.md`](./phase-3-es-modules.md) — Phase 3 native zero-build ES module refactor (zero-build ES modules, atomic `/functions_board_static_v/<digest>/` cache busting, `mixParts()`).
+6. [`roadmap-next-phases.md`](./roadmap-next-phases.md) — Visual UI/UX review findings, completed Phase 4 items, and remaining open polish items (including Issue #73 `readme-pictures`).
 
 ---
 

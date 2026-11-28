@@ -39,12 +39,16 @@ One UI bug found during the visual audit was fixed immediately with zero snapsho
 
 ---
 
-## 2. Phase 4 — Features & Recipes (Suggested `v0.15.0+`)
+## 2. Phase 4 — Features & Recipes (`v0.15.0` & `v0.16.0` Shipped!)
 
-Build on top of the modularized ES module codebase:
-- Additional **Recipes** alongside the Notification Builder (e.g., motion-activated lighting with timeout/manual override, door/window left-open alert, presence/quiet-hours helpers).
+Completed in **v0.15.0** (PR #75) and **v0.16.0** (PR #76) — see [`v0.15-v0.16-handoff.md`](./v0.15-v0.16-handoff.md):
+- **Done (`v0.15.0`):** Full Template Studio (5-goal wizard, 32-concept interactive Jinja Guide, plain-English clause walkthrough with live `render_template` values, unavailable-trap linter & 1-click fixes, inline attribute/time simulator, native Template helper creation) + 20 Guided Recipes Gallery (17 template helpers, Notification Builder, Left-open alert, Motion-activated light).
+- **Done (`v0.16.0`):** Never-Fired / Quiet Automations in Problems, Impact / "Where is this used?" cross-function drawer, Plain-English Version Diffs (Compare + Make active), Share-a-Function Anonymized YAML Package Export, and Self-Running Checks + Home Assistant Repairs (`check_runner.py`).
+
+Still open for future iterations:
 - Expanded HA 2026.x purpose-specific trigger/condition coverage in the sandbox.
 - Deeper multi-endpoint Z-Wave and Matter/Thread sandbox helpers.
+- User-facing documentation updates in `docs/guide.md` and `docs/what-it-changes.md` covering v0.15.0 & v0.16.0 features.
 
 ---
 
