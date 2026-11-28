@@ -439,7 +439,8 @@ export const problemsPart = {
       const nm = this._nameOf(key);
       try {
         await this._svc('automation', 'turn_off', {}, { entity_id: key });
-        this._toast(T('pq_off_done', { name: nm }));
+        // Undo turns it back on (0.16.1): every change the board makes can be taken back
+        this._toast(T('pq_off_done', { name: nm }), [{ text: T('undo'), fn: () => this._svc('automation', 'turn_on', {}, { entity_id: key }) }]);
         this._clock.after('quiet-refresh', 400, () => {
           this._renderHeader();
           if (this._drawer && this._drawer.mode === 'problems') this._openProblems(!!this._drawer.dismissed);

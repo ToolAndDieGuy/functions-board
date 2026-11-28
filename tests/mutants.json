@@ -2759,5 +2759,14 @@
   "replace": "        if False:",
   "suite": "backend",
   "expect": "test_anonymised_diagnostics_keep_shape_not_names"
+ },
+ {
+  "name": "problems: Turn off on a quiet automation has no Undo",
+  "file": "custom_components/functions_board/frontend/ui/problems.js",
+  "find": ", [{ text: T('undo'), fn: () => this._svc('automation', 'turn_on', {}, { entity_id: key }) }]);",
+  "replace": ");",
+  "suite": "board-regress",
+  "only": "0.16.1 Turn off",
+  "expect": "its message has Undo"
  }
 ]

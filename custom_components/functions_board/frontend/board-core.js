@@ -3276,6 +3276,7 @@ export class FunctionsBoard extends HTMLElement {
         T('creating_a_function_creates_a'),
         T('adding_or_removing_a_piece'),
         T('pause_and_resume_turn_the'),
+        T('pq_promise'),
         T('new_automations_scripts_helpers_and'),
         T('hide_from_board_leaves_the'),
       ];
@@ -3284,6 +3285,7 @@ export class FunctionsBoard extends HTMLElement {
         li.push(T('ver_promise_full'));
         li.push(T('tests_full_manager_a_helper'));
         li.push(T('nb_promise'));
+        li.push(T('ts_promise'));
         li.push(T('ver_del_promise'));
       } else {
         li.push(T('this_install_is_set_to'));
@@ -3291,6 +3293,7 @@ export class FunctionsBoard extends HTMLElement {
       li.push(T('the_debugger_watch_triggers_monitor'));
       li.push(T('show_node_red_flows_in'));
       li.push(T('ver_promise'));
+      li.push(T('share_promise'));
       li.push(T('every_change_is_shown_before'));
       li.push(T('privacy_promise'));
       return li;

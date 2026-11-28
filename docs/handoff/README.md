@@ -1,5 +1,9 @@
 # Handoff Index (`v0.14.0` → `v0.16.0`)
 
+> **Superseded in 0.16.1** (see the CHANGELOG): `check_runner.py` (a second simulator in Python that raised false Repairs) was
+> removed, and the change to `tests/diff/random.js` in Issue #72's triage (§3) was undone: it hid a real sandbox bug (a
+> state change made while an event is handed out goes at once in Home Assistant), now fixed. These notes are history.
+
 This folder documents the audit, hardening, ES module refactor (`v0.14.0`), and the subsequent **Template Studio & 20 Guided Recipes** (`v0.15.0`, PR #75) and **Board Intelligence & Safety Net** (`v0.16.0`, PR #76) releases.
 
 > **Current status:**

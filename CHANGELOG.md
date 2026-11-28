@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+- **Saved checks no longer raise false Repairs.** 0.16.0 re-ran saved checks inside Home Assistant with a simulator of
+  its own and raised a Repair for each one it judged failed. That simulator wasn't the sandbox and got common
+  automations wrong (run modes such as restart, a delay inside a choose, repeat), so working automations could show as
+  failed checks. It's gone, and so are the Repairs it raised: they're cleared when the integration starts. Saved
+  checks run in the board, by the sandbox, as before.
+- **The sandbox matches Home Assistant when an event starts a chain.** When an automation started by an event changes
+  something, Home Assistant runs whatever that change starts right away, before the first automation goes on. The
+  sandbox waited until the first one finished, so a function where both change the same thing could end differently.
+  The weekly comparison with Home Assistant's own core found it.
+- **Turn off** on a quiet automation can be undone, like every other change the board makes.
+- **Diagnostics** anonymise what you wrote in Template Studio and the recipes (labels, fallbacks, a state's words).
+- The guide, "What it changes" and the About dialog now describe Template Studio, the recipes, quiet automations,
+  Where used, Compare and Share as YAML package.
+
 ## 0.16.0 (2026-11-28)
 
 ### Board Intelligence & Safety Net

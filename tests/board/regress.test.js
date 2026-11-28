@@ -2614,3 +2614,20 @@ test('0.16.0 Board Intelligence: Never-Fired Automations, Impact Inspector, Plai
   check('0.16.0 Board Intelligence: no errors', page.logs.length === 0, page.logs);
   await ctx.close();
 });
+
+test('0.16.1 Turn off on a quiet automation can be undone: it turns it back on', async ({ browser, fake }) => {
+  const { ctx, page } = await imported(browser);
+  await openFn(page, /garage/i);
+  const key = await el(page, (b) => [...b._model.nodes.keys()].find((k) => k.startsWith('automation.')));
+  await fake.setState(key, 'on', { last_triggered: null });
+  await el(page, (b) => b._open(b._data.ui.current, true));
+  await fbq(page, '.pqchip').waitFor({ timeout: 8000 });
+  await fbq(page, '.pqchip').click();
+  await fbq(page, `.drawer .pquiet [data-act="pquiet-off"][data-key="${key}"]`).click();
+  await until(() => fake.calls.some((c) => c.kind === 'svc' && c.domain === 'automation' && c.service === 'turn_off') || null, 5000);
+  await fbq(page, '.toast:not([hidden]) [data-act="toast-act"]').click({ timeout: 3000 }).catch(() => {});
+  const on = await until(() => fake.calls.find((c) => c.kind === 'svc' && c.domain === 'automation' && c.service === 'turn_on') || null, 3000).catch(() => null);
+  check('0.16.1 Turn off on a quiet automation: its message has Undo, which turns that automation back on', !!on && JSON.stringify(on.target) === JSON.stringify({ entity_id: key }), on);
+  check('0.16.1 quiet Undo: no errors', page.logs.length === 0, page.logs);
+  await ctx.close();
+});
