@@ -20,7 +20,7 @@ export class FunctionsBoard extends HTMLElement {
     _init() {
       this._data = null; this._model = null;
       this._labels = []; this._ents = []; this._devs = [];
-      this._probs = new Map(); this._checkRes = new Map(); this._bgChecks = new Map();
+      this._probs = new Map(); this._checkRes = new Map();
       this._entMap = new Map(); this._devMap = new Map(); this._labelMap = new Map(); this._regIdMap = new Map();
       this._view = { x: 40, y: 40, k: 1 };
       this._sel = null; this._focus = null; this._focusEdges = new Set(); this._els = new Map();
@@ -313,7 +313,6 @@ export class FunctionsBoard extends HTMLElement {
       if (d.client && d.client === this._client()) return;
       // another board read Node-RED: one showing older flows takes the new ones (only with Node-RED switched on)
       if (d.what === 'versions') { if (this._drawer && this._drawer.mode === 'versions' && d.label === this._data.ui.current) this._renderVersions(); return; }
-      if (d.what === 'check_results') { this._loadBgChecks(d.label || null); return; }
       if (d.what === 'nodered') {
         this._nrTheirs();
         return;
@@ -742,7 +741,6 @@ export class FunctionsBoard extends HTMLElement {
       this._applyCheckProblems(label);
       this._renderHeader();
       this._checksSoon(label);
-      this._loadBgChecks(label);
       if (this._drawer && this._drawer.mode === 'problems') this._openProblems();
       this._place();
       this._render();
@@ -3278,6 +3276,7 @@ export class FunctionsBoard extends HTMLElement {
         T('creating_a_function_creates_a'),
         T('adding_or_removing_a_piece'),
         T('pause_and_resume_turn_the'),
+        T('pq_promise'),
         T('new_automations_scripts_helpers_and'),
         T('hide_from_board_leaves_the'),
       ];
@@ -3286,6 +3285,7 @@ export class FunctionsBoard extends HTMLElement {
         li.push(T('ver_promise_full'));
         li.push(T('tests_full_manager_a_helper'));
         li.push(T('nb_promise'));
+        li.push(T('ts_promise'));
         li.push(T('ver_del_promise'));
       } else {
         li.push(T('this_install_is_set_to'));
@@ -3293,6 +3293,7 @@ export class FunctionsBoard extends HTMLElement {
       li.push(T('the_debugger_watch_triggers_monitor'));
       li.push(T('show_node_red_flows_in'));
       li.push(T('ver_promise'));
+      li.push(T('share_promise'));
       li.push(T('every_change_is_shown_before'));
       li.push(T('privacy_promise'));
       return li;

@@ -111,7 +111,11 @@ async def _fill(hass: HomeAssistant, ws, home: dict[str, str]) -> str:
             "people": [{"id": "person.bramblewood_sam", "away": True, "phones": [{"svc": "mobile_app_bramblewood_pixel", "os": "android", "name": "Bramblewood pixel"}]}],
             "speakers": ["media_player.bramblewood_kitchen"], "tts": "tts.bramblewood_voice",
             "buttons": [{"title": "Close the bramblewood door", "then": [{"action": "script.bramblewood_close"}]}], "timeout": [], "wait": 30, "clear": True,
-            "level": "time", "quiet": {"from": "22:00", "to": "07:00"}, "speakAlways": False}}},
+            "level": "time", "quiet": {"from": "22:00", "to": "07:00"}, "speakAlways": False}},
+            # Template Studio's specs (0.15.0, 0.16.1): someone's words under the recipe's own keys (a label, a fallback, a map's to)
+            "sensor.bramblewood_gate_words": {"kind": "tpl_map_state", "spec": {"entity": home["door"], "rows": [{"from": "open", "to": "Elspeth aired the gate"}], "fallback": "Elspeth asleep"}},
+            "sensor.bramblewood_mood": {"kind": "tpl_band", "spec": {"entity": "sensor.bramblewood_temp", "bands": [{"upTo": 18, "label": "Elspeth's cold room"}], "aboveLabel": "Elspeth's hot room"}},
+            "binary_sensor.bramblewood_any": {"kind": "tpl_any_all", "spec": {"entities": [home["door"]], "mode": "any", "state": "on"}}},
     }
     for msg in (
         {"type": "functions_board/set_layout", "label": home["label"], "layout": layout},
@@ -143,6 +147,9 @@ async def test_anonymised_diagnostics_keep_shape_not_names(hass: HomeAssistant, 
     import re as _re  # noqa: PLC0415
     assert _leaks(dump) == [], [m.group(0) for m in _re.finditer(r".{0,60}bramblewood.{0,30}", dump, _re.I)][:8]
     assert home["device"] not in dump and home["area"] not in dump and home["label"] not in dump
+    # a recipe's words go, its shape stays (0.16.1)
+    assert "elspeth" not in dump.lower(), [l for l in dump.splitlines() if "lspeth" in l][:3]
+    assert '"mode": "any"' in dump or "'mode': 'any'" in dump or '"mode":"any"' in dump
     assert d["about"]["anonymised"] is True
     # the shape stays: layout geometry, types, modes, generic services and event types
     layout = next(iter(d["board"]["layouts"].values()))

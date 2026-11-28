@@ -710,7 +710,7 @@ export class Sandbox {
     this.busy = 0; this.seq = 0; this.steps = 0; this.halted = false; this.n = 0; this.devT = new WeakMap();
     // 0.11.2: step-through (paused runs, breakpoints), how devices answer, and what was reached (coverage)
     this.stepping = false; this.breaks = new Set(); this.paused = new Map(); this.behave = new Map();
-    this.hit = new WeakSet(); this.cres = new WeakMap(); this.fired = new Set(); this.dispatching = false; this.evq = []; this.after = []; this.round = null;
+    this.hit = new WeakSet(); this.cres = new WeakMap(); this.fired = new Set(); this.dispatching = false; this.evOut = 0; this.evq = []; this.after = []; this.round = null;
     // helpers that follow what they read (sbxFollow): id → { rule, reads, mem }, and what each input feeds
     this.follow = new Map(); this.feeds = new Map();
     // MQTT entities that follow their topics (0.11.3): id → { rule, mem }, in the order Home Assistant set them up
@@ -1164,8 +1164,14 @@ export class Sandbox {
     const nu = { state, attributes: A, last_changed: was === state && old ? old.last_changed : this.iso(), last_updated: this.iso() };
     this.changed.set(id, nu);
     const lid = this._log({ kind: 'state', key: id, from: was, to: state, cause, by: byYou ? 'you' : null, follows: follows || null });
-    if (h.now && this.dispatching) await this._onState(id, old, nu, lid);
-    else await this._dispatch(() => this._onState(id, old, nu, lid));
+    // handed out at once, inside the handing out in progress: an MQTT entity's write (how.now), and any change made
+    // while an event is handed out (0.16.1: Home Assistant doesn't hold those back as it does a change made while a
+    // change is handed out; tests/diff found it). That change's own handing out holds back what's made during it.
+    if ((h.now || this.evOut) && this.dispatching) {
+      const e = this.evOut;
+      this.evOut = 0;
+      try { await this._onState(id, old, nu, lid); } finally { this.evOut = e; }
+    } else await this._dispatch(() => this._onState(id, old, nu, lid));
     return lid;
   }
   async fireEvent(type, data, cause, byYou) {
@@ -1173,16 +1179,19 @@ export class Sandbox {
     const ev = { event_type: type, data: data || {} };
     await this._dispatch(async () => {
       const ws = this._listening();
-      for (const it of this.items.values()) {
-        if (it.kind !== 'automation' || !this._on(it)) continue;
-        const ts = this._trigs(it);
-        for (let i = 0; i < ts.length; i++) {
-          const t = ts[i];
-          if (t.enabled === false || this._plat(t) !== 'event') continue;
-          if (!toList(t.event_type).includes(type) || !subsetOf(t.event_data, data)) continue;
-          await this._fire(it, i, { platform: 'event', event: ev }, lid);
+      this.evOut = (this.evOut || 0) + 1;
+      try {
+        for (const it of this.items.values()) {
+          if (it.kind !== 'automation' || !this._on(it)) continue;
+          const ts = this._trigs(it);
+          for (let i = 0; i < ts.length; i++) {
+            const t = ts[i];
+            if (t.enabled === false || this._plat(t) !== 'event') continue;
+            if (!toList(t.event_type).includes(type) || !subsetOf(t.event_data, data)) continue;
+            await this._fire(it, i, { platform: 'event', event: ev }, lid);
+          }
         }
-      }
+      } finally { this.evOut--; }
       ws().forEach((w) => w.onEvent && w.onEvent(ev, lid));
     });
     return lid;

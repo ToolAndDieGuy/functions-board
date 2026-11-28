@@ -72,9 +72,9 @@ function one(r, n) {
   const autos = {};
   const count = r.int(1, 3);
   for (let i = 0; i < count; i++) {
-    // each automation changes only its own helper in x, y, z (and may trigger on helpers before it), so chains work
-    // without two concurrent runs racing to write conflicting states to the same input_boolean
-    const mine = [HELP[i]];
+    // the helpers this one may change: from a random place in the order on (several automations may change the same
+    // one: Home Assistant's order there is fixed, and the sandbox must keep it; 0.16.1 put this back)
+    const from = r.int(0, HELP.length - 1), mine = HELP.slice(from);
     const a = { triggers: [trigger(r, mine)] };
     if (r.maybe(0.3)) a.triggers.push(trigger(r, mine));
     // a trigger on a helper this one changes would make a loop: drop it
@@ -118,10 +118,15 @@ function one(r, n) {
       mq('binary_sensor.mb', Object.assign({ state_topic: 'r/mb' }, r.maybe(0.4) ? { off_delay: r.pick([5, 15, 30]) } : {}, r.maybe(0.3) ? { expire_after: r.pick([20, 60]) } : {})));
     Object.entries(mqtt).forEach(([id, x]) => { states[id] = [x.state]; });
     let published = false;
+    // one automation at most listens to each exact topic (0.16.1): Home Assistant keeps a topic's subscribers in a set,
+    // so the order two automations on one topic hear a message in changes from run to run, and no order is right
+    const heard = new Set();
     Object.values(autos).forEach((a) => {
-      const k = r.int(0, 5);
-      if (k === 0) a.triggers.push({ trigger: 'mqtt', topic: 'r/mq' });
-      else if (k === 1) a.triggers.push({ trigger: 'mqtt', topic: 'r/mb', payload: r.pick(['ON', 'OFF']) });
+      let k = r.int(0, 5);
+      if (k === 0 && heard.has('r/mq')) k = 2;
+      if (k === 1 && heard.has('r/mb')) k = 3;
+      if (k === 0) { heard.add('r/mq'); a.triggers.push({ trigger: 'mqtt', topic: 'r/mq' }); }
+      else if (k === 1) { heard.add('r/mb'); a.triggers.push({ trigger: 'mqtt', topic: 'r/mb', payload: r.pick(['ON', 'OFF']) }); }
       else if (k === 2) a.triggers.push({ trigger: 'numeric_state', entity_id: 'sensor.mq', above: r.pick([20, 50, 80]) });
       else if (k === 3) a.triggers.push({ trigger: 'state', entity_id: 'binary_sensor.mb', to: r.pick(['on', 'off']) });
       else if (k === 4) a.conditions = (a.conditions || []).concat([{ condition: 'state', entity_id: 'binary_sensor.mb', state: r.pick(['on', 'off']) }]);

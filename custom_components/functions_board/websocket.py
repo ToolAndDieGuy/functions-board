@@ -53,8 +53,6 @@ def async_register(hass: HomeAssistant) -> None:
         ws_nodered_keep,
         ws_checks,
         ws_set_checks,
-        ws_check_results,
-        ws_run_checks,
         ws_versions,
         ws_version_get,
         ws_version_save,
@@ -391,47 +389,7 @@ def ws_set_checks(hass: HomeAssistant, connection: websocket_api.ActiveConnectio
         return
     board = _board(hass)
     board.notify(hass, {"what": "checks", "label": msg["label"], "client": msg.get("client", "")})
-    if board.check_runner is not None:
-        board.check_runner.schedule_run(msg["label"])
     connection.send_result(msg["id"])
-
-
-@websocket_api.websocket_command(
-    {
-        vol.Required("type"): "functions_board/check_results",
-        vol.Optional("label"): LABEL,
-    }
-)
-@websocket_api.require_admin
-@callback
-def ws_check_results(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
-    """Latest background check results: one function's map (with label) or every function's map."""
-    runner = _board(hass).check_runner
-    if runner is None:
-        connection.send_result(msg["id"], {"results": {}})
-        return
-    if "label" in msg:
-        connection.send_result(msg["id"], {"results": dict(runner.results.get(msg["label"], {}))})
-    else:
-        connection.send_result(msg["id"], {"results": {k: dict(v) for k, v in runner.results.items()}})
-
-
-@websocket_api.websocket_command(
-    {
-        vol.Required("type"): "functions_board/run_checks",
-        vol.Optional("label"): LABEL,
-    }
-)
-@websocket_api.require_admin
-@websocket_api.async_response
-async def ws_run_checks(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
-    """Run saved checks in Python on demand and sync Home Assistant Repairs."""
-    runner = _board(hass).check_runner
-    if runner is None:
-        connection.send_result(msg["id"], {"results": {}})
-        return
-    results = await runner.async_run(msg.get("label"))
-    connection.send_result(msg["id"], {"results": results})
 
 
 # ---- saved versions of a function (versions.py). The board makes the snapshot from Home Assistant's own APIs and

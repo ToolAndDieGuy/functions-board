@@ -1,4 +1,4 @@
-export const VERSION = '0.16.0';
+export const VERSION = '0.16.1';
 export const REPO_URL = 'https://github.com/ToolAndDieGuy/functions-board';
 
 /* ---------- the board's words (4.9) ---------- */
@@ -890,6 +890,9 @@ export const STR = {
     nb_by_hand: 'Edited by hand since the builder made it: opening Home Assistant\'s editor',
     ver_del_promise: 'Deleting a saved version (Full manager) can also delete, only if you tick it, an automation, script or helper only that version has.',
     nb_promise: 'The notification builder (Full manager) writes the script it makes when you save it, and adds it to the function.',
+    ts_promise: 'Template Studio and the automation recipes (Full manager) make what you build when you save it: a template helper through Home Assistant\'s own helper setup, or an automation through its config API (automations.yaml is rewritten), and add it to the function. Undo takes it back.',
+    pq_promise: 'Turn off, on a quiet automation in the problems list, turns that automation off; Undo turns it back on.',
+    share_promise: 'Share as YAML package makes a file in your browser from the function\'s configs: nothing is sent anywhere, and names are swapped for stand-ins unless you untick that.',
     sbx_cond_mark: 'In the sandbox: {text} was {res}',
     sbx_f_calls: '{a}: {svc}{to}',
     sbx_f_checks: '{a} checks {c}',
@@ -1959,10 +1962,6 @@ export const STR = {
     pq_off_btn: 'Turn off',
     pq_off_done: 'Turned off {name}',
     pq_off_err: 'Could not turn off {name}: {e}',
-    chk_board_only: 'Run in board',
-    chk_board_only_t: 'Uses browser-only simulation steps — run it here in the board',
-    chk_bg_pass: 'Last background check passed',
-    chk_bg_fail: 'Background check failed: {detail}',
     // v0.16.0: Impact / "Where is this used?" inspector
     imp_btn: 'Where used',
     imp_title: 'Where is {name} used?',

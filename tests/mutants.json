@@ -2737,11 +2737,36 @@
   "expect": "zero privacy canaries leak"
  },
  {
-  "name": "check_runner: browser-only step ops fall through instead of marking board_only",
-  "file": "custom_components/functions_board/check_runner.py",
-  "find": "        if not isinstance(s, dict) or s.get(\"op\") in BOARD_ONLY_OPS or s.get(\"op\") not in SUPPORTED_OPS:",
+  "name": "setup: 0.16.0's check Repairs are left behind",
+  "file": "custom_components/functions_board/__init__.py",
+  "find": "    _clear_old_repairs(hass)\n",
+  "replace": "",
+  "suite": "backend",
+  "expect": "test_old_check_repairs_cleared_on_start"
+ },
+ {
+  "name": "sandbox: a change made while an outside event is handed out waits, as one made while a change is",
+  "file": "custom_components/functions_board/frontend/lib/sandbox.js",
+  "find": "if ((h.now || this.evOut) && this.dispatching) {",
+  "replace": "if (h.now && this.dispatching) {",
+  "suite": "sandbox",
+  "expect": "0.16.1 a run an outside event started changes something"
+ },
+ {
+  "name": "diagnostics: a recipe's words go through by their keys again",
+  "file": "custom_components/functions_board/diagnostics.py",
+  "find": "        if isinstance(v, dict) and key == \"builders\":",
   "replace": "        if False:",
   "suite": "backend",
-  "expect": "test_check_runner_passes_fails_and_syncs_repairs"
+  "expect": "test_anonymised_diagnostics_keep_shape_not_names"
+ },
+ {
+  "name": "problems: Turn off on a quiet automation has no Undo",
+  "file": "custom_components/functions_board/frontend/ui/problems.js",
+  "find": ", [{ text: T('undo'), fn: () => this._svc('automation', 'turn_on', {}, { entity_id: key }) }]);",
+  "replace": ");",
+  "suite": "board-regress",
+  "only": "0.16.1 Turn off",
+  "expect": "its message has Undo"
  }
 ]

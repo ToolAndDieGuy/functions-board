@@ -103,7 +103,7 @@ export const LINK_ORDER = {
 };
 export const LINK_AS_GIVEN = new Set(['config/entity_registry/list', 'config/device_registry/list', 'config/area_registry/list']);
 // a question, not a change: asked again, the newest answer is everyone's
-export const linkRead = (type) => /(^|\/)(list|get|config|list_for_display|versions|version_get|sources|nodered|check_results|get_user_data|get_translations)$/.test(type) && type !== 'functions_board/nodered_keep';
+export const linkRead = (type) => /(^|\/)(list|get|config|list_for_display|versions|version_get|sources|nodered|get_user_data|get_translations)$/.test(type) && type !== 'functions_board/nodered_keep';
 export function linkOrder(type, r) {
   if (!Array.isArray(r)) return r;
   const k = LINK_ORDER[type] || (/^[a-z_]+\/list$/.test(type) && !LINK_AS_GIVEN.has(type) && !type.startsWith('trace/') && r.every((x) => x && typeof x.id === 'string') ? 'id' : null);
@@ -348,7 +348,7 @@ export const PARTS = {
   list: { owns: ['_findQ'], table: 'list' },
   functions: { owns: ['_watch', '_fnIcon', '_fnColor', '_shareData'], table: 'create' },
   manager: { owns: ['_mgr', '_pick'], table: 'manager' },
-  problems: { owns: ['_probs', '_checkRes', '_probScanning', '_chkEdit', '_bgChecks'], table: 'problems' },
+  problems: { owns: ['_probs', '_checkRes', '_probScanning', '_chkEdit'], table: 'problems' },
   tools: { owns: ['_pendingTest', '_tw', '_monSubs', '_monData', '_monCount', '_monKind', '_testLog', '_testOk', '_msgs', '_impactTok'], table: 'tools' },
   debug: { owns: ['_dbg', '_dbgSel', '_dbgFlt', '_dbgScrolled', '_dbgSeq'], table: 'debug' },
   arrows: { owns: ['_arw', '_tt'], table: 'arrows' },

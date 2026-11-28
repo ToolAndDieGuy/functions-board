@@ -94,3 +94,15 @@ async def test_static_file_served(hass: HomeAssistant, hass_client) -> None:
     assert "javascript" in loader_resp.headers["Content-Type"]
     loader_text = await loader_resp.text()
     assert len(loader_text.encode("utf-8")) < 4096 and "is_admin" in loader_text
+
+
+async def test_old_check_repairs_cleared_on_start(hass: HomeAssistant) -> None:
+    """0.16.1: the Repairs 0.16.0's check simulator raised are taken away when the integration starts; others stay."""
+    from homeassistant.helpers import issue_registry as ir
+
+    for domain, iid in ((DOMAIN, "check_failed_lbl_chk1"), (DOMAIN, "check_failed_other_chk2"), (DOMAIN, "something_else"), ("other", "check_failed_x")):
+        ir.async_create_issue(hass, domain, iid, is_fixable=False, severity=ir.IssueSeverity.WARNING, translation_key="x")
+    await _setup(hass)
+    left = set(ir.async_get(hass).issues)
+    assert (DOMAIN, "check_failed_lbl_chk1") not in left and (DOMAIN, "check_failed_other_chk2") not in left
+    assert (DOMAIN, "something_else") in left and ("other", "check_failed_x") in left

@@ -8,10 +8,14 @@ Everything the board does, feature by feature. The [README](../README.md) has th
 - [A tour](#a-tour)
 - [Debugging](#debugging)
 - [Problems](#problems)
+- [Quiet automations](#quiet-automations)
+- [Where it's used](#where-its-used)
 - [Testing](#testing)
 - [Top to bottom](#top-to-bottom)
 - [Versions](#versions)
 - [Notifications](#notifications)
+- [Template Studio and recipes](#template-studio-and-recipes)
+- [Sharing a function](#sharing-a-function)
 - [Import, and on a phone](#import-and-on-a-phone)
 - [As a dashboard card](#as-a-dashboard-card)
 - [How the arrows are worked out](#how-the-arrows-are-worked-out)
@@ -84,6 +88,14 @@ Each function in the list shows how many it has, the header's **problems** chip 
 
 A problem you know about (a device that's unplugged for the winter) can be **dismissed**: it leaves the count, the list's badge and the marks on the board, and goes under **Dismissed** in the header, where **Bring back** returns it. Dismissals are kept with the function and shared between administrators. One is forgotten once its problem has been gone for a day, so if the problem comes back later, it shows again. **Ignore for good**, on a problem or a dismissed one, hides it for good: not in the count, not under Dismissed, not even if it goes away and comes back. The problems list says how many are ignored for good, and **Bring them back as dismissed** puts them under Dismissed again. A trigger that starts both ways is also said in the sandbox's timeline when it happens, with **Dismiss** beside it.
 
+## Quiet automations
+
+An automation that hasn't run in a long time is often one nobody needs any more, or one that stopped working without anyone noticing. The header's **quiet** chip counts the function's automations that are turned on but haven't run in 30 days (or 90, 365, or never: pick in the problems list), and the problems list shows them in a section of their own, apart from the red and amber problems. Each has **Show**, **Turn off** (Undo turns it back on), **Dismiss** and **Ignore for good**, as problems do. When an automation last ran is what Home Assistant keeps (`last_triggered`), so one that hasn't run since it was made says **never**.
+
+## Where it's used
+
+**Where used** on a box's bar lists everything in your Home Assistant that uses that entity, helper, automation, script, scene or device: the functions it's in, every automation and script that triggers on it, checks it, changes it, calls it or reads it in a template (a device counts for its entities too), groups and scenes that hold it, helpers that follow it (template, min/max and the like), and Node-RED flows that use it, when Node-RED is shown. Each line jumps to that function, or opens the automation in Home Assistant. It only reads. Look here before you remove or replace something.
+
 ## Testing
 
 <table>
@@ -111,6 +123,7 @@ The **Auto-arrange** button's menu sets which way a function flows: **left to ri
 
 - **Open** a version in a tab beside **Now** (the active one, always marked). Its board is drawn from the saved configs, boxes that have changed since or are only in that version are marked, and nothing on it can change your home. The tab's ↗ opens it in a new window, to see it beside what's there now.
 - **Try in sandbox** runs the saved version in the sandbox, without making it active.
+- **Compare** a version with what's there now, or with another version, in plain words: "Waits 15 min instead of 10 min", "Run mode changed from single to restart", a trigger, condition or action added, removed or turned off, a helper's setting changed. Making a version active shows the same list in its dialog.
 - **Make active** (Full manager) makes the function what that version is; the version itself, and every other, stays as it was saved. A dialog lists every change first. If what's there now is already a saved version, it says so and nothing needs saving; if it isn't (unsaved changes), saving it first as a new version is ticked, so nothing is lost unless you untick it; you choose whether automations added since are turned off or deleted (one that's also in another function, or used outside this one, only leaves the function); and if a device its steps used has been replaced, you pick the new one with Home Assistant's device picker.
 
 ## Notifications
@@ -125,6 +138,20 @@ The **Auto-arrange** button's menu sets which way a function flows: **left to ri
 - **Try in sandbox** runs it in the sandbox before or after saving, where its buttons can be pressed. Nothing is sent.
 
 Saving needs Full manager.
+
+## Template Studio and recipes
+
+**Recipes** in the function's toolbar lists everything the board can build for you, by what it's for: the notification builder, two automations (**Left open or left on**: a reminder when something stays open or on too long; **Motion light**: a light that turns on with motion and off after it stops), and **Template Studio**.
+
+**Template Studio** builds a template helper from what you want it to say, without writing Jinja: pick a goal (a yes or no, a number, a time or countdown, a piece of text), then a recipe (how many lights are on, whether any door is open, the low batteries, a fallback when a sensor is unavailable, a state put into words, and more), and answer its questions. It shows the template it makes beside your answers, says what each line does in plain words, warns about the usual traps (a sensor that's `unavailable` breaking a number, a comparison that's never true), and lets you try values to see what it would say. **Try in sandbox** runs it with the function before it exists.
+
+**Save** (Full manager) makes an ordinary template sensor or binary sensor through Home Assistant's own helper setup (the same as **Settings → Devices & services → Helpers → Template**) and adds it to the function. Its box's **Edit** opens it in its recipe again while it's what the recipe made; once it's been edited by hand, Edit opens Template Studio to explain it instead. A box with a template (a template helper, or an automation or script that uses one) has **Template Studio** on its bar, to explain what it does.
+
+Undo takes back what Template Studio or a recipe made. The automation recipes are saved like the notification builder: an ordinary automation, written through Home Assistant's own config API.
+
+## Sharing a function
+
+**Share as YAML package…** in a function's ⋮ menu makes one YAML file of the function: its automations, scripts, helpers and template helpers, as a [Home Assistant package](https://www.home-assistant.io/docs/configuration/packages/) someone else can read or use. It's made in your browser, and nothing is sent anywhere: **Copy** it or **Download** it. Names are swapped for stand-ins to start with (entity, device, area and label names, MQTT topics, addresses, e-mails, phone numbers and the words in your notifications), and the file's top lists the stand-ins to fill in. Untick that to share your own names; the dialog warns you first.
 
 ## Import, and on a phone
 

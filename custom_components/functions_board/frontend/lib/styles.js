@@ -822,7 +822,6 @@ button:focus-visible,.chip:focus-visible,.mi:focus-visible{outline:2px solid var
 .pqrow .pact{display:flex;gap:6px;flex-wrap:wrap}
 .pqrow .pact button{display:inline-flex;align-items:center;gap:4px;font:inherit;font-size:12px;padding:3px 8px;border-radius:6px;border:1px solid var(--divider-color);background:none;color:var(--primary-text-color);cursor:pointer}
 .pqrow .pact ha-icon{--mdc-icon-size:14px}
-.ckbg{font-size:10.5px;padding:1px 6px;border-radius:7px;border:1px solid var(--divider-color);color:var(--secondary-text-color);white-space:nowrap}
 .impact{display:flex;flex-direction:column;gap:12px;padding:12px 14px;overflow:auto;flex:1;min-height:0}
 .imp-sum{font-size:13px;line-height:1.45;padding:9px 11px;border-radius:10px;background:var(--secondary-background-color);border:1px solid var(--divider-color)}
 .imp-sec{display:flex;flex-direction:column;gap:6px}

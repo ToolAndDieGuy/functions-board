@@ -21,8 +21,9 @@ change without touching your home, and keeps versions you can go back to.
 - **Keep it working.** Save a sandbox run as a check: it's replayed after every change to the function, and turns
   red if it stops passing. Save versions of a function, open one beside what's there now, and make an old one
   active again.
-- **Build from recipes.** The notification builder writes an ordinary Home Assistant script: who gets it, how
-  urgent it is, quiet hours, and buttons that do things.
+- **Build from recipes.** Template Studio writes template helpers from what you want them to say, no Jinja
+  needed, and explains the ones you have. The notification builder writes an ordinary Home Assistant script: who
+  gets it, how urgent it is, quiet hours, and buttons that do things.
 
 There's more (a debugger with what caused each step, live checks on the arrows, tests, drawing an arrow to add a
 trigger or an action): [the guide](docs/guide.md) has all of it.
@@ -93,12 +94,12 @@ dashboard card.
 
 The integration starts in **Organise only** mode. Creating a function creates a label (and, when importing, files
 pieces with no category under one with the function's name); adding or removing a piece adds or removes that label;
-**Pause** turns the function's automations off and on. It never edits or deletes automations, scripts, helpers or
-devices.
+**Pause** turns the function's automations off and on (and **Turn off** does it for one quiet automation). It never
+edits or deletes automations, scripts, helpers or devices.
 
 **Full manager**, an option in the integration's settings, also lets the board delete things, edit the wiring, run
-tests that change your home for real, make a saved version active, and save what the notification builder makes,
-always through Home Assistant's own APIs. Every change is shown before it happens, and **Undo** takes it back,
+tests that change your home for real, make a saved version active, and save what the notification builder,
+Template Studio and the recipes make, always through Home Assistant's own APIs. Every change is shown before it happens, and **Undo** takes it back,
 except tests and deleting a helper that an integration set up.
 
 In either mode, the sandbox, the debugger and the problems check only read. The full list:
@@ -128,7 +129,7 @@ asks Home Assistant to render templates. It never calls a service, fires an even
 
 ## Feedback
 
-This is an early release (v0.16.0), and what would help most is hearing how it does in a real home:
+This is an early release (v0.16.1), and what would help most is hearing how it does in a real home:
 
 - What did **Import** get right or wrong about your setup?
 - Did the board show something you didn't know about your own automations (a problem, a loop, a reason one didn't

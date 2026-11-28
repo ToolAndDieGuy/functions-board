@@ -1,4 +1,4 @@
-style {82029 chars, #2a285276}
+style {81880 chars, #3acd47d8}
 div.board.m-panel.pc
   aside.list
     div.lhead
@@ -440,12 +440,14 @@ Related, not in this function. Select it to add it."
         li | Creating a function creates a Home Assistant label, and matching categories if you tick that option.
         li | Adding or removing a piece adds or removes that label. Items keep their other labels and stay where they are; a category is only set on items that don't have one.
         li | Pause and Resume turn the function's automations off and on. Resume turns on only the ones Pause turned off.
+        li | Turn off, on a quiet automation in the problems list, turns that automation off; Undo turns it back on.
         li | New automations, scripts, helpers and scenes are made in Home Assistant's own editors, in the drawer; the board labels what they create.
         li | Hide from board leaves the label, everything in it and the layout alone.
         li | This install is set to Organise only: the board doesn't edit or delete automations, scripts, helpers or devices, and doesn't run tests. Full manager, which adds deleting and tests, is in the Functions Board integration's options.
         li | The debugger, Watch triggers, monitor boxes and the live checks on arrows only read: watching a trigger never runs the automation.
         li | Show Node-RED flows (in the Key, off until you switch it on) reads your Node-RED app's flows in your browser to draw what they use. The flows last read (names and entity IDs, no flow code) are kept by the integration for every board.
         li | Versions: saving one reads the function through Home Assistant's own APIs and keeps a copy in .storage/functions_board.versions. Saving, opening and trying a version in the sandbox change nothing.
+        li | Share as YAML package makes a file in your browser from the function's configs: nothing is sent anywhere, and names are swapped for stand-ins unless you untick that.
         li | Every change is shown before it happens, and Undo (Ctrl+Z) takes it back, except tests and deleting a helper that an integration set up.
         li | Nothing leaves your Home Assistant: the board talks only to it, keeps its data in Home Assistant's own storage, and sends no telemetry. Diagnostics are a file you download, anonymised or not as you choose.
       h4 | Where things are kept
