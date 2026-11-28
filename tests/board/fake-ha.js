@@ -333,8 +333,6 @@ class FakeHA {
       case 'functions_board/nodered': this._admin(); return { kept: clone(this.nodered) };
       case 'functions_board/nodered_keep': this._admin(); this.nodered = { at: this._now(), slug: m.slug, groups: clone(m.groups) }; await this.notifyStore({ what: 'nodered', client: m.client || '' }); return null;
       case 'functions_board/checks': this._admin(); return { checks: m.label != null ? clone(this.checks[m.label] || []) : clone(this.checks) };
-      case 'functions_board/check_results': this._admin(); return { results: m.label != null ? clone((this.checkResults || {})[m.label] || {}) : clone(this.checkResults || {}) };
-      case 'functions_board/run_checks': this._admin(); return { results: m.label != null ? { [m.label]: clone((this.checkResults || {})[m.label] || {}) } : clone(this.checkResults || {}) };
       case 'functions_board/set_checks': {
         this._admin();
         if (!Array.isArray(m.checks) || m.checks.length > 50) throw new HAError('invalid_format', 'Checks not stored: malformed check entry');

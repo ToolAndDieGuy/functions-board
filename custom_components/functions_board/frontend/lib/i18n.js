@@ -1959,10 +1959,6 @@ export const STR = {
     pq_off_btn: 'Turn off',
     pq_off_done: 'Turned off {name}',
     pq_off_err: 'Could not turn off {name}: {e}',
-    chk_board_only: 'Run in board',
-    chk_board_only_t: 'Uses browser-only simulation steps — run it here in the board',
-    chk_bg_pass: 'Last background check passed',
-    chk_bg_fail: 'Background check failed: {detail}',
     // v0.16.0: Impact / "Where is this used?" inspector
     imp_btn: 'Where used',
     imp_title: 'Where is {name} used?',

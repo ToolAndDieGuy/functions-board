@@ -3,7 +3,7 @@ import { EXACT_RE, P, QUIET_DAYS, T, TGT_RE, analyze, bothWays, cleanCheck, cond
 export const problemsPart = {
     /* ======================================================================================================
        part: problems: problems and saved checks: counting, the drawer, dismissing, replaying checks Owns _probs,
-       _checkRes, _probScanning, _chkEdit, _bgChecks (PARTS): only its own methods use them; the other parts ask its methods.
+       _checkRes, _probScanning, _chkEdit (PARTS): only its own methods use them; the other parts ask its methods.
        ====================================================================================================== */
     _checkCompact() {
       // narrow board (phone, small dashboard column): the list becomes a drawer over the board, closed by default.
@@ -75,16 +75,12 @@ export const problemsPart = {
       const can = !this._ver && !!g.rec && g.rec.steps.length > 0, sig = [list.length, can, have.at || 0].join('|');
       if (soft && box.dataset.sig === sig) return;
       box.dataset.sig = sig;
-      const bg = (this._bgChecks && this._bgChecks.get(label)) || null;
       const mark = (c) => {
-        const r = res.get(c.id), b = bg && bg[c.id];
+        const r = res.get(c.id);
         if (r) {
           if (r.unsure) return `<span class="ckst unsure" title="${esc(r.unsure)}">?</span>`;
           return r.ok ? `<span class="ckst ok" title="${T('chk_passes')}">&#10003;</span>` : `<span class="ckst bad" title="${T('chk_fails')}">&#10005;</span>`;
         }
-        if (b && b.status === 'board_only') return `<span class="ckbg" title="${T('chk_board_only_t')}">${T('chk_board_only')}</span>`;
-        if (b && b.status === 'pass') return `<span class="ckst ok" title="${T('chk_bg_pass')}">&#10003;</span>`;
-        if (b && b.status === 'fail') return `<span class="ckst bad" title="${esc(T('chk_bg_fail', { detail: b.detail || '' }))}">&#10005;</span>`;
         return `<span class="ckst muted" title="${T('chk_not_run')}">·</span>`;
       };
       const row = (c) => `<div class="ckrow" data-id="${esc(c.id)}">${mark(c)}<span class="ckname" title="${esc(c.steps.map((x) => this._chkStepText(x).replace(/<[^>]+>/g, '')).join(' → '))}">${esc(c.name)}</span><button class="ib" data-act="chk-run" data-id="${esc(c.id)}" title="${T('chk_run_t')}"><ha-icon icon="mdi:play-circle-outline"></ha-icon></button><button class="ib" data-act="chk-replay" data-id="${esc(c.id)}" title="${T('chk_replay_t')}"><ha-icon icon="mdi:movie-open-play-outline"></ha-icon></button><button class="ib" data-act="chk-edit" data-id="${esc(c.id)}" title="${T('chk_edit_t')}"><ha-icon icon="mdi:pencil-outline"></ha-icon></button><button class="ib" data-act="chk-export" data-id="${esc(c.id)}" title="${T('chk_export_t')}"><ha-icon icon="mdi:export-variant"></ha-icon></button><button class="ib" data-act="chk-del" data-id="${esc(c.id)}" title="${T('chk_del_t')}"><ha-icon icon="mdi:delete-outline"></ha-icon></button></div>`;
@@ -420,16 +416,6 @@ export const problemsPart = {
       if (!c.e && !c.w) return '';
       const say = c.e ? P('prob_n_errors', c.e) + (c.w ? ' · ' + P('prob_n_warnings', c.w) : '') : P('prob_n_warnings', c.w);
       return `<span class="pbadge p-${c.e ? 'error' : 'warn'}" title="${esc(say)}"><span aria-hidden="true">${c.e || c.w}</span><span class="srt">${esc(say)}</span></span>`;
-    },
-    async _loadBgChecks(label) {
-      if (this._storeMode !== 'shared') return;
-      const msg = label ? { type: 'functions_board/check_results', label } : { type: 'functions_board/check_results' };
-      const r = await this._ws(msg, { optional: 'older integrations do not run checks in the background', fallback: null });
-      if (!r || !r.results) return;
-      this._bgChecks = this._bgChecks || new Map();
-      if (label) this._bgChecks.set(label, r.results || {});
-      else Object.entries(r.results).forEach(([k, v]) => this._bgChecks.set(k, v || {}));
-      if (this._sbx && (!label || this._sbx.label === label)) this._renderChecks();
     },
     _quietDays() {
       const v = this._data && this._data.ui && this._data.ui.quietDays;

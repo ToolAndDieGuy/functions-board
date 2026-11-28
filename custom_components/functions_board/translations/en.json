@@ -32,11 +32,5 @@
         "full": "Full manager"
       }
     }
-  },
-  "issues": {
-    "check_failed": {
-      "title": "Functions Board check failed: {check}",
-      "description": "Saved check \"{check}\" in function \"{function}\" failed after reloading your automations or scripts: {detail}\n\nOpen Functions Board to replay the check in the Sandbox and inspect what changed."
-    }
   }
 }

@@ -20,7 +20,7 @@ export class FunctionsBoard extends HTMLElement {
     _init() {
       this._data = null; this._model = null;
       this._labels = []; this._ents = []; this._devs = [];
-      this._probs = new Map(); this._checkRes = new Map(); this._bgChecks = new Map();
+      this._probs = new Map(); this._checkRes = new Map();
       this._entMap = new Map(); this._devMap = new Map(); this._labelMap = new Map(); this._regIdMap = new Map();
       this._view = { x: 40, y: 40, k: 1 };
       this._sel = null; this._focus = null; this._focusEdges = new Set(); this._els = new Map();
@@ -313,7 +313,6 @@ export class FunctionsBoard extends HTMLElement {
       if (d.client && d.client === this._client()) return;
       // another board read Node-RED: one showing older flows takes the new ones (only with Node-RED switched on)
       if (d.what === 'versions') { if (this._drawer && this._drawer.mode === 'versions' && d.label === this._data.ui.current) this._renderVersions(); return; }
-      if (d.what === 'check_results') { this._loadBgChecks(d.label || null); return; }
       if (d.what === 'nodered') {
         this._nrTheirs();
         return;
@@ -742,7 +741,6 @@ export class FunctionsBoard extends HTMLElement {
       this._applyCheckProblems(label);
       this._renderHeader();
       this._checksSoon(label);
-      this._loadBgChecks(label);
       if (this._drawer && this._drawer.mode === 'problems') this._openProblems();
       this._place();
       this._render();

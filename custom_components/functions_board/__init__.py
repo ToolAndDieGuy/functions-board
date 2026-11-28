@@ -23,7 +23,7 @@ from homeassistant.components import frontend, panel_custom
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import config_validation as cv, issue_registry as ir
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
@@ -31,7 +31,6 @@ from homeassistant.loader import async_get_integration
 from homeassistant.util.hass_dict import HassKey
 
 from . import websocket
-from .check_runner import CheckRunner
 from .checks import Checks
 from .nodered import NodeRedKept
 from .versions import Versions
@@ -97,7 +96,6 @@ class BoardData:
     nodered: NodeRedKept | None = None
     versions: Versions | None = None
     checks: Checks | None = None
-    check_runner: CheckRunner | None = None
 
     def stored(self) -> dict[str, Any]:
         """The store's contents."""
@@ -141,8 +139,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     await checks.async_load()
     if checks.migrate_from_layouts(hass.data[DATA_KEY].data.get("layouts")):
         hass.data[DATA_KEY].save()
-    hass.data[DATA_KEY].check_runner = runner = CheckRunner(hass)
-    runner.async_start()
+    _clear_old_repairs(hass)
     websocket.async_register(hass)
     return True
 
@@ -220,11 +217,18 @@ async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> Non
     board.notify(hass, {"what": "mode", "mode": board.mode, "client": ""})
 
 
+def _clear_old_repairs(hass: HomeAssistant) -> None:
+    """0.16.0 ran saved checks in a simulator of its own and raised a Repair for each it judged failed; it was wrong
+    for common automations (run modes, repeat, a delay inside a choose), so it is gone (0.16.1) and so are its Repairs."""
+    reg = ir.async_get(hass)
+    for domain, issue_id in list(reg.issues):
+        if domain == DOMAIN and issue_id.startswith("check_failed_"):
+            ir.async_delete_issue(hass, DOMAIN, issue_id)
+
+
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Take the page out of the sidebar."""
     board = hass.data[DATA_KEY]
-    if board.check_runner is not None:
-        board.check_runner.async_stop()
     frontend.async_remove_panel(hass, PANEL_URL, warn_if_unknown=False)
     _apply_card(hass, board, False)
     return True

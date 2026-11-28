@@ -2737,11 +2737,11 @@
   "expect": "zero privacy canaries leak"
  },
  {
-  "name": "check_runner: browser-only step ops fall through instead of marking board_only",
-  "file": "custom_components/functions_board/check_runner.py",
-  "find": "        if not isinstance(s, dict) or s.get(\"op\") in BOARD_ONLY_OPS or s.get(\"op\") not in SUPPORTED_OPS:",
-  "replace": "        if False:",
+  "name": "setup: 0.16.0's check Repairs are left behind",
+  "file": "custom_components/functions_board/__init__.py",
+  "find": "    _clear_old_repairs(hass)\n",
+  "replace": "",
   "suite": "backend",
-  "expect": "test_check_runner_passes_fails_and_syncs_repairs"
+  "expect": "test_old_check_repairs_cleared_on_start"
  }
 ]
