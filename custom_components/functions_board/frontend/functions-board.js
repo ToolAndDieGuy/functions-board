@@ -1,5 +1,5 @@
 /*!
- * Functions board v0.15.0 for Home Assistant
+ * Functions board v0.16.0 for Home Assistant
  *
  * One page per "function": every automation, script, helper and device that makes one job work,
  * grouped by a Home Assistant label and wired together from their own configs.

@@ -6,6 +6,8 @@ export * from './builders.js';
 export * from './template_studio.js';
 export * from './geometry.js';
 export * from './wiring.js';
+export * from './ver_diff.js';
+export * from './share.js';
 export * from './sandbox.js';
 export * from './clean.js';
 import { setLang } from './i18n.js';

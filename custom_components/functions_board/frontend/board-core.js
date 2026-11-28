@@ -20,7 +20,7 @@ export class FunctionsBoard extends HTMLElement {
     _init() {
       this._data = null; this._model = null;
       this._labels = []; this._ents = []; this._devs = [];
-      this._probs = new Map(); this._checkRes = new Map();
+      this._probs = new Map(); this._checkRes = new Map(); this._bgChecks = new Map();
       this._entMap = new Map(); this._devMap = new Map(); this._labelMap = new Map(); this._regIdMap = new Map();
       this._view = { x: 40, y: 40, k: 1 };
       this._sel = null; this._focus = null; this._focusEdges = new Set(); this._els = new Map();
@@ -313,6 +313,7 @@ export class FunctionsBoard extends HTMLElement {
       if (d.client && d.client === this._client()) return;
       // another board read Node-RED: one showing older flows takes the new ones (only with Node-RED switched on)
       if (d.what === 'versions') { if (this._drawer && this._drawer.mode === 'versions' && d.label === this._data.ui.current) this._renderVersions(); return; }
+      if (d.what === 'check_results') { this._loadBgChecks(d.label || null); return; }
       if (d.what === 'nodered') {
         this._nrTheirs();
         return;
@@ -741,6 +742,7 @@ export class FunctionsBoard extends HTMLElement {
       this._applyCheckProblems(label);
       this._renderHeader();
       this._checksSoon(label);
+      this._loadBgChecks(label);
       if (this._drawer && this._drawer.mode === 'problems') this._openProblems();
       this._place();
       this._render();
@@ -1711,6 +1713,7 @@ export class FunctionsBoard extends HTMLElement {
       const tools = [];
       if (this._canTest(n)) tools.push(['test', 'mdi:flask-outline', T('test_2'), this._full() ? null : FULL_ONLY_TEST]);
       if (this._canExplainTemplate(n)) tools.push(['ts-inspect', 'mdi:code-braces-box', T('ts_explain_btn')]);
+      if (!n.key.includes(':') || n.domain === 'device') tools.push(['impact', 'mdi:transit-connection-variant', T('imp_btn')]);
       if (n.domain === 'automation' && st) tools.push(this._watching(n.key) ? ['watch', 'mdi:eye-off-outline', T('stop_watching')] : ['watch', 'mdi:eye-outline', T('watch_triggers')]);
       if (/^(event|nact):/.test(n.key) || (n.key.startsWith('mqtt:') && (this._hass.config.components || []).includes('mqtt'))) tools.push(['monitor', 'mdi:monitor-eye', T('monitor')]);
       if (n.key.startsWith('svc:notify.') || (n.domain === 'notify' && st)) tools.push(['messages', 'mdi:message-text-clock-outline', T('messages')]);
@@ -2175,6 +2178,7 @@ export class FunctionsBoard extends HTMLElement {
           'left-new': (el) => { this._leftNew(el.dataset.id); },
           'fn-menu': (el) => { this._fnMenu(el, el.dataset.label); },
           'fnm-edit': (el) => { this._closeMenu(); this._fnModal(el.dataset.label); },
+          'fnm-share': (el) => { this._closeMenu(); this._shareModal(el.dataset.label); },
           'fnm-hide': (el) => { this._closeMenu(); this._hideFunction(el.dataset.label); },
           'fnm-del': (el) => { this._closeMenu(); this._deleteFnDialog(el.dataset.label, false); },
           'fnm-delall': (el) => { this._closeMenu(); this._deleteFnDialog(el.dataset.label, true); },
@@ -2188,6 +2192,8 @@ export class FunctionsBoard extends HTMLElement {
           'mk-scene': (el, { need }) => { if (need()) this._create('scene'); },
           'mk-more': () => { this._helperMoreMenu(); },
           'mk-back': () => { this._helperMenu(this._menuAnchor); },
+          'share-copy': () => { this._shareCopy(); },
+          'share-download': () => { this._shareDownload(); },
         },
         // the builders & 12-Recipes Gallery (0.11.3 / 0.15.0)
         builders: {
@@ -2326,6 +2332,9 @@ export class FunctionsBoard extends HTMLElement {
         },
         // the developer tools (Phase 9)
         tools: {
+          'impact': () => { if (this._sel) this._openImpact(this._sel); },
+          'impact-go': (el) => { this._findGo(el.dataset.key, el.dataset.label); },
+          'impact-ha': (el) => { this._impactOpenHA(el.dataset.key); },
           'messages': () => { if (this._sel) this._openMessages(this._sel); },
           'msg-run': (el) => { const x = (this._msgs || [])[+el.dataset.i]; if (x) this._showRun({ kind: 'run', key: x.from, t: x.t, run: x.run }, null); },
           'test': () => { if (this._sel) this._testDialog(this._sel); },
@@ -2383,6 +2392,8 @@ export class FunctionsBoard extends HTMLElement {
           'pdis-unever': () => { this._probDismiss(null, 'unever'); },
           'prob-go': (el) => { const k = el.dataset.key; if (this._model && this._model.nodes.has(k)) { this._select(k); this._centerOn(k); } },
           'prob-open': (el) => { const n = this._model && this._model.nodes.get(el.dataset.key); if (n) this._openItem(n); },
+          'pquiet-days': (el) => { this._setQuietDays(+el.dataset.days); },
+          'pquiet-off': (el) => { this._quietTurnOff(el.dataset.key); },
         },
         // the debugger and a run followed on the board
         debug: {
@@ -2410,6 +2421,7 @@ export class FunctionsBoard extends HTMLElement {
           'ver-over': () => { this._verOverDlg(); },
           'ver-over-go': () => { this._verOver(); },
           'ver-open': (el) => { this._verOpenTab(el.dataset.id); },
+          'ver-compare': (el) => { this._verCompareDlg(el.dataset.id); },
           'ver-sbx': (el) => { this._verOpenTab(el.dataset.id, true); },
           'ver-sbx-cur': () => { this._verTrySandbox(); },
           'ver-restore': (el) => { this._verRestore(el.dataset.id); },
@@ -2512,7 +2524,7 @@ export class FunctionsBoard extends HTMLElement {
     // a field changed: each part looks at it in turn, and the first that knows it handles it
     _onChange(e) {
       const t = e.target;
-      if (this._diagChange(t) || this._stuChange(t) || this._bldChange(t) || this._sbxChange(t) || this._nrChange(t) || this._testChange(t) || this._arwChange(t) || this._togChange(t) || this._fnChange(t) || this._mgrChange(t)) return;
+      if (this._diagChange(t) || this._verChange(t) || this._stuChange(t) || this._bldChange(t) || this._sbxChange(t) || this._nrChange(t) || this._testChange(t) || this._arwChange(t) || this._togChange(t) || this._fnChange(t) || this._mgrChange(t)) return;
     }
     // typed into: the same, for what each part reads as it's typed
     _onInput(e) {

@@ -2539,3 +2539,78 @@ test('0.15.0 Template Studio, 12-Recipes Gallery, Template helper config flow, a
   check('0.15.0 Template Studio & Recipes: no errors', page.logs.length === 0, page.logs);
   await ctx.close();
 });
+
+test('0.16.0 Board Intelligence: Never-Fired Automations, Impact Inspector, Plain-English Version Diffs, and Share YAML Export', async ({ browser, fake }) => {
+  const { ctx, page } = await imported(browser);
+  fake.store.mode = 'full';
+  await fake.notifyStore({ what: 'mode', mode: 'full', client: '' });
+  await until(() => el(page, (b) => b._fbMode === 'full' || null), 5000);
+  const garage = await openFn(page, /garage/i);
+
+  // 1. Never-Fired / Quiet Automations: set one automation never-triggered and verify quiet chip + Problems drawer section
+  const autoKey = await el(page, (b) => [...b._model.nodes.keys()].find((k) => k.startsWith('automation.')));
+  await fake.setState(autoKey, 'on', { last_triggered: null });
+  await el(page, (b) => b._open(b._data.ui.current, true));
+  await fbq(page, '.pqchip').waitFor({ timeout: 8000 });
+  const qChip = await fbq(page, '.pqchip').innerText();
+  const hasRedBadge = await fbq(page, '.pchip.p-error').count();
+  await fbq(page, '.pqchip').click();
+  await fbq(page, '.drawer .pquiet .pqrow').first().waitFor({ timeout: 5000 });
+  const qRows30 = await fbq(page, '.drawer .pquiet .pqrow').count();
+  await fbq(page, '.drawer .pquiet [data-act="pquiet-days"][data-days="0"]').click();
+  const qRowsNever = await fbq(page, '.drawer .pquiet .pqrow').count();
+  check('0.16.0 Quiet automations chip & drawer section work and stay separate from red error badge',
+    /quiet/i.test(qChip) && hasRedBadge === 0 && qRows30 >= 1 && qRowsNever >= 1,
+    { qChip, hasRedBadge, qRows30, qRowsNever });
+  await el(page, (b) => b._closeDrawer());
+
+  // 2. Impact / "Where is this used?" Inspector from box nodebar
+  await el(page, (b) => b._select('cover.garage_door'));
+  await fbq(page, '.nodebar [data-act="impact"]').waitFor({ timeout: 5000 });
+  await fbq(page, '.nodebar [data-act="impact"]').click();
+  await fbq(page, '.drawer .impact .imp-row').first().waitFor({ timeout: 8000 });
+  const impText = await fbq(page, '.drawer .impact').innerText();
+  check('0.16.0 Impact Inspector lists functions and automations referencing cover.garage_door with roles',
+    /Where is/i.test(await fbq(page, '.drawer .dtitle').innerText()) && /Garage/i.test(impText) && /trigger|action|condition/i.test(impText),
+    impText.slice(0, 220));
+  await el(page, (b) => b._closeDrawer());
+
+  // 3. Plain-English Version Diffs: save version v1, modify automation delay/mode, open Compare & Restore dialogs
+  await fbq(page, '.tools [data-act="versions"]').click();
+  await fbq(page, '.drawer [data-act="ver-new"]').first().click();
+  await fbq(page, '.modal input[name="vname"]').fill('Baseline v1');
+  await fbq(page, '.modal [data-act="ver-save"]').click();
+  await fbq(page, '.drawer [data-act="ver-compare"]').first().waitFor({ timeout: 8000 });
+  // Mutate the live automation config in fake HA
+  const liveCfg = await el(page, (b, k) => b._fetchConfig(k), autoKey);
+  const edited = JSON.parse(JSON.stringify(liveCfg));
+  edited.mode = edited.mode === 'restart' ? 'single' : 'restart';
+  edited.actions = (edited.actions || edited.action || []).concat([{ delay: '00:15:00' }]);
+  fake.autoByEntity[autoKey] = edited;
+  await el(page, (b) => b._store.changed('cfg:'));
+  await fbq(page, '.drawer [data-act="ver-compare"]').first().click();
+  await fbq(page, '.modal .vcdlg .vdiff-item').first().waitFor({ timeout: 8000 });
+  const cmpText = await fbq(page, '.modal .vcdlg').innerText();
+  check('0.16.0 Plain-English Version Diffs show human-readable mode & action changes in Compare dialog',
+    /Run mode changed/i.test(cmpText) && /wait 15 min/i.test(cmpText),
+    cmpText.slice(0, 260));
+  await fbq(page, '.modal [data-act="modal-cancel"]').click();
+  await el(page, (b) => b._closeDrawer());
+
+  // 4. Share a Function — Anonymized YAML Package Export
+  await fbq(page, '.bar [data-act="fn-menu"]').click();
+  await fbq(page, '.menu [data-act="fnm-share"]').click();
+  await fbq(page, '.modal .shdlg textarea.shyaml').waitFor({ timeout: 8000 });
+  const anonYaml = await fbq(page, '.modal textarea.shyaml').inputValue();
+  await fbq(page, '.modal input[name="shanon"]').uncheck();
+  const realYaml = await fbq(page, '.modal textarea.shyaml').inputValue();
+  const warnVisible = await fbq(page, '.modal .dwarn').count();
+  check('0.16.0 Share YAML Package anonymizes entity IDs by default and shows real names + warning when unchecked',
+    anonYaml.includes('automation:') && !anonYaml.includes('cover.garage_door') && anonYaml.includes('cover.cover_')
+    && realYaml.includes('cover.garage_door') && warnVisible >= 1,
+    { anonHead: anonYaml.slice(0, 200), warnVisible });
+  await fbq(page, '.modal [data-act="modal-cancel"]').click();
+
+  check('0.16.0 Board Intelligence: no errors', page.logs.length === 0, page.logs);
+  await ctx.close();
+});

@@ -301,6 +301,39 @@ export function findProblems(items, members, ctx) {
   return [...out.values()].sort((x, y) => (x.sev === y.sev ? 0 : x.sev === 'error' ? -1 : 1));
 }
 
+// Quiet / never-fired automations (0.16.0): enabled, healthy automations in a function whose
+// last_triggered is null ("never") or older than `days` days. Kept separate from broken-wiring errors.
+export const QUIET_DAYS = [30, 90, 365, 0];
+export function findQuietAutomations(members, ctx, opts = {}) {
+  const days = opts.days == null ? 30 : +opts.days;
+  const now = opts.now == null ? Date.now() : opts.now;
+  const dismissed = Array.isArray(opts.dismissed) ? opts.dismissed : [];
+  const offSet = new Set(dismissed.filter((d) => d && typeof d.k === 'string').map((d) => d.k));
+  const shown = [], hidden = [];
+  for (const k of members || []) {
+    if (typeof k !== 'string' || !k.startsWith('automation.')) continue;
+    const st = ctx.state(k), reg = ctx.ent(k);
+    if (!st || (reg && reg.disabled_by)) continue;
+    if (st.state !== 'on') continue; // disabled/off/unavailable automations are already surfaced in Problems
+    const lt = st.attributes && st.attributes.last_triggered;
+    let item = null;
+    if (!lt) {
+      item = { id: k, never: true, daysAgo: Infinity, lastTriggered: null };
+    } else {
+      const ts = Date.parse(lt);
+      if (Number.isFinite(ts) && days > 0) {
+        const d = Math.floor(Math.max(0, now - ts) / 86400000);
+        if (d >= days) item = { id: k, never: false, daysAgo: d, lastTriggered: lt };
+      }
+    }
+    if (!item) continue;
+    if (offSet.has('q|' + k)) hidden.push(item); else shown.push(item);
+  }
+  const cmp = (a, b) => (a.never !== b.never ? (a.never ? -1 : 1) : b.daysAgo - a.daysAgo || a.id.localeCompare(b.id));
+  shown.sort(cmp); hidden.sort(cmp);
+  return { shown, hidden };
+}
+
 /* ---------- layered layout (left to right): inputs -> logic -> outputs ---------- */
 // wrap (top to bottom only): the most a row may span, in px. Boxes stand side by side there, so a script that
 // drives thirty things would make one row thirty boxes wide; its end points (nothing comes after them) move down

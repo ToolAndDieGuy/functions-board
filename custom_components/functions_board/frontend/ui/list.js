@@ -75,6 +75,7 @@ export const listPart = {
       const full = this._full(), off = T('full_manager_only_switch_it');
       this._menu(btn, [
         { act: 'fnm-edit', data: { label }, icon: 'mdi:pencil-outline', text: T('edit_name_icon_colour') },
+        { act: 'fnm-share', data: { label }, icon: 'mdi:share-variant-outline', text: T('sh_menu'), title: T('sh_menu_t') },
         { act: 'fnm-hide', data: { label }, icon: 'mdi:eye-off-outline', text: T('hide_from_board'), title: T('the_label_everything_in_it') },
         { sep: true },
         { act: 'fnm-del', data: { label }, icon: 'mdi:label-off-outline', text: T('delete_function_2'), disabled: !full, title: full ? T('deletes_the_label_and_the') : off },

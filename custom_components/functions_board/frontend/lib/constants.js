@@ -135,7 +135,7 @@ export const SBX_PRESS = '\u0001press:';
 export const VER_HELPERS = new Set(['input_boolean', 'input_number', 'input_text', 'input_select', 'input_datetime', 'input_button', 'counter', 'timer', 'schedule']);
 export const VER_DOMAINS = new Set(['automation', 'script', ...VER_HELPERS]);
 // what may be clicked on a saved version's board: looking, the sandbox, and the versions themselves
-export const VER_OK_ACTS = /^(zoomin|zoomout|fit|togglelist|legend|hl|hl-.+|sandbox|sbx-.+|flow-.+|lit-.+|edge|close|back|newtab|modal-.+|ver-.+|vtab.*|versions|about|diag|diag-.+|problems|prob-.+|chk-run|chk-replay|hint-x|find-x|nr-open)$/;
+export const VER_OK_ACTS = /^(zoomin|zoomout|fit|togglelist|legend|hl|hl-.+|sandbox|sbx-.+|flow-.+|lit-.+|edge|close|back|newtab|modal-.+|ver-.+|vtab.*|versions|about|diag|diag-.+|problems|prob-.+|pquiet-.+|impact|impact-.+|chk-run|chk-replay|hint-x|find-x|nr-open)$/;
 // a short fingerprint of a snapshot's items and members: equal when the function is the same as that version
 export const verPrint = (snap) => {
   const body = JSON.stringify([[...(snap.members || [])].sort(), Object.keys(snap.items || {}).sort().map((k) => [k, (snap.items[k] || {}).cfg || null])]);

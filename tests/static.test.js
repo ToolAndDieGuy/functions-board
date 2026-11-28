@@ -218,7 +218,7 @@ const WS_OK = new Set(('automation/config blueprint/substitute config/area_regis
   + 'config/device_registry/update config/entity_registry/get config/entity_registry/list config/entity_registry/update '
   + 'config/floor_registry/list config/label_registry/create config/label_registry/delete config/label_registry/list '
   + 'config/label_registry/update config_entries/get device_automation/trigger/capabilities device_automation/trigger/list extract_from_target fire_event frontend/get_translations frontend/get_user_data '
-  + 'frontend/set_user_data functions_board/checks functions_board/diagnostics functions_board/get functions_board/nodered functions_board/nodered_keep '
+  + 'frontend/set_user_data functions_board/check_results functions_board/checks functions_board/diagnostics functions_board/get functions_board/nodered functions_board/nodered_keep '
   + 'functions_board/set functions_board/set_checks functions_board/set_functions functions_board/set_layout functions_board/sources functions_board/subscribe '
   + 'functions_board/version_active functions_board/version_delete functions_board/version_edit functions_board/version_get functions_board/version_overwrite functions_board/version_save '
   + 'functions_board/versions functions_board/zwave_values history/history_during_period logbook/event_stream logbook/get_action_calls manifest/list mqtt/device/debug_info mqtt/subscribe render_template '

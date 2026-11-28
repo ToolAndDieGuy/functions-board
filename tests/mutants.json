@@ -368,8 +368,8 @@
  {
   "name": "rules: a quick node suite left out of CI",
   "file": ".github/workflows/validate.yml",
-  "find": "--only 'selftest|static|wiring|import|problems|sandbox|builder|studio|clock|link|store'",
-  "replace": "--only 'selftest|static|wiring|problems|sandbox|builder|studio|clock|link|store'",
+  "find": "--only 'selftest|static|wiring|import|problems|sandbox|builder|studio|ver_diff|share|clock|link|store'",
+  "replace": "--only 'selftest|static|wiring|problems|sandbox|builder|studio|ver_diff|share|clock|link|store'",
   "suite": "static",
   "expect": "every quick node suite runs in CI"
  },
@@ -2711,5 +2711,37 @@
   "suite": "board-regress",
   "only": "0.15.0 Template Studio",
   "expect": "Organise only"
+ },
+ {
+  "name": "quiet: disabled/off automations are reported as quiet instead of skipped",
+  "file": "custom_components/functions_board/frontend/lib/wiring.js",
+  "find": "    if (st.state !== 'on') continue; // disabled/off/unavailable automations are already surfaced in Problems",
+  "replace": "    if (false && st.state !== 'on') continue;",
+  "suite": "problems",
+  "expect": "skips recent, off, unavailable"
+ },
+ {
+  "name": "ver_diff: delay change sentence is skipped",
+  "file": "custom_components/functions_board/frontend/lib/ver_diff.js",
+  "find": "  if (a.delay != null && b.delay != null && canon(a.delay) !== canon(b.delay)) {",
+  "replace": "  if (false && a.delay != null && b.delay != null && canon(a.delay) !== canon(b.delay)) {",
+  "suite": "ver_diff",
+  "expect": "Waits 15 min instead of 10 min"
+ },
+ {
+  "name": "share: anonymizer skips replacing entity IDs in strings and templates",
+  "file": "custom_components/functions_board/frontend/lib/share.js",
+  "find": "      return this.entity(dom, obj);",
+  "replace": "      return full;",
+  "suite": "share",
+  "expect": "zero privacy canaries leak"
+ },
+ {
+  "name": "check_runner: browser-only step ops fall through instead of marking board_only",
+  "file": "custom_components/functions_board/check_runner.py",
+  "find": "        if not isinstance(s, dict) or s.get(\"op\") in BOARD_ONLY_OPS or s.get(\"op\") not in SUPPORTED_OPS:",
+  "replace": "        if False:",
+  "suite": "backend",
+  "expect": "test_check_runner_passes_fails_and_syncs_repairs"
  }
 ]

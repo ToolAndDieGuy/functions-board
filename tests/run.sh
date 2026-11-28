@@ -41,7 +41,7 @@ run() {
 nodetest() { run "$1" node --test --test-reporter=junit --test-reporter-destination="$R/$1.xml" --test-reporter=spec --test-reporter-destination=stdout "tests/$1.test.js"; }
 
 want selftest && run selftest node tests/selftest/run.js "$R"
-for s in static wiring import problems sandbox builder studio clock link store; do want "$s" && nodetest "$s"; done
+for s in static wiring import problems sandbox builder studio ver_diff share clock link store; do want "$s" && nodetest "$s"; done
 if want backend; then
   if [ -x venvtest/bin/python ]; then run backend venvtest/bin/python -m pytest tests/backend -q -p no:cacheprovider --junitxml="$R/backend.xml"
   else WANT="$WANT backend"; echo "venvtest is missing: sh tests/setup.sh backend" > "$R/backend.log"; fi
