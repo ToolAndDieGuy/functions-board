@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.16.1 (2026-11-28)
 
 - **Saved checks no longer raise false Repairs.** 0.16.0 re-ran saved checks inside Home Assistant with a simulator of
   its own and raised a Repair for each one it judged failed. That simulator wasn't the sandbox and got common
