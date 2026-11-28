@@ -31,6 +31,7 @@ from homeassistant.loader import async_get_integration
 from homeassistant.util.hass_dict import HassKey
 
 from . import websocket
+from .check_runner import CheckRunner
 from .checks import Checks
 from .nodered import NodeRedKept
 from .versions import Versions
@@ -96,6 +97,7 @@ class BoardData:
     nodered: NodeRedKept | None = None
     versions: Versions | None = None
     checks: Checks | None = None
+    check_runner: CheckRunner | None = None
 
     def stored(self) -> dict[str, Any]:
         """The store's contents."""
@@ -139,6 +141,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     await checks.async_load()
     if checks.migrate_from_layouts(hass.data[DATA_KEY].data.get("layouts")):
         hass.data[DATA_KEY].save()
+    hass.data[DATA_KEY].check_runner = runner = CheckRunner(hass)
+    runner.async_start()
     websocket.async_register(hass)
     return True
 
@@ -219,6 +223,8 @@ async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> Non
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Take the page out of the sidebar."""
     board = hass.data[DATA_KEY]
+    if board.check_runner is not None:
+        board.check_runner.async_stop()
     frontend.async_remove_panel(hass, PANEL_URL, warn_if_unknown=False)
     _apply_card(hass, board, False)
     return True

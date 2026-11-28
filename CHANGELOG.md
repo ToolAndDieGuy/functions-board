@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.16.0 (2026-11-28)
+
+### Board Intelligence & Safety Net
+- **Never-Fired / Quiet Automations (`Problems` drawer & calm header chip):**
+  - Surfaces enabled, healthy automations whose `last_triggered` is empty or older than a configurable window (`30d` / `90d` / `365d` / `Never`), kept strictly separate from broken-wiring red/amber error badges.
+  - Supports jumping straight to the box on the board, turning off an automation directly, or dismissing / ignoring for good.
+- **Impact / "Where is this used?" Inspector (`Where used` on any entity, helper, automation, script, or device):**
+  - Read-only cross-function dependency drawer listing every function, automation, script (with `trigger` / `condition` / `action` / `calls` / `template` role pills), derived helper, group/scene, and Node-RED flow referencing that item — with clickable jump links or HA editor shortcuts.
+- **Plain-English Version Diffs (`lib/ver_diff.js` + `Versions → Compare` & `Make active`):**
+  - Translates raw config differences between any two saved versions (or a saved version vs. live Home Assistant) into readable sentences (`"Waits 15 min instead of 10 min"`, `"Run mode changed from single to restart"`, added/removed triggers, conditions, actions, and helper settings).
+  - Shown in both the new **Compare** dialog and the **Make active (restore)** confirmation dialog.
+- **Share a Function — Anonymized YAML Package Export (`⋮ → Share as YAML package…`):**
+  - Exports a function's automations, scripts, UI helpers, and template helpers into a single Home Assistant YAML package ready to copy or download as `<slug>.yaml`.
+  - **Anonymize entity, device, area, and personal names** is enabled by default, consistently replacing personal identifiers, URLs, emails, IPs, MACs, phone numbers, tokens, and notification copy with clean placeholders and a header checklist.
+- **Self-Running Checks + Home Assistant Repairs (`check_runner.py`):**
+  - Hybrid Python runner automatically re-runs supported saved checks on Home Assistant startup and automation/script reloads using Home Assistant's own Jinja renderer on isolated virtual state.
+  - Raises native Home Assistant Repair issues (`Settings → System → Repairs`) when a check fails and auto-clears them once fixed; checks that rely on browser-only simulation steps (device triggers, Z-Wave values, slow/failing devices, Assist sentences, calendars) are honestly marked **"Run in board"** rather than false-failing.
+  - Exposes admin-only `functions_board/check_results` and `functions_board/run_checks` WebSocket commands.
+
 ## 0.15.0 (2026-11-27)
 
 ### Template Studio & 20 Guided Recipes

@@ -1,9 +1,9 @@
-import { CAPTURE_KEY, COLORS, HELPER_DOMAINS, HELPER_PLATFORMS, HELPER_TYPES, P, T, anchor, clash, esc } from '../lib/index.js';
+import { CAPTURE_KEY, COLORS, HELPER_DOMAINS, HELPER_PLATFORMS, HELPER_TYPES, P, T, VER_HELPERS, anchor, clash, esc, exportFunctionPackage } from '../lib/index.js';
 
 export const functionsPart = {
     /* ======================================================================================================
        part: functions: making, editing, hiding and deleting functions; labelling what's made in the editor drawer
-       Owns _watch, _fnIcon, _fnColor (PARTS): only its own methods use them; the other parts ask its methods.
+       Owns _watch, _fnIcon, _fnColor, _shareData (PARTS): only its own methods use them; the other parts ask its methods.
        ====================================================================================================== */
     // something was created in the editor drawer: give it the function's label and keep an eye on it
     // something just made in the editor drawer, labelled and watched for a while (its id may change)
@@ -147,8 +147,12 @@ export const functionsPart = {
     },
 
     /* ---------- functions: create / edit / remove ---------- */
-    // the function dialog's colour and icon
-    _fnChange(t) { if (t.name === 'color' && t.tagName === 'SELECT') { this._fnColor = t.value; return true; } return false; },
+    // the function dialog's colour and icon, plus the Share YAML anonymize toggle
+    _fnChange(t) {
+      if (t.name === 'color' && t.tagName === 'SELECT') { this._fnColor = t.value; return true; }
+      if (t.name === 'shanon' && this._shareData) { this._shareData.anonymize = !!t.checked; this._shareRender(); return true; }
+      return false;
+    },
     _fnInput(t) { if (t.name === 'icon' && t.tagName === 'INPUT') { this._fnIcon = t.value.trim(); return true; } return false; },
     _fnModal(label) {
       const l = label ? this._labelMap.get(label) : null;
@@ -334,6 +338,80 @@ export const functionsPart = {
       }
       if (done.length) this._labelStep(T('add_to', { count: P('n_items', done.length), fnName: this._fnName(label) }), label, undo);
       return { done, skipped };
+    },
+    /* ---------- Share a function as a Home Assistant YAML package (0.16.0) ---------- */
+    async _shareModal(label) {
+      const m = this._$.modal, fnName = this._fnName(label);
+      m.hidden = false;
+      m.innerHTML = `<div class="dlg shdlg"><h3>${T('sh_h', { name: esc(fnName) })}</h3><div class="muted">${T('reading_configs')}</div></div>`;
+      const members = this._ents.filter((e) => (e.labels || []).includes(label)).map((e) => e.entity_id);
+      const automations = [], scripts = [], helpers = [], templates = [], lists = new Map();
+      const getList = async (dom) => {
+        if (!lists.has(dom)) lists.set(dom, await this._ws({ type: dom + '/list' }, { optional: 'a helper domain not set up has no list of helpers', fallback: [] }));
+        return lists.get(dom) || [];
+      };
+      for (const k of members) {
+        const dom = k.split('.')[0];
+        if (dom === 'automation' || dom === 'script') {
+          const cfg = await this._fetchConfig(k);
+          if (cfg) (dom === 'automation' ? automations : scripts).push({ entity_id: k, cfg });
+        } else if (VER_HELPERS.has(dom)) {
+          const reg = this._entMap.get(k);
+          const it = (await getList(dom)).find((x) => reg && x.id === reg.unique_id);
+          if (it) helpers.push({ entity_id: k, dom, id: it.id, cfg: it });
+        }
+      }
+      if (this._storeMode === 'shared') {
+        const tplCand = members.filter((k) => { const e = this._entMap.get(k); return e && e.platform === 'template'; });
+        const r = tplCand.length ? await this._ws({ type: 'functions_board/sources', entity_ids: tplCand, include_templates: true }, { fallback: null }) : null;
+        Object.entries((r && r.sources) || {}).forEach(([k, src]) => {
+          const t = src && src.templates;
+          if (t && t.state) {
+            templates.push({ entity_id: k, dom: k.split('.')[0], name: this._nameOf(k), state: t.state, availability: t.availability || null, icon: t.icon || null, attributes: t.attributes || null, triggered: !!t.triggered });
+          }
+        });
+      }
+      const entities = this._ents.map((e) => ({ entity_id: e.entity_id, name: this._nameOf(e.entity_id), area_id: e.area_id || null }));
+      const areas = this._areaMap ? [...this._areaMap.values()].map((a) => ({ area_id: a.area_id, name: a.name })) : [];
+      const devices = this._devs.map((d) => ({ id: d.id, name: d.name_by_user || d.name || '' }));
+      this._shareData = { label, pkg: { name: fnName, automations, scripts, helpers, templates, entities, areas, devices }, anonymize: true, res: null };
+      this._shareRender();
+    },
+    _shareRender() {
+      const s = this._shareData, m = this._$.modal;
+      if (!s) return;
+      const res = exportFunctionPackage(s.pkg, { anonymize: s.anonymize });
+      s.res = res;
+      const st = res.stats;
+      const statsTxt = T('sh_stats', {
+        autos: P('n_automations', st.automations),
+        scripts: P('n_scripts', st.scripts),
+        helpers: P('n_helpers', st.helpers),
+        tpls: P('sh_tpls_n', st.templates),
+      });
+      m.hidden = false;
+      m.innerHTML = `<div class="dlg shdlg"><h3>${T('sh_h', { name: esc(s.pkg.name) })}</h3><p class="dtext">${T('sh_lead')}</p>`
+        + `<div class="hint">${esc(statsTxt)}</div>`
+        + `<label class="chk"><input type="checkbox" name="shanon"${s.anonymize ? ' checked' : ''}>${T('sh_anon')}</label>`
+        + (s.anonymize ? '' : `<div class="dwarn"><ha-icon icon="mdi:alert-outline"></ha-icon><span>${T('sh_real_warn')}</span></div>`)
+        + `<textarea class="shyaml" readonly aria-label="${esc(T('sh_h', { name: s.pkg.name }))}">${esc(res.yaml)}</textarea>`
+        + `<div class="dval"></div><div class="btns"><button data-act="modal-cancel">${T('close')}</button><button data-act="share-copy"><ha-icon icon="mdi:content-copy"></ha-icon>${T('sh_copy')}</button><button class="primary" data-act="share-download"><ha-icon icon="mdi:file-download-outline"></ha-icon>${T('sh_download')}</button></div></div>`;
+    },
+    async _shareCopy() {
+      const s = this._shareData, m = this._$.modal, t = m.querySelector('textarea.shyaml');
+      if (!s || !s.res) return;
+      try { await navigator.clipboard.writeText(s.res.yaml); this._toast(T('sh_copied')); }
+      catch (e) { if (t) { t.focus(); t.select(); } const v = m.querySelector('.dval'); if (v) v.textContent = T('chk_copy_by_hand'); }
+    },
+    _shareDownload() {
+      const s = this._shareData;
+      if (!s || !s.res) return;
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([s.res.yaml], { type: 'text/yaml' }));
+      a.download = s.res.filename;
+      document.body.appendChild(a); a.click(); a.remove();
+      this._clock.deadline(5000, () => URL.revokeObjectURL(a.href));
+      this._toast(T('sh_downloaded', { file: s.res.filename }));
     },
 
 };

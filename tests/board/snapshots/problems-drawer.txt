@@ -1,4 +1,4 @@
-style {77877 chars, #b4c256ae}
+style {82029 chars, #2a285276}
 div.board.m-panel.pc
   aside.list
     div.lhead
@@ -63,6 +63,8 @@ div.board.m-panel.pc
           ha-icon icon="mdi:dots-vertical"
         button.p-error.pchip data-act="problems" title="What this function's automations and scripts point at that isn't there or can't work" | 1 problem
           ha-icon icon="mdi:alert-circle"
+        button.pqchip data-act="problems" title="Enabled automations in this function that have not fired recently (kept separate from broken-wiring errors)" | 4 quiet
+          ha-icon icon="mdi:sleep"
       div.tools aria-label="Function tools" role="toolbar"
         button data-act="new-automation" title="New automation in this function"
           ha-icon icon="mdi:robot-outline"
@@ -496,4 +498,70 @@ Related, not in this function. Select it to add it."
                   ha-icon icon="mdi:eye-off-outline"
                 button aria-label="Ignore for good: cover.garage_door_gone doesn't exist: renamed or removed?" data-act="pdis-ever" data-k="e_missing|cover.garage_door_gone" title="Never show this one again: not as a problem, and not under Dismissed, even if it goes away and comes back" | Ignore for good
                   ha-icon icon="mdi:cancel"
+          div.pquiet
+            div.pqhead
+              b | Quiet & never-fired automations
+                ha-icon icon="mdi:sleep"
+              div.pqtabs
+                button.chip.on data-act="pquiet-days" data-days="30" | <dur>
+                button.chip data-act="pquiet-days" data-days="90" | <dur>
+                button.chip data-act="pquiet-days" data-days="365" | <dur>
+                button.chip data-act="pquiet-days" data-days="0" | Never
+            div.vnote | Enabled automations that have not triggered within this window. Kept separate from broken-wiring errors.
+            div.pqrow
+              ha-icon icon="mdi:sleep"
+              div.pbody
+                div.ptxt | · Never fired
+                  b | Garage: closed, stop timer
+                div.pact
+                  button data-act="prob-go" data-key="automation.garage_closed_stop_timer" | Show
+                    ha-icon icon="mdi:crosshairs-gps"
+                  button data-act="pquiet-off" data-key="automation.garage_closed_stop_timer" | Turn off
+                    ha-icon icon="mdi:pause-circle-outline"
+                  button aria-label="Dismiss: Garage: closed, stop timer" data-act="pdis" data-k="q|automation.garage_closed_stop_timer" title="Stop counting this one: it leaves the count, the list and the board, and goes under Dismissed" | Dismiss
+                    ha-icon icon="mdi:eye-off-outline"
+                  button aria-label="Ignore for good: Garage: closed, stop timer" data-act="pdis-ever" data-k="q|automation.garage_closed_stop_timer" title="Never show this one again: not as a problem, and not under Dismissed, even if it goes away and comes back" | Ignore for good
+                    ha-icon icon="mdi:cancel"
+            div.pqrow
+              ha-icon icon="mdi:sleep"
+              div.pbody
+                div.ptxt | · Never fired
+                  b | Garage: left open
+                div.pact
+                  button data-act="prob-go" data-key="automation.garage_left_open" | Show
+                    ha-icon icon="mdi:crosshairs-gps"
+                  button data-act="pquiet-off" data-key="automation.garage_left_open" | Turn off
+                    ha-icon icon="mdi:pause-circle-outline"
+                  button aria-label="Dismiss: Garage: left open" data-act="pdis" data-k="q|automation.garage_left_open" title="Stop counting this one: it leaves the count, the list and the board, and goes under Dismissed" | Dismiss
+                    ha-icon icon="mdi:eye-off-outline"
+                  button aria-label="Ignore for good: Garage: left open" data-act="pdis-ever" data-k="q|automation.garage_left_open" title="Never show this one again: not as a problem, and not under Dismissed, even if it goes away and comes back" | Ignore for good
+                    ha-icon icon="mdi:cancel"
+            div.pqrow
+              ha-icon icon="mdi:sleep"
+              div.pbody
+                div.ptxt | · Never fired
+                  b | Garage snapshot points at gone
+                div.pact
+                  button data-act="prob-go" data-key="automation.garage_snapshot_points_at_gone" | Show
+                    ha-icon icon="mdi:crosshairs-gps"
+                  button data-act="pquiet-off" data-key="automation.garage_snapshot_points_at_gone" | Turn off
+                    ha-icon icon="mdi:pause-circle-outline"
+                  button aria-label="Dismiss: Garage snapshot points at gone" data-act="pdis" data-k="q|automation.garage_snapshot_points_at_gone" title="Stop counting this one: it leaves the count, the list and the board, and goes under Dismissed" | Dismiss
+                    ha-icon icon="mdi:eye-off-outline"
+                  button aria-label="Ignore for good: Garage snapshot points at gone" data-act="pdis-ever" data-k="q|automation.garage_snapshot_points_at_gone" title="Never show this one again: not as a problem, and not under Dismissed, even if it goes away and comes back" | Ignore for good
+                    ha-icon icon="mdi:cancel"
+            div.pqrow
+              ha-icon icon="mdi:sleep"
+              div.pbody
+                div.ptxt | · Never fired
+                  b | Garage: start open timer
+                div.pact
+                  button data-act="prob-go" data-key="automation.garage_start_open_timer" | Show
+                    ha-icon icon="mdi:crosshairs-gps"
+                  button data-act="pquiet-off" data-key="automation.garage_start_open_timer" | Turn off
+                    ha-icon icon="mdi:pause-circle-outline"
+                  button aria-label="Dismiss: Garage: start open timer" data-act="pdis" data-k="q|automation.garage_start_open_timer" title="Stop counting this one: it leaves the count, the list and the board, and goes under Dismissed" | Dismiss
+                    ha-icon icon="mdi:eye-off-outline"
+                  button aria-label="Ignore for good: Garage: start open timer" data-act="pdis-ever" data-k="q|automation.garage_start_open_timer" title="Never show this one again: not as a problem, and not under Dismissed, even if it goes away and comes back" | Ignore for good
+                    ha-icon icon="mdi:cancel"
   div.modal hidden

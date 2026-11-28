@@ -2,7 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const { analyze, findProblems, splitDismissed, probKey, markProblems, cleanLayout } = require('./lib/board-lib');
+const { analyze, findProblems, findQuietAutomations, splitDismissed, probKey, markProblems, cleanLayout } = require('./lib/board-lib');
 
 const { check } = require('./lib/check');
 
@@ -127,5 +127,35 @@ check('events, MQTT topics and unknown names inside templates aren\'t judged', f
   const edges = [{ from: 'automation.a', to: 'svc:notify.old_phone' }, { from: 'automation.a', to: 'light.ok' }];
   markProblems(nodes, edges, [{ sev: 'error', kind: 's_missing', ref: 'notify.old_phone', by: ['automation.a'] }]);
   check('0.13.2 markProblems marks missing targetless service box and its arrow', nodes.get('svc:notify.old_phone').prob === 'error' && nodes.get('automation.a').prob === 'error' && edges[0].prob === true && edges[1].prob === false, { nodes: [...nodes], edges });
+}
+{
+  // 0.16.0: quiet / never-fired automations (kept separate from broken-wiring errors)
+  const now = Date.parse('2026-11-27T12:00:00Z');
+  const qStates = {
+    'automation.never_fired': { state: 'on', attributes: { last_triggered: null } },
+    'automation.old_60d': { state: 'on', attributes: { last_triggered: '2026-09-20T12:00:00Z' } },
+    'automation.old_400d': { state: 'on', attributes: { last_triggered: '2025-10-01T12:00:00Z' } },
+    'automation.recent': { state: 'on', attributes: { last_triggered: '2026-11-26T12:00:00Z' } },
+    'automation.disabled_off': { state: 'off', attributes: { last_triggered: null } },
+    'automation.broken_unav': { state: 'unavailable', attributes: { last_triggered: null } },
+  };
+  const qCtx = { state: (id) => qStates[id], ent: () => null };
+  const qMem = Object.keys(qStates);
+  const r30 = findQuietAutomations(qMem, qCtx, { days: 30, now });
+  check('0.16.0 30d threshold returns never, 400d, and 60d (skips recent, off, unavailable)',
+    JSON.stringify(r30.shown.map((x) => x.id)) === JSON.stringify(['automation.never_fired', 'automation.old_400d', 'automation.old_60d']),
+    r30.shown);
+  const r90 = findQuietAutomations(qMem, qCtx, { days: 90, now });
+  check('0.16.0 90d threshold excludes 60d',
+    JSON.stringify(r90.shown.map((x) => x.id)) === JSON.stringify(['automation.never_fired', 'automation.old_400d']),
+    r90.shown);
+  const rNever = findQuietAutomations(qMem, qCtx, { days: 0, now });
+  check('0.16.0 Never threshold returns only never-fired automations',
+    JSON.stringify(rNever.shown.map((x) => x.id)) === JSON.stringify(['automation.never_fired']),
+    rNever.shown);
+  const rDis = findQuietAutomations(qMem, qCtx, { days: 30, now, dismissed: [{ k: 'q|automation.old_60d', at: now }] });
+  check('0.16.0 dismissed quiet automation moves to hidden',
+    rDis.shown.length === 2 && rDis.hidden.length === 1 && rDis.hidden[0].id === 'automation.old_60d',
+    rDis);
 }
 

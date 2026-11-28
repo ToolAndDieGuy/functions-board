@@ -1,9 +1,9 @@
-import { P, T, VER_DOMAINS, VER_HELPERS, canon, cleanLayout, devIdsIn, esc, swapDevs, uid, verLayoutKey, verPrint } from '../lib/index.js';
+import { P, T, VER_DOMAINS, VER_HELPERS, canon, cleanLayout, devIdsIn, diffSnapshots, esc, swapDevs, uid, verLayoutKey, verPrint } from '../lib/index.js';
 
 export const versionsPart = {
     /* ======================================================================================================
-       part: versions: saved versions: the drawer, a version's tab, comparing, restoring Owns _verPending, _verUrlDone
-       (PARTS): only its own methods use them; the other parts ask its methods.
+       part: versions: saved versions: the drawer, a version's tab, comparing, restoring Owns _verPending, _verUrlDone,
+       _verSnaps, _verDelPlan, _verCmp (PARTS): only its own methods use them; the other parts ask its methods.
        ====================================================================================================== */
     // top to bottom (the function's layout says so)
     _vert() { return !!(this._model && this._layout(this._model.label).dir === 'down'); },
@@ -115,7 +115,7 @@ export const versionsPart = {
       const { vs, print, active, base, guess, layoutOnly } = r, full = this._full(), viewing = this._ver && this._ver.label === label ? this._ver.id : null;
       this._verCache = { label, vs, active: active ? active.id : null, base: base ? base.id : null, print };
       const row = (v, top, mine) => `<div class="vrow${active && active.id === v.id ? ' on' : ''}${top ? ' top' : ''}${viewing === v.id ? ' view' : ''}" data-id="${esc(v.id)}"><div class="vh"><b>${esc(v.name)}</b>${active && active.id === v.id ? `<span class="vbadge">${T('ver_active')}</span>` : ''}${v.auto ? `<span class="vauto">${T('ver_auto')}</span>` : ''}</div>${v.desc ? `<div class="vdesc">${esc(v.desc)}</div>` : ''}<div class="vm">${esc(this._verWhen(v.at))}${v.by ? ' · ' + esc(v.by) : ''}</div>`
-        + `<div class="vb"><button data-act="ver-open" data-id="${esc(v.id)}"><ha-icon icon="mdi:tab"></ha-icon>${T('ver_open')}</button><button data-act="ver-sbx" data-id="${esc(v.id)}"><ha-icon icon="mdi:flask-outline"></ha-icon>${T('ver_try')}</button>`
+        + `<div class="vb"><button data-act="ver-open" data-id="${esc(v.id)}"><ha-icon icon="mdi:tab"></ha-icon>${T('ver_open')}</button><button data-act="ver-compare" data-id="${esc(v.id)}" title="${T('ver_cmp_t')}"><ha-icon icon="mdi:compare-horizontal"></ha-icon>${T('ver_cmp_btn')}</button><button data-act="ver-sbx" data-id="${esc(v.id)}"><ha-icon icon="mdi:flask-outline"></ha-icon>${T('ver_try')}</button>`
         + (mine || `<button data-act="ver-restore" data-id="${esc(v.id)}"${full && !(active && active.id === v.id) ? '' : ' disabled'} title="${full ? (active && active.id === v.id ? T('ver_is_active') : T('ver_restore_t')) : T('ver_restore_full')}"><ha-icon icon="mdi:check-circle-outline"></ha-icon>${T('ver_restore')}</button>`)
         + `<button class="ib" data-act="diag" data-ver="${esc(v.id)}" title="${T('diag_ver_t')}"><ha-icon icon="mdi:file-download-outline"></ha-icon></button><button class="ib" data-act="ver-edit" data-id="${esc(v.id)}" title="${T('ver_edit_t')}"><ha-icon icon="mdi:pencil-outline"></ha-icon></button><button class="ib" data-act="ver-del" data-id="${esc(v.id)}" title="${T('ver_del_t')}"><ha-icon icon="mdi:delete-outline"></ha-icon></button></div></div>`;
       // Save (over the active version, or the one unsaved changes came from: what's there now, its layout too) and
@@ -319,7 +319,7 @@ export const versionsPart = {
       const d = V && V.diff;
       el.innerHTML = `<div class="vtrow"><button class="vtab${V ? '' : ' on'}" data-act="vtab" data-id=""><span class="vdot"></span>${T('ver_current_tab')}<span class="vact">${T('ver_active')}</span></button>`
         + tabs.map((t) => `<span class="vtab${V && V.id === t.id ? ' on' : ''}"><button data-act="vtab" data-id="${esc(t.id)}"><ha-icon icon="mdi:history"></ha-icon>${esc(t.name)}</button><button class="ib" data-act="vtab-win" data-id="${esc(t.id)}" title="${T('ver_new_window')}"><ha-icon icon="mdi:open-in-new"></ha-icon></button><button class="ib" data-act="vtab-x" data-id="${esc(t.id)}" title="${T('close')}"><ha-icon icon="mdi:close"></ha-icon></button></span>`).join('') + '</div>'
-        + (V ? `<div class="vban"><ha-icon icon="mdi:history"></ha-icon><span>${T('ver_banner', { name: esc(V.name), when: esc(this._verWhen(V.at)) })}${d ? ' ' + T('ver_diff', { changed: d.changed.size, only: d.only.size, added: d.added.length }) : ''}</span><button data-act="ver-sbx-cur"><ha-icon icon="mdi:flask-outline"></ha-icon>${T('ver_try')}</button>${this._full() ? `<button data-act="ver-restore" data-id="${esc(V.id)}"><ha-icon icon="mdi:backup-restore"></ha-icon>${T('ver_restore')}</button>` : ''}</div>` : '');
+        + (V ? `<div class="vban"><ha-icon icon="mdi:history"></ha-icon><span>${T('ver_banner', { name: esc(V.name), when: esc(this._verWhen(V.at)) })}${d ? ' ' + T('ver_diff', { changed: d.changed.size, only: d.only.size, added: d.added.length }) : ''}</span><button data-act="ver-compare" data-id="${esc(V.id)}"><ha-icon icon="mdi:compare-horizontal"></ha-icon>${T('ver_cmp_btn')}</button><button data-act="ver-sbx-cur"><ha-icon icon="mdi:flask-outline"></ha-icon>${T('ver_try')}</button>${this._full() ? `<button data-act="ver-restore" data-id="${esc(V.id)}"><ha-icon icon="mdi:backup-restore"></ha-icon>${T('ver_restore')}</button>` : ''}</div>` : '');
     },
 
     // ---- restoring (Full manager): plan, dialog, then the writes, each through Home Assistant's own config APIs
@@ -362,7 +362,52 @@ export const versionsPart = {
       plan.added = plan.added.filter((k) => !plan.shared.some((x) => x.k === k));
       // and what restore writes back that's also in another function or used elsewhere: it changes there too (a warning)
       plan.writeShared = plan.write.map((k) => ({ k, why: this._sharedWhy({ id: k }, label, mine, uses, true) })).filter((x) => x.why);
+      const liveSnap = await this._verSnapshot(label);
+      plan.plainDiff = diffSnapshots(liveSnap, snap, { name: (k) => this._boxName(k) });
       return plan;
+    },
+    _verDiffHtml(diff) {
+      if (!diff || (!diff.items.length && !diff.layoutChanged)) return `<div class="muted">${T('ver_cmp_same')}</div>`;
+      const mark = { added: '+', removed: '−', changed: '~' };
+      const blocks = diff.items.map((it) => `<div class="vdiff-item"><b>${esc(it.name)}</b><ul class="vdiff-lines">${it.lines.map((l) => `<li class="vd-${l.kind}"><span class="vd-m">${mark[l.kind] || '~'}</span><span>${esc(l.text)}</span></li>`).join('')}</ul></div>`).join('');
+      return `<div class="vdiff-box">${blocks}${diff.layoutChanged ? `<div class="hint">${T('ver_cmp_layout')}</div>` : ''}</div>`;
+    },
+    _verChange(t) {
+      if (t.name !== 'vcmp' || !this._verCmp) return false;
+      this._verCmp.otherId = t.value || '';
+      this._verCompareRender();
+      return true;
+    },
+    async _verCompareDlg(id) {
+      const label = this._data.ui.current, m = this._$.modal;
+      if (!label) return;
+      m.hidden = false;
+      m.innerHTML = `<div class="dlg vcdlg"><h3>${T('ver_cmp_btn')}</h3><div class="muted">${T('ver_checking')}</div></div>`;
+      try {
+        const [{ vs }, v, live] = await Promise.all([this._verListAll(label), this._verGet(label, id), this._verSnapshot(label)]);
+        this._verCmp = { label, v, vs: vs || [], live, otherId: '' };
+        await this._verCompareRender();
+      } catch (e) {
+        m.innerHTML = `<div class="dlg"><h3>${T('ver_cmp_btn')}</h3><p class="dtext">${esc((e && (e.message || e.code)) || e)}</p><div class="btns"><button data-act="modal-cancel">${T('close')}</button></div></div>`;
+      }
+    },
+    async _verCompareRender() {
+      const c = this._verCmp, m = this._$.modal;
+      if (!c) return;
+      let otherSnap = c.live;
+      if (c.otherId) {
+        const ov = c.vs.find((x) => x.id === c.otherId);
+        if (ov) otherSnap = await this._verSnapOf(c.label, ov);
+      }
+      if (this._verCmp !== c) return;
+      const diff = diffSnapshots(otherSnap, c.v.snapshot, { name: (k) => this._boxName(k) });
+      const opts = `<option value=""${!c.otherId ? ' selected' : ''}>${T('ver_cmp_live')}</option>`
+        + c.vs.slice().reverse().filter((x) => x.id !== c.v.id).map((x) => `<option value="${esc(x.id)}"${c.otherId === x.id ? ' selected' : ''}>${esc(x.name)} (${esc(this._verWhen(x.at))})</option>`).join('');
+      m.hidden = false;
+      m.innerHTML = `<div class="dlg vcdlg"><h3>${T('ver_cmp_h', { name: esc(c.v.name) })}</h3>`
+        + `<label>${T('ver_cmp_against')}<select name="vcmp">${opts}</select></label>`
+        + `<div class="vclist">${this._verDiffHtml(diff)}</div>`
+        + `<div class="btns"><button data-act="modal-cancel">${T('close')}</button></div></div>`;
     },
     _verRestoreDlg() {
       const p = this._verPending, { v, plan } = p, snap = v.snapshot, m = this._$.modal, nm = (k) => esc((snap.items[k] && snap.items[k].name) || this._boxName(k));
@@ -381,6 +426,7 @@ export const versionsPart = {
       m.hidden = false;
       m.innerHTML = `<div class="dlg wide vrdlg"><h3>${T('ver_restore_h', { name: esc(v.name) })}</h3><p class="dtext">${T('ver_restore_lead', { fnName: esc(this._fnName(p.label)), when: esc(this._verWhen(v.at)) })}</p>`
         + `<ul class="vplan">${line(plan.write, P('ver_p_write', plan.write.length))}${line(plan.recreate, P('ver_p_recreate', plan.recreate.length))}${line(plan.rejoin, P('ver_p_rejoin', plan.rejoin.length))}${line(plan.same, P('ver_p_same', plan.same.length))}${line(plan.yaml, P('ver_p_yaml', plan.yaml.length))}${snap.layout ? `<li>${T('ver_p_layout')}</li>` : ''}</ul>`
+        + (plan.plainDiff && plan.plainDiff.items.length ? `<h4>${T('ver_restore_changes_h')}</h4>${this._verDiffHtml(plan.plainDiff)}` : '')
         + ((plan.writeShared || []).length ? `<div class="dwarn vwshared"><ha-icon icon="mdi:alert-outline"></ha-icon><span>${T('ver_write_shared', { list: plan.writeShared.map((x) => nm(x.k) + ' (' + esc(x.why) + ')').join(', ') })}</span></div>` : '')
         + (plan.missing.length ? `<h4>${T('ver_dev_h')}</h4><div class="hint">${T('ver_dev_hint')}</div>${devs}` : '')
         + (addLogic.length || addOther.length || plan.shared.length ? `<h4>${T('ver_added_h')}</h4>${plan.shared.length ? `<div class="hint">${T('ver_added_shared', { list: plan.shared.map((x) => nm(x.k) + ' (' + esc(x.why) + ')').join(', ') })}</div>` : ''}${addLogic.length ? `<div class="vaddlist">${addRows}</div>` : ''}${addOther.length ? `<div class="hint">${T('ver_added_other', { list: addOther.map(nm).join(', ') })}</div>` : ''}` : '')

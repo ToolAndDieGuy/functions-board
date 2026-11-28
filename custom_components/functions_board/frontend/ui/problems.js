@@ -1,9 +1,9 @@
-import { EXACT_RE, P, T, TGT_RE, analyze, bothWays, cleanCheck, condText, esc, findProblems, fmtDurLong, markProblems, probKey, runCheck, sbxDoStep, sbxZwLabel, shorten, splitDismissed, uid } from '../lib/index.js';
+import { EXACT_RE, P, QUIET_DAYS, T, TGT_RE, analyze, bothWays, cleanCheck, condText, esc, findProblems, findQuietAutomations, fmtDurLong, markProblems, probKey, runCheck, sbxDoStep, sbxZwLabel, shorten, splitDismissed, uid } from '../lib/index.js';
 
 export const problemsPart = {
     /* ======================================================================================================
        part: problems: problems and saved checks: counting, the drawer, dismissing, replaying checks Owns _probs,
-       _checkRes, _probScanning (PARTS): only its own methods use them; the other parts ask its methods.
+       _checkRes, _probScanning, _chkEdit, _bgChecks (PARTS): only its own methods use them; the other parts ask its methods.
        ====================================================================================================== */
     _checkCompact() {
       // narrow board (phone, small dashboard column): the list becomes a drawer over the board, closed by default.
@@ -75,7 +75,18 @@ export const problemsPart = {
       const can = !this._ver && !!g.rec && g.rec.steps.length > 0, sig = [list.length, can, have.at || 0].join('|');
       if (soft && box.dataset.sig === sig) return;
       box.dataset.sig = sig;
-      const mark = (c) => { const r = res.get(c.id); if (!r) return `<span class="ckst muted" title="${T('chk_not_run')}">·</span>`; if (r.unsure) return `<span class="ckst unsure" title="${esc(r.unsure)}">?</span>`; return r.ok ? `<span class="ckst ok" title="${T('chk_passes')}">&#10003;</span>` : `<span class="ckst bad" title="${T('chk_fails')}">&#10005;</span>`; };
+      const bg = (this._bgChecks && this._bgChecks.get(label)) || null;
+      const mark = (c) => {
+        const r = res.get(c.id), b = bg && bg[c.id];
+        if (r) {
+          if (r.unsure) return `<span class="ckst unsure" title="${esc(r.unsure)}">?</span>`;
+          return r.ok ? `<span class="ckst ok" title="${T('chk_passes')}">&#10003;</span>` : `<span class="ckst bad" title="${T('chk_fails')}">&#10005;</span>`;
+        }
+        if (b && b.status === 'board_only') return `<span class="ckbg" title="${T('chk_board_only_t')}">${T('chk_board_only')}</span>`;
+        if (b && b.status === 'pass') return `<span class="ckst ok" title="${T('chk_bg_pass')}">&#10003;</span>`;
+        if (b && b.status === 'fail') return `<span class="ckst bad" title="${esc(T('chk_bg_fail', { detail: b.detail || '' }))}">&#10005;</span>`;
+        return `<span class="ckst muted" title="${T('chk_not_run')}">·</span>`;
+      };
       const row = (c) => `<div class="ckrow" data-id="${esc(c.id)}">${mark(c)}<span class="ckname" title="${esc(c.steps.map((x) => this._chkStepText(x).replace(/<[^>]+>/g, '')).join(' → '))}">${esc(c.name)}</span><button class="ib" data-act="chk-run" data-id="${esc(c.id)}" title="${T('chk_run_t')}"><ha-icon icon="mdi:play-circle-outline"></ha-icon></button><button class="ib" data-act="chk-replay" data-id="${esc(c.id)}" title="${T('chk_replay_t')}"><ha-icon icon="mdi:movie-open-play-outline"></ha-icon></button><button class="ib" data-act="chk-edit" data-id="${esc(c.id)}" title="${T('chk_edit_t')}"><ha-icon icon="mdi:pencil-outline"></ha-icon></button><button class="ib" data-act="chk-export" data-id="${esc(c.id)}" title="${T('chk_export_t')}"><ha-icon icon="mdi:export-variant"></ha-icon></button><button class="ib" data-act="chk-del" data-id="${esc(c.id)}" title="${T('chk_del_t')}"><ha-icon icon="mdi:delete-outline"></ha-icon></button></div>`;
       this._put(box, this._ver ? '' : `<div class="ckhead"><span>${P('chk_n', list.length)}</span>${list.length ? `<button class="ib" data-act="chk-run" title="${T('chk_run_all_t')}"><ha-icon icon="mdi:play-box-multiple-outline"></ha-icon></button>` : ''}<button class="chip" data-act="chk-save"${can ? '' : ' disabled'} title="${can ? T('chk_save_t') : T('chk_save_none')}"><ha-icon icon="mdi:content-save-check-outline"></ha-icon>${T('chk_save')}</button><button class="ib" data-act="chk-import" title="${T('chk_import_t')}"><ha-icon icon="mdi:import"></ha-icon></button></div>${list.map(row).join('')}`);
     },
@@ -303,8 +314,8 @@ export const problemsPart = {
       if (!m || m.label !== label || this._ver) return;
       const all = (m.problems || []).concat(m.dismissed || [], m.ignored || []).filter((p) => !/^c_/.test(p.kind)).concat(this._checkProblems(label))
         .sort((x, y) => (x.sev === y.sev ? 0 : x.sev === 'error' ? -1 : 1));
-      // checks' results are only known once they've run
-      const sp = this._splitProbs(label, all, (k) => !k.startsWith('c_') || this._checkRes.has(label));
+      // checks' results are only known once they've run; quiet-automation dismissals (q|) stay until undone
+      const sp = this._splitProbs(label, all, (k) => !k.startsWith('q|') && (!k.startsWith('c_') || this._checkRes.has(label)));
       m.problems = sp.shown; m.dismissed = sp.hidden; m.ignored = sp.ignored || [];
       this._noteProblems(label, m.problems);
       this._renderHeader();
@@ -367,7 +378,7 @@ export const problemsPart = {
       if (this._drawer && this._drawer.mode === 'problems') this._openProblems(this._drawer.dismissed && m.dismissed.length > 0);
       if (this._sbxOn()) this._renderSbx();
       const undo = [{ text: T('undo'), fn: () => this._probDismiss(k, was ? (was.ever ? 'ever' : 'off') : 'back') }];
-      if (how === 'off' && p) this._toast(T('prob_dismissed_toast'), undo);
+      if (how === 'off' && (p || String(k || '').startsWith('q|'))) this._toast(T('prob_dismissed_toast'), undo);
       if (how === 'ever') this._toast(T('prob_ignored_toast'), undo);
     },
     // what the problems of a function's boxes depend on in Home Assistant's states (0.10.0): which are missing,
@@ -399,7 +410,7 @@ export const problemsPart = {
           const items = logic.map((e, i) => ({ key: e, refs: cfgs[i] ? analyze(cfgs[i], e.startsWith('script.'), known).refs : [], both: bothWays(cfgs[i]) }));
           const base = findProblems(items, members.concat(devs), this._probCtx(label));
           if (this._checksOf(label).length) await this._runChecks(label, null, false, logic.map((e, i) => ({ id: e, cfg: cfgs[i] })).filter((x) => x.cfg));
-          this._noteProblems(label, this._splitProbs(label, base.concat(this._checkProblems(label)), (k) => !k.startsWith('c_') || this._checkRes.has(label)).shown);
+          this._noteProblems(label, this._splitProbs(label, base.concat(this._checkProblems(label)), (k) => !k.startsWith('q|') && (!k.startsWith('c_') || this._checkRes.has(label))).shown);
           // (a turn for the page between functions; a board taken off the page stops counting)
           if (!(await this._clock.sleep(0))) return;
         }
@@ -410,10 +421,54 @@ export const problemsPart = {
       const say = c.e ? P('prob_n_errors', c.e) + (c.w ? ' · ' + P('prob_n_warnings', c.w) : '') : P('prob_n_warnings', c.w);
       return `<span class="pbadge p-${c.e ? 'error' : 'warn'}" title="${esc(say)}"><span aria-hidden="true">${c.e || c.w}</span><span class="srt">${esc(say)}</span></span>`;
     },
+    async _loadBgChecks(label) {
+      if (this._storeMode !== 'shared') return;
+      const msg = label ? { type: 'functions_board/check_results', label } : { type: 'functions_board/check_results' };
+      const r = await this._ws(msg, { optional: 'older integrations do not run checks in the background', fallback: null });
+      if (!r || !r.results) return;
+      this._bgChecks = this._bgChecks || new Map();
+      if (label) this._bgChecks.set(label, r.results || {});
+      else Object.entries(r.results).forEach(([k, v]) => this._bgChecks.set(k, v || {}));
+      if (this._sbx && (!label || this._sbx.label === label)) this._renderChecks();
+    },
+    _quietDays() {
+      const v = this._data && this._data.ui && this._data.ui.quietDays;
+      return QUIET_DAYS.includes(v) ? v : 30;
+    },
+    _quietOf(label) {
+      const m = this._model && this._model.label === label ? this._model : null;
+      if (!m || !this._hass) return { shown: [], hidden: [] };
+      const members = [...m.nodes.values()].filter((n) => n.kind === 'member' && n.domain === 'automation').map((n) => n.key);
+      const L = this._layout(label);
+      return findQuietAutomations(members, this._probCtx(label), { days: this._quietDays(), dismissed: (L && L.dismissed) || [] });
+    },
+    _setQuietDays(days) {
+      if (!this._data) return;
+      this._data.ui.quietDays = QUIET_DAYS.includes(days) ? days : 30;
+      this._save();
+      this._renderHeader();
+      if (this._drawer && this._drawer.mode === 'problems') this._openProblems(!!this._drawer.dismissed);
+    },
+    async _quietTurnOff(key) {
+      const nm = this._nameOf(key);
+      try {
+        await this._svc('automation', 'turn_off', {}, { entity_id: key });
+        this._toast(T('pq_off_done', { name: nm }));
+        this._clock.after('quiet-refresh', 400, () => {
+          this._renderHeader();
+          if (this._drawer && this._drawer.mode === 'problems') this._openProblems(!!this._drawer.dismissed);
+        });
+      } catch (e) {
+        this._toast(T('pq_off_err', { name: nm, e: (e && (e.message || e.code)) || e }));
+      }
+    },
     _probChip() {
-      const m = this._model && this._model.label === (this._data && this._data.ui.current) ? this._model : null, ps = (m && m.problems) || [], ds = (m && m.dismissed) || [];
+      const label = this._data && this._data.ui.current;
+      const m = this._model && this._model.label === label ? this._model : null, ps = (m && m.problems) || [], ds = (m && m.dismissed) || [];
       const e = ps.filter((p) => p.sev === 'error').length;
+      const q = m && !this._ver ? this._quietOf(label).shown.length : 0;
       return (ps.length ? `<button class="pchip p-${e ? 'error' : 'warn'}" data-act="problems" title="${T('prob_chip_t')}"><ha-icon icon="${e ? 'mdi:alert-circle' : 'mdi:alert'}"></ha-icon>${P('prob_n', ps.length)}</button>` : '')
+        + (q ? `<button class="pqchip" data-act="problems" title="${T('pq_chip_t')}"><ha-icon icon="mdi:sleep"></ha-icon>${P('pq_chip', q)}</button>` : '')
         + (ds.length ? `<button class="pdchip" data-act="pdis-list" title="${T('prob_dismissed_t')}"><ha-icon icon="mdi:eye-off-outline"></ha-icon>${P('prob_dismissed_n', ds.length)}</button>` : '');
     },
     _probWhat(ref) {
@@ -472,8 +527,24 @@ export const problemsPart = {
       const other = (dismissed ? `<button class="lnk" data-act="problems">${T('prob_back')}</button>`
         : ds.length ? `<button class="lnk" data-act="pdis-list">${P('prob_dismissed_n', ds.length)}</button>` : '')
         + (nev ? `<span class="pever">${P('prob_ignored_n', nev)} · <button class="lnk" data-act="pdis-unever" title="${T('prob_unignore_t')}">${T('prob_unignore')}</button></span>` : '');
+      const qDays = this._quietDays();
+      const qList = !dismissed && !this._ver ? this._quietOf(label).shown : [];
+      const qOpts = [[30, T('pq_d30')], [90, T('pq_d90')], [365, T('pq_d365')], [0, T('pq_never_opt')]];
+      const qRow = (q) => {
+        const qk = 'q|' + q.id, when = q.never ? T('pq_never') : P('pq_days_ago', q.daysAgo);
+        return `<div class="pqrow"><ha-icon icon="mdi:sleep"></ha-icon><div class="pbody"><div class="ptxt"><b>${nm(q.id)}</b> · ${esc(when)}</div>`
+          + `<div class="pact"><button data-act="prob-go" data-key="${esc(q.id)}"><ha-icon icon="mdi:crosshairs-gps"></ha-icon>${T('prob_show')}</button>`
+          + `<button data-act="pquiet-off" data-key="${esc(q.id)}"><ha-icon icon="mdi:pause-circle-outline"></ha-icon>${T('pq_off_btn')}</button>`
+          + `<button data-act="pdis" data-k="${esc(qk)}" title="${T('prob_dismiss_t')}" aria-label="${esc(T('prob_dismiss_a', { what: this._nameOf(q.id) }))}"><ha-icon icon="mdi:eye-off-outline"></ha-icon>${T('prob_dismiss')}</button>`
+          + `<button data-act="pdis-ever" data-k="${esc(qk)}" title="${T('prob_ignore_t')}" aria-label="${esc(T('prob_ignore_a', { what: this._nameOf(q.id) }))}"><ha-icon icon="mdi:cancel"></ha-icon>${T('prob_ignore')}</button>`
+          + `</div></div></div>`;
+      };
+      const hasAutos = [...this._model.nodes.values()].some((n) => n.kind === 'member' && n.domain === 'automation');
+      const quietSec = !dismissed && !this._ver && hasAutos
+        ? `<div class="pquiet"><div class="pqhead"><b><ha-icon icon="mdi:sleep"></ha-icon>${T('pq_head')}</b><div class="pqtabs">${qOpts.map(([dVal, lbl]) => `<button class="chip${qDays === dVal ? ' on' : ''}" data-act="pquiet-days" data-days="${dVal}">${esc(lbl)}</button>`).join('')}</div></div><div class="vnote">${T('pq_note')}</div>${qList.length ? qList.map(qRow).join('') : `<div class="muted pad">${T('pq_none')}</div>`}</div>`
+        : '';
       this._put(d, `<div class="dhead"><span class="dtitle">${dismissed ? T('prob_dismissed_title', { fnName: esc(this._fnName(label)) }) : T('prob_title', { fnName: esc(this._fnName(label)) })}</span><button data-act="close" title="${T('close')}"><ha-icon icon="mdi:close"></ha-icon></button></div>`
-        + `<div class="probs"><div class="vnote">${dismissed ? T('prob_dismissed_note') : T('prob_note')}</div>${ps.length ? ps.map(row).join('') : `<div class="muted pad">${dismissed ? T('prob_none_dismissed') : T('prob_none')}</div>`}${other ? `<div class="pother">${other}</div>` : ''}</div>`);
+        + `<div class="probs"><div class="vnote">${dismissed ? T('prob_dismissed_note') : T('prob_note')}</div>${ps.length ? ps.map(row).join('') : `<div class="muted pad">${dismissed ? T('prob_none_dismissed') : T('prob_none')}</div>`}${other ? `<div class="pother">${other}</div>` : ''}${quietSec}</div>`);
       this._fitLitbar && this._fitLitbar();
     },
 

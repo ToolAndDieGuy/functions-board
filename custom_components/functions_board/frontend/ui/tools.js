@@ -1,9 +1,9 @@
-import { FULL_ONLY_TEST, NO_MONITOR, OUTCOME, P, T, TEST_WARN, XW, clock, clockShort, esc, parseLoose, scalar, shorten, toList, whyStopped } from '../lib/index.js';
+import { FULL_ONLY_TEST, HELPER_PLATFORMS, NO_MONITOR, OUTCOME, P, T, TEST_WARN, XW, analyze, clock, clockShort, esc, parseLoose, scalar, shorten, toList, whyStopped } from '../lib/index.js';
 
 export const toolsPart = {
     /* ======================================================================================================
        part: tools: the developer tools on the board: test steps, monitors, watched triggers, the messages drawer Owns
-       _pendingTest, _tw, _monSubs, _monData, _monCount, _monKind, _testLog, _testOk, _msgs (PARTS): only its own
+       _pendingTest, _tw, _monSubs, _monData, _monCount, _monKind, _testLog, _testOk, _msgs, _impactTok (PARTS): only its own
        methods use them; the other parts ask its methods.
        ====================================================================================================== */
     // keep a box in place: Auto-arrange (and an import's) leaves it where it is
@@ -513,6 +513,114 @@ export const toolsPart = {
             + `<span class="ro">${esc(this._boxName(x.from))}</span></button>`;
         }).join('')}`
         : `<div class="muted pad">${T('nothing_found_home_assistant_keeps')}</div>`);
+    },
+    // ---- Impact / "Where is this used?" read-only cross-function dependency report (0.16.0) ----
+    async _openImpact(key) {
+      const m = this._model, n = m && m.nodes.get(key);
+      if (!n) return;
+      this._leaveDrawerMode();
+      this._capture = null;
+      this._drawer = { mode: 'impact', key };
+      const d = this._$.drawer;
+      d.hidden = false;
+      const tok = this._impactTok = (this._impactTok || 0) + 1;
+      const title = T('imp_title', { name: esc(n.name) });
+      this._put(d, `<div class="dhead"><span class="dtitle">${title}</span><button data-act="close" title="${T('close')}"><ha-icon icon="mdi:close"></ha-icon></button></div><div class="impact"><div class="muted pad">${T('imp_reading')}</div></div>`);
+      this._fitLitbar && this._fitLitbar();
+
+      const isDev = key.startsWith('device:');
+      const devId = isDev ? key.slice(7) : null;
+      const targets = new Set([key]);
+      if (isDev) this._ents.filter((e) => e.device_id === devId).forEach((e) => targets.add(e.entity_id));
+      const fset = new Set(this._data.functions);
+      const fnsOf = (k) => {
+        if (k.startsWith('device:')) { const dv = this._devMap.get(k.slice(7)); return ((dv && dv.labels) || []).filter((l) => fset.has(l)); }
+        const e = this._entMap.get(k);
+        return ((e && e.labels) || []).filter((l) => fset.has(l));
+      };
+      // 1. Functions holding this item
+      const ownFns = [...new Set([...targets].flatMap(fnsOf))];
+      // 2. Automations & scripts referencing it anywhere in HA
+      const allLogic = this._logicIds().filter((e) => e !== key);
+      const cfgs = await Promise.all(allLogic.map((e) => this._fetchConfig(e)));
+      if (tok !== this._impactTok || !this._drawer || this._drawer.mode !== 'impact' || this._drawer.key !== key) return;
+      const logicHits = [];
+      allLogic.forEach((e, i) => {
+        if (!cfgs[i]) return;
+        const an = analyze(cfgs[i], e.startsWith('script.'), (x) => this._known(x));
+        const roles = new Set();
+        an.refs.forEach((r) => {
+          if (!targets.has(r.ref)) return;
+          roles.add(r.role);
+          if (r.tpl) roles.add('template');
+        });
+        if (roles.size) logicHits.push({ id: e, name: this._nameOf(e), roles: [...roles], fns: fnsOf(e) });
+      });
+      // 3. Groups & scenes containing it
+      const groupHits = [];
+      Object.values(this._hass.states).forEach((st) => {
+        if (st.entity_id === key) return;
+        const list = toList(st.attributes && st.attributes.entity_id);
+        if (list.some((x) => typeof x === 'string' && targets.has(x))) {
+          groupHits.push({ id: st.entity_id, name: this._nameOf(st.entity_id), fns: fnsOf(st.entity_id) });
+        }
+      });
+      // 4. Derived helpers reading it (templates, min_max, threshold, statistics, groups...)
+      const helperHits = [];
+      if (this._storeMode === 'shared') {
+        const ask = this._ents.filter((e) => e.entity_id !== key && HELPER_PLATFORMS.has(e.platform)).map((e) => e.entity_id).slice(0, 500);
+        const r = ask.length ? await this._ws({ type: 'functions_board/sources', entity_ids: ask }, { fallback: null }) : null;
+        if (tok !== this._impactTok || !this._drawer || this._drawer.mode !== 'impact' || this._drawer.key !== key) return;
+        Object.entries((r && r.sources) || {}).forEach(([hid, src]) => {
+          if (((src && src.entities) || []).some((x) => targets.has(x))) {
+            helperHits.push({ id: hid, name: this._nameOf(hid), how: (src && src.how) || 'helper', fns: fnsOf(hid) });
+          }
+        });
+      }
+      // 5. Node-RED flows referencing it
+      const nrHits = [];
+      const nr = this._nrState();
+      ((nr && nr.groups) || []).forEach((g) => {
+        const roles = [];
+        if ((g.trig || []).some((x) => targets.has(x))) roles.push('trigger');
+        if ((g.read || []).some((x) => targets.has(x))) roles.push('condition');
+        if ((g.change || []).some((x) => targets.has(x))) roles.push('action');
+        if ((g.calls || []).some((x) => targets.has(x))) roles.push('call');
+        if (roles.length) nrHits.push({ name: g.name, tab: g.tabLabel || '', roles });
+      });
+
+      const roleLbl = (r) => ({
+        trigger: T('imp_role_trigger'), condition: T('imp_role_condition'),
+        action: T('imp_role_action'), call: T('imp_role_call'), template: T('imp_role_template'),
+      })[r] || r;
+      const fnChips = (id, fns) => (fns.length
+        ? fns.map((l) => `<button class="chip" data-act="impact-go" data-label="${esc(l)}" data-key="${esc(id)}"><ha-icon icon="mdi:sitemap-outline"></ha-icon>${esc(this._fnName(l))}</button>`).join('')
+        : `<span class="muted small">${T('imp_no_fn')}</span><button class="chip" data-act="impact-ha" data-key="${esc(id)}"><ha-icon icon="mdi:open-in-new"></ha-icon>${T('imp_open_ha')}</button>`);
+
+      const summaryParts = [];
+      if (ownFns.length) summaryParts.push(P('n_functions', ownFns.length));
+      if (logicHits.length) summaryParts.push(P('n_automations_and_scripts', logicHits.length));
+      if (groupHits.length + helperHits.length) summaryParts.push(P('n_helpers', groupHits.length + helperHits.length));
+      if (nrHits.length) summaryParts.push(`${nrHits.length} Node-RED`);
+      const sumText = summaryParts.length ? T('imp_summary', { parts: summaryParts.join(' · ') }) : T('imp_safe');
+
+      const secFns = ownFns.length
+        ? `<div class="imp-sec"><h4>${T('imp_sec_fns')} (${ownFns.length})</h4><div class="imp-acts">${ownFns.map((l) => `<button class="chip" data-act="impact-go" data-label="${esc(l)}" data-key="${esc(key)}"><ha-icon icon="mdi:sitemap-outline"></ha-icon>${esc(this._fnName(l))}</button>`).join('')}</div></div>` : '';
+      const secLogic = logicHits.length
+        ? `<div class="imp-sec"><h4>${T('imp_sec_logic')} (${logicHits.length})</h4>${logicHits.map((x) => `<div class="imp-row"><div class="imp-top"><span class="tag">${esc(this._tagOf(x.id))}</span><b>${esc(x.name)}</b><small>${esc(x.id)}</small></div><div class="imp-roles">${x.roles.map((r) => `<span class="imp-role">${esc(roleLbl(r))}</span>`).join('')}</div><div class="imp-acts">${fnChips(x.id, x.fns)}</div></div>`).join('')}</div>` : '';
+      const secGroups = groupHits.length
+        ? `<div class="imp-sec"><h4>${T('imp_sec_groups')} (${groupHits.length})</h4>${groupHits.map((x) => `<div class="imp-row"><div class="imp-top"><span class="tag">${esc(this._tagOf(x.id))}</span><b>${esc(x.name)}</b><small>${esc(x.id)}</small></div><div class="imp-acts">${fnChips(x.id, x.fns)}</div></div>`).join('')}</div>` : '';
+      const secHelpers = helperHits.length
+        ? `<div class="imp-sec"><h4>${T('imp_sec_helpers')} (${helperHits.length})</h4>${helperHits.map((x) => `<div class="imp-row"><div class="imp-top"><span class="tag">${esc(this._tagOf(x.id))}</span><b>${esc(x.name)}</b><small>${esc(x.id)}</small></div><div class="imp-acts">${fnChips(x.id, x.fns)}</div></div>`).join('')}</div>` : '';
+      const secNr = nrHits.length
+        ? `<div class="imp-sec"><h4>${T('imp_sec_nr')} (${nrHits.length})</h4>${nrHits.map((x) => `<div class="imp-row"><div class="imp-top"><span class="tag">${T('node_red')}</span><b>${esc(x.name)}</b>${x.tab ? `<small>${esc(x.tab)}</small>` : ''}</div><div class="imp-roles">${x.roles.map((r) => `<span class="imp-role">${esc(roleLbl(r))}</span>`).join('')}</div></div>`).join('')}</div>` : '';
+
+      this._put(d, `<div class="dhead"><span class="dtitle">${title}</span><button data-act="close" title="${T('close')}"><ha-icon icon="mdi:close"></ha-icon></button></div>`
+        + `<div class="impact"><div class="imp-sum">${esc(sumText)}</div>${secFns}${secLogic}${secHelpers}${secGroups}${secNr}</div>`);
+    },
+    _impactOpenHA(key) {
+      const n = (this._model && this._model.nodes.get(key)) || this._mkNode(key, 'outside');
+      this._openItem(n);
     },
     // the drawer: a labelled region beside the board; focus moves into it when it opens, back when it closes
     _watchDrawer() {
