@@ -60,8 +60,8 @@ async def async_sources(
             found = _trigger_template(hass, reg, comps, entity_id)
         if found is None and entity_id in entries and entries[entity_id].domain in helper_domains:
             found = _options_entities(hass, reg, entity_id, entries[entity_id].options)
-        rule = _rule(comps, entity_id) if found is not None else None
         tpls = _template_sources(comps, entity_id, entries.get(entity_id)) if include_templates else None
+        rule = _rule(comps, entity_id) if (found is not None or tpls is not None) else None
         if found and (found["entities"] or found["domains"] or found["all"] or (rule and rule.get("kind") == "template") or tpls):
             if rule:
                 found["rule"] = rule
